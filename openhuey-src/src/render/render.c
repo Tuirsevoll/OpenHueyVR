@@ -1,0 +1,1314 @@
+#include "render.h"
+
+#include "../platform/gl.h"
+#include "font.h"
+#include "post.h"
+
+#include <SDL3/SDL.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* the defaults: look-enhanced (scripts/graphics.fs - which start-up applies too, before a
+ * player's saved settings) */
+RenderSettings gRender = {
+    .msaa = 4, .scale = 1.0f, .aspect = 0, .anisotropy = 16.0f,
+    .ssao = 1, .ssao_radius = 20.0f, .ssao_strength = 0.9f,
+    .bloom = 1, .bloom_threshold = 0.9f, .bloom_strength = 0.12f,
+    .fog = 0, .fog_density = 0.0012f, .fog_start = 150.0f, .fog_color = {0.05f, 0.055f, 0.07f},
+    .exposure = 1.0f, .tonemap = 1, .saturation = 1.0f, .contrast = 1.0f,
+    .vignette = 0.2f, .grain = 0.0f,
+    .shadows = 1,
+    .light_dir = {0.35f, 0.85f, 0.4f}, .light_color = {0.55f, 0.52f, 0.48f}, .ambient = {0.16f, 0.17f, 0.2f},
+    .rim = 0.2f,
+    .room_fog = 1, .room_tint = 1, .room_bloom = 1, .room_dof = 1, .game_font = 1,
+    .room_lights = 1, .character_light = 1.0f, .ps2_lighting = 2, .shadow_maps = 1, .shadow_strength = 0.7f,
+};
+
+RoomLook gRoomLook;
+
+/* modes 3 / 4: a grey breathing between 0x20 and 0x80; mode 2: red with alpha between 0x80 and
+ * 0xC0 - a step of 1 (or 0x10) each tick, turning at the ends */
+void render_look_tick(void) {
+    RoomLook *l = &gRoomLook;
+    float step, lo, hi, *x;
+
+    if (!l->has_bloom || l->bloom_mode < 2 || l->bloom_mode > 4) {
+        return;
+    }
+    if (l->bloom_mode == 2) {
+        x = &l->bloom[3];   /* the alpha (red stays) */
+        step = 16.0f / 256.0f;
+        lo = 128.0f / 256.0f;
+        hi = 192.0f / 256.0f;
+    } else {
+        x = &l->bloom[0];   /* the grey, all of it */
+        step = 1.0f / 128.0f;
+        lo = 32.0f / 128.0f;
+        hi = 1.0f;
+    }
+    *x += l->bloom_phase ? -step : step;
+    if (*x >= hi) {
+        *x = hi;
+        l->bloom_phase = 1;
+    } else if (*x <= lo) {
+        *x = lo;
+        l->bloom_phase = 0;
+    }
+    if (l->bloom_mode != 2) {
+        l->bloom[1] = l->bloom[2] = l->bloom[0];
+        l->bloom[3] = l->bloom[0] / 2.0f;   /* (its alpha moves with it: 0x20 .. 0x80) */
+    }
+}
+
+/* ---- the scene's shader ----
+ * Fixed locations: u_mvp 0, u_use_tex 1, u_solid_tex 2, u_lit 3, u_coverage 4, u_light_dir 5,
+ * u_light_color 6, u_ambient 7, u_eye 8, u_rim 9; the texture on unit 0. */
+
+enum { U_MVP, U_USE_TEX, U_SOLID_TEX, U_LIT, U_COVERAGE, U_LIGHT_DIR, U_LIGHT_COLOR, U_AMBIENT, U_EYE, U_RIM, U_MASK,
+       U_ROOM_LIT, U_LPOS = 12, U_LCOL = 15, U_LRANGE = 18, U_AMBIENT128 = 21, U_NSHADOWS = 22, U_SHADOW_VP = 23,
+       U_SHADOW_INFO = 35, U_SHADOW_STRENGTH = 47, U_RECEIVE = 59, U_CHAR_LIGHT = 60, U_ALPHA = 61,
+       U_REJECT = 62, U_UNFOGGED = 63, U_SHADOW_LIGHT = 64, U_NBLOCKERS = 76, U_BLOCKER = 77,   /* (12 shadows, 16 blockers) */
+       U_PS2 = 180, U_PDIR = 181, U_PFALL = 184 };
+
+/* the PS2's lighting (gfx.ps2-lighting; src/game/model.c light_rgba): each light one direction
+ * (from the model's root to it; w: -dir.L), a falloff along it, its colour; the ambient; the sum
+ * clamped at 0x80 (= 1.0 against the texture). In the vertex shader (1: per vertex, as the
+ * original) or the fragment shader (2: the same per pixel, smooth) */
+#define PS2_LIGHT \
+    "layout(location = 15) uniform vec3 u_lcol[3];\n" \
+    "layout(location = 21) uniform vec3 u_ambient128;\n" \
+    "layout(location = 180) uniform int u_ps2;\n" \
+    "layout(location = 181) uniform vec4 u_pdir[3];\n" \
+    "layout(location = 184) uniform float u_pfall[3];\n" \
+    "vec3 ps2_light(vec3 normal, vec3 p) {\n" \
+    "    float len = length(normal);\n" \
+    "    vec3 n = len > 0.0 ? normal / len : vec3(0.0), l = u_ambient128;\n" \
+    "    for (int i = 0; i < 3; i++) {\n" \
+    "        float d = max(dot(u_pdir[i].xyz, n), 0.0);\n" \
+    "        float f = max(1.0 + u_pfall[i] * (dot(u_pdir[i].xyz, p) + u_pdir[i].w), 0.0);\n" \
+    "        l += u_lcol[i] * d * f;\n" \
+    "    }\n" \
+    "    return clamp(l, 0.0, 128.0);\n" \
+    "}\n"
+
+static const char *kMeshVs =
+    "#version 460 core\n"
+    "layout(location = 0) in vec3 a_pos;\n"
+    "layout(location = 1) in vec2 a_st;\n"
+    "layout(location = 2) in vec4 a_col;\n"
+    "layout(location = 3) in vec3 a_normal;\n"
+    "layout(location = 0) uniform mat4 u_mvp;\n"
+    "layout(location = 62) uniform vec4 u_reject;\n"   /* the PS2's clip volume (x, y bands, near, far); x 0: off */
+    "layout(location = 3) uniform int u_lit;\n"
+    "layout(location = 11) uniform int u_room_lit;\n"
+    PS2_LIGHT
+    "out vec3 v_ps2;\n"
+    "out vec2 v_st;\n"
+    "out vec4 v_col;\n"
+    "out vec3 v_normal;\n"
+    "out vec3 v_pos;\n"
+    "noperspective out float v_out;\n"
+    "void main() {\n"
+    "    gl_Position = u_mvp * vec4(a_pos, 1.0);\n"
+    "    vec4 p = gl_Position;\n"
+    "    v_out = u_reject.x > 0.0 && (p.w < u_reject.z || p.w > u_reject.w || abs(p.x) > u_reject.x * p.w ||\n"
+    "                                 abs(p.y) > u_reject.y * p.w) ? 1.0 : 0.0;\n"
+    "    v_st = a_st;\n"
+    "    v_col = a_col * (255.0 / 128.0);\n"   /* 0x80 = 1.0 */
+    "    v_normal = a_normal;\n"
+    "    v_pos = a_pos;\n"
+    /* (per vertex, cut to whole steps: the vertex colour the microprograms gave the GS) */
+    "    v_ps2 = u_lit != 0 && u_room_lit != 0 && u_ps2 == 1 ? floor(ps2_light(a_normal, a_pos)) / 128.0 : vec3(1.0);\n"
+    "}\n";
+
+/* the GS's modulate (texel times vertex colour), done on linear values; characters lit by a key
+ * light, the ambient and a rim; cut-out edges antialiased by alpha to coverage */
+static const char *kMeshFs =
+    "#version 460 core\n"
+    "in vec2 v_st;\n"
+    "in vec4 v_col;\n"
+    "in vec3 v_normal;\n"
+    "in vec3 v_pos;\n"
+    "in vec3 v_ps2;\n"
+    "noperspective in float v_out;\n"
+    "layout(binding = 0) uniform sampler2D u_tex;\n"
+    "layout(location = 1) uniform int u_use_tex;\n"
+    "layout(location = 2) uniform int u_solid_tex;\n"
+    "layout(location = 3) uniform int u_lit;\n"
+    "layout(location = 4) uniform int u_coverage;\n"
+    "layout(location = 5) uniform vec3 u_light_dir;\n"
+    "layout(location = 6) uniform vec3 u_light_color;\n"
+    "layout(location = 7) uniform vec3 u_ambient;\n"
+    "layout(location = 8) uniform vec3 u_eye;\n"
+    "layout(location = 9) uniform float u_rim;\n"
+    "layout(location = 10) uniform float u_mask;\n"   /* the bloom mask: 1 for its own draws */
+    "layout(location = 11) uniform int u_room_lit;\n"   /* lit draws: by the room's lights */
+    "layout(location = 12) uniform vec3 u_lpos[3];\n"
+    "layout(location = 18) uniform float u_lrange[3];\n"
+    "layout(location = 22) uniform int u_nshadows;\n"
+    PS2_LIGHT   /* (u_lcol: 0..128, times intensity) */
+    "layout(location = 23) uniform mat4 u_shadow_vp[12];\n"
+    "layout(location = 35) uniform vec4 u_shadow_info[12];\n"   /* the caster's middle, its size */
+    "layout(location = 47) uniform float u_shadow_strength[12];\n"
+    "layout(location = 59) uniform int u_receive;\n"
+    "layout(location = 60) uniform float u_char_light;\n"
+    "layout(location = 61) uniform vec4 u_tint;\n"   /* the whole draw tinted and faded (a character: 1 1 1 1 as it is) */
+    "layout(location = 63) uniform float u_unfogged;\n"   /* drawn after the room's fog: 1 */
+    "layout(binding = 1) uniform sampler2DArrayShadow u_shadow;\n"
+    "layout(location = 64) uniform vec4 u_shadow_light[12];\n"   /* where its light shades from, its shadows' reach */
+    "layout(location = 76) uniform int u_nblockers;\n"
+    "layout(location = 77) uniform vec3 u_blocker[96];\n"   /* 6 each: 4 corners, the facing, the top middle */
+    "layout(location = 0) out vec4 o_color;\n"
+    /* the lights' blockers (room.c room_blocked, the original's Shadow_BlockerVolumes): shadow i's
+     * light shaded from p by one - p behind a quad facing away from it, in the pyramid from the
+     * light through it, before its far end (the corners each the reach on) */
+    "bool blocked(int i, vec3 p) {\n"
+    "    vec3 lp = u_shadow_light[i].xyz;\n"
+    "    float len = u_shadow_light[i].w;\n"
+    "    if (!(len > 0.0)) return false;\n"
+    "    for (int b = 0; b < 16; b++) {\n"
+    "        if (b >= u_nblockers) break;\n"
+    "        vec3 q[4] = vec3[4](u_blocker[b * 6], u_blocker[b * 6 + 1], u_blocker[b * 6 + 3], u_blocker[b * 6 + 2]);\n"
+    "        vec3 n = u_blocker[b * 6 + 4];\n"
+    "        if (!(dot(lp - u_blocker[b * 6 + 5], n) < 0.0) || !(dot(p - q[0], n) > 0.0)) continue;\n"
+    "        vec3 mid = 0.25 * (q[0] + q[1] + q[2] + q[3]);\n"
+    "        bool inside = true;\n"
+    "        for (int k = 0; k < 4; k++) {\n"
+    "            vec3 sn = cross(q[k] - lp, q[(k + 1) & 3] - lp);\n"
+    "            if (dot(sn, p - lp) * dot(sn, mid - lp) < 0.0) inside = false;\n"
+    "        }\n"
+    "        if (!inside) continue;\n"
+    "        vec3 f0 = q[0] + normalize(q[0] - lp) * len, f1 = q[1] + normalize(q[1] - lp) * len;\n"
+    "        vec3 f2 = q[2] + normalize(q[2] - lp) * len, f3 = q[3] + normalize(q[3] - lp) * len;\n"
+    "        vec3 fn = cross(f2 - f0, f3 - f1);\n"
+    "        vec3 fm = 0.25 * (f0 + f1 + f2 + f3);\n"
+    "        if (dot(fn, p - fm) * dot(fn, lp - fm) >= 0.0) return true;\n"
+    "    }\n"
+    "    return false;\n"
+    "}\n"
+    "layout(location = 1) out vec2 o_mask;\n"   /* the bloom mask; drawn after the room's fog (no fog there) */
+    "void main() {\n"
+    /* (a triangle with a corner outside the PS2's clip volume isn't drawn at all, as the
+     * character microprograms reject it: CLIP, FCAND, the ADC bit - not cut at the screen) */
+    "    if (v_out > 0.0) discard;\n"
+    "    vec4 c = vec4(pow(max(v_col.rgb, 0.0), vec3(2.2)), v_col.a);\n"
+    "    if (u_use_tex != 0) {\n"
+    "        vec4 t = texture(u_tex, v_st);\n"   /* sRGB texture: already linear */
+    "        if (u_solid_tex != 0) t.a = 1.0;\n"
+    "        c *= t;\n"
+    "    }\n"
+    "    if (u_lit != 0) {\n"
+    "        vec3 n = normalize(v_normal), v = normalize(u_eye - v_pos), light;\n"
+    /* (a surface seen from its back - a wing's underside, a hem - lit as the side in view: its
+     * normal turned toward the eye, else the rim light floods it and the lights miss it) */
+    "        if (dot(n, v) < 0.0) n = -n;\n"
+    "        float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * u_rim;\n"
+    "        if (u_room_lit != 0 && u_ps2 == 1) {\n"   /* as the PS2 lit it (the vertex shader) */
+    "            light = pow(v_ps2, vec3(2.2));\n"
+    "        } else if (u_room_lit != 0 && u_ps2 == 2) {\n"   /* ... per pixel */
+    "            light = pow(ps2_light(v_normal, v_pos) / 128.0, vec3(2.2));\n"
+    "        } else if (u_room_lit != 0) {\n"   /* OpenHuey's: ambient + 3 point lights, 0x80 = 1.0 */
+    "            vec3 l = u_ambient128;\n"
+    "            for (int i = 0; i < 3; i++) {\n"
+    "                vec3 d = u_lpos[i] - v_pos;\n"
+    "                float dist = max(length(d), 1e-3);\n"
+    "                float fall = u_lrange[i] > 0.0 ? clamp(1.0 - dist / u_lrange[i], 0.0, 1.0) : 1.0;\n"
+    "                l += u_lcol[i] * max(dot(n, d / dist), 0.0) * fall;\n"
+    "            }\n"
+    "            light = pow(max(l / 128.0 * u_char_light, 0.0), vec3(2.2));\n"
+    "        } else {\n"
+    "            float key = max(dot(n, normalize(u_light_dir)), 0.0);\n"
+    "            light = u_ambient * 2.0 + u_light_color * key * 2.0;\n"
+    "        }\n"
+    "        c.rgb *= light;\n"
+    /* (the rim by the surface's own colour: a light one rimmed as it was, a dark one - a crow's
+     * feathers seen edge on - barely, not washed pale; and by the room's light on it alone, so a
+     * character in the dark has no glowing outline) */
+    "        c.rgb += rim * (u_room_lit != 0 ? light : max(light, u_ambient)) * clamp(c.rgb * 2.0, 0.0, 1.0) * c.a;\n"
+    "    }\n"
+    "    if (u_receive != 0) {\n"   /* characters' shadows: PCF over a disc, softer and fading with distance */
+    "        vec2 texel = 1.0 / vec2(textureSize(u_shadow, 0).xy);\n"
+    "        const vec2 disc[16] = vec2[16](vec2(-0.94, -0.40), vec2(0.95, -0.77), vec2(-0.09, -0.93), vec2(0.34, 0.29),\n"
+    "            vec2(-0.92, 0.46), vec2(-0.82, 0.15), vec2(-0.38, 0.28), vec2(-0.26, 0.98), vec2(0.97, 0.32),\n"
+    "            vec2(0.79, -0.24), vec2(-0.49, -0.75), vec2(0.20, 0.79), vec2(0.65, 0.68), vec2(0.21, -0.20),\n"
+    "            vec2(0.44, -0.94), vec2(-0.19, -0.37));\n"
+    "        for (int i = 0; i < 12; i++) {\n"
+    "            if (i >= u_nshadows) break;\n"
+    "            if (blocked(i, v_pos)) continue;\n"
+    /* (characters receive too - each other's shadows and their own: the point is moved out along
+     * the surface's normal first so a surface doesn't shadow itself) */
+    "            vec3 at = u_lit != 0 ? v_pos + normalize(v_normal) * 0.35 : v_pos;\n"
+    "            vec4 lp = u_shadow_vp[i] * vec4(at, 1.0);\n"
+    "            if (lp.w <= 0.0) continue;\n"
+    "            vec3 q = lp.xyz / lp.w * 0.5 + 0.5;\n"
+    "            if (any(lessThan(q, vec3(0.0))) || any(greaterThan(q, vec3(1.0)))) continue;\n"
+    "            float far = length(v_pos - u_shadow_info[i].xyz) / u_shadow_info[i].w;\n"
+    /* (sharp by the caster, softer the further it falls: the penumbra a lamp's size gives, not a
+     * cut-out's edge all the way to the shadow's end) */
+    "            float spread = mix(1.0, 5.0, smoothstep(0.5, 3.0, far));\n"
+    "            float lit = 0.0;\n"
+    "            for (int k = 0; k < 16; k++)\n"
+    "                lit += texture(u_shadow, vec4(q.xy + disc[k] * spread * texel, float(i), q.z - 0.0005));\n"
+    "            lit /= 16.0;\n"
+    "            float fade = 1.0 - smoothstep(1.0, 5.0, far);\n"
+    /* (a character's side turned from the light is dark by its lighting already: shadowed again
+     * it went near black, cut off hard along the line where the body turns away - its own
+     * shadow eased out toward that line instead) */
+    "            if (u_lit != 0) {\n"
+    "                vec3 sn = normalize(v_normal);\n"
+    "                if (dot(sn, u_eye - v_pos) < 0.0) sn = -sn;\n"
+    "                fade *= smoothstep(0.0, 0.35, dot(sn, normalize(u_shadow_light[i].xyz - v_pos)));\n"
+    "            }\n"
+    /* (darkening by the strength as it looks on screen, not in linear values) */
+    "            c.rgb *= pow(1.0 - u_shadow_strength[i] * (1.0 - lit) * fade, 2.2);\n"
+    "        }\n"
+    "    }\n"
+    "    if (u_use_tex != 0) {\n"
+    "        if (u_coverage != 0) {\n"   /* a sharp edge where alpha crosses the cut-off */
+    "            c.a = clamp((c.a - 0.02) / max(fwidth(c.a), 1e-4) + 0.5, 0.0, 1.0);\n"
+    "            if (c.a <= 0.0) discard;\n"
+    "        } else if (c.a < 1.0 / 255.0) {\n"
+    "            discard;\n"
+    "        }\n"
+    "    }\n"
+    "    c *= u_tint;\n"
+    "    o_color = c;\n"
+    "    o_mask = vec2(u_mask, u_unfogged);\n"
+    "}\n";
+
+/* the shadow pass: depth only, from the light */
+static const char *kShadowVs =
+    "#version 460 core\n"
+    "layout(location = 0) in vec3 a_pos;\n"
+    "layout(location = 0) uniform mat4 u_vp;\n"
+    "void main() { gl_Position = u_vp * vec4(a_pos, 1.0); }\n";
+static const char *kShadowFs =
+    "#version 460 core\n"
+    "void main() {}\n";
+
+#define SHADOW_SIZE 1024
+
+/* ---- state ---- */
+
+typedef struct Vertex2d {
+    float x, y, u, v;
+    uint8_t rgba[4];
+} Vertex2d;
+
+static struct {
+    GLuint mesh_prog, sampler;
+    float sampler_aniso;
+    GLuint prog2d, prog2d_image, vao2d, vbo2d, font, blob;
+    Vertex2d *v2d;
+    int n2d, cap2d;
+    int w, h;                   /* the window */
+    int px, py, pw, ph;         /* the picture's rectangle in it (GL: from the bottom left) */
+    GLuint present;             /* the finished picture: 0 the window, else a framebuffer */
+    Mat4 proj;
+    float znear, zfar;
+    GLuint shadow_prog, shadow_tex, shadow_fbo[RENDER_MAX_SHADOWS];
+    int nshadows;
+    Mat4 shadow_vp[RENDER_MAX_SHADOWS];
+    float shadow_info[RENDER_MAX_SHADOWS][4], shadow_strength[RENDER_MAX_SHADOWS];
+    float shadow_light[RENDER_MAX_SHADOWS][4];   /* where its light shades from, its reach */
+    GLuint shade_prog, shade_vao, shade_vbo;     /* layer 6's draws */
+} R;
+
+#define FONT_CELL_W 6
+#define FONT_CELL_H 8
+#define FONT_ATLAS_W (FONT_COUNT * FONT_CELL_W)   /* 576: rows stay 4-byte aligned */
+
+static const char *k2dVs =
+    "#version 460 core\n"
+    "layout(location = 0) in vec2 a_pos;\n"
+    "layout(location = 1) in vec2 a_uv;\n"
+    "layout(location = 2) in vec4 a_col;\n"
+    "layout(location = 0) uniform mat4 u_proj;\n"
+    "out vec2 v_uv;\n"
+    "out vec4 v_col;\n"
+    "void main() {\n"
+    "    gl_Position = u_proj * vec4(a_pos, 0.0, 1.0);\n"
+    "    v_uv = a_uv;\n"
+    "    v_col = a_col;\n"
+    "}\n";
+
+static const char *k2dFs =   /* the font is a coverage mask */
+    "#version 460 core\n"
+    "in vec2 v_uv;\n"
+    "in vec4 v_col;\n"
+    "layout(binding = 0) uniform sampler2D u_font;\n"
+    "out vec4 o_color;\n"
+    "void main() {\n"
+    "    o_color = vec4(v_col.rgb, v_col.a * texture(u_font, v_uv).r);\n"
+    "}\n";
+
+static const char *k2dImageFs =   /* a picture (a movie's frame), times the colour - its texture's
+                                   * sRGB (linear when sampled) encoded again: the 2D is drawn after
+                                   * the post pass, straight to the screen */
+    "#version 460 core\n"
+    "in vec2 v_uv;\n"
+    "in vec4 v_col;\n"
+    "layout(binding = 0) uniform sampler2D u_image;\n"
+    "layout(location = 1) uniform int u_fixed;\n"   /* a fixed-alpha blend: the texture's alpha only
+                                                     * tests, as the GS's (none drawn where it is 0;
+                                                     * filtered, its edges' colour faded by it) */
+    "out vec4 o_color;\n"
+    "vec3 to_srgb(vec3 c) {\n"
+    "    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));\n"
+    "}\n"
+    "void main() {\n"
+    "    vec4 t = texture(u_image, v_uv);\n"
+    "    if (u_fixed != 0) {\n"
+    "        if (t.a < 1.0 / 255.0) discard;\n"
+    "        o_color = vec4(to_srgb(t.rgb) * min(t.a, 1.0), 1.0) * v_col;\n"
+    "        return;\n"
+    "    }\n"
+    "    o_color = vec4(to_srgb(t.rgb), t.a) * v_col;\n"
+    "}\n";
+
+static void attribute(GLuint vao, GLuint index, GLint size, GLenum type, GLboolean normalized, GLuint offset) {
+    glEnableVertexArrayAttrib(vao, index);
+    glVertexArrayAttribFormat(vao, index, size, type, normalized, offset);
+    glVertexArrayAttribBinding(vao, index, 0);
+}
+
+static void make_font(void) {
+    static uint8_t px[FONT_CELL_H][FONT_ATLAS_W];
+    int c, x, y;
+
+    for (c = 0; c < FONT_COUNT; c++) {
+        for (x = 0; x < 5; x++) {
+            for (y = 0; y < 7; y++) {
+                px[y][c * FONT_CELL_W + x] = (kFont5x7[c][x] >> y) & 1 ? 255 : 0;
+            }
+        }
+    }
+    glCreateTextures(GL_TEXTURE_2D, 1, &R.font);
+    glTextureStorage2D(R.font, 1, GL_R8, FONT_ATLAS_W, FONT_CELL_H);
+    glTextureSubImage2D(R.font, 0, 0, 0, FONT_ATLAS_W, FONT_CELL_H, GL_RED, GL_UNSIGNED_BYTE, px);
+    glTextureParameteri(R.font, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTextureParameteri(R.font, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTextureParameteri(R.font, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(R.font, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+}
+
+/* a soft round shadow: white, its alpha falling off from the middle */
+static void make_blob(void) {
+    static uint8_t px[64][64][4];
+    int x, y;
+
+    for (y = 0; y < 64; y++) {
+        for (x = 0; x < 64; x++) {
+            float dx = (x + 0.5f) / 32.0f - 1.0f, dy = (y + 0.5f) / 32.0f - 1.0f, r = sqrtf(dx * dx + dy * dy);
+            float a = r >= 1.0f ? 0.0f : (1.0f - r) * (1.0f - r) * (3.0f - 2.0f * (1.0f - r));
+
+            px[y][x][0] = px[y][x][1] = px[y][x][2] = 255;
+            px[y][x][3] = (uint8_t)(a * 128.0f);   /* (0x80 = opaque) */
+        }
+    }
+    R.blob = render_texture(&px[0][0][0], 64, 64);
+}
+
+int render_init(void) {
+    R.mesh_prog = gl_program(kMeshVs, kMeshFs, "mesh");
+    R.prog2d = gl_program(k2dVs, k2dFs, "2d");
+    R.prog2d_image = gl_program(k2dVs, k2dImageFs, "2d image");
+    if (R.mesh_prog == 0 || R.prog2d == 0) {
+        return 0;
+    }
+    /* the scene's textures: trilinear and anisotropic, repeating */
+    glCreateSamplers(1, &R.sampler);
+    glSamplerParameteri(R.sampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glSamplerParameteri(R.sampler, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glSamplerParameteri(R.sampler, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glSamplerParameteri(R.sampler, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    glCreateBuffers(1, &R.vbo2d);
+    glCreateVertexArrays(1, &R.vao2d);
+    attribute(R.vao2d, 0, 2, GL_FLOAT, GL_FALSE, offsetof(Vertex2d, x));
+    attribute(R.vao2d, 1, 2, GL_FLOAT, GL_FALSE, offsetof(Vertex2d, u));
+    attribute(R.vao2d, 2, 4, GL_UNSIGNED_BYTE, GL_TRUE, offsetof(Vertex2d, rgba));
+    glVertexArrayVertexBuffer(R.vao2d, 0, R.vbo2d, 0, sizeof(Vertex2d));
+    make_font();
+    make_blob();
+    post_init();
+
+    /* shadow maps: a depth texture array, compared in the lookup (hardware PCF) */
+    R.shadow_prog = gl_program(kShadowVs, kShadowFs, "shadow");
+    glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &R.shadow_tex);
+    glTextureStorage3D(R.shadow_tex, 1, GL_DEPTH_COMPONENT32F, SHADOW_SIZE, SHADOW_SIZE, RENDER_MAX_SHADOWS);
+    glTextureParameteri(R.shadow_tex, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTextureParameteri(R.shadow_tex, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTextureParameteri(R.shadow_tex, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(R.shadow_tex, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(R.shadow_tex, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glTextureParameteri(R.shadow_tex, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    {
+        int i;
+
+        for (i = 0; i < RENDER_MAX_SHADOWS; i++) {
+            glCreateFramebuffers(1, &R.shadow_fbo[i]);
+            glNamedFramebufferTextureLayer(R.shadow_fbo[i], GL_DEPTH_ATTACHMENT, R.shadow_tex, 0, i);
+            glNamedFramebufferDrawBuffer(R.shadow_fbo[i], GL_NONE);
+        }
+    }
+    return 1;
+}
+
+void render_shutdown(void) {
+    free(R.v2d);
+    R.v2d = NULL;
+}
+
+/* ---- frames ---- */
+
+static int clampi(int x, int lo, int hi) {
+    return x < lo ? lo : x > hi ? hi : x;
+}
+
+static float lin(float c) {
+    return powf(c, 2.2f);
+}
+
+void render_begin(int w, int h, Vec3 clear) {
+    RenderSettings *s = &gRender;
+    int samples = s->msaa >= 8 ? 8 : s->msaa >= 4 ? 4 : s->msaa >= 2 ? 2 : 1;
+    float scale = s->scale < 0.25f ? 0.25f : s->scale > 2.0f ? 2.0f : s->scale;
+    const float black[4] = {0, 0, 0, 1};
+
+    R.w = w;
+    R.h = h;
+    R.n2d = 0;
+    /* the picture: the whole window, or the largest 4:3 rectangle in its middle */
+    R.pw = w;
+    R.ph = h;
+    if (s->aspect == 1) {
+        if (w * 3 > h * 4) {
+            R.pw = h * 4 / 3;
+        } else {
+            R.ph = w * 3 / 4;
+        }
+    }
+    R.px = (w - R.pw) / 2;
+    R.py = (h - R.ph) / 2;
+    glClearNamedFramebufferfv(R.present, GL_COLOR, 0, black);   /* (the bars, when there are any) */
+    if (s->anisotropy != R.sampler_aniso) {
+        R.sampler_aniso = s->anisotropy;
+        glSamplerParameterf(R.sampler, GL_TEXTURE_MAX_ANISOTROPY, s->anisotropy < 1.0f ? 1.0f : s->anisotropy);
+    }
+    post_begin(clampi((int)(R.pw * scale), 16, 8192), clampi((int)(R.ph * scale), 16, 8192), samples,
+               vec3(lin(clear.x), lin(clear.y), lin(clear.z)));
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glDisable(GL_CULL_FACE);
+}
+
+void render_set_present(unsigned fbo) { R.present = fbo; }
+unsigned render_present(void) { return R.present; }
+
+float render_aspect(void) {
+    int w = R.w, h = R.h;
+
+    if (gRender.aspect == 1) {
+        return 4.0f / 3.0f;
+    }
+    return h > 0 ? (float)w / (float)h : 1.0f;
+}
+
+void render_camera(const Mat4 *proj, const Mat4 *view, Vec3 eye, float znear, float zfar) {
+    Vec3 l = vec3_norm(gRender.light_dir);
+
+    (void)view;
+    R.proj = *proj;
+    R.znear = znear;
+    R.zfar = zfar;
+    glProgramUniform3f(R.mesh_prog, U_LIGHT_DIR, l.x, l.y, l.z);
+    glProgramUniform3f(R.mesh_prog, U_LIGHT_COLOR, gRender.light_color.x, gRender.light_color.y, gRender.light_color.z);
+    glProgramUniform3f(R.mesh_prog, U_AMBIENT, gRender.ambient.x, gRender.ambient.y, gRender.ambient.z);
+    glProgramUniform3f(R.mesh_prog, U_EYE, eye.x, eye.y, eye.z);
+    glProgramUniform1f(R.mesh_prog, U_RIM, gRender.rim);
+}
+
+void render_draw_lights(Vec3 ambient, const DrawLight *lights, int n, Vec3 root) {
+    float pos[9] = {0}, col[9] = {0}, range[3] = {0}, dir[12] = {0}, fall[3] = {1, 1, 1};
+    int i;
+
+    for (i = 0; i < n && i < 3; i++) {
+        /* the PS2's (light_slot): the direction from the root to the light, w -dir.L */
+        Vec3 d = vec3_sub(lights[i].pos, root);
+        float len = vec3_len(d);
+
+        d = len > 0.0f ? vec3_scale(d, 1.0f / len) : vec3(0, 0, 0);
+        dir[i * 4] = d.x;
+        dir[i * 4 + 1] = d.y;
+        dir[i * 4 + 2] = d.z;
+        dir[i * 4 + 3] = -vec3_dot(d, lights[i].pos);
+        fall[i] = lights[i].fall;
+        pos[i * 3] = lights[i].pos.x;
+        pos[i * 3 + 1] = lights[i].pos.y;
+        pos[i * 3 + 2] = lights[i].pos.z;
+        col[i * 3] = lights[i].color.x;
+        col[i * 3 + 1] = lights[i].color.y;
+        col[i * 3 + 2] = lights[i].color.z;
+        range[i] = lights[i].range;
+    }
+    glProgramUniform1i(R.mesh_prog, U_ROOM_LIT, n >= 0 && gRender.room_lights);
+    glProgramUniform1i(R.mesh_prog, U_PS2, gRender.ps2_lighting);
+    glProgramUniform3fv(R.mesh_prog, U_LPOS, 3, pos);
+    glProgramUniform3fv(R.mesh_prog, U_LCOL, 3, col);
+    glProgramUniform1fv(R.mesh_prog, U_LRANGE, 3, range);
+    glProgramUniform4fv(R.mesh_prog, U_PDIR, 3, dir);
+    glProgramUniform1fv(R.mesh_prog, U_PFALL, 3, fall);
+    glProgramUniform3f(R.mesh_prog, U_AMBIENT128, ambient.x, ambient.y, ambient.z);
+    glProgramUniform1f(R.mesh_prog, U_CHAR_LIGHT, gRender.character_light);
+}
+
+/* ---- reflections (the original's Reflection effect): its quad marked in the stencil and its
+ * depth pushed back, the characters drawn again mirrored there, then its depth put back ---- */
+
+static GLuint sQuadVao, sQuadVbo;
+
+static void quad_draw(const Mat4 *vp, const Vec3 q[4]) {   /* (corners 0 1 2 3: triangles 0 1 2, 2 1 3) */
+    static const int kOrder[6] = {0, 1, 2, 2, 1, 3};
+    float v[18];
+    int i;
+
+    if (sQuadVao == 0) {
+        glCreateVertexArrays(1, &sQuadVao);
+        glCreateBuffers(1, &sQuadVbo);
+        glNamedBufferStorage(sQuadVbo, sizeof(v), NULL, GL_DYNAMIC_STORAGE_BIT);
+        glVertexArrayVertexBuffer(sQuadVao, 0, sQuadVbo, 0, 3 * sizeof(float));
+        glEnableVertexArrayAttrib(sQuadVao, 0);
+        glVertexArrayAttribFormat(sQuadVao, 0, 3, GL_FLOAT, GL_FALSE, 0);
+        glVertexArrayAttribBinding(sQuadVao, 0, 0);
+    }
+    for (i = 0; i < 6; i++) {
+        v[i * 3] = q[kOrder[i]].x;
+        v[i * 3 + 1] = q[kOrder[i]].y;
+        v[i * 3 + 2] = q[kOrder[i]].z;
+    }
+    glNamedBufferSubData(sQuadVbo, 0, sizeof(v), v);
+    glProgramUniformMatrix4fv(R.shadow_prog, 0, 1, GL_FALSE, vp->m);
+    glUseProgram(R.shadow_prog);
+    glBindVertexArray(sQuadVao);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+}
+
+static void colour_writes(GLboolean on) {
+    glColorMaski(0, on, on, on, on);
+    glColorMaski(1, on, on, on, on);
+}
+
+void render_reflect_begin(const Mat4 *vp, const Vec3 q[4]) {
+    static const GLint kZero = 0;
+
+    glDisable(GL_BLEND);
+    glClearBufferiv(GL_STENCIL, 0, &kZero);
+    glEnable(GL_STENCIL_TEST);
+    colour_writes(GL_FALSE);
+    glStencilFunc(GL_ALWAYS, 1, 0xFF);   /* where the quad shows */
+    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+    glDepthMask(GL_FALSE);
+    glDepthFunc(GL_LEQUAL);
+    quad_draw(vp, q);
+    glStencilFunc(GL_EQUAL, 1, 0xFF);   /* its depth pushed to the back there */
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    glDepthFunc(GL_ALWAYS);
+    glDepthMask(GL_TRUE);
+    glDepthRange(1.0, 1.0);
+    quad_draw(vp, q);
+    glDepthRange(0.0, 1.0);
+    glDepthFunc(GL_LEQUAL);
+    colour_writes(GL_TRUE);
+}
+
+void render_reflect_end(const Mat4 *vp, const Vec3 q[4]) {
+    colour_writes(GL_FALSE);
+    glDisable(GL_BLEND);
+    glDepthFunc(GL_ALWAYS);
+    glDepthMask(GL_TRUE);
+    quad_draw(vp, q);
+    glDepthFunc(GL_LEQUAL);
+    colour_writes(GL_TRUE);
+    glDisable(GL_STENCIL_TEST);
+}
+
+void render_shadows_begin(void) {
+    R.nshadows = 0;
+}
+
+int render_shadow_add(const Mat4 *light_vp, Vec3 center, float radius, float strength, Vec3 light, float reach) {
+    static const float kFar = 1.0f;
+    int i = R.nshadows;
+
+    if (i >= RENDER_MAX_SHADOWS || !gRender.shadow_maps) {
+        return -1;
+    }
+    R.nshadows++;
+    R.shadow_vp[i] = *light_vp;
+    R.shadow_info[i][0] = center.x;
+    R.shadow_info[i][1] = center.y;
+    R.shadow_info[i][2] = center.z;
+    R.shadow_info[i][3] = radius;
+    R.shadow_strength[i] = strength;
+    R.shadow_light[i][0] = light.x;
+    R.shadow_light[i][1] = light.y;
+    R.shadow_light[i][2] = light.z;
+    R.shadow_light[i][3] = reach;
+    glBindFramebuffer(GL_FRAMEBUFFER, R.shadow_fbo[i]);
+    glViewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
+    glDepthMask(GL_TRUE);
+    glClearNamedFramebufferfv(R.shadow_fbo[i], GL_DEPTH, 0, &kFar);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glDisable(GL_BLEND);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(2.0f, 4.0f);
+    glProgramUniformMatrix4fv(R.shadow_prog, 0, 1, GL_FALSE, light_vp->m);
+    glUseProgram(R.shadow_prog);
+    return i;
+}
+
+void render_shadow_mesh(const GpuMesh *g, const MeshDraw *d, int nd) {
+    int i;
+
+    if (g->vao == 0) {
+        return;
+    }
+    glBindVertexArray(g->vao);
+    for (i = 0; i < nd; i++) {
+        if (!d[i].blend) {   /* (the cut-outs - fringes, lashes - cast nothing) */
+            glDrawArrays(GL_TRIANGLES, d[i].first, d[i].count);
+        }
+    }
+    glBindVertexArray(0);
+}
+
+void render_shadows_end(void) {
+    float vp[RENDER_MAX_SHADOWS * 16];
+    int i;
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    for (i = 0; i < R.nshadows; i++) {
+        memcpy(vp + i * 16, R.shadow_vp[i].m, sizeof(R.shadow_vp[i].m));
+    }
+    glProgramUniform1i(R.mesh_prog, U_NSHADOWS, R.nshadows);
+    if (R.nshadows > 0) {
+        glProgramUniformMatrix4fv(R.mesh_prog, U_SHADOW_VP, R.nshadows, GL_FALSE, vp);
+        glProgramUniform4fv(R.mesh_prog, U_SHADOW_INFO, R.nshadows, &R.shadow_info[0][0]);
+        glProgramUniform1fv(R.mesh_prog, U_SHADOW_STRENGTH, R.nshadows, R.shadow_strength);
+        glProgramUniform4fv(R.mesh_prog, U_SHADOW_LIGHT, R.nshadows, &R.shadow_light[0][0]);
+    }
+}
+
+void render_blockers(const float *v, int n) {
+    n = n < 0 ? 0 : n > RENDER_MAX_BLOCKERS ? RENDER_MAX_BLOCKERS : n;
+    glProgramUniform1i(R.mesh_prog, U_NBLOCKERS, n);
+    if (n > 0) {
+        glProgramUniform3fv(R.mesh_prog, U_BLOCKER, n * 6, v);
+    }
+}
+
+/* ---- layer 6: the original's shadow buffer (post.c post_shade_*) ---- */
+
+static const char *kShadeVs =
+    "#version 460 core\n"
+    "layout(location = 0) in vec3 a_pos;\n"
+    "layout(location = 1) in vec2 a_ca;\n"   /* the GS's colour and alpha (0..1: 0xFF, 0x80) */
+    "layout(location = 0) uniform mat4 u_vp;\n"
+    "noperspective out vec2 v_ca;\n"   /* (the GS shades along the screen) */
+    "void main() {\n"
+    "    gl_Position = u_vp * vec4(a_pos, 1.0);\n"
+    "    v_ca = a_ca;\n"
+    "}\n";
+static const char *kShadeFs =
+    "#version 460 core\n"
+    "noperspective in vec2 v_ca;\n"
+    "layout(location = 0) out vec4 o_color;\n"
+    "void main() { o_color = vec4(v_ca.x, 0.0, 0.0, v_ca.y); }\n";
+
+int render_shade_begin(void) {
+    if (!post_shade_begin()) {
+        return 0;
+    }
+    if (R.shade_prog == 0) {
+        R.shade_prog = gl_program(kShadeVs, kShadeFs, "shadow buffer");
+        glCreateVertexArrays(1, &R.shade_vao);
+        glCreateBuffers(1, &R.shade_vbo);
+        glNamedBufferStorage(R.shade_vbo, 4 * 5 * sizeof(float), NULL, GL_DYNAMIC_STORAGE_BIT);
+        glVertexArrayVertexBuffer(R.shade_vao, 0, R.shade_vbo, 0, 5 * sizeof(float));
+        glEnableVertexArrayAttrib(R.shade_vao, 0);
+        glVertexArrayAttribFormat(R.shade_vao, 0, 3, GL_FLOAT, GL_FALSE, 0);
+        glVertexArrayAttribBinding(R.shade_vao, 0, 0);
+        glEnableVertexArrayAttrib(R.shade_vao, 1);
+        glVertexArrayAttribFormat(R.shade_vao, 1, 2, GL_FLOAT, GL_FALSE, 3 * sizeof(float));
+        glVertexArrayAttribBinding(R.shade_vao, 1, 0);
+    }
+    glUseProgram(R.shade_prog);
+    glBindVertexArray(R.shade_vao);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    return 1;
+}
+
+void render_shade_quad(const Mat4 *vp, const Vec3 p[4], float alpha) {
+    float v[4][5];
+    int k;
+
+    for (k = 0; k < 4; k++) {   /* (the near two: 0x80 grey at the alpha; the far two: nothing) */
+        v[k][0] = p[k].x;
+        v[k][1] = p[k].y;
+        v[k][2] = p[k].z;
+        v[k][3] = k < 2 ? 128.0f / 255.0f : 0.0f;
+        v[k][4] = k < 2 ? alpha / 128.0f : 0.0f;
+    }
+    glNamedBufferSubData(R.shade_vbo, 0, sizeof(v), v);
+    glProgramUniformMatrix4fv(R.shade_prog, 0, 1, GL_FALSE, vp->m);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
+void render_shade_end(void) {
+    glBindVertexArray(0);
+    glDisable(GL_BLEND);
+    post_shade_end();
+}
+
+void render_post(void) {
+    PostCamera cam = {R.proj, R.znear, R.zfar};
+
+    post_finish(&cam, &gRender, R.px, R.py, R.pw, R.ph, (float)(SDL_GetTicks() % 100000) / 1000.0f);
+    glViewport(0, 0, R.w, R.h);
+}
+
+static void flush_2d(void) {
+    Mat4 proj = mat4_ortho2d((float)R.w, (float)R.h);
+
+    if (R.n2d == 0) {
+        return;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, R.present);
+    glViewport(0, 0, R.w, R.h);
+    glNamedBufferData(R.vbo2d, (GLsizeiptr)(R.n2d * sizeof(Vertex2d)), R.v2d, GL_STREAM_DRAW);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glProgramUniformMatrix4fv(R.prog2d, 0, 1, GL_FALSE, proj.m);
+    glUseProgram(R.prog2d);
+    glBindTextureUnit(0, R.font);
+    glBindSampler(0, 0);
+    glBindVertexArray(R.vao2d);
+    glDrawArrays(GL_TRIANGLES, 0, R.n2d);
+    glBindVertexArray(0);
+    glDisable(GL_BLEND);
+    R.n2d = 0;
+}
+
+void render_end(void) {
+    flush_2d();
+}
+
+/* ---- textures: sRGB (the game's colours are display values), with mipmaps ---- */
+
+GpuTexture render_texture(const uint8_t *rgba, int w, int h) {
+    GLuint t;
+    int levels = 1, m = w > h ? w : h;
+
+    while (m > 1) {
+        m >>= 1;
+        levels++;
+    }
+    glCreateTextures(GL_TEXTURE_2D, 1, &t);
+    glTextureStorage2D(t, levels, GL_SRGB8_ALPHA8, w, h);
+    glTextureSubImage2D(t, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glGenerateTextureMipmap(t);
+    return t;
+}
+
+void render_texture_free(GpuTexture t) {
+    if (t != 0) {
+        glDeleteTextures(1, &t);
+    }
+}
+
+GpuTexture render_blob_texture(void) {
+    return R.blob;
+}
+
+/* ---- meshes ---- */
+
+static void mesh_arrays(GpuMesh *g) {
+    glCreateVertexArrays(1, &g->vao);
+    attribute(g->vao, 0, 3, GL_FLOAT, GL_FALSE, offsetof(MeshVertex, x));
+    attribute(g->vao, 1, 2, GL_FLOAT, GL_FALSE, offsetof(MeshVertex, s));
+    attribute(g->vao, 2, 4, GL_UNSIGNED_BYTE, GL_TRUE, offsetof(MeshVertex, rgba));
+    attribute(g->vao, 3, 3, GL_FLOAT, GL_FALSE, offsetof(MeshVertex, nx));
+    glVertexArrayVertexBuffer(g->vao, 0, g->vbo, 0, sizeof(MeshVertex));
+}
+
+/* a mesh that never changes: immutable storage */
+void render_mesh_upload(GpuMesh *g, const MeshVertex *v, int n) {
+    glCreateBuffers(1, &g->vbo);
+    glNamedBufferStorage(g->vbo, (GLsizeiptr)((size_t)n * sizeof(MeshVertex)), v, 0);
+    mesh_arrays(g);
+    g->nv = n;
+}
+
+/* a mesh refilled every frame (skinned characters): storage that can be replaced */
+void render_mesh_update(GpuMesh *g, const MeshVertex *v, int n) {
+    if (g->vao == 0) {
+        glCreateBuffers(1, &g->vbo);
+        mesh_arrays(g);
+    }
+    glNamedBufferData(g->vbo, (GLsizeiptr)((size_t)n * sizeof(MeshVertex)), v, GL_STREAM_DRAW);
+    g->nv = n;
+}
+
+void render_mesh_free(GpuMesh *g) {
+    if (g->vbo != 0) {
+        glDeleteBuffers(1, &g->vbo);
+        glDeleteVertexArrays(1, &g->vao);
+    }
+    memset(g, 0, sizeof(*g));
+}
+
+static float sTint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+
+/* the character microprograms' clip test (tools/vudis.py: CLIP each corner, FCAND over the
+ * triangle's three, the ADC bit then drops it): a triangle with a corner outside the PS2's clip
+ * volume - nearer than the camera's near, beyond its far, or past the GS's 4096-wide drawing
+ * space around the 512 x 448 screen (2047 / 256 and 2047 / 224 of the screen's half-sizes) -
+ * isn't drawn at all; OpenGL would cut it at the screen and the near plane instead, so a camera
+ * in a model shows its insides. On for the draws until turned off */
+void render_mesh_ps2_clip(int on) {
+    float aspect = R.proj.m[0] != 0.0f ? R.proj.m[5] / R.proj.m[0] : 4.0f / 3.0f;
+
+    if (on) {
+        glProgramUniform4f(R.mesh_prog, U_REJECT, (2047.0f / 256.0f) * (4.0f / 3.0f) / aspect, 2047.0f / 224.0f, R.znear,
+                           R.zfar);
+    } else {
+        glProgramUniform4f(R.mesh_prog, U_REJECT, 0.0f, 0.0f, 0.0f, 0.0f);
+    }
+}
+
+/* what is drawn from now is after the room's fog (its layer: 9 drawn early, else $21 - Fog_Draw):
+ * the fog leaves it be */
+void render_fog_after(int on) {
+    glProgramUniform1f(R.mesh_prog, U_UNFOGGED, on ? 1.0f : 0.0f);
+}
+
+void render_mesh_tint(float r, float g, float b, float a) {
+    sTint[0] = r;
+    sTint[1] = g;
+    sTint[2] = b;
+    sTint[3] = a < 0.0f ? 0.0f : a > 1.0f ? 1.0f : a;
+}
+
+void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, const GpuTexture *textures,
+                 int ntextures, const uint32_t groups[8]) {
+    int i, multisampled = gRender.msaa > 1, faded = sTint[3] < 1.0f;
+
+    if (g->vao == 0) {
+        return;
+    }
+    glProgramUniformMatrix4fv(R.mesh_prog, U_MVP, 1, GL_FALSE, mvp->m);
+    glProgramUniform4f(R.mesh_prog, U_ALPHA, sTint[0], sTint[1], sTint[2], sTint[3]);
+    glUseProgram(R.mesh_prog);
+    glDisable(GL_BLEND);   /* (for both targets: only the colour one ever blends) */
+    glBindSampler(0, R.sampler);
+    glBindTextureUnit(1, R.shadow_tex);
+    glBindVertexArray(g->vao);
+    for (i = 0; i < nd; i++) {
+        const MeshDraw *x = &d[i];
+        GLuint tex = x->texture >= 0 && x->texture < ntextures ? textures[x->texture] : 0;
+        int coverage = multisampled && tex != 0 && !x->blend && !x->additive && !faded;
+
+        if (x->group != 0 && !(groups[x->group >> 5] >> (x->group & 31) & 1)) {
+            continue;
+        }
+        if (x->mask) {   /* the bloom mask: marks where it shows, draws no colour */
+            glDisable(GL_BLEND);
+            glColorMaski(0, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+        } else if (x->blend || x->additive || faded) {
+            glEnablei(GL_BLEND, 0);
+            glBlendFunc(GL_SRC_ALPHA, x->additive ? GL_ONE : GL_ONE_MINUS_SRC_ALPHA);
+        } else {
+            glDisable(GL_BLEND);
+        }
+        if (coverage) {
+            glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        } else {
+            glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        }
+        glDepthMask(x->no_zwrite || x->mask ? GL_FALSE : GL_TRUE);
+        /* (only what writes depth says whether the room's fog is over it) */
+        glColorMaski(1, GL_TRUE, x->no_zwrite || x->mask ? GL_FALSE : GL_TRUE, GL_FALSE, GL_FALSE);
+        glProgramUniform1f(R.mesh_prog, U_MASK, x->mask ? 1.0f : 0.0f);
+        glProgramUniform1i(R.mesh_prog, U_USE_TEX, tex != 0);
+        glProgramUniform1i(R.mesh_prog, U_SOLID_TEX, x->solid_tex);
+        glProgramUniform1i(R.mesh_prog, U_LIT, x->lit);
+        glProgramUniform1i(R.mesh_prog, U_COVERAGE, coverage);
+        glProgramUniform1i(R.mesh_prog, U_RECEIVE, !x->mask);
+        glBindTextureUnit(0, tex);
+        glDrawArrays(GL_TRIANGLES, x->first, x->count);
+        if (x->mask) {
+            glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        }
+    }
+    glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glBindVertexArray(0);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+}
+
+/* ---- 2D ---- */
+
+static void quad(float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1, uint32_t rgba) {
+    Vertex2d q[4];
+    static const int kOrder[6] = {0, 1, 2, 0, 2, 3};
+    int i;
+
+    if (R.n2d + 6 > R.cap2d) {
+        R.cap2d = R.cap2d * 2 + 6 * 256;
+        R.v2d = realloc(R.v2d, (size_t)R.cap2d * sizeof(Vertex2d));
+    }
+    q[0] = (Vertex2d){x0, y0, u0, v0, {0}};
+    q[1] = (Vertex2d){x1, y0, u1, v0, {0}};
+    q[2] = (Vertex2d){x1, y1, u1, v1, {0}};
+    q[3] = (Vertex2d){x0, y1, u0, v1, {0}};
+    for (i = 0; i < 4; i++) {
+        q[i].rgba[0] = (uint8_t)(rgba >> 24);
+        q[i].rgba[1] = (uint8_t)(rgba >> 16);
+        q[i].rgba[2] = (uint8_t)(rgba >> 8);
+        q[i].rgba[3] = (uint8_t)rgba;
+    }
+    for (i = 0; i < 6; i++) {
+        R.v2d[R.n2d++] = q[kOrder[i]];
+    }
+}
+
+void render_rect(float x, float y, float w, float h, uint32_t rgba) {
+    /* the middle of the solid block glyph (127) */
+    float u = ((FONT_COUNT - 1) * FONT_CELL_W + 2.5f) / FONT_ATLAS_W, v = 3.5f / FONT_CELL_H;
+
+    quad(x, y, x + w, y + h, u, v, u, v, rgba);
+}
+
+void render_image(GpuTexture t, float x, float y, float w, float h, uint32_t rgba) {
+    render_image_uv(t, x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, rgba);
+}
+
+static int sBlend2d;     /* how the pictures from now are blended (render_blend_2d) */
+static float sFix2d;     /* ... at FIX / 128 */
+void render_blend_2d(int mode, int fix) {
+    sBlend2d = mode;
+    sFix2d = (float)(fix < 0 ? 0 : fix > 255 ? 255 : fix) / 128.0f;
+}
+
+static void image_draw(GpuTexture t);
+void render_image_uv(GpuTexture t, float x, float y, float w, float h, float u0, float v0, float u1, float v1,
+                     uint32_t rgba) {
+    flush_2d();   /* (what was drawn before stays under it) */
+    quad(x, y, x + w, y + h, u0, v0, u1, v1, rgba);
+    image_draw(t);
+}
+
+void render_image_quad(GpuTexture t, const float xy[8], float u0, float v0, float u1, float v1, uint32_t rgba) {
+    static const int kOrder[6] = {0, 1, 3, 0, 3, 2};   /* (top left, top right, bottom right; top left, bottom right, bottom left) */
+    const float uv[8] = {u0, v0, u1, v0, u0, v1, u1, v1};
+    int i;
+
+    flush_2d();
+    if (R.n2d + 6 > R.cap2d) {
+        R.cap2d = R.cap2d * 2 + 6 * 256;
+        R.v2d = realloc(R.v2d, (size_t)R.cap2d * sizeof(Vertex2d));
+    }
+    for (i = 0; i < 6; i++) {
+        int k = kOrder[i];
+        Vertex2d *v = &R.v2d[R.n2d++];
+
+        *v = (Vertex2d){xy[k * 2], xy[k * 2 + 1], uv[k * 2], uv[k * 2 + 1], {0}};
+        v->rgba[0] = (uint8_t)(rgba >> 24);
+        v->rgba[1] = (uint8_t)(rgba >> 16);
+        v->rgba[2] = (uint8_t)(rgba >> 8);
+        v->rgba[3] = (uint8_t)rgba;
+    }
+    image_draw(t);
+}
+
+static void image_draw(GpuTexture t) {
+    Mat4 proj = mat4_ortho2d((float)R.w, (float)R.h);
+    glBindFramebuffer(GL_FRAMEBUFFER, R.present);
+    glViewport(0, 0, R.w, R.h);
+    glNamedBufferData(R.vbo2d, (GLsizeiptr)(R.n2d * sizeof(Vertex2d)), R.v2d, GL_STREAM_DRAW);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    if (sBlend2d == RENDER_BLEND_NORMAL) {
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    } else {   /* (the GS's ALPHA with C = FIX: the 2D is drawn in display values, as the GS blends) */
+        glBlendColor(sFix2d, sFix2d, sFix2d, sFix2d);
+        glBlendEquation(sBlend2d == RENDER_BLEND_SUBTRACT ? GL_FUNC_REVERSE_SUBTRACT : GL_FUNC_ADD);
+        glBlendFunc(GL_CONSTANT_COLOR, sBlend2d == RENDER_BLEND_MIX ? GL_ONE_MINUS_CONSTANT_COLOR : GL_ONE);
+    }
+    glProgramUniform1i(R.prog2d_image, 1, sBlend2d != RENDER_BLEND_NORMAL);
+    glProgramUniformMatrix4fv(R.prog2d_image, 0, 1, GL_FALSE, proj.m);
+    glUseProgram(R.prog2d_image);
+    glBindTextureUnit(0, t);
+    glBindSampler(0, 0);
+    glBindVertexArray(R.vao2d);
+    glDrawArrays(GL_TRIANGLES, 0, R.n2d);
+    glBindVertexArray(0);
+    glBlendEquation(GL_FUNC_ADD);
+    glDisable(GL_BLEND);
+    R.n2d = 0;
+}
+
+GpuTexture render_texture_stream(GpuTexture t, const uint8_t *rgba, int w, int h, int *tw, int *th) {
+    if (t == 0 || *tw != w || *th != h) {
+        render_texture_free(t);
+        glCreateTextures(GL_TEXTURE_2D, 1, &t);
+        glTextureStorage2D(t, 1, GL_SRGB8_ALPHA8, w, h);
+        glTextureParameteri(t, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTextureParameteri(t, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTextureParameteri(t, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTextureParameteri(t, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        *tw = w;
+        *th = h;
+    }
+    glTextureSubImage2D(t, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    return t;
+}
+
+void render_text(float x, float y, float scale, uint32_t rgba, const char *s, int n) {
+    int i;
+
+    for (i = 0; i < n && s[i] != 0; i++) {
+        int c = (unsigned char)s[i];
+
+        if (c >= FONT_FIRST && c < FONT_FIRST + FONT_COUNT && c != ' ') {
+            float u0 = (float)((c - FONT_FIRST) * FONT_CELL_W) / FONT_ATLAS_W;
+            float u1 = (float)((c - FONT_FIRST + 1) * FONT_CELL_W) / FONT_ATLAS_W;
+
+            quad(x, y, x + FONT_CELL_W * scale, y + FONT_CELL_H * scale, u0, 0.0f, u1, 1.0f, rgba);
+        }
+        x += FONT_CELL_W * scale;
+    }
+}
+
+float render_text_width(float scale, int chars) {
+    return (float)chars * FONT_CELL_W * scale;
+}
+
+float render_line_height(float scale) {
+    return (FONT_CELL_H + 2) * scale;
+}
+
+/* ---- screenshots: a PNG written by hand (uncompressed deflate blocks) ---- */
+
+static uint32_t crc32_update(uint32_t crc, const uint8_t *p, size_t n) {
+    static uint32_t table[256];
+    size_t i;
+
+    if (table[1] == 0) {
+        uint32_t c, k, j;
+
+        for (k = 0; k < 256; k++) {
+            for (c = k, j = 0; j < 8; j++) {
+                c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+            }
+            table[k] = c;
+        }
+    }
+    crc = ~crc;
+    for (i = 0; i < n; i++) {
+        crc = table[(crc ^ p[i]) & 0xFF] ^ (crc >> 8);
+    }
+    return ~crc;
+}
+
+static void put32(uint8_t *p, uint32_t x) {
+    p[0] = (uint8_t)(x >> 24);
+    p[1] = (uint8_t)(x >> 16);
+    p[2] = (uint8_t)(x >> 8);
+    p[3] = (uint8_t)x;
+}
+
+static void chunk(FILE *fp, const char *type, const uint8_t *data, size_t n) {
+    uint8_t head[8], tail[4];
+    uint32_t crc;
+
+    put32(head, (uint32_t)n);
+    memcpy(head + 4, type, 4);
+    crc = crc32_update(0, head + 4, 4);
+    crc = crc32_update(crc, data, n);
+    put32(tail, crc);
+    fwrite(head, 1, 8, fp);
+    fwrite(data, 1, n, fp);
+    fwrite(tail, 1, 4, fp);
+}
+
+int render_screenshot(const char *path) {
+    int w = R.w, h = R.h, y;
+    size_t row = (size_t)w * 3 + 1, raw_n = row * (size_t)h, blocks = (raw_n + 65534) / 65535;
+    uint8_t *px = malloc((size_t)w * h * 4), *raw = malloc(raw_n), *z = malloc(raw_n + blocks * 5 + 6);
+    uint8_t ihdr[13];
+    uint32_t a = 1, b = 0;
+    size_t i, zn = 0;
+    FILE *fp = fopen(path, "wb");
+
+    if (fp == NULL || px == NULL || raw == NULL || z == NULL) {
+        free(px);
+        free(raw);
+        free(z);
+        if (fp != NULL) {
+            fclose(fp);
+        }
+        return 0;
+    }
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, R.present);
+    glReadnPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, (GLsizei)((size_t)w * h * 4), px);
+    for (y = 0; y < h; y++) {   /* GL's rows go up; PNG's go down */
+        const uint8_t *src = px + (size_t)(h - 1 - y) * w * 4;
+        uint8_t *dst = raw + (size_t)y * row;
+        int x;
+
+        dst[0] = 0;   /* (no filter) */
+        for (x = 0; x < w; x++) {
+            memcpy(dst + 1 + x * 3, src + x * 4, 3);
+        }
+    }
+    z[zn++] = 0x78;
+    z[zn++] = 0x01;
+    for (i = 0; i < raw_n; i += 65535) {
+        size_t n = raw_n - i < 65535 ? raw_n - i : 65535;
+
+        z[zn++] = i + n == raw_n;   /* the last block? */
+        z[zn++] = (uint8_t)n;
+        z[zn++] = (uint8_t)(n >> 8);
+        z[zn++] = (uint8_t)~n;
+        z[zn++] = (uint8_t)(~n >> 8);
+        memcpy(z + zn, raw + i, n);
+        zn += n;
+    }
+    for (i = 0; i < raw_n; i++) {   /* Adler-32 */
+        a = (a + raw[i]) % 65521;
+        b = (b + a) % 65521;
+    }
+    put32(z + zn, b << 16 | a);
+    zn += 4;
+    put32(ihdr, (uint32_t)w);
+    put32(ihdr + 4, (uint32_t)h);
+    ihdr[8] = 8;    /* bits */
+    ihdr[9] = 2;    /* RGB */
+    ihdr[10] = ihdr[11] = ihdr[12] = 0;
+    fwrite("\x89PNG\r\n\x1a\n", 1, 8, fp);
+    chunk(fp, "IHDR", ihdr, 13);
+    chunk(fp, "IDAT", z, zn);
+    chunk(fp, "IEND", NULL, 0);
+    fclose(fp);
+    free(px);
+    free(raw);
+    free(z);
+    return 1;
+}
+
+/* a cutscene's picture, drawn once, then shown on a screen in the headset */
+static GLuint sStageFbo, sStageTex, sStageProg, sStageVao, sStageVbo;
+static int sStageW, sStageH;
+
+static const char *kStageVs =
+    "#version 460 core\n"
+    "layout(location = 0) in vec3 a_pos;\n"
+    "layout(location = 1) in vec2 a_uv;\n"
+    "layout(location = 0) uniform mat4 u_vp;\n"
+    "out vec2 v_uv;\n"
+    "void main() { gl_Position = u_vp * vec4(a_pos, 1.0); v_uv = a_uv; }\n";
+static const char *kStageFs =
+    "#version 460 core\n"
+    "in vec2 v_uv;\n"
+    "layout(binding = 0) uniform sampler2D u_tex;\n"
+    "out vec4 o_color;\n"
+    "void main() { o_color = texture(u_tex, v_uv); }\n";
+
+unsigned render_stage_fbo(int w, int h) {
+    if (w < 16) {
+        w = 16;
+    }
+    if (h < 16) {
+        h = 16;
+    }
+    if (sStageTex != 0 && w == sStageW && h == sStageH) {
+        return sStageFbo;
+    }
+    if (sStageTex != 0) {
+        glDeleteTextures(1, &sStageTex);
+        glDeleteFramebuffers(1, &sStageFbo);
+    }
+    glCreateTextures(GL_TEXTURE_2D, 1, &sStageTex);
+    glTextureStorage2D(sStageTex, 1, GL_RGBA8, w, h);
+    glTextureParameteri(sStageTex, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTextureParameteri(sStageTex, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTextureParameteri(sStageTex, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(sStageTex, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glCreateFramebuffers(1, &sStageFbo);
+    glNamedFramebufferTexture(sStageFbo, GL_COLOR_ATTACHMENT0, sStageTex, 0);
+    sStageW = w;
+    sStageH = h;
+    return sStageFbo;
+}
+
+unsigned render_stage_tex(void) { return sStageTex; }
+
+void render_show_stage(unsigned tex, const Mat4 *vp, const Vec3 corners[4]) {
+    float v[4][5];
+    int i;
+    static const float uv[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
+
+    if (tex == 0 || vp == NULL || corners == NULL) {
+        return;
+    }
+    if (sStageProg == 0) {
+        sStageProg = gl_program(kStageVs, kStageFs, "stage");
+        glCreateBuffers(1, &sStageVbo);
+        glCreateVertexArrays(1, &sStageVao);
+        glEnableVertexArrayAttrib(sStageVao, 0);
+        glVertexArrayAttribFormat(sStageVao, 0, 3, GL_FLOAT, GL_FALSE, 0);
+        glVertexArrayAttribBinding(sStageVao, 0, 0);
+        glEnableVertexArrayAttrib(sStageVao, 1);
+        glVertexArrayAttribFormat(sStageVao, 1, 2, GL_FLOAT, GL_FALSE, 12);
+        glVertexArrayAttribBinding(sStageVao, 1, 0);
+        glVertexArrayVertexBuffer(sStageVao, 0, sStageVbo, 0, 20);
+    }
+    if (sStageProg == 0) {
+        return;
+    }
+    for (i = 0; i < 4; i++) {
+        v[i][0] = corners[i].x;
+        v[i][1] = corners[i].y;
+        v[i][2] = corners[i].z;
+        v[i][3] = uv[i][0];
+        v[i][4] = uv[i][1];
+    }
+    glNamedBufferData(sStageVbo, sizeof(v), v, GL_STREAM_DRAW);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glUseProgram(sStageProg);
+    glProgramUniformMatrix4fv(sStageProg, 0, 1, GL_FALSE, vp->m);
+    glBindTextureUnit(0, tex);
+    glBindSampler(0, 0);
+    glBindVertexArray(sStageVao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST);
+}

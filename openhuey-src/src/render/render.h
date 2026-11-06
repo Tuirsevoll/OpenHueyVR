@@ -1,0 +1,220 @@
+/* The renderer: OpenGL 4.6, written 4.5+ style (direct state access).
+ *
+ * A frame:
+ *   render_begin       the window's size; picks the picture's rectangle (all of the window, or
+ *                      a 4:3 one in the middle) and readies the scene targets
+ *   render_camera      the camera for the 3D pass
+ *   render_mesh ...    the scene: into an HDR (16-bit float) target, multisampled
+ *   render_post        resolve, then ambient occlusion, bloom, fog, exposure, tone mapping,
+ *                      grading, vignette and grain - onto the window
+ *   render_rect/text   2D on top (the console, menus, hints)
+ *   render_end
+ *
+ * Colours: the game's textures and vertex colours are display (gamma) values. They are turned
+ * linear for lighting and blending, so with every effect off the picture matches the original;
+ * vertex colours and texture alpha keep the PS2's 0x80 = 1.0. */
+#ifndef RENDER_H
+#define RENDER_H
+
+#include "../core/mathx.h"
+#include "../data/roommesh.h"
+
+#include <stdint.h>
+
+typedef unsigned int GpuTexture;   /* a GL texture name; 0 = none */
+
+typedef struct GpuMesh {
+    unsigned int vao, vbo;
+    int nv;
+} GpuMesh;
+
+/* what the picture looks like: changed freely (from Forth: the `gfx` fields); takes effect on
+ * the next frame */
+typedef struct RenderSettings {
+    int32_t msaa;            /* samples: 1 (off), 2, 4, 8 */
+    float scale;             /* render resolution relative to the window: 0.5 .. 2 */
+    int32_t aspect;          /* 0: fill the window (wider screens see more), 1: the original 4:3 */
+    float anisotropy;        /* texture filtering: 1 .. 16 */
+    int32_t ssao;            /* ambient occlusion */
+    float ssao_radius;       /* room units */
+    float ssao_strength;     /* 0 .. 1 */
+    int32_t bloom;
+    float bloom_threshold;   /* brightness where glow starts (linear) */
+    float bloom_strength;
+    int32_t fog;
+    float fog_density;       /* per room unit */
+    float fog_start;         /* room units from the eye */
+    Vec3 fog_color;          /* display colour */
+    float exposure;
+    int32_t tonemap;         /* 0 clip, 1 soft shoulder (keeps the original look), 2 filmic (ACES) */
+    float saturation;
+    float contrast;
+    float vignette;          /* 0 .. 1 */
+    float grain;             /* 0 .. 0.1 */
+    int32_t shadows;         /* soft contact shadows under characters */
+    Vec3 light_dir;          /* characters' key light: the direction it comes from (world) */
+    Vec3 light_color;        /* linear */
+    Vec3 ambient;            /* linear */
+    float rim;               /* rim light on characters' edges */
+    int32_t room_lights;     /* characters lit by the room's lights (as the game does) */
+    float character_light;   /* ... that light's strength (OpenHuey's lighting only) */
+    int32_t ps2_lighting;    /* ... as the PS2 did it (src/game/model.c light_rgba): one direction a
+                              * light from the model's root, its falloff along it, the sum clamped
+                              * at 0x80 - 1 per vertex (the original), 2 per pixel (smooth); 0:
+                              * OpenHuey's point lights, times character_light, unclamped */
+    int32_t shadow_maps;     /* characters cast shadows from the room's lights onto it */
+    float shadow_strength;   /* 0 .. 1 */
+    int32_t room_fog;        /* the room's own fog, tint and bloom (part of the original look) */
+    int32_t room_tint;
+    int32_t room_bloom;
+    int32_t room_dof;        /* the room's depth of field */
+    int32_t game_font;       /* text in the game's own font (the room's), not the built-in one */
+    int32_t fullscreen;      /* the window fullscreen (F11, Alt+Return) */
+    int32_t debug;           /* show a buffer instead: 1 occlusion, 2 bloom, 3 depth (white 1500 away),
+                              * 4 the bloom mask */
+} RenderSettings;
+
+extern RenderSettings gRender;
+
+/* the room's own look (PAC section 13, src/game/effects.c RoomEffects_TakeRoom): fog, the
+ * two-colour tint and the bloom, all worked on display values as the PS2 did. Colours: r g b
+ * with 1.0 = 0x80 (fog: 1.0 = 0xFF), a = the strength */
+typedef struct RoomLook {
+    int32_t has_fog;
+    float fog_near_color[4], fog_far_color[4];   /* the ramp's ends; a: how opaque (1 = 0x100: the palette halves it) */
+    float fog_near, fog_far;                     /* view distance where it starts / ends */
+    int32_t fog_early;                           /* drawn in layer 9: what follows (the characters) not fogged */
+    int32_t has_tint;
+    float tint_glow[4];                          /* added: the screen blurred, times this */
+    float tint_contrast[4];                      /* pushed away from: its blurred copy, times this */
+    int32_t tint_sharp;                          /* not blurred first */
+    int32_t has_bloom;
+    float bloom[4];                              /* the masked areas' glow */
+    int32_t bloom_subtract;
+    int32_t bloom_mode;                          /* 2 3 4: the colour pulses (render_look_tick) */
+    int32_t bloom_phase;
+    int32_t has_dof;
+    float dof[4];                                /* depth of field: blurred nearer than [0], sharp
+                                                  * from [1] to [2], blurred again by [3] */
+} RoomLook;
+
+/* a tick of the room's look: the pulsing bloom colours (src/game/effects.c ScreenBlend_Update) */
+void render_look_tick(void);
+
+extern RoomLook gRoomLook;
+
+int render_init(void);
+void render_shutdown(void);
+
+/* the frame: the window's size in pixels; `clear` the background (display colour) */
+void render_begin(int window_w, int window_h, Vec3 clear);
+/* where the finished picture and the 2D go: 0 the window, or a framebuffer (one headset eye) */
+void render_set_present(unsigned fbo);
+unsigned render_present(void);
+/* the picture's aspect (width / height) - for the camera's projection */
+float render_aspect(void);
+/* the camera (for lighting, ambient occlusion and fog): projection, view, eye, depth range */
+void render_camera(const Mat4 *proj, const Mat4 *view, Vec3 eye, float znear, float zfar);
+/* finish the 3D scene: post effects onto the window */
+void render_post(void);
+void render_end(void);
+
+GpuTexture render_texture(const uint8_t *rgba, int w, int h);
+void render_texture_free(GpuTexture t);
+
+void render_mesh_upload(GpuMesh *g, const MeshVertex *v, int n);
+/* replace a mesh's vertices (meshes that change every frame: skinned characters) */
+void render_mesh_update(GpuMesh *g, const MeshVertex *v, int n);
+void render_mesh_free(GpuMesh *g);
+/* the next meshes drawn tinted and faded (1 1 1 1: as they are; a character fading out of sight,
+ * a silhouette) */
+void render_mesh_tint(float r, float g, float b, float a);
+/* the characters' clip test, as the original's microprograms: a triangle with a corner outside
+ * the PS2's clip volume (the near and far planes, the GS's drawing space round the screen) not
+ * drawn at all, not cut at the screen (on for the draws until turned off) */
+void render_mesh_ps2_clip(int on);
+/* what is drawn from now on is drawn after the room's fog (the original's layers: Fog_Draw's 9 or
+ * $21), which then leaves it unfogged */
+void render_fog_after(int on);
+/* draw a mesh's draws; textures[i] for texture index i; groups: bit g shows group g (0 always) */
+void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, const GpuTexture *textures,
+                 int ntextures, const uint32_t groups[8]);
+
+/* the lights for the next lit draws (characters): the room's ambient and up to 3 point lights,
+ * colours on the game's 0..128 scale (times intensity); n < 0: the fixed key light instead.
+ * `root`: the model's root bone in the room, where the PS2's lighting (gfx.ps2-lighting) takes
+ * each light's direction from (Lights_ForModel, light_slot) */
+typedef struct DrawLight {
+    Vec3 pos;
+    Vec3 color;
+    float range;    /* 0: no falloff (OpenHuey's lighting) */
+    float fall;     /* the PS2's falloff along the light's direction (the light's +0x24: 1 / its
+                     * range; 0 none) */
+} DrawLight;
+void render_draw_lights(Vec3 ambient, const DrawLight *lights, int n, Vec3 root);
+
+/* shadows: each frame, before render_begin, casters are drawn from their light into a shadow
+ * map; the room's draws then darken where a caster hides the light */
+#define RENDER_MAX_SHADOWS 12   /* (the scene's shader has as many: render.c) */
+/* a reflection on the quad q (corners 0 1 2 3): between these two, what is drawn shows only on
+ * the quad, in front of what was there (its depth pushed back), which is put back after */
+void render_reflect_begin(const Mat4 *vp, const Vec3 q[4]);
+void render_reflect_end(const Mat4 *vp, const Vec3 q[4]);
+void render_shadows_begin(void);
+/* a new shadow: the light's view-projection, the caster's middle and size (shadows fade past a
+ * few sizes), the darkening, and where the light shades from and how far (for the blockers); -1
+ * if there is no room left. Then render_shadow_mesh draws into it */
+int render_shadow_add(const Mat4 *light_vp, Vec3 center, float radius, float strength, Vec3 light, float reach);
+void render_shadow_mesh(const GpuMesh *g, const MeshDraw *d, int nd);
+void render_shadows_end(void);
+
+/* the lights' blockers this frame (room.h RoomBlocker: 6 points each - 4 corners, the facing, the
+ * top middle): where one shades a shadow's light from a point, that shadow doesn't fall there */
+#define RENDER_MAX_BLOCKERS 16
+void render_blockers(const float *v, int n);
+
+/* the original's layer 6, its shadow buffer (half size): between render_shade_begin (0: not now)
+ * and render_shade_end, strips drawn into it against the scene's depth so far, each over what is
+ * there as the GS blends (its near two corners 0x80 grey at `alpha` - of 0x80 - its far two
+ * nothing, shaded along the screen); at the end the buffer is blurred and taken off the screen at
+ * half (display values). What is drawn after isn't darkened */
+int render_shade_begin(void);
+void render_shade_quad(const Mat4 *vp, const Vec3 p[4], float alpha);
+void render_shade_end(void);
+
+/* the contact-shadow texture (a soft round blob) */
+GpuTexture render_blob_texture(void);
+
+/* 2D, in window pixels from the top left; colours 0xRRGGBBAA */
+void render_rect(float x, float y, float w, float h, uint32_t rgba);
+/* a picture over the screen (window pixels from the top left), times a colour (0xRRGGBBAA) */
+void render_image(GpuTexture t, float x, float y, float w, float h, uint32_t rgba);
+/* ... a part of it: texture coordinates u0, v0 .. u1, v1 (0..1) */
+void render_image_uv(GpuTexture t, float x, float y, float w, float h, float u0, float v0, float u1, float v1,
+                     uint32_t rgba);
+/* ... on four corners xy[8] (the part's top left, top right, bottom left, bottom right: turned) */
+void render_image_quad(GpuTexture t, const float xy[8], float u0, float v0, float u1, float v1, uint32_t rgba);
+/* how the pictures (render_image*) from now are blended, as the GS's ALPHA register with C the
+ * fixed FIX (`fix` / 128): RENDER_BLEND_NORMAL over the screen by their alpha times the colour's
+ * (the default); SUBTRACT Cd - Cs * FIX (GS 0x62), MIX (Cs - Cd) * FIX + Cd (0x64), ADD
+ * Cd + Cs * FIX (0x68) - in these the texture's alpha only tests: nothing drawn where it is 0 */
+enum { RENDER_BLEND_NORMAL, RENDER_BLEND_SUBTRACT, RENDER_BLEND_MIX, RENDER_BLEND_ADD };
+void render_blend_2d(int mode, int fix);
+/* a texture (re)filled with a w x h RGBA picture each time (a movie); made anew when the size
+ * changes (*tw / *th: its size) */
+GpuTexture render_texture_stream(GpuTexture t, const uint8_t *rgba, int w, int h, int *tw, int *th);
+void render_text(float x, float y, float scale, uint32_t rgba, const char *s, int n);
+float render_text_width(float scale, int chars);
+float render_line_height(float scale);
+
+/* save the last drawn frame as a PNG; 0 on failure */
+int render_screenshot(const char *path);
+
+/* an offscreen colour target the size asked (a cutscene picture, drawn once). The framebuffer
+ * is what render_set_present wants; the texture is that picture. */
+unsigned render_stage_fbo(int w, int h);
+unsigned render_stage_tex(void);
+/* that picture on four world corners (bottom left, bottom right, top left, top right) */
+void render_show_stage(unsigned tex, const Mat4 *vp, const Vec3 corners[4]);
+
+#endif

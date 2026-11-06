@@ -1,0 +1,835 @@
+/* The game's movies: see movie.h. Ported from the decomp's native/platform/sofdec.c (the demux,
+ * the ADX sound, the libavcodec video), with new-src's mixer and files. */
+#include "movie.h"
+
+#include "disc.h"
+#include "../core/files.h"
+#include "../data/musicsrc.h"
+#include "../data/sfd.h"
+#include "sound.h"
+
+#include <SDL3/SDL.h>
+#include <math.h>
+#include "compat.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define SND_RATE SOUND_RATE
+enum { STAT_STOP = 0, STAT_PREP, STAT_PLAYING, STAT_PLAYEND, STAT_ERROR };
+
+static SDL_Mutex *sLock;
+static void snd_lock(void) { if (sLock != NULL) SDL_LockMutex(sLock); }
+static void snd_unlock(void) { if (sLock != NULL) SDL_UnlockMutex(sLock); }
+static float snd_db10(int db10) { return powf(10.0f, (float)db10 / 200.0f); }
+
+/* ---- libavcodec, by hand: only what the decoder needs, so no headers are required ---- */
+
+#define AV_CODEC_ID_MPEG2VIDEO 2
+#define AV_PIX_FMT_YUV420P 0
+#define AV_NOPTS_VALUE ((int64_t)UINT64_C(0x8000000000000000))
+#define AV_PAD 64   /* AV_INPUT_BUFFER_PADDING_SIZE */
+
+typedef struct AvFramePrefix {   /* the head of AVFrame, unchanged since FFmpeg 1.x */
+    uint8_t *data[8];
+    int linesize[8];
+    uint8_t **extended_data;
+    int width, height;
+    int nb_samples;
+    int format;
+} AvFramePrefix;
+
+static struct {
+    int tried, ok;
+    const void *(*find_decoder)(int id);
+    void *(*alloc_context3)(const void *codec);
+    int (*open2)(void *ctx, const void *codec, void **opts);
+    void (*free_context)(void **ctx);
+    int (*send_packet)(void *ctx, const void *pkt);
+    int (*receive_frame)(void *ctx, void *frame);
+    void *(*parser_init)(int id);
+    int (*parser_parse2)(void *s, void *ctx, uint8_t **out, int *outSize, const uint8_t *buf, int size,
+                         int64_t pts, int64_t dts, int64_t pos);
+    void (*parser_close)(void *s);
+    void *(*packet_alloc)(void);
+    void (*packet_free)(void **pkt);
+    int (*packet_from_data)(void *pkt, uint8_t *data, int size);
+    void (*packet_unref)(void *pkt);
+    void *(*frame_alloc)(void);
+    void (*frame_free)(void **frame);
+    void *(*av_malloc)(size_t size);
+    void (*av_free)(void *ptr);
+} av;
+
+static void av_free_data(void *ptr) { av.av_free(ptr); }
+
+#ifdef _WIN32
+/* OpenXR's loader calls SetDefaultDllDirectories, which drops PATH from later LoadLibrary
+ * searches. A full path still loads, so walk PATH ourselves. */
+static void *lib_from_path(const char *name) {
+    const char *env = getenv("PATH"), *p;
+    char path[1200];
+
+    if (env == NULL) {
+        return NULL;
+    }
+    for (p = env; *p != '\0'; ) {
+        const char *end = p;
+        size_t n, namelen = strlen(name);
+        void *h;
+
+        while (*end != '\0' && *end != ';') {
+            end++;
+        }
+        n = (size_t)(end - p);
+        if (n > 0 && n + namelen + 2 < sizeof(path)) {
+            memcpy(path, p, n);
+            if (path[n - 1] != '\\' && path[n - 1] != '/') {
+                path[n++] = '\\';
+            }
+            memcpy(path + n, name, namelen + 1);
+            h = SDL_LoadObject(path);
+            if (h != NULL) {
+                return h;
+            }
+        }
+        p = *end == ';' ? end + 1 : end;
+    }
+    return NULL;
+}
+#endif
+
+/* a library: the release's own copy (beside the executable, or in its lib/), else the system's */
+static void *lib_open(const char *const *names, size_t n) {
+    const char *base = SDL_GetBasePath();
+    char path[1200];
+    void *h = NULL;
+    size_t i;
+
+    for (i = 0; i < n && h == NULL; i++) {
+        if (base != NULL) {
+            snprintf(path, sizeof(path), "%s%s", base, names[i]);
+            h = SDL_LoadObject(path);
+            if (h == NULL) {
+                snprintf(path, sizeof(path), "%slib/%s", base, names[i]);
+                h = SDL_LoadObject(path);
+            }
+        }
+        if (h == NULL) {
+            h = SDL_LoadObject(names[i]);
+        }
+#ifdef _WIN32
+        if (h == NULL) {
+            h = lib_from_path(names[i]);
+        }
+#endif
+    }
+    return h;
+}
+
+static void *sAvUtil;
+static void *av_sym(void *codec, const char *name) {   /* (av_malloc and the frames are avutil's) */
+    void *p = (void *)SDL_LoadFunction(codec, name);
+
+    return p != NULL || sAvUtil == NULL ? p : (void *)SDL_LoadFunction(sAvUtil, name);
+}
+
+static int av_load(void) {
+#ifdef _WIN32
+    static const char *const names[] = {"avcodec-62.dll", "avcodec-61.dll", "avcodec-60.dll", "avcodec-59.dll",
+                                        "avcodec-58.dll"};
+    static const char *const util[] = {"avutil-60.dll", "avutil-59.dll", "avutil-58.dll", "avutil-57.dll",
+                                       "avutil-56.dll"};
+#else
+    static const char *const names[] = {"libavcodec.so.62", "libavcodec.so.63", "libavcodec.so.61",
+                                        "libavcodec.so.60", "libavcodec.so.59", "libavcodec.so.58", "libavcodec.so"};
+    static const char *const util[] = {"libavutil.so.60", "libavutil.so.61", "libavutil.so.59",
+                                       "libavutil.so.58", "libavutil.so.57", "libavutil.so.56", "libavutil.so"};
+#endif
+    void *h;
+
+    if (av.tried) {
+        return av.ok;
+    }
+    av.tried = 1;
+    sAvUtil = lib_open(util, sizeof(util) / sizeof(util[0]));   /* (first: avcodec needs it) */
+    h = lib_open(names, sizeof(names) / sizeof(names[0]));
+    if (h == NULL) {
+        fprintf(stderr, "sofdec: no libavcodec, a movie plays its sound without a picture\n");
+        return 0;
+    }
+#define SYM(field, name)                                                       \
+    if ((*(void **)&av.field = av_sym(h, name)) == NULL) {                    \
+        fprintf(stderr, "sofdec: libavcodec has no %s, movies are skipped\n", name); \
+        return 0;                                                              \
+    }
+    SYM(find_decoder, "avcodec_find_decoder");
+    SYM(alloc_context3, "avcodec_alloc_context3");
+    SYM(open2, "avcodec_open2");
+    SYM(free_context, "avcodec_free_context");
+    SYM(send_packet, "avcodec_send_packet");
+    SYM(receive_frame, "avcodec_receive_frame");
+    SYM(parser_init, "av_parser_init");
+    SYM(parser_parse2, "av_parser_parse2");
+    SYM(parser_close, "av_parser_close");
+    SYM(packet_alloc, "av_packet_alloc");
+    SYM(packet_free, "av_packet_free");
+    SYM(packet_from_data, "av_packet_from_data");
+    SYM(packet_unref, "av_packet_unref");
+    SYM(frame_alloc, "av_frame_alloc");
+    SYM(frame_free, "av_frame_free");
+    SYM(av_malloc, "av_malloc");
+    SYM(av_free, "av_free");
+#undef SYM
+    av.ok = 1;
+    return 1;
+}
+
+/* ---- the player ---- */
+
+#define AUD_RING (SND_RATE * 8)   /* stereo frames of sound decoded ahead */
+#define ADX_BLOCK 18
+#define ADX_FRAME 32
+
+typedef struct Ply {
+    int stat;
+    int paused;
+    int vol;          /* 0.1 dB */
+    DiscFile *f;
+    int eof;          /* the file is read to its end (2: and the parser flushed) */
+    int drained;      /* the decoder gave its last frame */
+    SfdReader rd;     /* reading (data/sfd.h) */
+    MusicSrc *flac;   /* the library's: the sound from X.flac (the stream, X.mpg, has none) */
+    int flacDone;     /* ... all of it decoded */
+    /* video */
+    void *ctx, *parser, *pkt, *frm;
+    struct { uint8_t *data; int size; } *queue;   /* frames parsed, not yet taken by the decoder
+                                                   * (one PES packet may hold several) */
+    int queued, queueCap;
+    int compo, key_lo, key_hi;   /* how the picture is laid over (movie_compose) */
+    double fps;
+    int w, h;
+    uint8_t *rgb;     /* the frame shown, w x h RGBA */
+    int shownNo;      /* its number, -1 none */
+    int ready;        /* a decoded frame waits in frm */
+    int readyNo;      /* its number */
+    int decoded;      /* frames decoded so far */
+    int fresh;        /* a frame not yet handed to the game */
+    /* time */
+    double clock;     /* seconds played */
+    uint64_t lastTick;
+    /* sound: the ADX stream as it arrives */
+    uint8_t *adx;
+    int adxLen, adxCap, adxPos;
+    int adxCh, adxRate, adxHead, coef1, coef2;
+    int hist[2][2];
+    float ring[AUD_RING * 2];
+    unsigned rdPos, wrPos;   /* frames, wrapping in the ring */
+    double frac;
+    float last[2], cur[2];
+} Ply;
+
+static Ply *sPlaying;   /* the one movie whose sound is mixed */
+
+
+static size_t rd_file(void *user, uint8_t *buf, size_t n) { return disc_file_read(user, buf, n); }
+
+/* ---- sound ---- */
+
+static unsigned be16(const uint8_t *b) { return (unsigned)(b[0] << 8 | b[1]); }
+static unsigned be32(const uint8_t *b) { return (unsigned)b[0] << 24 | (unsigned)b[1] << 16 | (unsigned)b[2] << 8 | b[3]; }
+
+/* the ADX header, once enough of the stream is in */
+static void adx_head(Ply *p) {
+    const uint8_t *h = p->adx;
+    unsigned off, cutoff;
+    double x, y, z;
+
+    if (p->adxLen < 0x14) {
+        return;
+    }
+    if (!sfd_adx_playable(h, (size_t)p->adxLen)) {
+        fprintf(stderr, "sofdec: unsupported sound, the movie plays silent\n");
+        p->adxHead = -1;
+        return;
+    }
+    off = be16(h + 2) + 4;
+    if ((unsigned)p->adxLen < off) {
+        return;
+    }
+    p->adxCh = h[7];
+    p->adxRate = (int)be32(h + 8);
+    cutoff = be16(h + 0x10);
+    x = sqrt(2.0) - cos(2.0 * M_PI * cutoff / p->adxRate);
+    y = sqrt(2.0) - 1.0;
+    z = (x - sqrt((x + y) * (x - y))) / y;
+    p->coef1 = (int)floor(z * 8192.0);
+    p->coef2 = (int)floor(z * z * -4096.0);
+    p->adxPos = (int)off;
+    p->adxHead = 1;
+}
+
+/* decode the whole frames that have arrived into the ring (game thread, under the sound lock) */
+static void flac_pump(Ply *p) {   /* (the library's: as adx_pump, from X.flac) */
+    int16_t pcm[2][MUSICSRC_FRAME];
+    int n, i;
+
+    snd_lock();
+    while (!p->flacDone && p->wrPos - p->rdPos + MUSICSRC_FRAME <= AUD_RING) {
+        if ((n = musicsrc_next(p->flac, pcm)) <= 0) {
+            p->flacDone = 1;
+            break;
+        }
+        for (i = 0; i < n; i++) {
+            float *o = &p->ring[(p->wrPos % AUD_RING) * 2];
+
+            o[0] = pcm[0][i] / 32768.0f;
+            o[1] = pcm[p->adxCh > 1][i] / 32768.0f;
+            p->wrPos++;
+        }
+    }
+    snd_unlock();
+}
+
+static void adx_pump(Ply *p) {
+    int n;
+
+    if (p->flac != NULL) {
+        flac_pump(p);
+        return;
+    }
+    if (p->adxHead == 0) {
+        adx_head(p);
+    }
+    if (p->adxHead != 1) {
+        return;
+    }
+    n = ADX_BLOCK * p->adxCh;
+    snd_lock();
+    while (p->adxLen - p->adxPos >= n && p->wrPos - p->rdPos < AUD_RING) {
+        short pcm[2][ADX_FRAME];
+        int c, i;
+
+        for (c = 0; c < p->adxCh; c++) {
+            const uint8_t *b = p->adx + p->adxPos + c * ADX_BLOCK;
+            int scale = (int)be16(b);
+            int h1 = p->hist[c][0], h2 = p->hist[c][1];
+
+            if (scale & 0x8000) {   /* the end marker */
+                p->adxPos = p->adxLen;
+                snd_unlock();
+                return;
+            }
+            for (i = 0; i < ADX_FRAME; i++) {
+                int v = (b[2 + i / 2] >> (i & 1 ? 0 : 4)) & 0xF;
+
+                if (v & 8) {
+                    v -= 16;
+                }
+                v = v * scale + ((p->coef1 * h1 + p->coef2 * h2) >> 12);
+                v = v > 32767 ? 32767 : v < -32768 ? -32768 : v;
+                pcm[c][i] = (short)v;
+                h2 = h1;
+                h1 = v;
+            }
+            p->hist[c][0] = h1;
+            p->hist[c][1] = h2;
+        }
+        for (i = 0; i < ADX_FRAME && p->wrPos - p->rdPos < AUD_RING; i++) {
+            float *o = &p->ring[(p->wrPos % AUD_RING) * 2];
+
+            o[0] = pcm[0][i] / 32768.0f;
+            o[1] = pcm[p->adxCh > 1][i] / 32768.0f;
+            p->wrPos++;
+        }
+        p->adxPos += n;
+    }
+    snd_unlock();
+    if (p->adxPos > 0x40000) {   /* drop what's decoded */
+        memmove(p->adx, p->adx + p->adxPos, (size_t)(p->adxLen - p->adxPos));
+        p->adxLen -= p->adxPos;
+        p->adxPos = 0;
+    }
+}
+
+static void adx_append(Ply *p, const uint8_t *b, int n) {
+    if (p->adxHead < 0) {
+        return;
+    }
+    if (p->adxLen + n > p->adxCap) {
+        p->adxCap = (p->adxLen + n) * 2;
+        p->adx = realloc(p->adx, (size_t)p->adxCap);
+    }
+    memcpy(p->adx + p->adxLen, b, (size_t)n);
+    p->adxLen += n;
+    adx_pump(p);
+}
+
+/* the mixer (sound.c's thread): the movie's sound added in */
+static void sfd_render(float *out, int frames) {
+    Ply *p = sPlaying;
+    double step;
+    float g;
+    int i;
+
+    if (p == NULL || p->paused || p->stat != STAT_PLAYING || p->adxHead != 1) {
+        return;
+    }
+    g = snd_db10(p->vol);
+    step = (double)p->adxRate / SND_RATE;
+    for (i = 0; i < frames; i++) {
+        p->frac += step;
+        while (p->frac >= 1.0) {
+            const float *s;
+
+            if (p->rdPos == p->wrPos) {   /* not decoded yet: hold */
+                p->frac = 1.0;
+                break;
+            }
+            s = &p->ring[(p->rdPos % AUD_RING) * 2];
+            p->last[0] = p->cur[0];
+            p->last[1] = p->cur[1];
+            p->cur[0] = s[0];
+            p->cur[1] = s[1];
+            p->rdPos++;
+            p->frac -= 1.0;
+        }
+        out[2 * i] += (p->last[0] + (p->cur[0] - p->last[0]) * (float)fmin(p->frac, 1.0)) * g;
+        out[2 * i + 1] += (p->last[1] + (p->cur[1] - p->last[1]) * (float)fmin(p->frac, 1.0)) * g;
+    }
+}
+
+/* ---- video ---- */
+
+static const double kFrameRates[16] = {0, 24000.0 / 1001, 24, 25, 30000.0 / 1001, 30, 50, 60000.0 / 1001, 60};
+
+static void video_feed(Ply *p, const uint8_t *b, int n) {
+    while (n > 0 || (n == 0 && b == NULL)) {
+        uint8_t *out = NULL;
+        int outSize = 0;
+        int used = av.parser_parse2(p->parser, p->ctx, &out, &outSize, b, n, AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+
+        if (used < 0) {
+            return;
+        }
+        if (b != NULL) {
+            b += used;
+            n -= used;
+        }
+        if (outSize > 0) {
+            uint8_t *data = av.av_malloc((size_t)outSize + AV_PAD);
+
+            if (p->fps == 0.0) {   /* the sequence header's frame rate */
+                int i;
+
+                for (i = 0; i + 7 < outSize; i++) {
+                    if (out[i] == 0 && out[i + 1] == 0 && out[i + 2] == 1 && out[i + 3] == 0xB3) {
+                        p->fps = kFrameRates[out[i + 7] & 0xF];
+                        break;
+                    }
+                }
+            }
+            if (p->queued == p->queueCap) {
+                int cap = p->queueCap * 2 + 16;
+                void *more = realloc(p->queue, (size_t)cap * sizeof(*p->queue));
+
+                if (more == NULL) {
+                    av_free_data(data);
+                    data = NULL;
+                } else {
+                    p->queue = more;
+                    p->queueCap = cap;
+                }
+            }
+            if (data != NULL) {
+                memcpy(data, out, (size_t)outSize);
+                memset(data + outSize, 0, AV_PAD);
+                p->queue[p->queued].data = data;
+                p->queue[p->queued].size = outSize;
+                p->queued++;
+            }
+        }
+        if (b == NULL) {
+            return;
+        }
+    }
+}
+
+/* one PES packet's payload, or the stream's end; 0 at the end of the file */
+static int demux_one(Ply *p) {
+    const uint8_t *data;
+    int id, len;
+
+    if (!sfd_next(&p->rd, &id, &data, &len)) {
+        return 0;
+    }
+    if (id == 0xE0) {
+        video_feed(p, data, len);
+    } else if (p->flac == NULL) {
+        adx_append(p, data, len);
+    }
+    return 1;
+}
+
+/* the next decoded frame into frm (ready); 0 when there are no more */
+static int video_next(Ply *p) {
+    while (!p->ready) {
+        int r = av.receive_frame(p->ctx, p->frm);
+
+        if (r == 0) {
+            const AvFramePrefix *f = p->frm;
+
+            if (f->format != AV_PIX_FMT_YUV420P) {
+                continue;
+            }
+            p->ready = 1;
+            p->readyNo = p->decoded++;
+            return 1;
+        }
+        if (p->queued > 0) {   /* the decoder wants more: the next frame parsed */
+            if (av.packet_from_data(p->pkt, p->queue[0].data, p->queue[0].size) == 0) {
+                av.send_packet(p->ctx, p->pkt);   /* (it takes it: it has just said it wants input) */
+                av.packet_unref(p->pkt);
+            } else {
+                av_free_data(p->queue[0].data);
+            }
+            memmove(p->queue, p->queue + 1, (size_t)--p->queued * sizeof(*p->queue));
+            continue;
+        }
+        if (p->drained) {
+            return 0;
+        }
+        if (p->eof == 1) {   /* the parser's last frame, then the decoder's */
+            video_feed(p, NULL, 0);
+            p->eof = 2;
+            continue;
+        }
+        if (p->eof == 2) {
+            av.send_packet(p->ctx, NULL);   /* flush */
+            p->drained = 1;
+            continue;
+        }
+        if (!demux_one(p)) {
+            p->eof = 1;
+        }
+    }
+    return 1;
+}
+
+/* the ready frame into rgb (BT.601, TV range; alpha 0x80) */
+static void video_show(Ply *p) {
+    const AvFramePrefix *f = p->frm;
+    int full = p->compo == MOVIE_ALPHA_FULL, h = full ? f->height / 2 : f->height, x, y;
+
+    if (f->width != p->w || h != p->h || p->rgb == NULL) {
+        p->w = f->width;
+        p->h = h;
+        free(p->rgb);
+        p->rgb = malloc((size_t)p->w * p->h * 4);
+    }
+    for (y = 0; y < p->h; y++) {
+        const uint8_t *py = f->data[0] + y * f->linesize[0];
+        const uint8_t *pu = f->data[1] + (y / 2) * f->linesize[1];
+        const uint8_t *pv = f->data[2] + (y / 2) * f->linesize[2];
+        uint8_t *o = p->rgb + (size_t)y * p->w * 4;
+
+        for (x = 0; x < p->w; x++) {
+            int c = (py[x] - 16) * 298, d = pu[x / 2] - 128, e = pv[x / 2] - 128;
+            int r = (c + 409 * e + 128) >> 8, g = (c - 100 * d - 208 * e + 128) >> 8, b = (c + 516 * d + 128) >> 8;
+
+            o[0] = (uint8_t)(r < 0 ? 0 : r > 255 ? 255 : r);
+            o[1] = (uint8_t)(g < 0 ? 0 : g > 255 ? 255 : g);
+            o[2] = (uint8_t)(b < 0 ? 0 : b > 255 ? 255 : b);
+            if (p->compo == MOVIE_ALPHA_LUMI) {   /* dark is clear: up to the low key, opaque from the high */
+                int k = py[x];
+
+                o[3] = (uint8_t)(k <= p->key_lo ? 0 : k >= p->key_hi ? 255 : (k - p->key_lo) * 255 / (p->key_hi - p->key_lo));
+            } else if (full) {   /* the alpha: the lower half's brightness */
+                int a = (f->data[0][(y + h) * f->linesize[0] + x] - 16) * 255 / 219;
+
+                o[3] = (uint8_t)(a < 0 ? 0 : a > 255 ? 255 : a);
+            } else {
+                o[3] = 0xFF;
+            }
+            o += 4;
+        }
+    }
+    p->shownNo = p->readyNo;
+    p->ready = 0;
+    p->fresh = 1;
+}
+
+static void ply_close(Ply *p) {
+    snd_lock();
+    if (sPlaying == p) {
+        sPlaying = NULL;
+    }
+    snd_unlock();
+    if (p->f != NULL) {
+        disc_file_close(p->f);
+        p->f = NULL;
+    }
+    musicsrc_free(p->flac);
+    p->flac = NULL;
+    if (p->parser != NULL) {
+        av.parser_close(p->parser);
+        p->parser = NULL;
+    }
+    if (p->ctx != NULL) {
+        av.free_context(&p->ctx);
+    }
+    if (p->pkt != NULL) {
+        av.packet_free(&p->pkt);
+    }
+    while (p->queued > 0) {
+        av_free_data(p->queue[--p->queued].data);
+    }
+    free(p->queue);
+    p->queue = NULL;
+    p->queueCap = 0;
+    if (p->frm != NULL) {
+        av.frame_free(&p->frm);
+    }
+    free(p->adx);
+    p->adx = NULL;
+    p->adxLen = p->adxCap = p->adxPos = 0;
+    free(p->rgb);
+    p->rgb = NULL;
+}
+
+static int sGameClock;   /* the clock by game ticks (headless runs: the same frames each time) */
+
+/* advance the clock and the frames to it: by real time, or (sGameClock) by the ticks given - a
+ * game tick is 1/30 s */
+static void ply_update(Ply *p, int ticks) {
+    uint64_t now = SDL_GetTicksNS();
+
+    if (p->stat != STAT_PLAYING) {
+        return;
+    }
+    if (p->ctx == NULL) {   /* no picture decoder: the file's own track still plays */
+        p->lastTick = now;
+        if (p->flac != NULL) {
+            adx_pump(p);
+        } else {
+            while (p->eof == 0 && p->wrPos - p->rdPos + 4800 < (unsigned)AUD_RING) {
+                const uint8_t *data;
+                int id, len;
+
+                if (!sfd_next(&p->rd, &id, &data, &len)) {
+                    p->eof = 1;
+                    break;
+                }
+                if (id != 0xE0) {
+                    adx_append(p, data, len);
+                }
+            }
+        }
+        if (p->eof && p->adxHead == 1 && p->rdPos == p->wrPos && (p->flac == NULL || p->flacDone)) {
+            p->stat = STAT_PLAYEND;
+        }
+        return;
+    }
+    if (!p->paused && p->shownNo >= 0) {
+        p->clock += sGameClock ? ticks / 30.0 : (double)(now - p->lastTick) / 1e9;
+    }
+    p->lastTick = now;
+    for (;;) {
+        int due = p->shownNo < 0 ? 0 : (int)(p->clock * (p->fps > 0.0 ? p->fps : 30.0));
+
+        if (p->shownNo >= 0 && p->shownNo >= due) {
+            break;
+        }
+        if (!video_next(p)) {
+            /* the end: once the sound is out too (on the game clock - headless - the video's end:
+             * its sound drains in real time, which those runs outpace) */
+            if (sGameClock || p->adxHead != 1 || (p->rdPos == p->wrPos && (p->flac == NULL || p->flacDone))) {
+                p->stat = STAT_PLAYEND;
+            }
+            break;
+        }
+        if (p->readyNo >= due || p->shownNo < 0) {
+            video_show(p);
+            if (p->shownNo >= due) {
+                break;
+            }
+        } else {
+            p->ready = 0;   /* late: skipped */
+        }
+    }
+    adx_pump(p);
+}
+
+
+/* ---- what new-src calls ---- */
+
+static Ply *sPly;
+static float sVolume = 1.0f;
+
+static void mix(int16_t *out, int frames) {   /* (sound.c's stream hook, its lock not held) */
+    float buf[2048];
+    int done = 0;
+
+    snd_lock();
+    while (done < frames) {
+        int n = frames - done > 1024 ? 1024 : frames - done, i;
+
+        memset(buf, 0, sizeof(buf));
+        sfd_render(buf, n);
+        for (i = 0; i < n * 2; i++) {
+            int v = out[done * 2 + i] + (int)(buf[i] * 32767.0f * sVolume);
+
+            out[done * 2 + i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+        }
+        done += n;
+    }
+    snd_unlock();
+}
+
+int movie_open(const char *path) {
+    int video;
+
+    movie_close();
+    video = av_load();   /* the picture. The sound does not need it. */
+    if (sLock == NULL) {
+        sLock = SDL_CreateMutex();
+    }
+    sPly = calloc(1, sizeof(*sPly));
+    if (sPly == NULL) {
+        return 0;
+    }
+    sPly->shownNo = -1;
+    {   /* the library's: X.SFD as X.mpg (the picture) and X.flac (the sound), else the SFD */
+        char mpg[300], *dot;
+        size_t n = 0;
+        uint8_t *flac;
+
+        snprintf(mpg, sizeof(mpg), "%s", path);
+        dot = strrchr(mpg, '.');
+        if (dot != NULL && (size_t)(dot - mpg) + 6 < sizeof(mpg)) {
+            strcpy(dot, ".flac");
+            flac = files_read(mpg, &n);
+            strcpy(dot, ".mpg");
+            if ((sPly->f = files_open(mpg)) != NULL && flac != NULL) {
+                sPly->flac = musicsrc_open(flac, n, 0);
+                if (sPly->flac != NULL) {
+                    sPly->adxCh = musicsrc_channels(sPly->flac);
+                    sPly->adxRate = musicsrc_rate(sPly->flac);
+                    sPly->adxHead = 1;
+                } else {
+                    free(flac);
+                }
+            } else {
+                free(flac);
+            }
+            /* a picture without its .flac is silent. The .sfd still has the ADX track. */
+            if (sPly->flac == NULL && sPly->f != NULL) {
+                disc_file_close(sPly->f);
+                sPly->f = NULL;
+            }
+        }
+    }
+    if (sPly->f == NULL) {
+        sPly->f = files_open(path);
+    }
+    sPly->rd.read = rd_file;
+    sPly->rd.user = sPly->f;
+    if (sPly->f == NULL) {
+        fprintf(stderr, "movie: can't open %s\n", path);
+        movie_close();
+        return 0;
+    }
+    if (video) {
+        sPly->ctx = av.alloc_context3(av.find_decoder(AV_CODEC_ID_MPEG2VIDEO));
+        sPly->parser = av.parser_init(AV_CODEC_ID_MPEG2VIDEO);
+        sPly->pkt = av.packet_alloc();
+        sPly->frm = av.frame_alloc();
+        if (sPly->ctx == NULL || sPly->parser == NULL || sPly->pkt == NULL || sPly->frm == NULL
+            || av.open2(sPly->ctx, av.find_decoder(AV_CODEC_ID_MPEG2VIDEO), NULL) < 0) {
+            fprintf(stderr, "movie: can't set up the decoder for %s\n", path);
+            if (sPly->parser != NULL) {
+                av.parser_close(sPly->parser);
+            }
+            if (sPly->ctx != NULL) {
+                av.free_context(&sPly->ctx);
+            }
+            if (sPly->pkt != NULL) {
+                av.packet_free(&sPly->pkt);
+            }
+            if (sPly->frm != NULL) {
+                av.frame_free(&sPly->frm);
+            }
+            sPly->ctx = sPly->parser = sPly->pkt = sPly->frm = NULL;
+        }
+    }
+    sPly->lastTick = SDL_GetTicksNS();
+    sPly->stat = STAT_PLAYING;
+    snd_lock();
+    sPlaying = sPly;
+    snd_unlock();
+    sound_stream(mix);
+    return 1;
+}
+
+void movie_close(void) {
+    sound_stream(NULL);
+    if (sPly != NULL) {
+        ply_close(sPly);
+        free(sPly);
+        sPly = NULL;
+    }
+}
+
+void movie_update(void) {   /* (each game tick) */
+    if (sPly != NULL) {
+        ply_update(sPly, 1);
+    }
+}
+
+void movie_game_clock(int on) {
+    sGameClock = on != 0;
+}
+
+int movie_status(void) {
+    return sPly == NULL ? MOVIE_NONE : sPly->stat == STAT_PLAYING ? MOVIE_PLAYING : MOVIE_ENDED;
+}
+
+int movie_paused(void) {
+    return sPly != NULL && sPly->paused;
+}
+
+int movie_frame(void) {
+    return sPly != NULL ? sPly->shownNo : -1;
+}
+
+const uint8_t *movie_picture(int *w, int *h, int *fresh) {
+    if (sPly == NULL || sPly->rgb == NULL) {
+        return NULL;
+    }
+    *w = sPly->w;
+    *h = sPly->h;
+    *fresh = sPly->fresh;
+    sPly->fresh = 0;
+    return sPly->rgb;
+}
+
+void movie_pause(int on) {
+    if (sPly != NULL) {
+        ply_update(sPly, 0);
+        sPly->paused = on != 0;
+    }
+}
+
+void movie_compose(int compo, int lo, int hi) {
+    if (sPly != NULL) {
+        sPly->compo = compo < 0 ? sPly->compo : compo;
+        sPly->key_lo = lo;
+        sPly->key_hi = hi > lo ? hi : lo + 1;
+    }
+}
+
+void movie_volume(float v) {
+    sVolume = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+}

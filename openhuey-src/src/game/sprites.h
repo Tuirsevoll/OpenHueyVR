@@ -1,0 +1,80 @@
+/* Sprites: what the original's quad drawer draws (src/game/effects.c QuadDrawer, gl_sprites) -
+ * camera-facing textured quads, each a cell of a texture sheet, for the effects (flames, specks,
+ * smoke...). An engine service: an effect (a Forth actor) keeps a batch, sets its texture and
+ * cells, and writes its sprites' records each frame; the engine draws every batch after the
+ * scene's opaque parts.
+ *
+ * Textures come as the original's texture cache has them (TexCache): an index of group + id, 64
+ * of them - group 0x10 GAME_FIX.TEX (loaded at start), 0 the room's bank (PAC section 9), 0x15 its
+ * second (section 11). */
+#ifndef SPRITES_H
+#define SPRITES_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "../core/mathx.h"
+
+#define SPRITE_BATCHES 128
+#define SPRITES_PER_BATCH 512
+
+enum {
+    SPRITE_UPRIGHT = 1,    /* turned to the camera about y only */
+    SPRITE_CORNERS = 2,    /* its own corners, not turned to the camera */
+    SPRITE_QUARTER = 4,    /* the camera's turn, then a quarter about y */
+    SPRITE_ADD = 0x40,     /* added to the picture */
+    SPRITE_GLOW = 0x80,    /* also glows (the original's glow pass: drawn again into its buffer) */
+    SPRITE_OPAQUE = 0x100, /* not blended, writes depth (the shards' boxes) */
+    SPRITE_MASK = 0x200    /* only marks the bloom mask (the original's layer 0x26), draws no colour */
+};
+
+typedef struct Sprite {
+    float x, y, z;
+    float w, h;            /* half its size */
+    float rot;             /* about the view axis */
+    uint8_t rgba[4];       /* 0x80 = 1.0 */
+    int frame;
+    int own;               /* its own four corners (c): a quad anywhere (a shard's face) */
+    float c[4][3];
+    int shaded;            /* its corners' own colours (crgba) in place of rgba: a gradient */
+    uint8_t crgba[4][4];
+    int mapped;            /* its corners' own texture coordinates (cst) in place of the cell's */
+    float cst[4][2];
+} Sprite;
+
+/* the cache's group `group` from a texture bank (NULL: gone); the bank must stay while it's used */
+void sprites_group(int group, const uint8_t *bank, size_t size);
+struct TexBank;
+void sprites_group_bank(int group, struct TexBank *bank);   /* (taken: freed when the group changes) */
+void sprites_init(void);    /* GAME_FIX.TEX as group 0x10 */
+
+int sprites_new(void);      /* a batch (-1: none free) */
+void sprites_free(int b);
+void sprites_free_all(void);
+/* its texture (group + id, palette -1 the first), the frame cells (the first at x y, cw x ch,
+ * along rows of a tw x th sheet, `frames` of them), its flags (SPRITE_*) and draw layer */
+void sprites_texture(int b, int group, int id, int palette);
+/* its texture a GPU one of its own (0: back to the cache's) */
+void sprites_raw_texture(int b, unsigned int tex);
+/* the size of the cache's texture group + id (0 if none) */
+int sprites_texture_size(int group, int id, int *w, int *h);
+void sprites_cells(int b, int x, int y, int cw, int ch, int tw, int th, int frames);
+void sprites_flags(int b, int flags, int layer);
+void sprites_offset(int b, float cx, float cy);           /* the corners' offset */
+void sprites_corner(int b, int k, float x, float y, float z);   /* its own corner k (0..3) */
+void sprites_uv(int b, float u0, float v0, float u1, float v1);   /* a cell in texture coordinates (all its sprites) */
+/* the batch's records: n of them (its count is n; -1: the count kept), to be written */
+Sprite *sprites_records(int b, int n);
+
+void sprites_draw(const Mat4 *view_proj, const Mat4 *view);
+/* the glow pass: whether any batch drawn this frame glows; those drawn again (after sprites_draw) */
+int sprites_glowing(void);
+void sprites_draw_glow(const Mat4 *view_proj);
+
+/* the cache's group `group` from a .TEX file, kept until the group is loaded again (the menus'
+ * banks: the sub screen's SUBBASE / SUBBACK, an item's picture): 1 if it loaded */
+int sprites_group_file(int group, const char *path);
+/* texture group + id in palette csa (-1 the first) on the GPU, and its size; 0 if none */
+unsigned sprites_texture_of(int group, int id, int csa, int *w, int *h);
+
+#endif

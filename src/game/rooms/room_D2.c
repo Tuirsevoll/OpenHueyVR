@@ -1,0 +1,68 @@
+/* Room 0xD2: its event handler class (vtable RoomD2_vtable, see sRooms in event.c),
+ * the tables its getters give the event system, and the room's hooks
+ * (commands, conditions, objects and effects). */
+#include "common.h"
+#include "game/rooms/rooms.h"
+#include "ptmf.h"
+
+extern void *RoomBase_vtable[];
+extern void *RoomD2_vtable[];
+extern u8 RoomD2_EnterScript_data[];
+extern char D_0047B2A0[];
+extern const char str_59_59_3[];
+
+extern u8 RoomD2_CharEnterScript_data[];
+extern u8 RoomD2_Phase1Script_data[];
+extern u8 RoomD2_Phase3Script_data[];
+extern u8 RoomD2_Table38_data[];
+extern PTMF RoomD2_CmdTable[];
+extern PTMF RoomD2_CondTable[];
+
+/* 0x0036E2D0 */
+void *RoomD2_dtor(void *o, s32 flags) { return room_dtor(o, flags, RoomD2_vtable, RoomBase_vtable); }
+
+/* 0x0036E330 */
+void *RoomD2_EnterScript(void *o) { return RoomD2_EnterScript_data; }   /* RoomD2_vtable +0xC */
+
+/* 0x0036E340 */
+void *RoomD2_CharEnterScript(void) {
+    return RoomD2_CharEnterScript_data;
+}
+
+/* 0x0036E350 */
+void *RoomD2_Phase1Script(void) {
+    return RoomD2_Phase1Script_data;
+}
+
+/* 0x0036E360 */
+void *RoomD2_Phase3Script(void) {
+    return RoomD2_Phase3Script_data;
+}
+
+/* 0x0036E370 */
+void *RoomD2_Table38(void) {
+    return RoomD2_Table38_data;
+}
+
+/* (self->*RoomD2_CondTable[i])(a, b) */
+/* 0x0036E380 */
+s32 RoomD2_Condition(void *self, u32 i, s32 a, s32 b) {
+    return ptmf_scall_r2(self, &RoomD2_CondTable[i & 0xFF], a, b);
+}
+
+/* the progress object's +0x7C with the caller's arguments */
+/* 0x0036E3B0 */
+s32 RoomD2_Cond00(void *self, s32 a1, s32 a2, s32 a3) {
+    return VCALL((VObject *)gProgress, 0x7C, s32 (*)(VObject *, s32, s32, s32))((VObject *)gProgress, a1, a2, a3);
+}
+
+/* (self->*RoomD2_CmdTable[i])(a, b) */
+/* 0x0036E3D0 */
+s32 RoomD2_Command(void *self, u32 i, s32 a, s32 b) {
+    return ptmf_scall_r2(self, &RoomD2_CmdTable[i & 0xFF], a, b);
+}
+
+/* room 0xD2: draws the countdown clock at (431, 395): "MM:SS", or "59:59" once time is up
+ * (clock_draw; a frame hook). */
+/* 0x0036E400 */
+s32 RoomD2_Cmd00(void) { return clock_draw(D_0047B2A0, str_59_59_3); }

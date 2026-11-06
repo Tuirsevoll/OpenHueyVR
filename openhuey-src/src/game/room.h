@@ -1,0 +1,190 @@
+/* A room: its PAC file, its mesh and textures on the GPU, and which visibility groups show. */
+#ifndef ROOM_H
+#define ROOM_H
+
+#include "../data/navmesh.h"
+#include "../data/pac.h"
+#include "../data/roommesh.h"
+#include "../render/render.h"
+#include "placed.h"
+
+#define ROOM_MAX_TEXTURES 256
+#define ROOM_MAX_LIGHTS 16
+
+/* a room light (PAC section 4: 12 floats each - position, colour 0..128, intensity, range;
+ * range 0 reaches everywhere: the moon) */
+typedef struct RoomLight {
+    Vec3 pos;
+    Vec3 color;
+    float intensity;
+    float range;
+    float shadow;           /* how far its shadows reach (+0x2C: Shadow_Draw's extrusion) */
+    float reach, range2;    /* its falloff as the shadows take it (+0x24, +0x28: 1 / range and
+                             * range squared; range2 0: none) */
+} RoomLight;
+
+#define ROOM_DOORS 8
+
+/* a door of the room (src/game/doors.c: PAC section 7 places it - by exit - and section 8 holds
+ * its model): where it stands, its turn (Euler angles; y about the vertical) at rest, and its
+ * swing from rest in degrees (-90: open) easing to the wanted one */
+typedef struct RoomDoor {
+    int present;
+    int shown;              /* drawn and swung (+0x70): only with a nav triangle (Doors_TakeRoom) */
+    const uint8_t *sides;   /* its two sides' nav triangles (section 7 +0x28: a count and the
+                             * triangles, then the other side's) - the passage a door blocks */
+    RoomMesh mesh;
+    GpuMesh gpu;
+    Vec3 pos, rot;
+    Vec3 stand;             /* where it stands (section 7 +0x10: the doors' +0x30) */
+    int tri;                /* its nav triangle (+0x0) */
+    float swing, target;
+    /* an animation of a character using it (Doors_StartAnim: FIN_D000.MTN's record - the swing a
+     * frame), its frame and frames; closing (+0x78: it was open) */
+    const uint8_t *keys;
+    int key, nkeys, closing;
+    int mode;               /* how it swings (Door_Swing +0x60): 0 still, 1 along `keys`, 2 by 5
+                             * degrees a frame, 3 slammed (15) */
+    int sounded;            /* this swing's creak / latch played (+0x71) */
+    /* what happened this tick (for the doors actor): the sound it made (0x27 the creak, 0x28 the
+     * latch; 0 none) and how loud its noise is (Door_PlaySound: 1 / 2 quiet, 3 / 4 loud, else
+     * none); `settled` 1 it came to rest open, 0 shut, -1 neither */
+    int sound, sound_how, settled;
+    int next_sound, next_how;   /* a sound made between ticks (Doors_SetOpened's creak): this tick's */
+    uint32_t groups[8];     /* its model's parts shown: bit g, group g (0 always) - the scripts'
+                             * door bits (Doors_SetBits: door +0x120) */
+} RoomDoor;
+
+typedef struct Room {
+    int id;                 /* -1: none loaded */
+    Pac pac;
+    size_t pac_read;        /* its size as read (before the library's texts are put back after it) */
+    RoomMesh mesh;
+    NavMesh nav;            /* where characters can stand (empty in some rooms) */
+    GpuMesh gpu;
+    GpuTexture textures[ROOM_MAX_TEXTURES];
+    int ntextures;
+    uint32_t groups[8];     /* bit g: group g shown (group 0 always is) */
+    RoomDoor doors[ROOM_DOORS];   /* by exit */
+    PlacedSet placed;       /* the objects the scripts show and move (sections 12, 15) */
+    Vec3 ambient;           /* (0..128) */
+    RoomLight lights[ROOM_MAX_LIGHTS];
+    RoomLight own_lights[ROOM_MAX_LIGHTS];   /* as the room file has them (Lights +0x9E0) */
+    int nlights;
+    GpuMesh moving;         /* the batches that move with the view or animate, rebuilt each frame */
+    MeshVertex *moving_v;
+    MeshDraw *moving_d;
+    int nmoving;            /* this frame's (room_draw_begin) */
+} Room;
+
+int room_exists(int id);
+/* load room `id` in place of the current one; 0 if it can't be read */
+int room_load(Room *r, int id);
+/* the room's own look again, as its file has it (after scripts changed it) */
+void room_reset_look(Room *r);
+/* one effect of the room's look from its parameters, as the scripts send them: slot 0x1C depth
+ * of field, 0x1D fog, 0x1E screen blend, 0x1F tint (NULL: that effect removed) */
+void room_look_set(int slot, const uint8_t *d, size_t n);
+size_t room_look_get(int slot, uint8_t *out);   /* its parameters as last set (0: none) */
+void room_free(Room *r);
+/* door `exit`'s swing (degrees from shut; -90 open): eased there, or set at once */
+void room_door_swing(Room *r, int exit, float degrees, int at_once);
+/* the doors' animations for the one who uses them (O_FIN/FIN_D000.MTN: 8 records - the user's
+ * spot by the door x, z and turn, then the door's swing a frame); loaded once */
+int room_door_anims(void);
+/* Doors_AnimUserSpot: where animation `anim` puts its user at door `exit` (its point turned with
+ * the door, reached on the mesh from the door's triangle - failing that without its x) and the
+ * user's heading: the triangle, -1 none */
+int room_door_user_spot(const Room *r, int exit, int anim, Vec3 *at, float *yaw);
+/* Doors_StartAnim: the door swings along animation `anim` from this frame; 0 if it can't */
+int room_door_anim_start(Room *r, int exit, int anim);
+/* Doors_Side: 1 if p is in front of the door (along its turn at rest from where it stands), 0
+ * behind, -1 no door */
+int room_door_side(const Room *r, int exit, Vec3 p);
+/* Doors_Passage: `flags` set (or cleared) on side `side`'s triangles of the door */
+void room_door_side_flags(Room *r, int exit, int side, uint32_t flags, int set);
+/* Doors_OnSide: nav triangle `tri` is in the door's side `side` (0 / 1) list */
+int room_door_on_side(const Room *r, int exit, int side, int tri);
+/* Doors_AtDoor: within 20 of where it stands (5 up or down) */
+int room_door_near(const Room *r, int exit, Vec3 p);
+/* Doors_InArea: inside its area `kind` (D_003E51A0: quads in the door's frame), 5 up or down */
+int room_door_in_area(const Room *r, int exit, int kind, Vec3 p);
+/* the door at an exit lets characters through or not (Doors_RoomIn / Doors_Refresh): shut, its
+ * near side's triangles take the passage flags 0x60000 (open: the far side's, where the door
+ * now stands); `locks` (0x1000000 / 0x4000000: locked to the stalkers' / Hewie's sides) on the
+ * near side as well */
+void room_door_passage(Room *r, int exit, int open, uint32_t locks);
+/* door `exit` swung open or shut by 5 degrees a frame (Door_Swing 2), or slammed shut (3) */
+void room_door_move(Room *r, int exit, int open, int slam);
+/* Doors_SetOpened: door `exit` (not along a user's animation) set swinging open - with a loud
+ * creak (0x91), heard from Fiona's noise source - or shut, by 15 degrees a frame, its passage
+ * flags 0x60000 moved to the other side at once; 0 if it can't */
+int room_door_set_opened(Room *r, int exit, int open);
+/* door `exit` turned to `radians` (its whole turn, as a cutscene keys it: Doors_TurnTo) */
+void room_door_angle(Room *r, int exit, float radians);
+/* a tick: the room's flip books step, its doors swing */
+void room_tick(Room *r);
+/* the frame's moving batches, as the eye sees them: before room_draw_layer */
+void room_draw_begin(Room *r, Vec3 eye, Vec3 forward);
+/* its draws in the original's renderer layer `layer` (RoomMgr_Draw, PlacedObjects_Draw; layers
+ * draw in order, the characters in theirs - $A): 1 the solid part, the doors, the plain placed
+ * objects; $19 (8 when the fog is drawn early) the see-through and flip-book parts, $19 the "a_"
+ * objects; $1F the glows; $26 the bloom mask and the "g_" objects. Each triangle with a corner
+ * outside the PS2's clip volume is left out, as the room's microprograms do */
+void room_draw_layer(Room *r, const Mat4 *view_proj, int layer);
+/* the highest solid surface at (x, z) below height y: 1 and its height in *out, or 0 if none */
+/* the up to 3 lights brightest at a point (those reaching its nav triangle: the game's
+ * Lights_Brightest): their indices, -1 for none; how many */
+int room_lights_at(const Room *r, Vec3 pos, int out[3]);
+/* ... of those reaching nav triangle `tri` (-1: light 0 alone - Lights_ShadowLights) */
+int room_lights_on(const Room *r, int tri, Vec3 pos, int out[3]);
+int room_floor_below(const Room *r, float x, float y, float z, float *out);
+
+/* ---- the open doors' light (src/game/lights.c, src/game/doors.c Door_Draw) ---- */
+
+/* what the doors' light is worked out for: the camera's view-projection, eye, near and far, and
+ * the PS2's clip bands (render_mesh_ps2_clip's: the GS's drawing space round the screen). A point
+ * is "in view" inside them, as the original's clip tests take it */
+typedef struct RoomView {
+    Mat4 vp;
+    Vec3 eye;
+    float bx, by, znear, zfar;
+} RoomView;
+RoomView room_view(const Mat4 *proj, const Mat4 *view, Vec3 eye, float znear, float zfar);
+int room_in_view(const RoomView *v, Vec3 p);
+
+/* an open door's shadow from one light (DoorShadow_Queue / DoorShadow_FromLight: its draw in the
+ * original's layer 6): the door's face away from the light (p[0..3]: its 12 x 22 leaf's top
+ * far, top near, bottom far, bottom near) and each corner swept away from the light by 3/4 of
+ * its shadows' reach (p[4..7]); the box's sides are drawn into the shadow buffer shading from
+ * `alpha` (of 0x80) at the door to nothing at the far end */
+typedef struct RoomShade {
+    Vec3 p[8];
+    float alpha;
+    int exit, light;
+} RoomShade;
+#define ROOM_MAX_SHADES (ROOM_DOORS * 3)
+/* the open doors' shadows this frame (each door shown, its leaf shown, swung open at all, and the
+ * lights letting a shadow fall at it - lights +0x2C - up to 3 of them); how many */
+int room_door_shades(const Room *r, const RoomView *v, RoomShade *out, int max);
+
+/* a blocker of the lights (lights +0x38, Lights_AddDoorway): a quad (corners top far, top near,
+ * bottom far, bottom near - in that order a strip), the way it faces and its top middle. Where it
+ * shades a light - behind it, away from the light (5 above it), within the light's shadows'
+ * reach - the characters' shadows from that light don't fall (Shadow_BlockerVolumes) */
+typedef struct RoomBlocker {
+    Vec3 q[4];
+    Vec3 facing, top;
+} RoomBlocker;
+#define ROOM_MAX_BLOCKERS 16   /* (the lights' room for them: 0x60 vectors) */
+/* the doors swung open past 78.75 degrees give two each: the leaf's two faces (door_portal),
+ * when wholly in view; added to out[n..max), the new count */
+int room_door_blockers(const Room *r, const RoomView *v, RoomBlocker *out, int n, int max);
+/* a blocker from four corners (the room scripts' 0x66): its facing from the first three, its
+ * middle */
+RoomBlocker room_blocker(const Vec3 q[4]);
+/* point p is in the shade of a blocker from light `l` (the volume behind it facing away from the
+ * light: Shadow_BlockerVolumes' first, longer, one); 1 if so */
+int room_blocked(const RoomLight *l, const RoomBlocker *b, int n, Vec3 p);
+
+#endif

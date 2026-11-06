@@ -1,0 +1,114 @@
+/* PS2 interrupts: the game registers vblank handlers (INTC 2 = vblank start, 3 = vblank end).
+ * The PC frame loop calls them through hg_vblank() once per displayed frame. */
+#include <stdio.h>
+
+typedef int (*IntcHandler)(int cause);
+
+static IntcHandler sHandlers[16];
+static int sEnabled[16];
+
+/* AddIntcHandler(cause, handler, next): returns a handler id */
+int AddIntcHandler(int cause, IntcHandler handler, int next) {
+    (void)next;
+    if (cause >= 0 && cause < 16) {
+        sHandlers[cause] = handler;
+    }
+    return cause + 1;
+}
+
+/* EnableIntc(cause) */
+int EnableIntc(int cause) {
+    if (cause >= 0 && cause < 16) {
+        sEnabled[cause] = 1;
+    }
+    return 1;
+}
+
+/* The game's vblank handlers (PS2 0x001BEDA0 / 0x001BED80 end with `ei`, so they stay assembly in
+ * the PS2 build). */
+extern unsigned char gVblankStartSeen, gVblankEndSeen;
+extern unsigned gVblankCount;
+
+int VBlank_StartHandler(int cause) {
+    (void)cause;
+    gVblankStartSeen = 1;
+    gVblankCount++;
+    return 0;
+}
+
+int VBlank_EndHandler(int cause) {
+    (void)cause;
+    gVblankEndSeen = 1;
+    return 0;
+}
+
+/* one displayed frame: vblank start then end */
+void hg_vblank(void) {
+    if (sEnabled[2] && sHandlers[2]) {
+        sHandlers[2](2);
+    }
+    if (sEnabled[3] && sHandlers[3]) {
+        sHandlers[3](3);
+    }
+}
+
+/* writes to PS2 hardware registers (include/ps2hw.h) */
+void hg_hw_write32(unsigned addr, unsigned value) {
+    (void)addr;
+    (void)value;
+}
+
+/* The PC vblank clock: one tick = one PS2 field (59.94 Hz): present the frame and pump input
+ * (video.c), wait for the tick's time, then run the game's vblank handlers (start + end). */
+#include <SDL3/SDL.h>
+
+extern void hg_frame(void);   /* video.c */
+
+/* (SDL's clock and delay: MinGW's clock_nanosleep doesn't take an absolute time as Linux does -
+ * on Windows the frames ran unpaced, or stalled) */
+static void hg_vblank_tick(void) {
+    static Uint64 next;
+    Uint64 now;
+
+    hg_frame();
+    now = SDL_GetTicksNS();
+    if (next == 0 || now > next + 1000000000ull) {
+        next = now;
+    }
+    next += 16683333;
+    if (next > now) {
+        SDL_DelayPrecise(next - now);
+    }
+    hg_vblank();
+}
+
+/* VSYNC_WAIT (include/ps2hw.h): clear the flag, tick until a vblank handler sets it */
+void hg_wait_flag(volatile unsigned char *flag) {
+    *flag = 0;
+    while (!*flag) {
+        hg_vblank_tick();
+    }
+}
+
+/* The game's "wait for vsync" (system +0x1C, PS2 0x001BED00): vblank start, then end. */
+void func_001BED00(void) {
+    hg_wait_flag(&gVblankStartSeen);
+    hg_wait_flag(&gVblankEndSeen);
+}
+
+/* DisableIntc(cause) */
+int DisableIntc(int cause) {
+    if (cause >= 0 && cause < 16) {
+        sEnabled[cause] = 0;
+    }
+    return 1;
+}
+
+/* RemoveIntcHandler(cause, id) */
+int RemoveIntcHandler(int cause, int id) {
+    (void)id;
+    if (cause >= 0 && cause < 16) {
+        sHandlers[cause] = 0;
+    }
+    return 0;
+}

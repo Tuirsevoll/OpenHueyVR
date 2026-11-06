@@ -1,0 +1,124 @@
+\ Fiona, phase F1: moving, footsteps, doors, going out (docs/subsystems/fiona.md). Headless:
+\   build/openhuey-src/openhuey --test openhuey-src/tests/fiona/test_fiona.fs
+IN: test-fiona
+USING: tester engine game-state actors messages room-names game fiona.state fiona.model fiona.moving fiona.doors fiona.hurt fiona.fear debug ;
+
+: her@ ( xt -- x )  fiona enter  execute  leave-actor ;          \ (one of her fields, read inside her)
+: anim ( -- id )  ['] anim@ her@ ;
+: sub ( -- n )  [: her-sub @ ;] her@ ;
+: doing ( -- n )  [: her-doing @ ;] her@ ;
+: hold ( key -- )  true key-hold ;   : release ( key -- )  false key-hold ;
+: press-key ( key -- )  dup hold  game-tick  release ;
+create from 12 allot  create now 12 allot
+: moved ( -- )  fiona body-pos from vec! ;    \ (marks where she is)
+: since ( F: -- d )  fiona body-pos now vec!  from now vec-dist-xz ;
+
+2 run-frames
+0 fiona send costume  1 run-frames   \ (her clothes: these are her mechanics, not the new game's slip)
+game:story send story-stop  deliver  progress pr.state 8 0 fill   \ (no room scripts: this test sets the flags by hand)
+testing a new game: in the cage room, standing, followed by the camera
+T{ room-id  fiona body-room -> front-garden-3 front-garden-3 }T
+T{ anim -> 0 }T
+T{ cam-followed -> fiona }T
+
+testing walking, running, stopping
+moved
+T{ key: W hold  30 run-frames  anim sub -> $200 1 }T
+T{ since 5e f> -> -1 }T
+T{ key: X hold  30 run-frames  anim sub -> $202 2 }T
+T{ key: X release  key: W release  25 run-frames  anim sub -> 0 0 }T
+
+testing her footsteps are heard: walking 4, running $14
+state: ear-state  cell field dummy  end-state
+variable loudest
+behaviour ear-acts
+  on heard ( loud room tri door source -- )  fiona-noise = if  2drop drop loudest @ max loudest !  else  2drop 2drop  then ;
+  on heard-nothing ( -- ) ;
+end-behaviour
+ear-acts ear-state s" ear" spawn constant ear
+deliver  ear enter  fiona body-room fiona body-tri fiona body-pos body-place  0 stalker-noise acoustics send listen  leave-actor
+T{ 0 loudest !  key: W hold  40 run-frames  key: W release  loudest @ -> 4 }T
+T{ 0 loudest !  key: W hold key: X hold  40 run-frames  key: X release key: W release  loudest @ -> $14 }T
+ear kill
+
+\ ---- doors: front-garden-2's exit 0 is a real door ----
+front-garden-2 -1 rooms send go-to-room  5 run-frames
+: door0 ( -- d )  front-garden-2 0 room-exit-door ;
+: state0 ( -- w )  door0 4 * progress pr.doors + l@ ;
+: clean0 ( -- )  door0 4 * progress pr.doors + 0 swap l! ;
+: at-door ( -- )   \ (by its spot for her first door animation)
+    fiona enter  0 0 door-user-spot drop  fdrop  her-at vec!  her-at blocked-floor v-tri-in her-tri !  leave-actor  3 run-frames ;
+: watch-anim ( n anim -- seen? )   \ up to n frames for that animation
+    false swap rot 0 ?do  game-tick  dup anim = if  nip true swap leave  then  loop  drop ;
+
+testing at a door, the action button: she holds it, opens it by hand, lets it go open
+clean0 at-door
+T{ key: C press-key  doing -> 3 }T
+T{ 30 $600 watch-anim  state0 -> -1 1 }T          \ her animation, the door held
+full-suite   \ (on: waits, scenes, walks - the full run's)
+T{ 120 run-frames  state0  doing -> 2 0 }T            \ let go open; free again
+\ (her animation takes her into the exit's area; the story takes the exit: tests/story/test_story.fs)
+front-garden-2 -1 rooms send go-to-room  5 run-frames
+
+testing at a door: over the doorway's floor from the animation on (+0x2B); out of the stalkers' reach (+0x2D) only past it or on a doorway floor (Fiona_StateDoorStepOut); neither after
+: reach-flag ( -- flag )  [: her-out-of-reach @ 0<> ;] her@ ;
+: noclip? ( -- flag )  [: her-noclip @ 0<> ;] her@ ;
+: stepping? ( -- flag )  [: her-act @ ['] stepping-out = ;] her@ ;
+: till-stepping ( -- )  60 0 do  stepping? if  leave  then  1 run-frames  loop ;
+: other-side ( -- )  [: her-door-side @ 0= 1 and her-door-side ! ;] her@ ;
+clean0  front-garden-2 -1 rooms send go-to-room  5 run-frames  at-door
+T{ reach-flag noclip? -> 0 0 }T
+key: C press-key  till-stepping
+T{ stepping?  noclip? -> -1 -1 }T
+1 run-frames
+T{ reach-flag [: plight ;] her@ unreachable-plight = -> 0 0 }T
+other-side  1 run-frames
+T{ reach-flag [: plight ;] her@ -> -1 unreachable-plight }T
+other-side  1 run-frames
+T{ reach-flag -> 0 }T
+: till-free ( -- )  120 0 do  stepping? 0= if  leave  then  1 run-frames  loop ;
+till-free  1 run-frames
+T{ reach-flag noclip? -> 0 0 }T
+testing ... on a doorway floor she is out of reach too
+T{ [: nav-tris 0 ?do  i nav-flags door-floor and if  i her-tri !  leave  then  loop  on-door-floor? ;] her@ -> -1 }T
+[: to-idle ;] her@  front-garden-2 -1 rooms send go-to-room  5 run-frames
+testing ... struck in the door, off the doorway's floor again (Fiona_StartInDoor)
+clean0  at-door  key: C press-key  till-stepping
+1 0 10e f>cell fiona send hit  deliver  2 run-frames
+T{ noclip? -> 0 }T
+[: to-idle ;] her@  front-garden-2 -1 rooms send go-to-room  5 run-frames
+
+testing a locked door: she tries it, and gives up (no story here: no message to wait on - test_examine)
+clean0  door0 doors send lock  deliver  at-door
+T{ key: C press-key  60 $609 watch-anim -> -1 }T
+T{ 90 run-frames  doing  state0 -> 0 8 }T             \ free; still locked, never held
+door0 doors send unlock  deliver
+
+testing struck while she opens a door: it is let go (left open, as she meant), not held
+clean0  front-garden-2 -1 rooms send go-to-room  5 run-frames  at-door
+T{ key: C press-key  30 $600 watch-anim  state0 1 and -> -1 1 }T
+T{ 1 0 10e f>cell fiona send hit  deliver  2 run-frames  state0 1 and  [: her-door-exit @ ;] her@ -> 0 -1 }T
+120 run-frames
+
+testing the story's door use (its move 3: through the door at exit 0, opening it): to the door, open by hand, done
+clean0  front-garden-2 -1 rooms send go-to-room  5 run-frames  at-door
+: move-done? ( -- flag )  [: her-move-done @ ;] her@ ;
+T{ 3 0 -1 0 0 0 0 fiona send scripted-move  deliver  30 $600 watch-anim -> -1 }T
+T{ 200 run-frames  state0 2 and  move-done? -> 2 -1 }T
+
+\ (going out by an exit: the story's room scripts take it - tests/story/test_story.fs)
+
+testing arriving by an exit while walking: she keeps her stride (Fiona_Vt34); standing, she stands
+key: W hold  30 run-frames
+T{ sub  room-id 0 fiona send arrived  1 run-frames  sub anim -> 1 1 $200 }T
+key: W release  25 run-frames
+T{ room-id 0 fiona send arrived  1 run-frames  sub anim -> 0 0 }T
+
+testing down after a fall, she gets up where she fell ($B01, then $B02; Fiona_StateSpecialEntry)
+moved
+[: lie-down ;] her@  1 run-frames
+T{ [: her-mode @ ;] her@  anim -> $A $B01 }T
+: up? ( n -- flag )  0 ?do  game-tick  [: her-mode @ 0= ;] her@ if  true unloop exit  then  loop  false ;
+T{ 600 up?  since 5e f<  [: her-tri @ 0< 0= ;] her@ -> -1 -1 -1 }T
+
+test-summary

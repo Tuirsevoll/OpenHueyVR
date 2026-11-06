@@ -1,0 +1,235 @@
+/* Room 0x02: its event handler class (vtable Room02_vtable, see sRooms in event.c),
+ * the tables its getters give the event system, and the room's hooks
+ * (commands, conditions, objects and effects). */
+#include "common.h"
+#include "game/rooms/rooms.h"
+#include "gl2d.h"
+#include "ptmf.h"
+#include "fiona.h"
+#include "scene_game.h"
+#include "msl.h"
+
+extern void *RoomBase_vtable[];
+extern void *Room02_vtable[];
+extern const char *pstr_ori;
+extern void *OrangeSparks_vtable[];
+extern u8 Room02_EnterScript_data[];
+extern u8 Room02_CharEnterScript_data[];
+extern u8 Room02_Phase1Script_data[];
+extern u8 Room02_Phase2Script_data[];
+extern u8 Room02_Phase3Script_data[];
+extern u8 Room02_Phase5Script_data[];
+extern void *Room02_ActionScripts[];
+extern void *Room02_ObjectNames[];
+extern u8 Room02_Table38_data[];
+extern u8 Room02_Table3C_data[];
+extern PTMF Room02_CmdTable[];
+extern PTMF Room02_CondTable[];
+
+static void effect_70A70_init(void **obj) {
+    obj[0] = OrangeSparks_vtable;
+    obj[0xC10 / 4] = Helper469D00_vtable;
+    ((s32 *)obj)[0xC14 / 4] = -1;
+    obj[0xC10 / 4] = QuadDrawer_vtable;
+}
+
+/* 0x002A8E00 */
+void *Room02_dtor(void *o, s32 flags) { return room_dtor(o, flags, Room02_vtable, RoomBase_vtable); }
+
+/* 0x002A8E60 */
+void *Room02_EnterScript(void) {
+    return Room02_EnterScript_data;
+}
+
+/* 0x002A8E70 */
+void *Room02_CharEnterScript(void) {
+    return Room02_CharEnterScript_data;
+}
+
+/* 0x002A8E80 */
+void *Room02_Phase1Script(void) {
+    return Room02_Phase1Script_data;
+}
+
+/* 0x002A8E90 */
+void *Room02_Phase2Script(void) {
+    return Room02_Phase2Script_data;
+}
+
+/* 0x002A8EA0 */
+void *Room02_Phase3Script(void) {
+    return Room02_Phase3Script_data;
+}
+
+/* 0x002A8EB0 */
+void *Room02_Phase5Script(void) {
+    return Room02_Phase5Script_data;
+}
+
+/* 0x002A8EC0 */
+void *Room02_ActionScript(void *self, s32 i) {
+    return Room02_ActionScripts[i];
+}
+
+/* 0x002A8EE0 */
+void *Room02_Table38(void) {
+    return Room02_Table38_data;
+}
+
+/* 0x002A8EF0 */
+void *Room02_Table3C(void) {
+    return Room02_Table3C_data;
+}
+
+/* 0x002A8F00 */
+void *Room02_ObjectName(void *self, s32 i) {
+    return Room02_ObjectNames[i];
+}
+
+/* (self->*Room02_CondTable[i])(a, b) */
+/* 0x002A8F20 */
+s32 Room02_Condition(void *self, u32 i, s32 a, s32 b) {
+    return ptmf_scall_r2(self, &Room02_CondTable[i & 0xFF], a, b);
+}
+
+/* room 0x02 (Room02_Cond01_ptmf): the pursuer is about, in a mode other than 0, 1 or 5, and progress
+ * +0x1130 isn't 0xFE */
+/* 0x002A8F50 */
+s32 Room02_Cond01(void) {
+    Character *s = gCharPursuer;
+
+    if (s == NULL || s->a.active == 0 || AT(s, 0xE8, s32) == 0 || AT(s, 0xE8, s32) == 1 || AT(s, 0xE8, s32) == 5) {
+        return 0;
+    }
+    if (AT(gProgress, 0x1130, u8) == 0xFE) {
+        return 0;
+    }
+    return 1;
+}
+
+/* room 0x02 (D_003F03C0): the player is about and down at floor level (y <= 0) */
+/* 0x002A8FF0 */
+s32 Room02_Cond00(void) {
+    if (gCharPlayer != NULL && gCharPlayer->a.active != 0 && gCharPlayer->a.pos[1] <= 0.0f) {
+        return 1;
+    }
+    return 0;
+}
+
+/* (self->*Room02_CmdTable[i])(a, b) */
+/* 0x002A9050 */
+s32 Room02_Command(void *self, u32 i, s32 a, s32 b) {
+    return ptmf_scall_r2(self, &Room02_CmdTable[i & 0xFF], a, b);
+}
+
+/* room 0x02 (D_003F03B0): the drum can's wobble by byte 3 - 0 still (rest height +0x38 = its
+ * height), 2 struck (+0x34 strength 1), 1 each frame: the strength fades by 0.2 while it bobs
+ * 0.2 x strength x sin(phase +0x30, on by 90 degrees) about the rest height */
+/* 0x002A9080 */
+s32 Room02_Cmd03(void *self, void *a1, u8 *cmd) {
+    u8 *o = VCALL(gRoomObjects, 0x18, u8 *(*)(VObject *, const char *))(gRoomObjects, pstr_doramukan);
+    f32 t;
+
+#ifdef HG_NATIVE
+    if (o == NULL) {   /* (the PS2 writes through junk) */
+        return 1;
+    }
+#endif
+    switch (cmd[3]) {
+    case 2:
+        AT(o, 0x30, s32) = 0;
+        AT(o, 0x34, f32) = 1.0f;
+        break;
+    case 1:
+        t = AT(o, 0x34, f32) - 0x1.99999ap-3f /* 0.2 */;
+        AT(o, 0x34, f32) = t;
+        if (t <= 0.0f) {
+            AT(o, 0x34, f32) = 0.0f;
+            AT(o, 0x30, f32) = 0.0f;
+            AT(o, 0x24, f32) = AT(o, 0x38, f32);
+            break;
+        }
+        t = AT(o, 0x30, f32) + 90.0f;
+        AT(o, 0x30, f32) = t;
+        if (!(t < 360.0f)) {
+            AT(o, 0x30, f32) = t - 360.0f;
+        }
+        AT(o, 0x24, f32) = AT(o, 0x38, f32) + 0x1.99999ap-3f /* 0.2 */ *
+            (AT(o, 0x34, f32) * msl_sinf(0x1.921fb6p+1f /* pi */ * AT(o, 0x30, f32) / 180.0f));
+        break;
+    case 0:
+        AT(o, 0x34, s32) = 0;
+        AT(o, 0x30, s32) = 0;
+        AT(o, 0x38, f32) = AT(o, 0x24, f32);
+        break;
+    default:
+        return 1;
+    }
+    return 1;
+}
+
+/* room 0x02 (D_003F03A0): the 0xE60-byte effect OrangeSparks_vtable by byte 3 - 0 made (its slot kept
+ * in event variable 0), 1 that one sent 0 (stop), else one more made and sent 1 */
+/* 0x002A91F0 */
+s32 Room02_Cmd02(void *self, void *a1, u8 *cmd) {
+    if (cmd[3] == 0) {
+        s32 slot = Effect_New(gEffects, 0xE60, effect_70A70_init);
+
+        VCALL(gEvents, 0x30, void (*)(VObject *, s32, s32))(gEvents, 0, slot);
+    } else if (cmd[3] == 1) {
+        s32 slot = VCALL(gEvents, 0x34, s32 (*)(VObject *, s32))(gEvents, 0);
+        s32 arg = 0;
+
+        EffectMgr_Start(gEffects, slot, &arg);
+    } else {
+        u8 *mgr = gEffects;
+        s32 slot = Effect_New(mgr, 0xE60, effect_70A70_init);
+        s32 arg = 1;
+
+        EffectMgr_Start(mgr, slot, &arg);
+    }
+    return 1;
+}
+
+/* room 0x02 (Room02_Cmd01_ptmf): the panic (progress +0x7B8) raised to 80 */
+/* 0x002A9460 */
+s32 Room02_Cmd01(void) {
+    u8 *p = (u8 *)gProgress;
+    f32 t = 80.0f - AT(p, 0x7BC, f32);
+
+    if (!(t < 0.0f)) {
+        Panic_FrightRaw(p + 0x7B8, t);
+    }
+    return 1;
+}
+
+/* the room object pstr_ori's +0x24 by byte 3: 0 set (37.978 with progress flag 0x12, else
+ * 11), 1 up 0.25 to 37.978 (then event +0x5C (2)), 2 up 0.25, else down 0.25 */
+/* 0x002A94C0 */
+s32 Room02_Cmd00(void *self, void *a1, u8 *cmd) {
+    static const union { u32 u; f32 f; } kTop = {0x4217E979};   /* 37.978 */
+    u8 *o = VCALL(gRoomObjects, 0x18, u8 *(*)(VObject *, const char *))(gRoomObjects, pstr_ori);
+
+    if (o == NULL) {
+        return 1;
+    }
+    switch (cmd[3]) {
+    case 0:
+        AT(o, 0x24, f32) = (AT(gProgress, 0x1C, u32) & 0x40000) ? kTop.f : 11.0f;
+        break;
+    case 1:
+        AT(o, 0x24, f32) = AT(o, 0x24, f32) + 0.25f;
+        if (!(AT(o, 0x24, f32) < kTop.f)) {
+            VCALL(gEvents, 0x5C, void (*)(VObject *, s32))(gEvents, 2);
+            AT(o, 0x24, f32) = kTop.f;
+        }
+        break;
+    case 2:
+        AT(o, 0x24, f32) = AT(o, 0x24, f32) + 0.25f;
+        break;
+    default:
+        AT(o, 0x24, f32) = AT(o, 0x24, f32) - 0.25f;
+        break;
+    }
+    return 1;
+}

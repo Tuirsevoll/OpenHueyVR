@@ -1,0 +1,300 @@
+# Data words that are pointers spimdisasm left raw (or vice versa). See tools/ptrpatch.py.
+# <vram of the word>            -> .word <containing label> + offset
+# <vram> = <expr>               -> explicit expression
+# <vram> raw                    -> not a pointer, keep the number
+
+## libkernl kernel-patch block (0x3EA980..): descriptor + tables used by InitTLB etc.
+0x003EA99C = _end               # memory top handed to the kernel patch
+0x003EAA58
+0x003EAA6C
+0x003EADF4
+0x003EAE04
+0x003EB0B0                      # -> TLB table inside this block
+0x003EB0B4
+0x003EB0B8
+0x003EB0CC
+0x003EB0D4
+0x003EB88C
+0x003EB8A4
+0x003EC014
+
+## MW pointer-to-member records {delta, -1, func, 0} after the kernel block
+0x003EC148
+0x003EC168
+0x003EC278
+0x003EC288
+0x003EC298
+0x003EC2A8
+0x003EC2B8
+0x003EC2C8
+0x003EC2D8
+0x003EC2E8
+0x003EC2F8
+0x003EC318
+0x003EC328
+0x003EC338
+0x003EC348
+0x003EC358
+0x003EC368
+0x003EC378
+0x003EC388
+
+## PTMF function words spimdisasm left raw (targets hidden after a tail call, now split)
+0x003E5248 = CamDirector_ModeNormal
+0x00447B78 = RoomD7_Cond00
+0x00447E28 = RoomD8_Cond00
+
+## room handler file-name tables (+0x34): string pointers spimdisasm left raw
+0x0047A9C8
+0x0047AA78
+0x0047AA7C
+0x0047AAA0
+0x0047AAA4
+0x0047AAF8
+0x0047AAFC
+0x0047AB20
+0x0047AB24
+0x0047AB34
+0x0047AB68
+0x0047ABD8
+0x0047ABDC
+0x0047AC20
+0x0047AC24
+0x0047AC48
+0x0047AC4C
+0x0047AC70
+0x0047AC74
+0x0047AC88
+0x0047AC8C
+0x0047ACE0
+0x0047ACE4
+0x0047AD00
+0x0047AD08
+0x0047AD0C
+0x0047AE28
+0x0047AE2C
+0x0047AE40
+0x0047AE48
+0x0047AE4C
+0x0047AE90
+0x0047AE94
+0x0047AEA8
+0x0047AEAC
+0x0047AEC0
+0x0047AEC4
+0x0047AEF4
+0x0047AF00
+0x0047AF80
+0x0047AF84
+0x0047AFD0
+0x0047AFD4
+0x0047B0C0
+0x0047B0C4
+
+## more raw pointers in sinit_data: vtable RTTI words, room data tables (obstacles, paths...)
+0x004696B0
+0x004696C0
+0x004696E0
+0x00469700
+0x0046970C
+0x00469730
+0x0046973C
+0x00469790
+0x004697D0
+0x004697DC
+0x00469800
+0x0046980C
+0x00469860
+0x004698A0
+0x004698D0
+0x00469900
+0x00469940
+0x00469960
+0x00469990
+0x0047A938
+0x0047A9A8
+0x0047AA38
+0x0047AA3C
+0x0047AB60
+0x0047AB64
+0x0047AC18
+0x0047AC1C
+0x0047ACA0
+0x0047ACA4
+0x0047AE20
+0x0047AE24
+0x0047AE78
+0x0047AEB0
+0x0047AEB4
+0x0047AEF0
+0x0047AEF8
+0x0047AEFC
+0x0047AF38
+0x0047AF3C
+0x0047AF94
+0x0047AFBC
+0x0047AFC8
+0x0047AFCC
+0x0047B088
+0x0047B08C
+0x0047B0A0
+0x0047B0A4
+0x0047B0A8
+
+# script bytes spimdisasm took for pointers (decoded as event scripts: commands/conditions)
+0x003EF06C raw   # func_00240300 in script Room02_CharEnterScript_data
+0x003F3F70 raw   # D_00409C00 in script Room0A_Phase3Script_data
+0x003F3F7C raw   # D_00409C00 in script Room0A_Phase3Script_data
+0x003F62D8 raw   # D_00406800 in script Room0F_Phase1Script_data
+0x003F7B60 raw   # func_001E26E8 in script Room11_Phase1Script_data
+0x003FA18C raw   # D_003B8004 in script Room15_CharEnterScript_data
+0x003FB63C raw   # D_003EA800 in script Room19_Phase1Script_data
+0x003FE494 raw   # D_003E6200 in script Room20_EnterScript_data
+0x003FE670 raw   # D_003B8004 in script Room20_CharEnterScript_data
+0x00401A80 raw   # D_00408800 in script Room24_Phase1Script_data
+0x00403064 raw   # D_00408800 in script Room26_Phase2Script_data
+0x00404CFC raw   # D_00401F00 in script Room2A_Phase2Script_data
+0x004071A4 raw   # func_00103900 in script Room42_EnterScript_data
+0x004071AC raw   # func_00100000 in script Room42_EnterScript_data
+0x004072E4 raw   # func_00105A00 in script Room42_EnterScript_data
+0x004072F4 raw   # func_00103B00 in script Room42_EnterScript_data
+0x004086B4 raw   # D_003F7700 in script Room4A_EnterScript_data
+0x00408F18 raw   # func_00240400 in script Room4B_Phase1Script_data
+0x0040B78C raw   # D_00400100 in script Room4F_Phase1Script_data
+0x0040FC10 raw   # func_001E26E8 in script Room58_Phase1Script_data
+0x00412580 raw   # D_00441B00 in script Room5E_Phase1Script_data
+0x00415E94 raw   # D_0044F200 in script Room44_Phase1Script_data
+0x00416C88 raw   # D_00405100 in script Room46_Phase1Script_data
+0x0041CBD8 raw   # D_003B8004 in script Room41_CharEnterScript_data
+0x00421C74 raw   # str_ITEM02_ITEM_03D_TEX in script Room62_EnterScript_data
+0x004271C8 raw   # D_00406800 in script Room54_Phase1Script_data
+0x004271DC raw   # D_00406800 in script Room54_Phase1Script_data
+0x0042720C raw   # D_00406800 in script Room54_Phase1Script_data
+0x0042723C raw   # D_00406800 in script Room54_Phase1Script_data
+0x0042726C raw   # D_00406800 in script Room54_Phase1Script_data
+0x00428264 raw   # D_00406800 in script Room60_Phase1Script_data
+0x0042829C raw   # D_00406800 in script Room60_Phase1Script_data
+0x004282D4 raw   # D_00406800 in script Room60_Phase1Script_data
+0x0042830C raw   # D_00406800 in script Room60_Phase1Script_data
+0x004318C4 raw   # D_00408800 in script Room82_Phase1Script_data
+0x00431E60 raw   # D_003B8004 in script Room83_CharEnterScript_data
+0x00432480 raw   # D_003B8004 in script Room84_CharEnterScript_data
+0x00432EDC raw   # D_00406800 in script Room88_Phase1Script_data
+0x004338D0 raw   # func_001E26E8 in script Room8A_Phase1Script_data
+0x00435D0C raw   # D_00473000 in script Room8F_Phase3Script_data
+0x00436948 raw   # func_001E26E8 in script Room91_Phase1Script_data
+0x00436978 raw   # D_00406800 in script Room91_Phase1Script_data
+0x004388B0 raw   # D_003F5900 in script Room6A_CharEnterScript_data
+0x004395D8 raw   # func_001E26E8 in script Room6C_Phase1Script_data
+0x0043AC2C raw   # D_00406800 in script Room6F_Phase1Script_data
+0x0043B360 raw   # D_00408800 in script Room70_Phase2Script_data
+0x0043EE74 raw   # D_00406800 in script RoomC1_Phase1Script_data
+0x00440290 raw   # D_00406800 in script RoomC5_Phase1Script_data
+0x0044051C raw   # D_00450300 in script RoomC5_Phase1Script_data
+0x00440558 raw   # D_00450700 in script RoomC5_Phase1Script_data
+0x00440C10 raw   # D_00401F00 in script RoomC5_Phase1Script_data
+0x00440C3C raw   # D_00401F00 in script RoomC5_Phase1Script_data
+0x00441374 raw   # D_00406800 in script RoomC6_Phase1Script_data
+0x00442958 raw   # D_003B8004 in script Room34_CharEnterScript_data
+0x00442DA8 raw   # D_003B8004 in script Room33_CharEnterScript_data
+0x0044395C raw   # D_00406800 in script Room9B_Phase1Script_data
+0x00448234 raw   # D_00406800 in script RoomE0_Phase1Script_data
+0x00448F48 raw   # D_00401F00 in script RoomE3_Phase3Script_data
+0x00448F54 raw   # D_00401F00 in script RoomE3_Phase3Script_data
+0x004493E4 raw   # D_00406800 in script RoomE4_Phase1Script_data
+
+## numbers that equal a code address (symbolized as pointers, so relocated on PC)
+0x0041B5F0 raw                  # Debilitas2's buffer sizes: the model's 0x1A3000 (= Fiona_FollowAnim)
+0x003E5E60 raw                  # movie.c's table D_003E5270: 0x00320000 among 0x00XX0000 / 0x0000FFxx pairs (= TintStalker_Draw)
+0x0042D6F8 raw                  # script-like bytes in D_0042D670 (... 191AFFFF 00072100 18000359): 0x00210700 (= SndDriver_LoadPart_thunk)
+
+## event script bytes: aligned words of a script that look like data addresses (tools/evdis.py
+## gives each command's bytes; a symbol among them breaks the script on PC - room 0x21's Hewie
+## scene left the room through a stray "exit" made of a pointer's bytes)
+0x003EEF30 raw                  # room 02 EnterScript (bytes 004A3800, not Task_OpenAt)
+0x003EFE80 raw                  # room 02 Action12 (bytes 00054500, not D_00450500)
+0x003F16C4 raw                  # room 04 Action11 (bytes 24F83A00, not D_003AF824)
+0x003F3824 raw                  # room 09 Action8 (bytes 001F4000, not D_00401F00)
+0x003F4134 raw                  # room 0A Action2 (bytes 24F83A00, not D_003AF824)
+0x003F42D4 raw                  # room 0A Action9 (bytes 24F83A00, not D_003AF824)
+0x003F4520 raw                  # room 0B Action0 (bytes 24F84500, not D_0045F824)
+0x003F4F98 raw                  # room 0C Action9 (bytes 009C4000, not D_00409C00)
+0x003F75C0 raw                  # room 10 Action4 (bytes 004A3800, not Task_OpenAt)
+0x003F80E4 raw                  # room 11 Action6 (bytes 00333C00, not D_003C3300)
+0x003F8C8C raw                  # room 12 Action5 (bytes 00123D00, not D_003D1200)
+0x003F8DA0 raw                  # room 12 Action14 (bytes 00054500, not D_00450500)
+0x003F9D60 raw                  # room 14 Action4 (bytes 00144500, not D_00451400)
+0x003FC39C raw                  # room 1A Action2 (bytes F8884000, not D_004088F8)
+0x003FC9C8 raw                  # room 1B Action2 (bytes 009C4000, not D_00409C00)
+0x003FE088 raw                  # room 1E Action3 (bytes 00082100, not SndDriver_SeqVolume_thunk)
+0x003FE0F8 raw                  # room 1E Action7 (bytes 00014500, not D_00450100)
+0x003FF8B0 raw                  # room 21 Action0 (bytes 00884000, not D_00408800)
+0x003FFD28 raw                  # room 21 Action9 (bytes 48013F00, not D_003F0148)
+0x00400F94 raw                  # room 22 Action3 (bytes 00164500, not D_00451600)
+0x004013A0 raw                  # room 23 Action3 (bytes 00054500, not D_00450500)
+0x004031F4 raw                  # room 26 Action0 (bytes 00104500, not D_00451000)
+0x004034CC raw                  # room 26 Action9 (bytes 00074500, not D_00450700)
+0x0040540C raw                  # room 2A Action17 (bytes 00082100, not SndDriver_SeqVolume_thunk)
+0x00406388 raw                  # room 2D Action18 (bytes 00084500, not D_00450800)
+0x00408318 raw                  # room 49 Action3 (bytes E44E4500, not D_00454EE4)
+0x00408460 raw                  # room 49 Action6 (bytes 009C4000, not D_00409C00)
+0x004095E4 raw                  # room 4B Action6 (bytes 000C4500, not D_00450C00)
+0x00409C6C raw                  # room 4C Phase1Script (bytes 88000080, not D_80000088)
+0x00409FF0 raw                  # room 4C Phase1Script (bytes 009C4000, not D_00409C00)
+0x0040A008 raw                  # room 4C Phase1Script (bytes 009C4000, not D_00409C00)
+0x0040A5E0 raw                  # room 4C Action6 (bytes 1C014500, not D_0045011C)
+0x0040A694 raw                  # room 4C Action7 (bytes 00194500, not D_00451900)
+0x0040A6DC raw                  # room 4C Action7 (bytes 00374500, not D_00453700)
+0x0040A7A8 raw                  # room 4C Action14 (bytes 00054500, not D_00450500)
+0x0040A844 raw                  # room 4C Action16 (bytes 0C003C00, not D_003C000C)
+0x0040B324 raw                  # room 4E Action3 (bytes 000C4500, not D_00450C00)
+0x0040BB30 raw                  # room 4F Action4 (bytes 045F4500, not D_00455F04)
+0x0040C8A0 raw                  # room 50 Action7 (bytes 00104500, not D_00451000)
+0x0040C97C raw                  # room 50 Action10 (bytes 00074500, not D_00450700)
+0x0040D3C4 raw                  # room 51 Action0 (bytes 004D3F00, not D_003F4D00)
+0x0040DA34 raw                  # room 51 Action9 (bytes 003C4500, not D_00453C00)
+0x0040DA64 raw                  # room 51 Action9 (bytes 1C014500, not D_0045011C)
+0x0040DBCC raw                  # room 51 Action12 (bytes 00074500, not D_00450700)
+0x00410278 raw                  # room 59 Action0 (bytes E44E4500, not D_00454EE4)
+0x0041041C raw                  # room 59 Action1 (bytes 00591200, not Character_RootTurn)
+0x00410574 raw                  # room 59 Action2 (bytes 54223B00, not D_003B2254)
+0x00410764 raw                  # room 59 Action8 (bytes 000B4500, not D_00450B00)
+0x004117B4 raw                  # room 5C Action6 (bytes 1C014500, not D_0045011C)
+0x00417010 raw                  # room 46 Action5 (bytes 00054500, not D_00450500)
+0x004214D4 raw                  # room 63 Action0 (bytes 00004000, not D_00400000)
+0x00425AF4 raw                  # room 48 Action1 (bytes 00144500, not D_00451400)
+0x0042759C raw                  # room 54 Action1 (bytes 04084500, not D_00450804)
+0x0042760C raw                  # room 54 Action2 (bytes 04084500, not D_00450804)
+0x0042767C raw                  # room 54 Action3 (bytes 04084500, not D_00450804)
+0x0042781C raw                  # room 54 Action5 (bytes 04084500, not D_00450804)
+0x0042788C raw                  # room 54 Action6 (bytes 04084500, not D_00450804)
+0x004278FC raw                  # room 54 Action7 (bytes 04084500, not D_00450804)
+0x0042B6A0 raw                  # room 32 Action0 (bytes 00884000, not D_00408800)
+0x0042BA58 raw                  # room 32 Action9 (bytes 50001400, not Hewie_RandomIdle)
+0x0043003C raw                  # room C7 Action6 (bytes 00004500, not D_00450000)
+0x00430090 raw                  # room C7 Action6 (bytes 00004500, not D_00450000)
+0x00433390 raw                  # room 88 Action1 (bytes 005F4500, not D_00455F00)
+0x00435FF0 raw                  # room 8F Action3 (bytes 00304700, not D_00473000)
+0x00436ACC raw                  # room 91 Action1 (bytes 00084500, not D_00450800)
+0x00438AF4 raw                  # room 6A Action1 (bytes 000C4500, not D_00450C00)
+0x00438F60 raw                  # room 6B Action0 (bytes 005F4500, not D_00455F00)
+0x0043A394 raw                  # room 6E Action1 (bytes 0C004700, not D_0047000C)
+0x0043A39C raw                  # room 6E Action1 (bytes 00FE4100, not D_0041FE00)
+0x0043A4B0 raw                  # room 6E Action1 (bytes 00384500, not D_00453800)
+0x0043A58C raw                  # room 6E Action4 (bytes 00074500, not D_00450700)
+0x0043F598 raw                  # room C2 Action0 (bytes 00374500, not D_00453700)
+0x0043FD64 raw                  # room C3 Action0 (bytes 00374500, not D_00453700)
+0x0043FE04 raw                  # room C3 Action0 (bytes 00194500, not D_00451900)
+0x0043FF28 raw                  # room C3 Action3 (bytes 00301D00, not func_001D3000)
+0x00442A14 raw                  # room 34 Action0 (bytes 04FF3A00, not D_003AFF00)
+0x004431FC raw                  # room 35 Action1 (bytes 08F83A00, not D_003AF808)
+0x00443BC0 raw                  # room 9B Action0 (bytes 005F4500, not D_00455F00)
+0x004465A8 raw                  # room 37 Action5 (bytes 00082100, not SndDriver_SeqVolume_thunk)
+0x00446608 raw                  # room 37 Action6 (bytes 00082100, not SndDriver_SeqVolume_thunk)
+0x00446668 raw                  # room 37 Action7 (bytes 00082100, not SndDriver_SeqVolume_thunk)
+0x0044841C raw                  # room E0 Action2 (bytes 20014500, not D_00450120)
+0x00449090 raw                  # room E3 Action0 (bytes 20014500, not D_00450120)
+0x0044911C raw                  # room E3 Action1 (bytes 20014500, not D_00450120)
+0x00449DB8 raw                  # room E7 Action0 (bytes 00054500, not D_00450500)
+0x00449DDC raw                  # room E7 Action1 (bytes 20014500, not D_00450120)
+0x0044A8F0 raw                  # room E9 Action1 (bytes 24F83A00, not D_003AF824)
