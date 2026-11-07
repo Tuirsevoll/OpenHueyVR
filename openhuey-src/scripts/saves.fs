@@ -110,6 +110,17 @@ create pn-was 7 cells allot   variable pn-was?        \ her panic (progress +0x7
 : door-word? ( i -- flag )  door-words over + within ;
 : unheld ( v i -- v' )  door-word? if  doors:held-bit invert and  then ;
 : doors-unheld ( -- )  door-words 0 do  dup i + 4 * progress +  dup l@ doors:held-bit invert and  swap l!  loop  drop ;
+\ the bedroom's two doors, once she has changed. an older save can still have the lock bit.
+\ the leaf is left as the save recorded it: shut until she opens it, open if she left it open.
+\ both locked: the hide lesson, left alone. the west door stays locked at night until Hewie is found.
+\ a new game does not come through here.
+: named-fact? ( addr len -- flag )  fact-named dup 0< if  drop 0 exit  then  story-flag? ;
+: bedroom-saved ( -- )
+    s" found-file-202" named-fact? 0= if  exit  then
+    $3C doors:locked-bit doors:has?  $3D doors:locked-bit doors:has? and if  exit  then
+    $3C doors:unlatch
+    s" c2f-3-flag1" named-fact?  s" hewie-found-in-wire" named-fact? 0= and if  exit  then
+    $3D doors:unlatch ;
 : write-progress ( -- )   \ (all of it but the story's flags: those are facts, by name)
     ." progress-clear" cr
     progress-size 4 / 0 do
@@ -211,6 +222,12 @@ create records-written 36 allot          \ (and the mini-game's best times)
     panic-back   \ (at once: not the panic she had as she loaded)
     doors-unheld   \ (a save made before they were left out)
     door-poses-clear   \ (angles from the session before this load are not the save's doors)
+    bedroom-saved   \ (a lock left in an older save; the leaf stays as the save recorded it)
+    world-exits-rebuild   \ (the first door on an exit is skipped once it is closed off. the map is
+    \ built at startup before a save's closed-off bits exist, so the gallery and the yard were still
+    \ on the later chapter's doors. those leaves snap shut, with no latch, the moment she leaves.
+    \ a new game rebuilds when the opening closes those doors off, which is why the rest of that
+    \ process was fine and the next launch was not)
     subscreen-wanted state-flag-clear   \ (a save point's save was made with the save screen up: not again)
     new-game-sounds state-flag? 1 and sound-set!   \ (SceneGame_StateEntry: bank 4's set by the flag - bare feet or boots)
     broadcast game-loaded

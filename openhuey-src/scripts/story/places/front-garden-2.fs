@@ -112,11 +112,11 @@ create entries  2 , 2 ,   1 , 1 ,   3 , -1 ,                    \ (by exit 0, 1,
 : ways ( -- )
     wire-night? 0= if  0 exit-out  then  1 exit-out  to-exit-2-area 2 leaves-by
     cameras 6 cameras-at  ahead 4 ways-out ;
-\ (the bedroom door, world door $3C. Daniella's scene clears its opened bit; this side has no
-\ other way back through a shut door, so once she has the clothes it stays open)
+\ (the bedroom door, world door $3C. the same door as in the bedroom, once the later chapter's
+\ door on this exit is closed off. a shut leaf stays shut; the lock does not come back)
 $3C constant bedroom-door
 : bedroom-open ( -- )
-    found-file-201 fact? 0= if  exit  then
+    found-file-202 fact? 0= if  exit  then
     bedroom-door doors:unlatch ;
 : each-frame ( -- )
     events-held state? if  window-light exit  then

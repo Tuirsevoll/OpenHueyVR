@@ -160,11 +160,11 @@ create entries  3 , -1 ,   0 , 0 ,   4 , 3 ,     \ (by exit 0, 1, 2: the camera)
     fiona from-exit-1-area left? if  1 prepare-exit  then
     fiona gallery-area entered? if  -1 in-gallery !  then   fiona gallery-area left? if  0 in-gallery !  then
     fiona to-exit-2-area entered? if  3 map-page  then   fiona to-exit-2-area left? if  2 map-page  then ;
-\ (the bedroom's west door, world door $3D. same opened bit as the yard door: cleared by
-\ Daniella's scene, so the gallery side stays shut. the night still keeps it shut)
+\ (the bedroom's west door, world door $3D. the same door as in the bedroom, once the later
+\ chapter's door on this exit is closed off. the night still keeps it shut)
 $3D constant bedroom-door
 : bedroom-open ( -- )
-    found-file-201 fact? 0= if  exit  then
+    found-file-202 fact? 0= if  exit  then
     c2f-3-flag1 fact?  hewie-found-in-wire fact? 0= and if  exit  then
     bedroom-door doors:unlatch ;
 : each-frame ( -- )

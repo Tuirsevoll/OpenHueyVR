@@ -42,6 +42,7 @@ $3C constant hall-door   $3D constant west-door   \ (its doors)
 \ ---- entering ----
 : came-in ( exit -- )
     drop  room-sounds  tv-in  medallion-sparkle
+    found-file-202 fact? 0= if  hall-door lock  west-door lock  then   \ (the sheet: both shut until she has changed)
     c2f-3-flag1 fact?  hewie-found-in-wire fact? 0= and if  west-door lock  then
     found-file-201 fact?  found-file-202 fact? 0= and  clothes-part swap part
     30 whine-frames !
@@ -208,11 +209,7 @@ $201 constant first-file
     if  clothes-msg run-scene  then
     glass  wait-fade  world-held state!  0 false no-shadow  3 figure-out
     clothes-part show-part  2 blown
-    \ (door-shut here left the opened bit clear: the yard and the gallery can only be walked
-    \ back through an open door, so the way she left stayed shut behind her)
-    hall-door doors:unlatch  west-door doors:unlatch
-    hall-door doors:opened-bit doors:set-bits  west-door doors:opened-bit doors:set-bits
-    hall-door doors:changed  west-door doors:changed
+    \ (still in the sheet: the doors stay shut until she changes. change-clothes opens them)
     fiona $10E 107 -27.455e -48.354e place-at  1 1 her-camera  camera-restart
     found-file-201 fact!  15 fade-in  first-file give-file ;
 : maid-comes? ( -- )   \ (stepping into her way, before the clothes: once a visit)
@@ -352,10 +349,10 @@ forced-exit 1 or constant from-the-wire   \ (sent from the front garden, Hewie f
     came-by @ forced-exit = if  came-forced  then
     came-by @ from-the-wire = if  came-from-wire  then ;
 
-\ (after Daniella's clothes scene both doors stay unlocked and open. the hide lesson and the
-\ night still shut the west door, and the lesson shuts both, once those have started)
+\ (once she has changed, both doors stay unlocked. the hide lesson and the night still shut
+\ the west door, and the lesson shuts both, once those have started. the leaf is left as it is)
 : keep-open ( -- )
-    found-file-201 fact? 0= if  exit  then
+    found-file-202 fact? 0= if  exit  then
     hiding-offered @ if  exit  then
     hall-door doors:unlatch
     night? if  exit  then

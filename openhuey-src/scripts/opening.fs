@@ -36,6 +36,8 @@ variable hard   \ the new game chosen is a hard one (the title's HARD MODE; new-
 : costume-vars! ( fiona hewie -- )  progress pr.vars $27 + c!  progress pr.vars $26 + c! ;
 : flag-on ( n -- )  state-flag-set ;
 : new-game ( -- )   \ SceneGame_StateEntry, entry $2A (messages: from an actor or at load)
+    progress-reset   \ (a game already loaded in this process: its doors and facts do not carry over)
+    door-poses-clear   \ (nor the leaves' angles)
     0 hewie-played !   \ (SceneGame_ctor: Fiona the one played)
     new-game-sounds flag-on  world-held flag-on  in-play flag-on
     1 sound-set!   \ (Progress_LoadSoundSet by new-game-sounds: her bare feet's set)
