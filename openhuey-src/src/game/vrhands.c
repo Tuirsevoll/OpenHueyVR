@@ -27,6 +27,9 @@ static Vec3 sGrabRot[2];
 static int sSettle[ROOM_DOORS];
 static int sCoast[ROOM_DOORS];
 static float sVel[ROOM_DOORS];
+static int sPushNow[ROOM_DOORS];   /* a bare hand moved this leaf this frame */
+static int sPushWas[ROOM_DOORS];   /* it did so last frame: contact ending is a release */
+static int sPushRoom = -2;
 static int sGrace[2], sGraceDoor[2];   /* after a throw, that hand does not shove this door */
 static Vec3 sHandAt[2];
 static int sHandHave[2];
@@ -635,8 +638,10 @@ static int seg_leaf(Vec3 a, Vec3 b, float *tHit) {
 }
 
 /* a shove moves the leaf with the hand. A fast hand's whole step counts, so it cannot
- * pass through without the door taking that speed. The leaf stops at the latch. */
-static int push_step(const RoomDoor *d, Vec3 prev, Vec3 curr, int have_prev, float *delta) {
+ * pass through without the door taking that speed. The leaf stops at the latch.
+ * `speed` is the hand's own angular step, before the slow-contact minimum, so a
+ * release can coast with that speed the way a gripped throw does. */
+static int push_step(const RoomDoor *d, Vec3 prev, Vec3 curr, int have_prev, float *delta, float *speed) {
     Vec3 a = have_prev ? door_local(d, prev) : door_local(d, curr);
     Vec3 b = door_local(d, curr);
     float t = 0.0f, x, dz, vel, side, step, next;
@@ -672,6 +677,9 @@ static int push_step(const RoomDoor *d, Vec3 prev, Vec3 curr, int have_prev, flo
         next = -DOOR_WIDE;
     }
     *delta = next - d->swing;
+    if (speed != NULL) {
+        *speed = vel;
+    }
     return *delta > 0.4f || *delta < -0.4f;
 }
 
@@ -872,6 +880,11 @@ void vrhands_tick(Engine *e) {
         poses_save(e);
         return;
     }
+    if (sPushRoom != e->room.id) {
+        memset(sPushNow, 0, sizeof(sPushNow));
+        memset(sPushWas, 0, sizeof(sPushWas));
+        sPushRoom = e->room.id;
+    }
     for (side = 0; side < 2; side++) {
         Vec3 at, right, fwd, up;
         float grip, index, thumb, doorD, propD;
@@ -983,10 +996,10 @@ void vrhands_tick(Engine *e) {
                 if (sGrace[side] > 0 && sGraceDoor[side] == i) {
                     continue;
                 }
-                if (!push_step(d, sHandAt[side], at, sHandHave[side], &step)) {
+                if (!push_step(d, sHandAt[side], at, sHandHave[side], &step, &sVel[i])) {
                     continue;
                 }
-                sVel[i] = step;
+                sPushNow[i] = 1;
                 sCoast[i] = 0;
                 room_door_swing(&e->room, i, d->swing + step, 1);
                 if (d->swing > -DOOR_LATCH && d->swing < DOOR_LATCH) {
@@ -1009,7 +1022,34 @@ void vrhands_tick(Engine *e) {
     }
     for (i = 0; i < ROOM_DOORS; i++) {
         int held = (sHold[0] == HOLD_DOOR && sHoldId[0] == i) || (sHold[1] == HOLD_DOOR && sHoldId[1] == i);
+        float sw;
 
+        /* the hand has left the leaf: a fast shove keeps its speed, as a gripped throw does */
+        if (sPushNow[i]) {
+            sPushWas[i] = 1;
+            sPushNow[i] = 0;
+        } else if (sPushWas[i] && !held) {
+            sPushWas[i] = 0;
+            sw = e->room.doors[i].swing;
+            if (sw > -DOOR_LATCH && sw < DOOR_LATCH) {
+                /* the shove already carried it onto the latch */
+            } else if (sw <= -DOOR_WIDE || sw >= DOOR_WIDE) {
+                /* against the open stop */
+            } else if (sVel[i] <= -COAST_SPEED || sVel[i] >= COAST_SPEED) {
+                int h;
+
+                sCoast[i] = 1;
+                sSettle[i] = 0;
+                for (h = 0; h < 2; h++) {
+                    if (sGrace[h] == 0 || sGraceDoor[h] == i) {
+                        sGrace[h] = PUSH_GRACE;
+                        sGraceDoor[h] = i;
+                    }
+                }
+            }
+        } else {
+            sPushWas[i] = 0;
+        }
         if (held) {
             sSettle[i] = 0;
             sCoast[i] = 0;
