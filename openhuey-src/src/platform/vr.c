@@ -159,15 +159,13 @@ typedef struct VrHandSlot {
     XrAction pose, squeeze, thumb;
     XrSpace space;
     int tracked;
-    Vec3 at, forward, up;
+    Vec3 at, right, up, forward;
     float grip, index, thumbv;
 } VrHandSlot;
 static VrHandSlot sHand[2];
 static int sAnchorOn;
 static Vec3 sAnchorEye;
 static float sAnchorYaw;
-static XrQuaternionf sNeutralYaw;   /* upright heading of the play space; pitch and roll are never stored */
-static int sNeutralSet;
 static float sStickX, sStickY, sRightX;
 static float sMoveYaw, sFaceYaw, sTurn;
 static int sDown[8], sPressed[8], sRun, sClickWas, sBothWas, sRecenterReq, sAlignRecenter;
@@ -625,8 +623,9 @@ static void sync_hands(void) {
         h->at = vec3(loc.pose.position.x * VR_UNITS_PER_METER / s,
                      loc.pose.position.y * VR_UNITS_PER_METER / s,
                      loc.pose.position.z * VR_UNITS_PER_METER / s);
-        h->forward = quat_dir(loc.pose.orientation, 0.0f, 0.0f, -1.0f);
+        h->right = quat_dir(loc.pose.orientation, 1.0f, 0.0f, 0.0f);
         h->up = quat_dir(loc.pose.orientation, 0.0f, 1.0f, 0.0f);
+        h->forward = quat_dir(loc.pose.orientation, 0.0f, 0.0f, -1.0f);
         h->tracked = 1;
     }
 }
@@ -708,11 +707,6 @@ static void sync_stick(void) {
     sync_hands();
 }
 
-/* controllers again, once this frame's play space is the one the eyes will use */
-static void sync_hands_late(void) {
-    sync_hands();
-}
-
 int vr_pad_down(int button) {
     if (button < 0 || button >= 8) {
         return 0;
@@ -785,8 +779,9 @@ int vr_controller(int hand, VrController *out) {
     h = &sHand[hand];
     out->tracked = h->tracked;
     out->at = h->at;
-    out->forward = h->forward;
+    out->right = h->right;
     out->up = h->up;
+    out->forward = h->forward;
     out->grip = h->grip;
     out->index = h->index;
     out->thumb = h->thumbv;
@@ -1315,7 +1310,6 @@ void vr_close(void) {
         xrDestroySession(sSession);
         sSession = XR_NULL_HANDLE;
     }
-    sNeutralSet = 0;
     if (sActions != XR_NULL_HANDLE && xrDestroyActionSet != NULL) {
         xrDestroyActionSet(sActions);
         sActions = XR_NULL_HANDLE;
@@ -1452,32 +1446,13 @@ static int pose_tracked(void) {
            (sViewFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT) != 0 && n > 0.5f;
 }
 
-/* yaw about Y only. The play space stays upright; a tilted head is not the new level. */
-static XrQuaternionf upright_yaw(XrQuaternionf q) {
-    float yaw = quat_yaw(q);
-    XrQuaternionf o;
-
-    o.x = 0.0f;
-    o.y = sinf(yaw * 0.5f);
-    o.z = 0.0f;
-    o.w = cosf(yaw * 0.5f);
-    return o;
-}
-
-/* origin at the head, orientation upright. The first lock takes the head's heading.
- * A later reset keeps that heading, so looking down or aside does not become forward. */
-static int recenter_play_space(int keep_heading) {
+/* the play space's origin becomes the head, so a tilted launch is upright and facing ahead */
+static int recenter_play_space(void) {
     XrReferenceSpaceCreateInfo info = {XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
     XrSpace play = XR_NULL_HANDLE;
-    XrPosef head = head_pose();
 
     info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
-    info.poseInReferenceSpace.position = head.position;
-    if (!keep_heading || !sNeutralSet) {
-        sNeutralYaw = upright_yaw(head.orientation);
-        sNeutralSet = 1;
-    }
-    info.poseInReferenceSpace.orientation = sNeutralYaw;
+    info.poseInReferenceSpace = head_pose();
     if (XR_FAILED(xrCreateReferenceSpace(sSession, &info, &play))) {
         return 0;
     }
@@ -1516,17 +1491,14 @@ int vr_begin_frame(void) {
     if (!sFrame.shouldRender) {
         return 1;
     }
-    /* the first tracked pose takes an upright heading. Both stick clicks keep that heading
-     * and drop the position offset. Pitch and roll stay live, so a tilted head is not saved
-     * as the new level. The layer is submitted in this same space. */
+    /* the first tracked pose, and both stick clicks, become the neutral head. Views after
+     * that are the offset from it, and the layer is submitted in that same space, so a tilt
+     * at launch does not stay in the picture. */
     if (!sHaveOrigin || sRecenterReq) {
-        int keep = sHaveOrigin && sRecenterReq;
-
-        if (locate_views(sLocal) && pose_tracked() && recenter_play_space(keep)) {
+        if (locate_views(sLocal) && pose_tracked() && recenter_play_space()) {
             sAlignRecenter = 1;
             sRecenterReq = 0;
             vr_screen_face();
-            sync_hands_late();
         } else if (!sHaveOrigin) {
             return 1;
         }

@@ -66,7 +66,8 @@ int vr_anchor_get(Vec3 *eye, float *yaw);
  * index curls the pointing finger, thumb is 1 while it rests in. */
 typedef struct VrController {
     int tracked;
-    Vec3 at, forward, up;
+    Vec3 at;                 /* world units from the neutral head, camera axes */
+    Vec3 right, up, forward; /* grip pose axes in that same space: +X, +Y, and -Z */
     float grip, index, thumb;
 } VrController;
 int vr_controller(int hand, VrController *out);   /* 0 left, 1 right */

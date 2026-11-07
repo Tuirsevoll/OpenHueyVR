@@ -23,6 +23,11 @@ static int sSettle[ROOM_DOORS];
 
 static const Model *sArmModel;
 static int sShoulder[2], sElbow[2], sHandBone[2], sArmFound[2];
+static const Model *sExtentModel;
+static float sExtent[2];
+
+#define VR_UNITS_PER_METER 12.5f
+#define HAND_METRES 0.19f   /* wrist to fingertip, sized for the player */
 
 int vrhands_wants(const Actor *a) {
     return a != NULL && a->used && vr_active() && strncmp(a->name, "O_FI", 4) == 0;
@@ -83,24 +88,25 @@ static void find_arms(Actor *a, const Mat4 *world) {
     }
 }
 
-/* play space matches the camera: +X right, +Y up, -Z forward. `p` is already an offset from her eyes. */
-static Vec3 from_eyes(Vec3 eye, float yaw, Vec3 p) {
+/* play space matches the camera: +X right, +Y up, -Z forward. `p` is an offset from her eyes. */
+static Vec3 play_to_world(Vec3 eye, float yaw, Vec3 p) {
     float sy = sinf(yaw), cy = cosf(yaw);
 
     return vec3(eye.x + cy * p.x - sy * p.z, eye.y + p.y, eye.z + sy * p.x + cy * p.z);
 }
 
-static int hand_world(int side, Vec3 *at, Vec3 *fwd, Vec3 *up, float *grip, float *index, float *thumb) {
+static int hand_world(int side, Vec3 *at, Vec3 *right, Vec3 *up, Vec3 *fwd, float *grip, float *index, float *thumb) {
     VrController c;
-    Vec3 eye;
+    Vec3 eye, zero = vec3(0.0f, 0.0f, 0.0f);
     float yaw;
 
     if (!vr_controller(side, &c) || !c.tracked || !vr_anchor_get(&eye, &yaw)) {
         return 0;
     }
-    *at = from_eyes(eye, yaw, c.at);
-    *fwd = vec3_norm(from_eyes(vec3(0.0f, 0.0f, 0.0f), yaw, c.forward));
-    *up = vec3_norm(from_eyes(vec3(0.0f, 0.0f, 0.0f), yaw, c.up));
+    *at = play_to_world(eye, yaw, c.at);
+    *right = vec3_norm(play_to_world(zero, yaw, c.right));
+    *up = vec3_norm(play_to_world(zero, yaw, c.up));
+    *fwd = vec3_norm(play_to_world(zero, yaw, c.forward));
     *grip = c.grip;
     *index = c.index;
     *thumb = c.thumb;
@@ -241,11 +247,84 @@ static void curl_hand(Actor *a, int side, float grip, float index, float thumb) 
     a->face.hand[side].w = w;
 }
 
+/* how far the hand mesh reaches from this bone, in model units */
+static float hand_extent(const Model *m, int bone) {
+    float maxd = 0.0f;
+    int i, k;
+
+    for (i = 0; i < m->nv; i++) {
+        for (k = 0; k < 4; k++) {
+            int b = m->v[i].bones[k];
+            Vec3 local;
+            float d;
+
+            if (m->v[i].weights[k] < 0.15f || b < 0 || b >= m->nbones) {
+                continue;
+            }
+            if (b != bone && !descends(m, b, bone)) {
+                continue;
+            }
+            local = mat4_point(&m->bones[bone].inv_bind, m->v[i].pos);
+            d = vec3_len(local);
+            if (d > maxd) {
+                maxd = d;
+            }
+        }
+    }
+    return maxd;
+}
+
+/* enlarge the bind-pose hand until it is a real hand in front of the player */
+static float hand_scale(const Actor *a, int side, int bone) {
+    float body = 1.0f, extent, s;
+
+    if (sExtentModel != &a->model) {
+        sExtentModel = &a->model;
+        sExtent[0] = sExtent[1] = 0.0f;
+    }
+    if (sExtent[side] <= 0.0f) {
+        sExtent[side] = hand_extent(&a->model, bone);
+    }
+    extent = sExtent[side];
+    vr_body(NULL, &body);
+    if (body < 0.2f) {
+        body = 1.0f;
+    }
+    if (extent < 0.05f) {
+        return 2.2f;
+    }
+    s = (HAND_METRES * VR_UNITS_PER_METER / body) / extent;
+    if (s < 1.0f) {
+        s = 1.0f;
+    }
+    if (s > 3.5f) {
+        s = 3.5f;
+    }
+    return s;
+}
+
+/* the grip pose itself: bone X points with the controller, Y is its up, then scaled */
+static Mat4 grip_matrix(Vec3 at, Vec3 fwd, Vec3 up, float scale) {
+    Vec3 x = vec3_norm(fwd);
+    Vec3 z = vec3_norm(up);
+    Vec3 y = vec3_norm(vec3_cross(z, x));
+    Mat4 m = mat4_identity();
+
+    z = vec3_norm(vec3_cross(x, y));
+    m.m[0] = x.x * scale; m.m[1] = x.y * scale; m.m[2] = x.z * scale;
+    m.m[4] = y.x * scale; m.m[5] = y.y * scale; m.m[6] = y.z * scale;
+    m.m[8] = z.x * scale; m.m[9] = z.y * scale; m.m[10] = z.z * scale;
+    m.m[12] = at.x;
+    m.m[13] = at.y;
+    m.m[14] = at.z;
+    return m;
+}
+
 static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace, int side, Vec3 at, Vec3 fwd, Vec3 up) {
     const Model *m = &a->model;
     int sh = sShoulder[side], el = sElbow[side], ha = sHandBone[side];
-    Mat4 room[3], old;
-    float root[3], mid[3], end[3], pole[3], l1, l2, reach[3], dir[3], dist, span;
+    Mat4 room[3], grip, old;
+    float root[3], mid[3], end[3], pole[3], l1, l2;
     int i;
 
     if (!sArmFound[side] || sh < 0 || el < 0 || ha < 0 || ha >= m->nbones) {
@@ -262,37 +341,18 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
     end[1] = room[2].m[13] - mid[1];
     end[2] = room[2].m[14] - mid[2];
     l2 = v_len(end);
-    if (l1 < 0.05f || l2 < 0.05f) {
-        return;
-    }
-    /* the wrist sits just behind the grip, so the palm is what closes on a thing */
-    reach[0] = at.x - fwd.x * 1.5f;
-    reach[1] = at.y - fwd.y * 1.5f;
-    reach[2] = at.z - fwd.z * 1.5f;
-    v_sub(dir, reach, root);
-    dist = v_len(dir);
-    span = l1 + l2;
-    if (dist > span && dist > 1.0e-4f) {
-        float k = span / dist;
+    if (l1 > 0.05f && l2 > 0.05f) {
+        float reach[3] = {at.x, at.y, at.z};
 
-        reach[0] = root[0] + dir[0] * k;
-        reach[1] = root[1] + dir[1] * k;
-        reach[2] = root[2] + dir[2] * k;
+        place_middle(root, mid, reach, pole, l1, l2);
+        aim(&room[0], root, mid, pole);
+        aim(&room[1], mid, reach, pole);
+        world[sh] = mat4_mul(*unplace, room[0]);
+        world[el] = mat4_mul(*unplace, room[1]);
     }
-    place_middle(root, mid, reach, pole, l1, l2);
-    aim(&room[0], root, mid, pole);
-    aim(&room[1], mid, reach, pole);
-    end[0] = reach[0] + fwd.x;
-    end[1] = reach[1] + fwd.y;
-    end[2] = reach[2] + fwd.z;
-    pole[0] = up.x;
-    pole[1] = up.y;
-    pole[2] = up.z;
-    aim(&room[2], reach, end, pole);
+    grip = grip_matrix(at, fwd, up, hand_scale(a, side, ha));
     old = world[ha];
-    world[sh] = mat4_mul(*unplace, room[0]);
-    world[el] = mat4_mul(*unplace, room[1]);
-    world[ha] = mat4_mul(*unplace, room[2]);
+    world[ha] = mat4_mul(*unplace, grip);
     {
         Mat4 delta = mat4_mul(world[ha], rigid_inverse(&old));
 
@@ -312,12 +372,13 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
     }
     find_arms(a, world);
     for (side = 0; side < 2; side++) {
-        Vec3 at, fwd, up;
+        Vec3 at, right, fwd, up;
         float grip, index, thumb;
 
-        if (!hand_world(side, &at, &fwd, &up, &grip, &index, &thumb)) {
+        if (!hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
             continue;
         }
+        (void)right;
         pose_arm(a, world, place, unplace, side, at, fwd, up);
         curl_hand(a, side, grip, index, thumb);
     }
@@ -446,17 +507,18 @@ void vrhands_tick(Engine *e) {
         return;
     }
     for (side = 0; side < 2; side++) {
-        Vec3 at, fwd, up;
+        Vec3 at, right, fwd, up;
         float grip, index, thumb, doorD, propD;
         int rising, door, axis = 0, prop;
 
-        if (!hand_world(side, &at, &fwd, &up, &grip, &index, &thumb)) {
+        if (!hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
             if (sHold[side] != HOLD_NONE) {
                 release_hand(&e->room, side);
             }
             sGripWas[side] = 0.0f;
             continue;
         }
+        (void)right;
         (void)index;
         (void)thumb;
         rising = grip > 0.65f && sGripWas[side] <= 0.4f;
