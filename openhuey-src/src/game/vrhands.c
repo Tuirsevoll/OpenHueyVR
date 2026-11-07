@@ -317,9 +317,9 @@ static float hand_scale(const Actor *a, int side, int bone) {
 }
 
 /* grip pose, after the skeleton is written. Bone X follows the controller for the left hand.
- * The right mesh points the other way, so it turns 180° about the palm (local Y): fingers match
- * the left, palm still faces the same side of the controller. The bone then shifts so the mesh
- * center, not the wrist, sits on the grip — the same slide for both hands. */
+ * The right mesh points the other way along X, and its palm faces the other way, so it turns
+ * 180° about controller up (local Z): fingers match the left and the palm faces the same side.
+ * The bone then shifts so the mesh center, not the wrist, sits on the grip — the same slide for both. */
 static Mat4 grip_matrix(Vec3 at, Vec3 fwd, Vec3 up, float scale, Vec3 center, int side) {
     Vec3 x = vec3_norm(fwd);
     Vec3 z = vec3_norm(up);
@@ -330,7 +330,7 @@ static Mat4 grip_matrix(Vec3 at, Vec3 fwd, Vec3 up, float scale, Vec3 center, in
     z = vec3_norm(vec3_cross(x, y));
     if (side == 1) {
         x = vec3_scale(x, -1.0f);
-        z = vec3_scale(z, -1.0f);
+        y = vec3_scale(y, -1.0f);
     }
     seat = vec3_add(vec3_add(vec3_scale(x, center.x * scale), vec3_scale(y, center.y * scale)),
                     vec3_scale(z, center.z * scale));
@@ -399,7 +399,7 @@ static void log_hands(float left, float right, int posed) {
         return;
     }
     if (n % 120 == 0) {
-        fprintf(stderr, "vr hands: HAND_SCALE %.2f, right turned 180 about the palm, both seated on the grip (bone scale %.2f %.2f)\n",
+        fprintf(stderr, "vr hands: HAND_SCALE %.2f, right palm flipped 180 about controller up, both seated on the grip (bone scale %.2f %.2f)\n",
                 HAND_SCALE, left, right);
     }
     n++;
