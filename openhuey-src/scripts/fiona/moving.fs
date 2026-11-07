@@ -52,8 +52,8 @@ USING: engine game-state actors messages common vectors facts items.names fiona.
                   1 her-rest +!  her-rest @ 90 >= if  rest-anim -1 play-table  else  -1 idle-anim  then
               else  stand  then  0 her-run-t !  endof
         resting-group of  ended? if  stand  then  0 her-run-t !  endof
-        walking-group of  vr? if  stand  else  her-still @ 6 < if  walk-look  else  stand  then  then  0 her-run-t !  endof
-        running-group of  vr? if  0 her-rest !  0 her-run-t !  -1 idle-anim  else  her-still @ 6 < if  run-look  else  0 her-rest !  0 her-run-t !  -1 idle-anim  then  then  endof
+        walking-group of  her-still @ vr? if  18  else  6  then  < if  walk-look  else  stand  then  0 her-run-t !  endof
+        running-group of  her-still @ vr? if  18  else  6  then  < if  run-look  else  0 her-rest !  0 her-run-t !  -1 idle-anim  then  endof
         >r  0 her-rest !  0 her-run-t !  -1 idle-anim  r>
     endcase ;
 defer exhausted   ' noop is exhausted   \ (Fiona_Exhausted: fiona.fear)
@@ -61,10 +61,16 @@ defer exhausted   ' noop is exhausted   \ (Fiona_Exhausted: fiona.fear)
 \ a short push slides her without starting a step. past this, the walk plays, slower when the stick is lighter
 0.62e fconstant vr-stride
 : vr-pace ( -- )  stick-len 1e fmin her act.rate sf! ;
+fvariable vr-step   \ the last real step, kept across a reversal so a new cycle does not pin her
+: kept-step ( F: raw -- dist )
+    {: F: raw :}
+    raw 0.04e f> if  raw vr-step f!  raw exit  then
+    vr-step f@ ;
 : stick-held ( -- )   \ the stick held: walk, or run with the run button (not under story flag 0x1E)
     vr? if  vr-face fdup her-heading f! her-yaw f!  else  stick-heading her-heading f!  then
     vr? stick-len vr-stride f< and if
-        group walking-group = group running-group = or if  stand  then
+        group walking-group = if  walk-look  then
+        group running-group = if  run-look  then
         exit
     then
     no-running state-flag? 0=  her-run? @ and if
@@ -111,8 +117,9 @@ defer push-check ( F: reach -- )   ' fdrop is push-check   \ (something to push 
     turn-to-stick
     rz slope-keep f* {: F: ahead :}
     vr? if
-        \ the pose plays. the distance is the animation's own root step, aimed along the stick
-        rx ahead vlen her-stick-k f@ f* vr-shove move-by
+        \ the pose plays. the distance is the animation's own root step, aimed along the stick.
+        \ a reversal keeps the last step, so the restart of the cycle does not stop her
+        rx ahead vlen kept-step her-stick-k f@ f* vr-shove move-by
     else
         \ the root motion by her heading-to-be, less the further the stick points from her facing
         rx ahead her-heading f@ rotate-by  {: F: dx dz :}

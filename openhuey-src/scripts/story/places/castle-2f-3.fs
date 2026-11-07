@@ -42,7 +42,6 @@ $3C constant hall-door   $3D constant west-door   \ (its doors)
 \ ---- entering ----
 : came-in ( exit -- )
     drop  room-sounds  tv-in  medallion-sparkle
-    found-file-202 fact? 0= if  west-door lock  then
     c2f-3-flag1 fact?  hewie-found-in-wire fact? 0= and if  west-door lock  then
     found-file-201 fact?  found-file-202 fact? 0= and  clothes-part swap part
     30 whine-frames !
@@ -100,7 +99,8 @@ $A6 constant actions-doc   $AB constant costumes-doc
     world-held state!  fiona-dressing false no-shadow  3 figure-out  4 figure-out  5 figure-out
     0 dress  steps-in  clothes-part hide-part
     fiona $21 178 5.752e -41.411e place-at  1 1 her-camera  camera-restart
-    hall-door unlock  west-door unlock  found-file-202 fact!  no-flee state-off
+    hall-door unlock  west-door unlock  hall-door true open-mark  west-door true open-mark
+    found-file-202 fact!  no-flee state-off
     15 fade-in  clothes-file give-file
     fiona rest-anim 10 play-blend  fiona 10 idle  now-what-msg say
     15 screen:to-dim fade wait-fade
@@ -205,7 +205,10 @@ $201 constant first-file
     glass-off  ['] maid-shots at-shots  panic-eased
     if  clothes-msg run-scene  then
     glass  wait-fade  world-held state!  0 false no-shadow  3 figure-out
-    clothes-part show-part  2 blown  hall-door door-shut  doors-redone  hall-door lock
+    clothes-part show-part  2 blown
+    \ (door-shut here left the opened bit clear: the yard and the gallery can only be walked
+    \ back through an open door, so the way she left stayed shut behind her)
+    hall-door unlock  west-door unlock  hall-door true open-mark  west-door true open-mark  doors-redone
     fiona $10E 107 -27.455e -48.354e place-at  1 1 her-camera  camera-restart
     found-file-201 fact!  15 fade-in  first-file give-file ;
 : maid-comes? ( -- )   \ (stepping into her way, before the clothes: once a visit)
@@ -345,11 +348,21 @@ forced-exit 1 or constant from-the-wire   \ (sent from the front garden, Hewie f
     came-by @ forced-exit = if  came-forced  then
     came-by @ from-the-wire = if  came-from-wire  then ;
 
+\ (after Daniella's clothes scene both doors stay unlocked and open. the hide lesson and the
+\ night still shut the west door, and the lesson shuts both, once those have started)
+: keep-open ( -- )
+    found-file-201 fact? 0= if  exit  then
+    hiding-offered @ if  exit  then
+    hall-door doors:door-locked? if  hall-door unlock  then
+    hall-door doors:state@ 2 and 0= if  hall-door true open-mark  then
+    night? if  exit  then
+    west-door doors:door-locked? if  west-door unlock  then
+    west-door doors:state@ 2 and 0= if  west-door true open-mark  then ;
 : each-frame ( -- )
     events-held state? if  doorway-light exit  then   \ (a replay: only the doorway's light)
-    ambience  fan  ways  show-tv  maid-comes?  hewie-sniffs  spots  hewie-looks  doorway-light ;
+    keep-open  ambience  fan  ways  show-tv  maid-comes?  hewie-sniffs  spots  hewie-looks  doorway-light ;
 : person-in ( i -- )
     case  fiona-p of  fiona-came  endof  stalker-p of  stalker-came  endof  endcase ;
-: went ( -- ) ;
+: went ( -- )  keep-open ;
 
 ' came-in ' person-in ' each-frame ' went castle-2f-3 place!

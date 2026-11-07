@@ -112,9 +112,16 @@ create entries  2 , 2 ,   1 , 1 ,   3 , -1 ,                    \ (by exit 0, 1,
 : ways ( -- )
     wire-night? 0= if  0 exit-out  then  1 exit-out  to-exit-2-area 2 leaves-by
     cameras 6 cameras-at  ahead 4 ways-out ;
+\ (the bedroom door, world door $3C. Daniella's scene clears its opened bit; this side has no
+\ other way back through a shut door, so once she has the clothes it stays open)
+$3C constant bedroom-door
+: bedroom-open ( -- )
+    found-file-201 fact? 0= if  exit  then
+    bedroom-door doors:door-locked? if  bedroom-door unlock  then
+    bedroom-door doors:state@ 2 and 0= if  bedroom-door true open-mark  then ;
 : each-frame ( -- )
     events-held state? if  window-light exit  then
-    ways  grate-near  toward-the-cage  spots  window-light ;
+    bedroom-open  ways  grate-near  toward-the-cage  spots  window-light ;
 : person-in ( i -- )
     fiona-p = if  events-held state? if  hewie send part-from-fiona  ['] replay-grate start drop exit  then
         entries 3 ways-in  then ;

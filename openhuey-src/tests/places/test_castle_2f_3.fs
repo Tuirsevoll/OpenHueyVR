@@ -37,8 +37,8 @@ testing in the sheet: every thing only reminds her of it
 T{ portrait-1-area 90 at  said -> sheets-msg }T
 T{ c2f-3-portrait-1-examined story-flag? -> 0 }T
 T{ sheets-msg -> $20 }T   \ ("Call me old-fashioned, but..." - $C is the night's dog remark)
-testing ... a locked door too, after the maid: the remark, not a try at the door (the sheet has no rattle)
-found-file-201 story-flag-set  room-afresh  hall-door lock   \ (as the maid leaves it)
+testing ... a locked door, while she is still in the sheet: the remark, not a try at the door
+found-file-201 story-flag-set  room-afresh  hall-door lock
 : before-door ( exit -- )  0 exit-spot drop  fswap fdrop  0 by ;   \ (its door's spot: in its try area)
 1 before-door
 T{ [: 8 locked-request? ;] in-place  said  [: her-door-anim @ ;] her -> -1 sheets-msg 0 }T

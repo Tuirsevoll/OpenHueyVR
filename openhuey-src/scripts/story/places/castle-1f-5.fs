@@ -160,8 +160,16 @@ create entries  3 , -1 ,   0 , 0 ,   4 , 3 ,     \ (by exit 0, 1, 2: the camera)
     fiona from-exit-1-area left? if  1 prepare-exit  then
     fiona gallery-area entered? if  -1 in-gallery !  then   fiona gallery-area left? if  0 in-gallery !  then
     fiona to-exit-2-area entered? if  3 map-page  then   fiona to-exit-2-area left? if  2 map-page  then ;
+\ (the bedroom's west door, world door $3D. same opened bit as the yard door: cleared by
+\ Daniella's scene, so the gallery side stays shut. the night still keeps it shut)
+$3D constant bedroom-door
+: bedroom-open ( -- )
+    found-file-201 fact? 0= if  exit  then
+    c2f-3-flag1 fact?  hewie-found-in-wire fact? 0= and if  exit  then
+    bedroom-door doors:door-locked? if  bedroom-door unlock  then
+    bedroom-door doors:state@ 2 and 0= if  bedroom-door true open-mark  then ;
 : each-frame ( -- )
-    ways  shove?  ['] flags weakness  draughts  spots  walls-shade
+    bedroom-open  ways  shove?  ['] flags weakness  draughts  spots  walls-shade
     room-sounds-in? if  tired-sound keep-playing or room-bank fiona sound-by  then ;
 : person-in ( i -- )
     dup stalker-p = if  drop  0 him-sent ! exit  then
