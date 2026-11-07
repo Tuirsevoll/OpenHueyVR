@@ -10,6 +10,7 @@
 #include "../platform/vr.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #define HOLD_NONE 0
@@ -22,12 +23,17 @@ static Vec3 sGrabRot[2];
 static int sSettle[ROOM_DOORS];
 
 static const Model *sArmModel;
+static int sArmBones, sArmVerts;
 static int sShoulder[2], sElbow[2], sHandBone[2], sArmFound[2];
 static const Model *sExtentModel;
+static int sExtentVerts;
 static float sExtent[2];
+static Vec3 sCenter[2];
 
 #define VR_UNITS_PER_METER 12.5f
-#define HAND_METRES 0.19f   /* wrist to fingertip, sized for the player */
+#define HAND_METRES 0.19f   /* wrist to fingertip before HAND_SCALE */
+/* Both hands, every pose. 1 leaves the fitted size; 1.5 is half again as large. */
+#define HAND_SCALE 1.5f
 
 int vrhands_wants(const Actor *a) {
     return a != NULL && a->used && vr_active() && strncmp(a->name, "O_FI", 4) == 0;
@@ -54,10 +60,12 @@ static void find_arms(Actor *a, const Mat4 *world) {
     float best[2] = {-1.0f, -1.0f};
     int i;
 
-    if (sArmModel == m && sArmFound[0] && sArmFound[1]) {
+    if (sArmModel == m && sArmBones == m->nbones && sArmVerts == m->nv && sArmFound[0] && sArmFound[1]) {
         return;
     }
     sArmModel = m;
+    sArmBones = m->nbones;
+    sArmVerts = m->nv;
     sArmFound[0] = sArmFound[1] = 0;
     for (i = 0; i < m->nbones; i++) {
         int p = m->bones[i].parent;
@@ -247,10 +255,12 @@ static void curl_hand(Actor *a, int side, float grip, float index, float thumb) 
     a->face.hand[side].w = w;
 }
 
-/* how far the hand mesh reaches from this bone, in model units */
-static float hand_extent(const Model *m, int bone) {
+/* wrist-to-fingertip reach, and where the mesh sits in this bone's space. Fiona's left hand
+ * runs out along +X and her right along -X; Y is the thin palm axis. */
+static void hand_measure(const Model *m, int bone, float *extent, Vec3 *center) {
+    Vec3 sum = vec3(0.0f, 0.0f, 0.0f);
     float maxd = 0.0f;
-    int i, k;
+    int i, k, n = 0;
 
     for (i = 0; i < m->nv; i++) {
         for (k = 0; k < 4; k++) {
@@ -269,21 +279,26 @@ static float hand_extent(const Model *m, int bone) {
             if (d > maxd) {
                 maxd = d;
             }
+            sum = vec3_add(sum, local);
+            n++;
+            break;
         }
     }
-    return maxd;
+    *extent = maxd;
+    *center = n > 0 ? vec3_scale(sum, 1.0f / (float)n) : vec3(0.0f, 0.0f, 0.0f);
 }
 
-/* enlarge the bind-pose hand until it is a real hand in front of the player */
+/* fitted wrist-to-fingertip size, then HAND_SCALE. Recomputed when the mesh is replaced. */
 static float hand_scale(const Actor *a, int side, int bone) {
     float body = 1.0f, extent, s;
 
-    if (sExtentModel != &a->model) {
+    if (sExtentModel != &a->model || sExtentVerts != a->model.nv) {
         sExtentModel = &a->model;
+        sExtentVerts = a->model.nv;
         sExtent[0] = sExtent[1] = 0.0f;
     }
     if (sExtent[side] <= 0.0f) {
-        sExtent[side] = hand_extent(&a->model, bone);
+        hand_measure(&a->model, bone, &sExtent[side], &sCenter[side]);
     }
     extent = sExtent[side];
     vr_body(NULL, &body);
@@ -291,26 +306,35 @@ static float hand_scale(const Actor *a, int side, int bone) {
         body = 1.0f;
     }
     if (extent < 0.05f) {
-        return 2.2f;
+        s = 2.2f;
+    } else {
+        s = (HAND_METRES * VR_UNITS_PER_METER / body) / extent;
+        if (s < 1.0f) {
+            s = 1.0f;
+        }
     }
-    s = (HAND_METRES * VR_UNITS_PER_METER / body) / extent;
-    if (s < 1.0f) {
-        s = 1.0f;
-    }
-    if (s > 3.5f) {
-        s = 3.5f;
-    }
-    return s;
+    return s * HAND_SCALE;
 }
 
-/* the grip pose itself: bone X points with the controller, Y is its up, then scaled */
-static Mat4 grip_matrix(Vec3 at, Vec3 fwd, Vec3 up, float scale) {
+/* grip pose, after the skeleton is written. Bone X follows the controller for the left hand.
+ * The right mesh points the other way, so it turns 180° about the palm (local Y): fingers match
+ * the left, palm still faces the same side of the controller. The bone then shifts so the mesh
+ * center, not the wrist, sits on the grip — the same slide for both hands. */
+static Mat4 grip_matrix(Vec3 at, Vec3 fwd, Vec3 up, float scale, Vec3 center, int side) {
     Vec3 x = vec3_norm(fwd);
     Vec3 z = vec3_norm(up);
     Vec3 y = vec3_norm(vec3_cross(z, x));
+    Vec3 seat;
     Mat4 m = mat4_identity();
 
     z = vec3_norm(vec3_cross(x, y));
+    if (side == 1) {
+        x = vec3_scale(x, -1.0f);
+        z = vec3_scale(z, -1.0f);
+    }
+    seat = vec3_add(vec3_add(vec3_scale(x, center.x * scale), vec3_scale(y, center.y * scale)),
+                    vec3_scale(z, center.z * scale));
+    at = vec3_sub(at, seat);
     m.m[0] = x.x * scale; m.m[1] = x.y * scale; m.m[2] = x.z * scale;
     m.m[4] = y.x * scale; m.m[5] = y.y * scale; m.m[6] = y.z * scale;
     m.m[8] = z.x * scale; m.m[9] = z.y * scale; m.m[10] = z.z * scale;
@@ -341,8 +365,13 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
     end[1] = room[2].m[13] - mid[1];
     end[2] = room[2].m[14] - mid[2];
     l2 = v_len(end);
+    {
+        float scale = hand_scale(a, side, ha);
+
+        grip = grip_matrix(at, fwd, up, scale, sCenter[side], side);
+    }
     if (l1 > 0.05f && l2 > 0.05f) {
-        float reach[3] = {at.x, at.y, at.z};
+        float reach[3] = {grip.m[12], grip.m[13], grip.m[14]};
 
         place_middle(root, mid, reach, pole, l1, l2);
         aim(&room[0], root, mid, pole);
@@ -350,7 +379,6 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
         world[sh] = mat4_mul(*unplace, room[0]);
         world[el] = mat4_mul(*unplace, room[1]);
     }
-    grip = grip_matrix(at, fwd, up, hand_scale(a, side, ha));
     old = world[ha];
     world[ha] = mat4_mul(*unplace, grip);
     {
@@ -364,8 +392,22 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
     }
 }
 
+static void log_hands(float left, float right, int posed) {
+    static unsigned n;
+
+    if (posed <= 0) {
+        return;
+    }
+    if (n % 120 == 0) {
+        fprintf(stderr, "vr hands: HAND_SCALE %.2f, right turned 180 about the palm, both seated on the grip (bone scale %.2f %.2f)\n",
+                HAND_SCALE, left, right);
+    }
+    n++;
+}
+
 void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace) {
-    int side;
+    float applied[2] = {0.0f, 0.0f};
+    int side, posed = 0;
 
     if (!vrhands_wants(a) || !a->visible || world == NULL) {
         return;
@@ -375,13 +417,16 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         Vec3 at, right, fwd, up;
         float grip, index, thumb;
 
-        if (!hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
+        if (!sArmFound[side] || !hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
             continue;
         }
         (void)right;
+        applied[side] = hand_scale(a, side, sHandBone[side]);
         pose_arm(a, world, place, unplace, side, at, fwd, up);
         curl_hand(a, side, grip, index, thumb);
+        posed++;
     }
+    log_hands(applied[0], applied[1], posed);
 }
 
 static float wrap_deg(float d) {
