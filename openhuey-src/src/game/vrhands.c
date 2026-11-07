@@ -329,21 +329,33 @@ static float hand_scale(const Actor *a, int side, int bone) {
     return s * HAND_SCALE;
 }
 
-/* grip pose, after the skeleton is written. Bone X follows the controller for the left hand.
- * The right mesh points the other way along X, and its palm faces the other way, so it turns
- * 180° about controller up (local Z): fingers match the left and the palm faces the same side.
- * The bone then shifts so the mesh center, not the wrist, sits on the grip — the same slide for both. */
+/* grip pose, every frame after the OpenXR grip is written into the skeleton.
+ * With the palm facing inward and the fingers forward, grip -Z (fwd) points at the thumb,
+ * straight up, and grip +Y points backward. Bone Y is the palm axis and is left alone, so
+ * neither palm turns outward or over.
+ * The left mesh fingers run along +X, so that axis turns onto -grip +Y (forward) and bone Z
+ * takes the old thumb axis (up). The right mesh fingers run along -X and its palm faces the
+ * other way, so it turns 180° about grip +Y first, then the opposite quarter turn: bone +X
+ * lands on +grip +Y and the fingers still point forward. */
 static Mat4 grip_matrix(Vec3 at, Vec3 fwd, Vec3 up, float scale, Vec3 center, int side) {
     Vec3 x = vec3_norm(fwd);
     Vec3 z = vec3_norm(up);
     Vec3 y = vec3_norm(vec3_cross(z, x));
-    Vec3 seat;
+    Vec3 ox, seat;
     Mat4 m = mat4_identity();
 
     z = vec3_norm(vec3_cross(x, y));
     if (side == 1) {
         x = vec3_scale(x, -1.0f);
         y = vec3_scale(y, -1.0f);
+    }
+    ox = x;
+    if (side == 0) {
+        x = vec3_scale(z, -1.0f);
+        z = ox;
+    } else {
+        x = z;
+        z = vec3_scale(ox, -1.0f);
     }
     seat = vec3_add(vec3_add(vec3_scale(x, center.x * scale), vec3_scale(y, center.y * scale)),
                     vec3_scale(z, center.z * scale));
@@ -412,7 +424,7 @@ static void log_hands(float left, float right, int posed) {
         return;
     }
     if (n % 120 == 0) {
-        fprintf(stderr, "vr hands: HAND_SCALE %.2f, right palm flipped 180 about controller up, both seated on the grip (bone scale %.2f %.2f)\n",
+        fprintf(stderr, "vr hands: HAND_SCALE %.2f, fingers on -grip +Y (left quarter turn reversed), palms unflipped (bone scale %.2f %.2f)\n",
                 HAND_SCALE, left, right);
     }
     n++;
