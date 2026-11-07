@@ -27,6 +27,40 @@ enum: button  circle square l1 triangle r1 cross start-button select-button ;
 : button-down? ( b -- flag )  dup vr-down? swap button-keys ['] key-down? either or ;
 : button-pressed? ( b -- flag )  dup vr-pressed? swap button-keys ['] key-pressed? either or ;
 
+\ the left stick as the menu's arrows. one direction at a time, repeating like a held key.
+\ movement reads the same stick on its own.
+variable nav-tick
+variable nav-hold
+variable nav-bits
+: nav-repeat? ( n -- flag )
+    dup 1 = if  drop true exit  then
+    dup 13 < if  drop false exit  then
+    13 - 2 mod 0= ;
+: sample-nav ( -- )
+    {: | F: x F: y :}
+    ticks nav-tick @ = if  exit  then
+    ticks nav-tick !
+    0 nav-bits !
+    vr? if  vr-stick  else  pad-stick  then  to y to x
+    x fabs y fabs fmax 0.55e f< if  0 nav-hold !  exit  then
+    1 nav-hold +!
+    nav-hold @ nav-repeat? 0= if  exit  then
+    x fabs y fabs f> if  x f0> if  2  else  8  then  else  y f0> if  4  else  1  then  then  nav-bits ! ;
+: nav-up? ( -- flag )  sample-nav nav-bits @ 1 and ;
+: nav-right? ( -- flag )  sample-nav nav-bits @ 2 and ;
+: nav-down? ( -- flag )  sample-nav nav-bits @ 4 and ;
+: nav-left? ( -- flag )  sample-nav nav-bits @ 8 and ;
+\ held, for a menu that counts its own repeat (0 up, 1 right, 2 down, 3 left)
+: stick-way? ( i -- flag )
+    {: i | F: x F: y :}
+    vr? if  vr-stick  else  pad-stick  then  to y to x
+    i case
+        0 of  y -0.55e f<  endof
+        1 of  x 0.55e f>  endof
+        2 of  y 0.55e f>  endof
+        >r  x -0.55e f<  r>
+    endcase ;
+
 \ ---- the sticks ----
 \ the left stick: W A S D (and a gamepad's left stick as far as it is pushed), x right, z down
 : stick@ ( F: -- x z )

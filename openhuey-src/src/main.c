@@ -760,6 +760,9 @@ static void prepare_shadows(Engine *e) {
         a->lights[0] = a->lights[1] = a->lights[2] = -1;
         if (a->used && a->visible) {
             actor_prepare(a);
+            if (a == sFp) {   /* the headset is at her eyes: no head, face or hair in the picture */
+                actor_hide_head(a);
+            }
             light_actor(e, a);
         }
     }

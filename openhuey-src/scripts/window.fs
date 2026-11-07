@@ -151,10 +151,10 @@ $2A constant cursor-sound   $2B constant decide-sound   $2C constant cancel-soun
         picked @ last-option <> if  last-option picked !  cancel-sound se  then  exit
     then
     picked @  {: was :}
-    key: Right key-pressed? if  1 along-row
-    else key: Left key-pressed? if  -1 along-row
-    else key: Up key-pressed? if  picked @ 1- round picked !
-    else key: Down key-pressed? if  picked @ 1+ round picked !  then then then then
+    nav-right? key: Right key-pressed? or if  1 along-row
+    else nav-left? key: Left key-pressed? or if  -1 along-row
+    else nav-up? key: Up key-pressed? or if  picked @ 1- round picked !
+    else nav-down? key: Down key-pressed? or if  picked @ 1+ round picked !  then then then then
     picked @ was <> if  cursor-sound se  then ;
 
 \ ---- a page turned or the message closed (Task_StateNextPage / WaitButton: Select, L1, R1 and

@@ -130,6 +130,8 @@ void actor_advance(Actor *a);
 void actor_tick(Actor *a);
 /* pose and skin it for this frame (before shadows and drawing) */
 void actor_prepare(Actor *a);
+/* drop the head, face and hair from the posed mesh. The body and hands stay. */
+void actor_hide_head(Actor *a);
 /* its middle and size in the room */
 Vec3 actor_center(const Actor *a);
 float actor_radius(const Actor *a);

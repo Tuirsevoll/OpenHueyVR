@@ -52,10 +52,10 @@ create footer-text 64 allot   variable footer-n
 
 \ ---- the keys: true when it is done (the triangle) ----
 : keys ( -- done? )
-    key: Up pressed? if  -1 pick-row  then
-    key: Down pressed? if  1 pick-row  then
-    key: Left pressed?  l1 button-pressed? or if  -1 reorder  then
-    key: Right pressed?  r1 button-pressed? or if  1 reorder  then
+    nav-up? key: Up pressed? or if  -1 pick-row  then
+    nav-down? key: Down pressed? or if  1 pick-row  then
+    nav-left? key: Left pressed? or  l1 button-pressed? or if  -1 reorder  then
+    nav-right? key: Right pressed? or  r1 button-pressed? or if  1 reorder  then
     cross button-pressed? rows 0> and if  at @ mods-menu-switch  then
     triangle button-pressed? if
         mods-menu-changed? if  mods-menu-save if  1  else  -1  then  saved !  then

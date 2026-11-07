@@ -35,6 +35,13 @@ USING: engine game-state actors messages common vectors facts items.names fiona.
     root-turn {: F: x y z :}  x z her-yaw f@ rotate-by  her-noclip @ if  y move-any  else  move-by  then ;
 : root-move-within ( mask -- )  root-turn {: F: x y z :}  x z her-yaw f@ rotate-by move-within ;
 : turn-to-heading ( F: step -- left )  her-yaw f@ her-heading f@ frot turn-toward fswap her-yaw f! ;
+\ the stick as a step in the room, the way the camera reads it. `dist` is how far a full tilt goes
+: vr-shove ( F: dist -- x z )
+    {: F: dist | F: dx F: dz F: len :}
+    steer-yaw sx sz stick-turned to dz to dx
+    sx sz vlen to len
+    len 0.08e f< if  0e 0e exit  then
+    dx len f/ dist f*   dz len f/ dist f* ;
 
 \ ---- standing, walking, running (Fiona_StateIdleMove) ----
 :noname ( -- how )  settled? if  by-none  else  by-facing  then ; is settled-for-stand
@@ -45,18 +52,26 @@ USING: engine game-state actors messages common vectors facts items.names fiona.
                   1 her-rest +!  her-rest @ 90 >= if  rest-anim -1 play-table  else  -1 idle-anim  then
               else  stand  then  0 her-run-t !  endof
         resting-group of  ended? if  stand  then  0 her-run-t !  endof
-        walking-group of  her-still @ 6 < if  walk-look  else  stand  then  0 her-run-t !  endof
-        running-group of  her-still @ 6 < if  run-look  else  0 her-rest !  0 her-run-t !  -1 idle-anim  then  endof
+        walking-group of  vr? if  stand  else  her-still @ 6 < if  walk-look  else  stand  then  then  0 her-run-t !  endof
+        running-group of  vr? if  0 her-rest !  0 her-run-t !  -1 idle-anim  else  her-still @ 6 < if  run-look  else  0 her-rest !  0 her-run-t !  -1 idle-anim  then  then  endof
         >r  0 her-rest !  0 her-run-t !  -1 idle-anim  r>
     endcase ;
 defer exhausted   ' noop is exhausted   \ (Fiona_Exhausted: fiona.fear)
+: stick-len ( F: -- n )  her-stick v.x sf@ her-stick v.z sf@ vlen ;
+\ a short push slides her without starting a step. past this, the walk plays, slower when the stick is lighter
+0.62e fconstant vr-stride
+: vr-pace ( -- )  stick-len 1e fmin her act.rate sf! ;
 : stick-held ( -- )   \ the stick held: walk, or run with the run button (not under story flag 0x1E)
-    stick-heading her-heading f!
+    vr? if  vr-face fdup her-heading f! her-yaw f!  else  stick-heading her-heading f!  then
+    vr? stick-len vr-stride f< and if
+        group walking-group = group running-group = or if  stand  then
+        exit
+    then
     no-running state-flag? 0=  her-run? @ and if
         her-fear-bits @ 1 and if   \ out of breath: running only while it lasts
             -1 her-panic-t +!  her-panic-t @ 0< 0= if  1 her-run-t +!  run-look  else  exhausted  0 her-run-t !  then
-        else  1 her-run-t +!  run-look  then
-    else  0 her-run-t !  walk-look  then ;
+        else  1 her-run-t +!  run-look  vr? if  vr-pace  then  then
+    else  0 her-run-t !  walk-look  vr? if  vr-pace  then  then ;
 defer push-check ( F: reach -- )   ' fdrop is push-check   \ (something to push that far ahead: fiona/push.fs)
 : turn-to-stick ( -- )   \ toward the stick's heading 10 degrees a frame - or, after a cut, the
     vr? if  her-still @ 0= if  her-heading f@ her-yaw f!  then  exit  then
@@ -94,15 +109,21 @@ defer push-check ( F: reach -- )   ' fdrop is push-check   \ (something to push 
     then  drop
     root-turn {: F: rx ry rz :}
     turn-to-stick
-    \ the root motion by her heading-to-be, less the further the stick points from her facing
     rz slope-keep f* {: F: ahead :}
-    rx ahead her-heading f@ rotate-by  {: F: dx dz :}
-    vr? if  1e  else  her-heading f@ her-yaw f@ f- fcos 1e f+ 2e f/  then  her-stick-k f@ f*  {: F: k :}
-    dx k f* to dx  dz k f* to dz
-    dx dz move-by
-    \ moved backwards (pushed along a wall corner): she stays where she was
-    her-at v.x sf@ her-was-at v.x sf@ f- dx f*  her-at v.z sf@ her-was-at v.z sf@ f- dz f* f+ f0< if
-        her-was-at her-at /vec move  her-was-tri @ her-tri !
+    vr? if
+        \ the pose plays, but the step is the stick itself, so a cancelled root step cannot pin her
+        stick-len  her-run? @ if  3.2e  else  1.8e  then  f*
+        vr-shove move-by
+    else
+        \ the root motion by her heading-to-be, less the further the stick points from her facing
+        rx ahead her-heading f@ rotate-by  {: F: dx dz :}
+        her-heading f@ her-yaw f@ f- fcos 1e f+ 2e f/  her-stick-k f@ f*  {: F: k :}
+        dx k f* to dx  dz k f* to dz
+        dx dz move-by
+        \ moved backwards (pushed along a wall corner): she stays where she was
+        her-at v.x sf@ her-was-at v.x sf@ f- dx f*  her-at v.z sf@ her-was-at v.z sf@ f- dz f* f+ f0< if
+            her-was-at her-at /vec move  her-was-tri @ her-tri !
+        then
     then
     ahead push-check ;
 

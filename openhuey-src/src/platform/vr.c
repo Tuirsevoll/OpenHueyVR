@@ -154,7 +154,7 @@ static PFN_xrGetActionStateFloat xrGetActionStateFloat;
 static PFN_xrCreateActionSpace xrCreateActionSpace;
 static XrActionSet sActions;
 static XrAction sMove, sRunClick, sInteract, sMenu, sKick, sTurnStick, sRightClick;
-static XrAction sIndexL;
+static XrAction sIndexL, sCancel, sPause;
 typedef struct VrHandSlot {
     XrAction pose, squeeze, thumb;
     XrSpace space;
@@ -694,8 +694,11 @@ static void sync_stick(void) {
             }
         }
     }
-    note_button(0, read_bool(sInteract));                 /* A: use */
+    note_button(0, read_bool(sInteract));                 /* A: use, and accept in a menu */
+    note_button(5, read_bool(sInteract));
+    note_button(3, read_bool(sCancel));                   /* B: back */
     note_button(7, read_bool(sMenu));                     /* Y: the status menu */
+    note_button(6, read_bool(sPause));                    /* X: pause */
     if (sKick != XR_NULL_HANDLE && xrGetActionStateFloat != NULL) {
         get.action = sKick;
         if (XR_SUCCEEDED(xrGetActionStateFloat(sSession, &get, &kick)) && kick.isActive) {
@@ -704,6 +707,7 @@ static void sync_stick(void) {
             note_button(1, 0);
         }
     }
+    note_button(4, read_float(sIndexL) >= 0.6f);          /* left trigger: step back */
     sync_hands();
 }
 
@@ -853,7 +857,9 @@ static void bind_stick(void) {
     }
     make_action(&sRunClick, XR_ACTION_TYPE_BOOLEAN_INPUT, "run", "Run");
     make_action(&sInteract, XR_ACTION_TYPE_BOOLEAN_INPUT, "interact", "Interact");
+    make_action(&sCancel, XR_ACTION_TYPE_BOOLEAN_INPUT, "cancel", "Back");
     make_action(&sMenu, XR_ACTION_TYPE_BOOLEAN_INPUT, "menu", "Menu");
+    make_action(&sPause, XR_ACTION_TYPE_BOOLEAN_INPUT, "pause", "Pause");
     make_action(&sKick, XR_ACTION_TYPE_FLOAT_INPUT, "kick", "Kick");
     make_action(&sTurnStick, XR_ACTION_TYPE_VECTOR2F_INPUT, "turn", "Turn");
     make_action(&sRightClick, XR_ACTION_TYPE_BOOLEAN_INPUT, "reset", "Reset");
@@ -873,7 +879,7 @@ static void bind_stick(void) {
         suggest("/interaction_profiles/htc/vive_controller", &one, 1);
     }
     {
-        XrActionSuggestedBinding quest[16];
+        XrActionSuggestedBinding quest[20];
         uint32_t n = 0;
         static const char *const quest_profiles[] = {
             "/interaction_profiles/oculus/touch_controller",
@@ -883,7 +889,9 @@ static void bind_stick(void) {
         n += bind_path(sMove, "/user/hand/left/input/thumbstick", &quest[n]);
         n += bind_path(sRunClick, "/user/hand/left/input/thumbstick/click", &quest[n]);
         n += bind_path(sInteract, "/user/hand/right/input/a/click", &quest[n]);
+        n += bind_path(sCancel, "/user/hand/right/input/b/click", &quest[n]);
         n += bind_path(sMenu, "/user/hand/left/input/y/click", &quest[n]);
+        n += bind_path(sPause, "/user/hand/left/input/x/click", &quest[n]);
         n += bind_path(sKick, "/user/hand/right/input/trigger/value", &quest[n]);
         n += bind_path(sTurnStick, "/user/hand/right/input/thumbstick", &quest[n]);
         n += bind_path(sRightClick, "/user/hand/right/input/thumbstick/click", &quest[n]);
@@ -1446,13 +1454,26 @@ static int pose_tracked(void) {
            (sViewFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT) != 0 && n > 0.5f;
 }
 
-/* the play space's origin becomes the head, so a tilted launch is upright and facing ahead */
+/* yaw about Y only. Pitch and roll stay on the headset, so a tilted click does not become the horizon. */
+static XrQuaternionf yaw_only(float yaw) {
+    XrQuaternionf q;
+
+    q.x = 0.0f;
+    q.y = sinf(yaw * 0.5f);
+    q.z = 0.0f;
+    q.w = cosf(yaw * 0.5f);
+    return q;
+}
+
+/* the play space's origin is the head, turned to the facing yaw and level. It is not touched again. */
 static int recenter_play_space(void) {
     XrReferenceSpaceCreateInfo info = {XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
     XrSpace play = XR_NULL_HANDLE;
+    XrPosef head = head_pose();
 
     info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
-    info.poseInReferenceSpace = head_pose();
+    info.poseInReferenceSpace.position = head.position;
+    info.poseInReferenceSpace.orientation = yaw_only(quat_yaw(head.orientation));
     if (XR_FAILED(xrCreateReferenceSpace(sSession, &info, &play))) {
         return 0;
     }
@@ -1491,9 +1512,9 @@ int vr_begin_frame(void) {
     if (!sFrame.shouldRender) {
         return 1;
     }
-    /* the first tracked pose, and both stick clicks, become the neutral head. Views after
-     * that are the offset from it, and the layer is submitted in that same space, so a tilt
-     * at launch does not stay in the picture. */
+    /* the first tracked pose, and both stick clicks, set the yaw origin once. Views after
+     * that are the offset from that level facing, and the layer is submitted in that same
+     * space. Pitch and roll are not stored, and the origin is not adjusted again. */
     if (!sHaveOrigin || sRecenterReq) {
         if (locate_views(sLocal) && pose_tracked() && recenter_play_space()) {
             sAlignRecenter = 1;

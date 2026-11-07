@@ -26,7 +26,7 @@ variable arrows
 : read-arrows ( -- )   \ (once a frame)
     0 arrows !
     4 0 do
-        i cells held-for +  i arrow-keys key-down? swap key-down? or if
+        i cells held-for +  i arrow-keys key-down? swap key-down? or  i stick-way? or if
             dup 1 swap +!  @ repeats? if  1 i lshift arrows @ or arrows !  then
         else  0 swap !  then
     loop ;

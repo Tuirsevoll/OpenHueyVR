@@ -69,13 +69,21 @@ enum: direction-from  by-camera by-facing by-none by-steering ;
     fdup vr-turn!
     fdup her-yaw field+!
     her-heading field+! ;
+\ the stick in the room, relative to where she faces: x right, z down on the stick
+: vr-aim ( F: -- x z )
+    {: | F: yaw :}
+    her-yaw f@ to yaw
+    yaw fcos fnegate sx f*  yaw fsin sz f* f-
+    yaw fsin sx f*          yaw fcos sz f* f- ;
 : vr-move ( -- )
     read-stick
     vr-smooth-turn
     sx sz vlen fdup f0> if  fdup sx fswap f/ way-x f!  sz fswap f/ way-z f!  else  fdrop 0e way-x f!  0e way-z f!  then
-    sx sz small? dup if  1 her-still +!  her-still @ 6 min her-still !  else  0 her-still !  then  drop
-    steer-yaw dir-by
-    her-still @ 0= if  stick-heading her-heading f!  then
+    \ a light tilt still counts as moving; only a dead stick is "let go"
+    sx sz vlen 0.12e f< dup if  1 her-still +!  her-still @ 6 min her-still !  else  0 her-still !  then  drop
+    \ her body stays with the headset. the stick then points ahead of that, not behind her
+    vr-face fdup her-heading f! her-yaw f!
+    vr-aim dir!
     camera-relative her-turn-mode !
     0 her-cut !
     sx her-stick v.x sf!  0e her-stick v.y sf!  sz her-stick v.z sf!

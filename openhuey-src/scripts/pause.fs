@@ -59,8 +59,8 @@ end-state
 : arrow ( k1 k2 -- flag )  key-pressed? swap key-pressed? or ;
 : choose ( -- )
     choice @
-    key: Up key: W arrow if  0 choice !  then
-    key: Down key: S arrow if  1 choice !  then
+    nav-up? key: Up key: W arrow or if  0 choice !  then
+    nav-down? key: Down key: S arrow or if  1 choice !  then
     choice @ <> if  move-sound sound  then ;
 
 \ ---- the play pause, a frame of each stage (Pause_State*) ----

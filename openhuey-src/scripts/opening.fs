@@ -159,8 +159,8 @@ defer title-menu-hook ( -- )
     loop
     menu-layer  s" >"  sw 10 / char-size drop 2* -  picked @ entry-y  $FFFFFFFF 3 ui-text ;
 : menu-keys ( -- )
-    key: Up key-pressed? if  picked @ 1- 0 max picked !  then
-    key: Down key-pressed? if  picked @ 1+ #items 1- min picked !  then
+    nav-up? key: Up key-pressed? or if  picked @ 1- 0 max picked !  then
+    nav-down? key: Down key-pressed? or if  picked @ 1+ #items 1- min picked !  then
     cross button-pressed? if   \ (confirm: cross)
         picked @ entry case
             e-new of  0 hard !  m-get-up 0 play  getting-up stage !  endof
@@ -178,8 +178,8 @@ defer title-menu-hook ( -- )
 : load-it ( -- )   \ (the slot's game: the title away, the saves actor puts it back)
     title-end  started stage !  slot-at @ s" saves" actor-named send load-from-slot  self kill ;
 : slots-keys ( -- )
-    key: Up key-pressed? if  slot-at @ 1- #slots + #slots mod slot-at !  then
-    key: Down key-pressed? if  slot-at @ 1+ #slots mod slot-at !  then
+    nav-up? key: Up key-pressed? or if  slot-at @ 1- #slots + #slots mod slot-at !  then
+    nav-down? key: Down key-pressed? or if  slot-at @ 1+ #slots mod slot-at !  then
     cross button-pressed? slot-at @ slot-used? and if  load-it exit  then
     triangle button-pressed? if  on-menu stage !  then ;
 

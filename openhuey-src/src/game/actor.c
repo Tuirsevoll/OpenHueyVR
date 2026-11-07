@@ -945,6 +945,93 @@ static void draw_shadow(Actor *a, const Mat4 *view_proj) {
     render_mesh(&a->shadow, view_proj, &d, 1, &blob, 1, kAllGroups);
 }
 
+static int bone_under(const Model *m, int bone, int root) {
+    int guard = 0;
+
+    if (root < 0) {
+        return 0;
+    }
+    while (bone >= 0 && bone < m->nbones && guard++ < MODEL_MAX_BONES) {
+        if (bone == root) {
+            return 1;
+        }
+        bone = m->bones[bone].parent;
+    }
+    return 0;
+}
+
+/* the head bone and what hangs on it (the face, the hair). A vertex counts when that is
+ * where most of its weight sits, or a good share of it. */
+static int on_head(const Model *m, const SkinVertex *v, int head) {
+    int j, best = 0;
+    float top = -1.0f, share = 0.0f;
+
+    for (j = 0; j < 4; j++) {
+        if (v->weights[j] > top) {
+            top = v->weights[j];
+            best = v->bones[j];
+        }
+        if (bone_under(m, v->bones[j], head)) {
+            share += v->weights[j];
+        }
+    }
+    return bone_under(m, best, head) || share >= 0.25f;
+}
+
+void actor_hide_head(Actor *a) {
+    const Model *m;
+    int head, i, n;
+    unsigned char *hide;
+
+    if (a == NULL || !a->used || a->model.nv < 3 || a->posed == NULL) {
+        return;
+    }
+    m = &a->model;
+    head = a->head.head;
+    n = m->nv;
+    hide = (unsigned char *)calloc((size_t)n, 1);
+    if (hide == NULL) {
+        return;
+    }
+    if (head >= 0) {
+        for (i = 0; i < n; i++) {
+            const SkinVertex *v = a->shaped != NULL ? &a->shaped[i] : &m->v[i];
+
+            if (on_head(m, v, head)) {
+                hide[i] = 1;
+            }
+        }
+    }
+    for (i = 0; i < m->nmorphs; i++) {   /* the face parts, even where the skin weight is shared */
+        const ModelMorph *mo = &m->morphs[i];
+        int k;
+
+        if (!mo->face) {
+            continue;
+        }
+        for (k = 0; k < mo->count; k++) {
+            int vi = mo->first + k;
+
+            if (vi >= 0 && vi < n) {
+                hide[vi] = 1;
+            }
+        }
+    }
+    for (i = 0; i + 2 < n; i += 3) {
+        if (!hide[i] && !hide[i + 1] && !hide[i + 2]) {
+            continue;
+        }
+        a->posed[i + 1].x = a->posed[i].x;
+        a->posed[i + 1].y = a->posed[i].y;
+        a->posed[i + 1].z = a->posed[i].z;
+        a->posed[i + 2].x = a->posed[i].x;
+        a->posed[i + 2].y = a->posed[i].y;
+        a->posed[i + 2].z = a->posed[i].z;
+    }
+    free(hide);
+    render_mesh_update(&a->gpu, a->posed, n);
+}
+
 void actor_prepare(Actor *a) {
     if (!a->used || !a->visible || a->model.nv == 0) {
         return;
