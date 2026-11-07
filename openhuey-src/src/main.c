@@ -563,8 +563,8 @@ static Actor *sFp;   /* her model, hidden while the headset is inside it */
 static void draw_actor(Engine *e, Actor *a, const Mat4 *vp) {
     float alpha = a->alpha, faded = doorway_faded(e, a);
 
-    if (a == sFp) {
-        return;
+    if (a == sFp && !vr_hands_tracked()) {
+        return;   /* controllers up: her arms are drawn, reaching them */
     }
 
     a->alpha = alpha * (1.0f - faded);
@@ -770,9 +770,10 @@ static int cutscene_on_screen(void) {
     return gCamDir.scene || (movie_status() == MOVIE_PLAYING && !movie_paused());
 }
 
-/* where "looking ahead" sits in the world. her body and the old camera keep turning on their own;
- * this does not, so the headset is the only thing that changes where she looks. it is taken again
- * after a cutscene or the free camera. the half turn is her model's yaw, which faces the other way. */
+/* where "looking ahead" sits. her yaw 0 faces +Z and a camera yaw of 0 faces -Z, so the
+ * camera yaw along her facing is pi minus her yaw. a right-stick turn adds to her yaw and
+ * subtracts here: the headset keeps its direction in the room while she turns. lean and
+ * look are applied on top. taken again after a cutscene, the free camera, or both stick clicks. */
 static float sAlign;
 static int sAlignSet;
 static int sRecenter;
@@ -782,9 +783,9 @@ static int sRecenter;
 static int fiona_view(Engine *e, Camera *out) {
     int i;
     Actor *pick = NULL;
-    float head;
 
     sFp = NULL;
+    vr_anchor_set(0, vec3(0.0f, 0.0f, 0.0f), 0.0f);
     if (gCamDir.scene || freecam_active()) {
         sRecenter = 1;
         return 0;
@@ -792,23 +793,22 @@ static int fiona_view(Engine *e, Camera *out) {
     for (i = 0; i < MAX_ACTORS; i++) {
         Actor *a = &e->actors[i];
 
-        if (!a->used || strncmp(a->name, "O_FI", 4) != 0) {
+        if (!a->used || !a->visible || strncmp(a->name, "O_FI", 4) != 0) {
             continue;
         }
-        if (a->visible) {
-            pick = a;
-            break;
-        }
-        if (pick == NULL) {
-            pick = a;
-        }
+        pick = a;
+        break;
     }
-    if (pick == NULL) {
+    if (pick == NULL || !vr_tracking()) {
         return 0;
     }
-    head = vr_head_yaw();
+    if (vr_take_recenter()) {
+        sRecenter = 1;
+    }
+    sAlign -= vr_take_turn();
     if (!sAlignSet || sRecenter) {
-        sAlign = pick->yaw + 3.14159265f - head;
+        /* upright neutral already faces her. The headset's tilt at this moment is not stored. */
+        sAlign = 3.14159265f - pick->yaw;
         sAlignSet = 1;
         sRecenter = 0;
     }
@@ -825,6 +825,7 @@ static int fiona_view(Engine *e, Camera *out) {
         out->pos.y = bone.y + 1.5f;
         out->pos.z = pick->pos.z - cosf(sAlign);
     }
+    vr_anchor_set(1, out->pos, out->yaw);
     sFp = pick;
     return 1;
 }
@@ -840,7 +841,8 @@ static void hear_from_her(Engine *e) {
 
         /* the same forward the eyes will render, levelled. the stick moves along it. */
         if (flat > 0.25f) {
-            vr_set_move_yaw(atan2f(fwd.x, -fwd.z));
+            vr_set_move_yaw(atan2f(fwd.x, -fwd.z));   /* camera heading: the stick turns by this */
+            vr_set_face_yaw(atan2f(fwd.x, fwd.z));    /* body heading: 0 along +z, where she is looking */
         }
         engine_set_ear(&view);
         return;
@@ -856,7 +858,17 @@ static void draw(Engine *e) {
         int i, n = vr_eye_count();
         int screen = cutscene_on_screen();
 
+        {
+            static int menu_was;
+            int menu = e->paused || e->console.open;
+
+            if (menu && !menu_was) {
+                vr_screen_face();   /* a menu opens in front of the current look, then stays put */
+            }
+            menu_was = menu;
+        }
         if (screen) {
+            vr_screen_loose(0);
             sFp = NULL;   /* the scene shows her; the picture is the projected screen */
             /* the cutscene is drawn once, then put on a screen in front of the player. The
              * eyes keep the real head pose, so looking around is looking around the screen. */
@@ -898,6 +910,7 @@ static void draw(Engine *e) {
                 vr_eye_end(i);
             }
         } else {
+            vr_screen_loose(1);
             /* menus and prompts are drawn once, then put on the same kind of screen as a cutscene.
              * Each eye keeps the real head pose, so the panel is one picture at a fixed distance. */
             Vec3 corners[4];
@@ -932,7 +945,15 @@ static void draw(Engine *e) {
                     e->height = h;
                     render_set_present(fbo);
                     render_begin(w, h, e->clear);
-                    view = mat4_mul(fp ? body : offset, camera_view(fp ? &played : &e->camera));
+                    {
+                        Mat4 eye_body;
+
+                        if (fp && vr_eye_body(i, &eye_body)) {
+                            view = mat4_mul(eye_body, camera_view(&played));
+                        } else {
+                            view = mat4_mul(fp ? body : offset, camera_view(fp ? &played : &e->camera));
+                        }
+                    }
                     draw_scene(e, &proj, &view, view_position(&view), view_forward(&view));
                 if (vr_head_view(i, &head)) {
                     vp = mat4_mul(proj, head);
@@ -1176,6 +1197,7 @@ int main(int argc, char **argv) {
         while (lag >= tick_ns && ticks < 4) {
             engine_tick(e);
             memset(e->input.pressed, 0, sizeof(e->input.pressed));   /* presses count once */
+            vr_pad_clear();
             e->input.mouse_dx = e->input.mouse_dy = 0;
             lag -= tick_ns;
             ticks++;

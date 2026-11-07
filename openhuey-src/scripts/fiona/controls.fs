@@ -12,7 +12,8 @@ USING: engine keys common vectors messages facts fiona.state fiona.anims ;
     0e stick-x f!  0e stick-z f!
     hands-off? if  exit  then
     stick@ stick-z f!  stick-x f! ;
-: run-held? ( -- flag )  hands-off? 0=  cross button-down? and ;   \ (Fiona_Move: cross held)
+: run-held? ( -- flag )   \ (Fiona_Move: cross held; the headset: the left stick click toggles it)
+    hands-off? 0=  vr? if  vr-run?  else  cross button-down?  then  and ;
 : turned ( F: cam-yaw nx nz -- dx dz )  stick-turned ;
 \ in the headset, the stick points where she is looking, not where the old camera sits
 : steer-yaw ( F: -- a )  vr? if  vr-look-yaw  else  cam-yaw  then ;
@@ -59,8 +60,18 @@ enum: direction-from  by-camera by-facing by-none by-steering ;
     endcase ;
 \ the headset is the only steering. the old camera's cuts and its "keep the last camera" turn
 \ are not used, and she moves the way the stick points without waiting to face it.
+\ right stick: turn her in the world, and the view with her, so the room turns while
+\ the headset keeps facing the same way in the room
+: vr-smooth-turn ( -- )
+    hands-off? if  exit  then
+    vr-right fdup f0= if  fdrop exit  then
+    3.5e deg>rad f*
+    fdup vr-turn!
+    fdup her-yaw field+!
+    her-heading field+! ;
 : vr-move ( -- )
     read-stick
+    vr-smooth-turn
     sx sz vlen fdup f0> if  fdup sx fswap f/ way-x f!  sz fswap f/ way-z f!  else  fdrop 0e way-x f!  0e way-z f!  then
     sx sz small? dup if  1 her-still +!  her-still @ 6 min her-still !  else  0 her-still !  then  drop
     steer-yaw dir-by

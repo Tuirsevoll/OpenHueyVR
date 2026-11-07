@@ -24,8 +24,8 @@ enum: button  circle square l1 triangle r1 cross start-button select-button ;
     endcase ;
 : key-so? ( key xt -- flag )  over if  execute  else  2drop false  then ;   \ (a key 0 is none)
 : either ( k1 k2 xt -- flag )  {: k1 k2 xt :}  k1 xt key-so?  k2 xt key-so?  or ;   \ (either key so)
-: button-down? ( b -- flag )  button-keys ['] key-down? either ;
-: button-pressed? ( b -- flag )  button-keys ['] key-pressed? either ;
+: button-down? ( b -- flag )  dup vr-down? swap button-keys ['] key-down? either or ;
+: button-pressed? ( b -- flag )  dup vr-pressed? swap button-keys ['] key-pressed? either or ;
 
 \ ---- the sticks ----
 \ the left stick: W A S D (and a gamepad's left stick as far as it is pushed), x right, z down

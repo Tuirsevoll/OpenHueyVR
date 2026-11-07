@@ -34,10 +34,14 @@ int vr_eye_count(void) { return 0; }
 void vr_lock_pose(int on) { (void)on; }
 void vr_cutscene_screen(int active, Vec3 corners[4]) { (void)active; (void)corners; }
 int vr_head_view(int eye, Mat4 *view) { (void)eye; (void)view; return 0; }
+int vr_tracking(void) { return 0; }
 int vr_body_view(Mat4 *view) { (void)view; return 0; }
+int vr_eye_body(int eye, Mat4 *view) { (void)eye; (void)view; return 0; }
 float vr_head_yaw(void) { return 0.0f; }
 void vr_set_move_yaw(float yaw) { (void)yaw; }
 float vr_move_yaw(void) { return 0.0f; }
+void vr_set_face_yaw(float yaw) { (void)yaw; }
+float vr_face_yaw(void) { return 0.0f; }
 void vr_stick(float *x, float *y) {
     if (x != NULL) {
         *x = 0.0f;
@@ -46,6 +50,21 @@ void vr_stick(float *x, float *y) {
         *y = 0.0f;
     }
 }
+int vr_pad_down(int button) { (void)button; return 0; }
+int vr_pad_pressed(int button) { (void)button; return 0; }
+void vr_pad_clear(void) {}
+int vr_run_on(void) { return 0; }
+float vr_right_stick(void) { return 0.0f; }
+void vr_add_turn(float yaw) { (void)yaw; }
+float vr_take_turn(void) { return 0.0f; }
+void vr_request_recenter(void) {}
+int vr_take_recenter(void) { return 0; }
+void vr_anchor_set(int on, Vec3 eye, float yaw) { (void)on; (void)eye; (void)yaw; }
+int vr_anchor_get(Vec3 *eye, float *yaw) { (void)eye; (void)yaw; return 0; }
+int vr_controller(int hand, VrController *out) { (void)hand; (void)out; return 0; }
+int vr_hands_tracked(void) { return 0; }
+void vr_screen_face(void) {}
+void vr_screen_loose(int on) { (void)on; }
 int vr_calibrate(float *height_m, float *scale) { (void)height_m; (void)scale; return 0; }
 void vr_set_height(float height_m) { (void)height_m; }
 void vr_set_scale(float scale) { (void)scale; }
@@ -80,7 +99,8 @@ void vr_eye_end(int eye) { (void)eye; }
 static HMODULE sLoader;
 static XrInstance sInstance;
 static XrSession sSession;
-static XrSpace sSpace;
+static XrSpace sLocal;   /* LOCAL, identity: where a neutral pose is measured */
+static XrSpace sSpace;   /* LOCAL posed at the neutral head: views and the submitted layer */
 static XrSpace sStage;   /* the floor, when the runtime has one */
 static XrSystemId sSystem;
 static XrEnvironmentBlendMode sBlend = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
@@ -97,7 +117,8 @@ static int sAcquired[VR_MAX_EYES];
 static int sQuit;
 static int sHaveOrigin;
 static int sLockPose;   /* a cutscene or story shot: eyes stay on the scripted camera */
-static XrPosef sOrigin;
+static XrViewStateFlags sViewFlags;
+static XrPosef sOrigin;   /* identity: sSpace is already the neutral pose */
 
 static PFN_xrGetInstanceProcAddr xrGetInstanceProcAddr;
 static PFN_xrEnumerateInstanceExtensionProperties xrEnumerateInstanceExtensionProperties;
@@ -128,10 +149,28 @@ static PFN_xrSuggestInteractionProfileBindings xrSuggestInteractionProfileBindin
 static PFN_xrAttachSessionActionSets xrAttachSessionActionSets;
 static PFN_xrSyncActions xrSyncActions;
 static PFN_xrGetActionStateVector2f xrGetActionStateVector2f;
+static PFN_xrGetActionStateBoolean xrGetActionStateBoolean;
+static PFN_xrGetActionStateFloat xrGetActionStateFloat;
+static PFN_xrCreateActionSpace xrCreateActionSpace;
 static XrActionSet sActions;
-static XrAction sMove;
-static float sStickX, sStickY;
-static float sMoveYaw;
+static XrAction sMove, sRunClick, sInteract, sMenu, sKick, sTurnStick, sRightClick;
+static XrAction sIndexL;
+typedef struct VrHandSlot {
+    XrAction pose, squeeze, thumb;
+    XrSpace space;
+    int tracked;
+    Vec3 at, forward, up;
+    float grip, index, thumbv;
+} VrHandSlot;
+static VrHandSlot sHand[2];
+static int sAnchorOn;
+static Vec3 sAnchorEye;
+static float sAnchorYaw;
+static XrQuaternionf sNeutralYaw;   /* upright heading of the play space; pitch and roll are never stored */
+static int sNeutralSet;
+static float sStickX, sStickY, sRightX;
+static float sMoveYaw, sFaceYaw, sTurn;
+static int sDown[8], sPressed[8], sRun, sClickWas, sBothWas, sRecenterReq, sAlignRecenter;
 static PFN_xrCreateReferenceSpace xrCreateReferenceSpace;
 static PFN_xrDestroySpace xrDestroySpace;
 static PFN_xrEnumerateSwapchainFormats xrEnumerateSwapchainFormats;
@@ -249,23 +288,25 @@ static XrVector3f quat_rotate(XrQuaternionf q, XrVector3f v) {
     return o;
 }
 
-/* the first head pose becomes the origin, so the scripts' camera is where the player starts looking */
-static void capture_origin(void) {
-    int i;
+/* a lean or a duck, not a walk across the room. The origin is the neutral head. */
+static XrVector3f clamp_lean(XrVector3f p) {
+    float h = sqrtf(p.x * p.x + p.z * p.z);
+    const float reach = 0.75f;
 
-    sOrigin = sViews[0].pose;
-    for (i = 1; i < sViewCount; i++) {
-        sOrigin.position.x += sViews[i].pose.position.x;
-        sOrigin.position.y += sViews[i].pose.position.y;
-        sOrigin.position.z += sViews[i].pose.position.z;
+    if (h > reach) {
+        p.x *= reach / h;
+        p.z *= reach / h;
     }
-    sOrigin.position.x /= (float)sViewCount;
-    sOrigin.position.y /= (float)sViewCount;
-    sOrigin.position.z /= (float)sViewCount;
-    sHaveOrigin = 1;
+    if (p.y > 0.50f) {
+        p.y = 0.50f;
+    }
+    if (p.y < -1.20f) {
+        p.y = -1.20f;
+    }
+    return p;
 }
 
-/* pose relative to the pose captured at startup */
+/* pose relative to the neutral head (sSpace's origin, so this is usually the pose itself) */
 static XrPosef pose_delta(XrPosef pose) {
     XrQuaternionf inv = {-sOrigin.orientation.x, -sOrigin.orientation.y, -sOrigin.orientation.z, sOrigin.orientation.w};
     XrVector3f d = {pose.position.x - sOrigin.position.x, pose.position.y - sOrigin.position.y,
@@ -312,9 +353,22 @@ static Mat4 pose_to_view(XrPosef pose) {
     return v;
 }
 
-/* inverse of the eye's pose relative to the pose captured at startup */
+/* the eye, with the head kept inside the lean. Stereo offset from the head is unchanged. */
+static XrPosef head_pose(void);
+static XrPosef stable_pose(XrPosef pose) {
+    XrPosef head = pose_delta(head_pose());
+    XrVector3f held = clamp_lean(head.position);
+
+    pose = pose_delta(pose);
+    pose.position.x += held.x - head.position.x;
+    pose.position.y += held.y - head.position.y;
+    pose.position.z += held.z - head.position.z;
+    return pose;
+}
+
+/* inverse of the eye's pose in the neutral space */
 static Mat4 pose_view(XrPosef pose) {
-    return pose_to_view(pose_delta(pose));
+    return pose_to_view(stable_pose(pose));
 }
 
 /* the eyes' midpoint; orientation is the first eye's (they share the head) */
@@ -365,8 +419,17 @@ static float clamp_scale(float s) {
     return s < 0.4f ? 0.4f : s > 2.0f ? 2.0f : s;
 }
 
+static XrPosef pose_from_head(XrPosef pose);
+
+/* headset since the neutral pose: its look, and a lean or a duck. A long walk is clamped. */
+static XrPosef head_look(void) {
+    XrPosef d = pose_delta(head_pose());
+
+    d.position = clamp_lean(d.position);
+    return d;
+}
+
 int vr_body_view(Mat4 *view) {
-    XrPosef d;
     float h;
 
     if (view == NULL || !sHaveOrigin || sViewCount <= 0 || !floor_height(&h)) {
@@ -376,11 +439,35 @@ int vr_body_view(Mat4 *view) {
         sEyeHeight = h;   /* standing as the session started: her eyes, no crouch yet */
         sEyeSet = 1;
     }
-    d = pose_delta(head_pose());
-    d.position.x *= sBodyScale;
-    d.position.z *= sBodyScale;
-    d.position.y = (h - sEyeHeight) * sBodyScale;
-    *view = pose_to_view(d);
+    {
+        XrPosef d = head_look();
+        float s = sBodyScale > 0.001f ? sBodyScale : 1.0f;
+
+        /* the same scale as the eye separation, so a lean and the stereo agree */
+        d.position.x /= s;
+        d.position.y /= s;
+        d.position.z /= s;
+        *view = pose_to_view(d);
+    }
+    return 1;
+}
+
+int vr_eye_body(int eye, Mat4 *view) {
+    XrPosef local;
+    Mat4 head, eye_m;
+    float s;
+
+    if (view == NULL || eye < 0 || eye >= sViewCount || !vr_body_view(&head)) {
+        return 0;
+    }
+    local = pose_from_head(sViews[eye].pose);
+    s = sBodyScale > 0.001f ? sBodyScale : 1.0f;
+    /* a taller player (scale below 1) needs the eyes further apart, or the world feels huge up close */
+    local.position.x /= s;
+    local.position.y /= s;
+    local.position.z /= s;
+    eye_m = pose_to_view(local);
+    *view = mat4_mul(eye_m, head);
     return 1;
 }
 
@@ -426,6 +513,8 @@ void vr_body(float *height_m, float *scale) {
 
 static float quat_yaw(XrQuaternionf q);
 
+int vr_tracking(void) { return sHaveOrigin; }
+
 float vr_head_yaw(void) {
     if (!sHaveOrigin || sViewCount <= 0) {
         return 0.0f;
@@ -435,6 +524,8 @@ float vr_head_yaw(void) {
 
 void vr_set_move_yaw(float yaw) { sMoveYaw = yaw; }
 float vr_move_yaw(void) { return sMoveYaw; }
+void vr_set_face_yaw(float yaw) { sFaceYaw = yaw; }
+float vr_face_yaw(void) { return sFaceYaw; }
 
 void vr_stick(float *x, float *y) {
     if (x != NULL) {
@@ -445,15 +536,112 @@ void vr_stick(float *x, float *y) {
     }
 }
 
+static int read_bool(XrAction action) {
+    XrActionStateGetInfo get = {XR_TYPE_ACTION_STATE_GET_INFO};
+    XrActionStateBoolean state = {XR_TYPE_ACTION_STATE_BOOLEAN};
+
+    if (action == XR_NULL_HANDLE || xrGetActionStateBoolean == NULL) {
+        return 0;
+    }
+    get.action = action;
+    get.subactionPath = XR_NULL_PATH;
+    if (XR_FAILED(xrGetActionStateBoolean(sSession, &get, &state)) || !state.isActive) {
+        return 0;
+    }
+    return state.currentState ? 1 : 0;
+}
+
+static void note_button(int button, int down) {
+    if (button < 0 || button >= 8) {
+        return;
+    }
+    if (down && !sDown[button]) {
+        sPressed[button] = 1;
+    }
+    sDown[button] = down;
+}
+
+static Vec3 quat_dir(XrQuaternionf q, float x, float y, float z) {
+    XrVector3f v;
+
+    v.x = x;
+    v.y = y;
+    v.z = z;
+    v = quat_rotate(q, v);
+    return vec3(v.x, v.y, v.z);
+}
+
+static float read_float(XrAction action) {
+    XrActionStateGetInfo get = {XR_TYPE_ACTION_STATE_GET_INFO};
+    XrActionStateFloat state = {XR_TYPE_ACTION_STATE_FLOAT};
+
+    if (action == XR_NULL_HANDLE || xrGetActionStateFloat == NULL) {
+        return 0.0f;
+    }
+    get.action = action;
+    get.subactionPath = XR_NULL_PATH;
+    if (XR_FAILED(xrGetActionStateFloat(sSession, &get, &state)) || !state.isActive) {
+        return 0.0f;
+    }
+    return state.currentState;
+}
+
+/* grip poses live in the same recentered space as the head, so a hand stays put relative to it */
+static void sync_hands(void) {
+    int i;
+    float s = sBodyScale > 0.001f ? sBodyScale : 1.0f;
+
+    for (i = 0; i < 2; i++) {
+        XrActionSpaceCreateInfo space = {XR_TYPE_ACTION_SPACE_CREATE_INFO};
+        XrSpaceLocation loc = {XR_TYPE_SPACE_LOCATION};
+        VrHandSlot *h = &sHand[i];
+
+        h->tracked = 0;
+        h->grip = read_float(h->squeeze);
+        h->thumbv = read_bool(h->thumb) ? 1.0f : 0.0f;
+        h->index = i == 1 ? read_float(sKick) : read_float(sIndexL);
+        if (h->pose == XR_NULL_HANDLE || xrLocateSpace == NULL || !sHaveOrigin || sSpace == XR_NULL_HANDLE) {
+            continue;
+        }
+        if (h->space == XR_NULL_HANDLE && xrCreateActionSpace != NULL) {
+            space.action = h->pose;
+            space.subactionPath = XR_NULL_PATH;
+            space.poseInActionSpace.orientation.w = 1.0f;
+            if (XR_FAILED(xrCreateActionSpace(sSession, &space, &h->space))) {
+                h->space = XR_NULL_HANDLE;
+                continue;
+            }
+        }
+        if (h->space == XR_NULL_HANDLE) {
+            continue;
+        }
+        if (XR_FAILED(xrLocateSpace(h->space, sSpace, sFrame.predictedDisplayTime, &loc))) {
+            continue;
+        }
+        if ((loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) == 0 ||
+            (loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) == 0) {
+            continue;
+        }
+        h->at = vec3(loc.pose.position.x * VR_UNITS_PER_METER / s,
+                     loc.pose.position.y * VR_UNITS_PER_METER / s,
+                     loc.pose.position.z * VR_UNITS_PER_METER / s);
+        h->forward = quat_dir(loc.pose.orientation, 0.0f, 0.0f, -1.0f);
+        h->up = quat_dir(loc.pose.orientation, 0.0f, 1.0f, 0.0f);
+        h->tracked = 1;
+    }
+}
+
 static void sync_stick(void) {
     XrActiveActionSet active;
     XrActionsSyncInfo sync = {XR_TYPE_ACTIONS_SYNC_INFO};
     XrActionStateGetInfo get = {XR_TYPE_ACTION_STATE_GET_INFO};
     XrActionStateVector2f state = {XR_TYPE_ACTION_STATE_VECTOR2F};
+    XrActionStateFloat kick = {XR_TYPE_ACTION_STATE_FLOAT};
     float x, y, len;
+    int click;
 
-    sStickX = sStickY = 0.0f;
-    if (sMove == XR_NULL_HANDLE || xrSyncActions == NULL || xrGetActionStateVector2f == NULL) {
+    sStickX = sStickY = sRightX = 0.0f;
+    if (sMove == XR_NULL_HANDLE || xrSyncActions == NULL) {
         return;
     }
     active.actionSet = sActions;
@@ -463,28 +651,188 @@ static void sync_stick(void) {
     if (XR_FAILED(xrSyncActions(sSession, &sync))) {
         return;
     }
-    get.action = sMove;
     get.subactionPath = XR_NULL_PATH;
-    if (XR_FAILED(xrGetActionStateVector2f(sSession, &get, &state)) || !state.isActive) {
-        return;
+    if (xrGetActionStateVector2f != NULL) {
+        get.action = sMove;
+        if (XR_SUCCEEDED(xrGetActionStateVector2f(sSession, &get, &state)) && state.isActive) {
+            x = state.currentState.x;
+            y = -state.currentState.y;   /* stick up is forward: the game's stick z grows downward */
+            len = sqrtf(x * x + y * y);
+            if (len >= 0.2f) {
+                if (len > 1.0f) {
+                    len = 1.0f;
+                }
+                sStickX = x / len;
+                sStickY = y / len;
+            }
+        }
     }
-    x = state.currentState.x;
-    y = -state.currentState.y;   /* stick up is forward: the game's stick z grows downward */
-    len = sqrtf(x * x + y * y);
-    if (len < 0.2f) {
-        return;
+    click = read_bool(sRunClick);
+    {
+        int right = read_bool(sRightClick);
+
+        if (click && right) {
+            if (!sBothWas) {
+                sRecenterReq = 1;   /* both sticks: put the view back on her facing */
+            }
+            sBothWas = 1;
+        } else {
+            sBothWas = 0;
+            if (click && !sClickWas) {
+                sRun = !sRun;
+            }
+        }
     }
-    if (len > 1.0f) {
-        len = 1.0f;
+    sClickWas = click;
+    if (sTurnStick != XR_NULL_HANDLE && xrGetActionStateVector2f != NULL) {
+        get.action = sTurnStick;
+        if (XR_SUCCEEDED(xrGetActionStateVector2f(sSession, &get, &state)) && state.isActive) {
+            float rx = state.currentState.x;
+
+            if (rx > 0.2f || rx < -0.2f) {
+                /* stick right is positive. Her yaw's positive direction is a left turn, so this is negated. */
+                sRightX = (rx > 0.0f ? -1.0f : 1.0f) * (fabsf(rx) - 0.2f) / 0.8f;
+            }
+        }
     }
-    sStickX = x / len;
-    sStickY = y / len;
+    note_button(0, read_bool(sInteract));                 /* A: use */
+    note_button(7, read_bool(sMenu));                     /* Y: the status menu */
+    if (sKick != XR_NULL_HANDLE && xrGetActionStateFloat != NULL) {
+        get.action = sKick;
+        if (XR_SUCCEEDED(xrGetActionStateFloat(sSession, &get, &kick)) && kick.isActive) {
+            note_button(1, kick.currentState >= 0.6f);    /* right trigger: kick */
+        } else {
+            note_button(1, 0);
+        }
+    }
+    sync_hands();
 }
 
-/* the left stick, on the profiles a headset is likely to be using */
+/* controllers again, once this frame's play space is the one the eyes will use */
+static void sync_hands_late(void) {
+    sync_hands();
+}
+
+int vr_pad_down(int button) {
+    if (button < 0 || button >= 8) {
+        return 0;
+    }
+    return sDown[button] ? 1 : 0;
+}
+
+int vr_pad_pressed(int button) {
+    if (button < 0 || button >= 8) {
+        return 0;
+    }
+    return sPressed[button] ? 1 : 0;
+}
+
+void vr_pad_clear(void) {
+    int i;
+
+    for (i = 0; i < 8; i++) {
+        sPressed[i] = 0;
+    }
+}
+
+int vr_run_on(void) { return sRun ? 1 : 0; }
+
+float vr_right_stick(void) { return sRightX; }
+
+void vr_add_turn(float yaw) { sTurn += yaw; }
+
+float vr_take_turn(void) {
+    float t = sTurn;
+
+    sTurn = 0.0f;
+    return t;
+}
+
+void vr_request_recenter(void) { sRecenterReq = 1; }
+
+int vr_take_recenter(void) {
+    int r = sAlignRecenter;
+
+    sAlignRecenter = 0;
+    return r;
+}
+
+void vr_anchor_set(int on, Vec3 eye, float yaw) {
+    sAnchorOn = on ? 1 : 0;
+    sAnchorEye = eye;
+    sAnchorYaw = yaw;
+}
+
+int vr_anchor_get(Vec3 *eye, float *yaw) {
+    if (!sAnchorOn) {
+        return 0;
+    }
+    if (eye != NULL) {
+        *eye = sAnchorEye;
+    }
+    if (yaw != NULL) {
+        *yaw = sAnchorYaw;
+    }
+    return 1;
+}
+
+int vr_controller(int hand, VrController *out) {
+    const VrHandSlot *h;
+
+    if (out == NULL || hand < 0 || hand > 1) {
+        return 0;
+    }
+    h = &sHand[hand];
+    out->tracked = h->tracked;
+    out->at = h->at;
+    out->forward = h->forward;
+    out->up = h->up;
+    out->grip = h->grip;
+    out->index = h->index;
+    out->thumb = h->thumbv;
+    return h->tracked;
+}
+
+int vr_hands_tracked(void) {
+    return (sHand[0].tracked || sHand[1].tracked) ? 1 : 0;
+}
+
+static int make_action(XrAction *out, XrActionType type, const char *name, const char *local) {
+    XrActionCreateInfo act = {XR_TYPE_ACTION_CREATE_INFO};
+
+    act.actionType = type;
+    strcpy(act.actionName, name);
+    strcpy(act.localizedActionName, local);
+    return XR_SUCCEEDED(xrCreateAction(sActions, &act, out));
+}
+
+static int bind_path(XrAction action, const char *path, XrActionSuggestedBinding *out) {
+    XrPath p;
+
+    if (action == XR_NULL_HANDLE || XR_FAILED(xrStringToPath(sInstance, path, &p))) {
+        return 0;
+    }
+    out->action = action;
+    out->binding = p;
+    return 1;
+}
+
+static void suggest(const char *profile, XrActionSuggestedBinding *binds, uint32_t n) {
+    XrPath path;
+    XrInteractionProfileSuggestedBinding sug = {XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+
+    if (n == 0 || XR_FAILED(xrStringToPath(sInstance, profile, &path))) {
+        return;
+    }
+    sug.interactionProfile = path;
+    sug.countSuggestedBindings = n;
+    sug.suggestedBindings = binds;
+    xrSuggestInteractionProfileBindings(sInstance, &sug);
+}
+
+/* the left stick, and the Quest 3 buttons (Touch and Touch Plus) */
 static void bind_stick(void) {
-    static const char *const profiles[] = {
-        "/interaction_profiles/oculus/touch_controller",
+    static const char *const sticks[] = {
         "/interaction_profiles/valve/index_controller",
         "/interaction_profiles/microsoft/motion_controller",
         "/interaction_profiles/hp/mixed_reality_controller",
@@ -492,9 +840,8 @@ static void bind_stick(void) {
         "/interaction_profiles/htc/vive_focus3_controller",
     };
     XrActionSetCreateInfo set = {XR_TYPE_ACTION_SET_CREATE_INFO};
-    XrActionCreateInfo act = {XR_TYPE_ACTION_CREATE_INFO};
-    XrPath stick;
     XrSessionActionSetsAttachInfo attach = {XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
+    XrActionSuggestedBinding one;
     size_t i;
 
     if (xrCreateActionSet == NULL || xrCreateAction == NULL || xrStringToPath == NULL ||
@@ -506,41 +853,54 @@ static void bind_stick(void) {
     if (XR_FAILED(xrCreateActionSet(sInstance, &set, &sActions))) {
         return;
     }
-    act.actionType = XR_ACTION_TYPE_VECTOR2F_INPUT;
-    strcpy(act.actionName, "move");
-    strcpy(act.localizedActionName, "Move");
-    if (XR_FAILED(xrCreateAction(sActions, &act, &sMove)) ||
-        XR_FAILED(xrStringToPath(sInstance, "/user/hand/left/input/thumbstick", &stick))) {
+    if (!make_action(&sMove, XR_ACTION_TYPE_VECTOR2F_INPUT, "move", "Move")) {
         return;
     }
-    for (i = 0; i < sizeof(profiles) / sizeof(profiles[0]); i++) {
-        XrPath profile;
-        XrActionSuggestedBinding binding;
-        XrInteractionProfileSuggestedBinding sug = {XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
-
-        if (XR_FAILED(xrStringToPath(sInstance, profiles[i], &profile))) {
-            continue;
+    make_action(&sRunClick, XR_ACTION_TYPE_BOOLEAN_INPUT, "run", "Run");
+    make_action(&sInteract, XR_ACTION_TYPE_BOOLEAN_INPUT, "interact", "Interact");
+    make_action(&sMenu, XR_ACTION_TYPE_BOOLEAN_INPUT, "menu", "Menu");
+    make_action(&sKick, XR_ACTION_TYPE_FLOAT_INPUT, "kick", "Kick");
+    make_action(&sTurnStick, XR_ACTION_TYPE_VECTOR2F_INPUT, "turn", "Turn");
+    make_action(&sRightClick, XR_ACTION_TYPE_BOOLEAN_INPUT, "reset", "Reset");
+    make_action(&sHand[0].pose, XR_ACTION_TYPE_POSE_INPUT, "grip_l", "Left hand");
+    make_action(&sHand[1].pose, XR_ACTION_TYPE_POSE_INPUT, "grip_r", "Right hand");
+    make_action(&sHand[0].squeeze, XR_ACTION_TYPE_FLOAT_INPUT, "squeeze_l", "Left grip");
+    make_action(&sHand[1].squeeze, XR_ACTION_TYPE_FLOAT_INPUT, "squeeze_r", "Right grip");
+    make_action(&sIndexL, XR_ACTION_TYPE_FLOAT_INPUT, "index_l", "Left index");
+    make_action(&sHand[0].thumb, XR_ACTION_TYPE_BOOLEAN_INPUT, "thumb_l", "Left thumb");
+    make_action(&sHand[1].thumb, XR_ACTION_TYPE_BOOLEAN_INPUT, "thumb_r", "Right thumb");
+    for (i = 0; i < sizeof(sticks) / sizeof(sticks[0]); i++) {
+        if (bind_path(sMove, "/user/hand/left/input/thumbstick", &one)) {
+            suggest(sticks[i], &one, 1);
         }
-        binding.action = sMove;
-        binding.binding = stick;
-        sug.interactionProfile = profile;
-        sug.countSuggestedBindings = 1;
-        sug.suggestedBindings = &binding;
-        xrSuggestInteractionProfileBindings(sInstance, &sug);
+    }
+    if (bind_path(sMove, "/user/hand/left/input/trackpad", &one)) {
+        suggest("/interaction_profiles/htc/vive_controller", &one, 1);
     }
     {
-        XrPath profile, pad;
-        XrActionSuggestedBinding binding;
-        XrInteractionProfileSuggestedBinding sug = {XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+        XrActionSuggestedBinding quest[16];
+        uint32_t n = 0;
+        static const char *const quest_profiles[] = {
+            "/interaction_profiles/oculus/touch_controller",
+            "/interaction_profiles/meta/touch_controller_plus",
+        };
 
-        if (XR_SUCCEEDED(xrStringToPath(sInstance, "/interaction_profiles/htc/vive_controller", &profile)) &&
-            XR_SUCCEEDED(xrStringToPath(sInstance, "/user/hand/left/input/trackpad", &pad))) {
-            binding.action = sMove;
-            binding.binding = pad;
-            sug.interactionProfile = profile;
-            sug.countSuggestedBindings = 1;
-            sug.suggestedBindings = &binding;
-            xrSuggestInteractionProfileBindings(sInstance, &sug);
+        n += bind_path(sMove, "/user/hand/left/input/thumbstick", &quest[n]);
+        n += bind_path(sRunClick, "/user/hand/left/input/thumbstick/click", &quest[n]);
+        n += bind_path(sInteract, "/user/hand/right/input/a/click", &quest[n]);
+        n += bind_path(sMenu, "/user/hand/left/input/y/click", &quest[n]);
+        n += bind_path(sKick, "/user/hand/right/input/trigger/value", &quest[n]);
+        n += bind_path(sTurnStick, "/user/hand/right/input/thumbstick", &quest[n]);
+        n += bind_path(sRightClick, "/user/hand/right/input/thumbstick/click", &quest[n]);
+        n += bind_path(sHand[0].pose, "/user/hand/left/input/grip/pose", &quest[n]);
+        n += bind_path(sHand[1].pose, "/user/hand/right/input/grip/pose", &quest[n]);
+        n += bind_path(sHand[0].squeeze, "/user/hand/left/input/squeeze/value", &quest[n]);
+        n += bind_path(sHand[1].squeeze, "/user/hand/right/input/squeeze/value", &quest[n]);
+        n += bind_path(sIndexL, "/user/hand/left/input/trigger/value", &quest[n]);
+        n += bind_path(sHand[0].thumb, "/user/hand/left/input/thumbrest/touch", &quest[n]);
+        n += bind_path(sHand[1].thumb, "/user/hand/right/input/thumbrest/touch", &quest[n]);
+        for (i = 0; i < sizeof(quest_profiles) / sizeof(quest_profiles[0]); i++) {
+            suggest(quest_profiles[i], quest, n);
         }
     }
     attach.countActionSets = 1;
@@ -566,10 +926,13 @@ static Mat4 proj_fov(XrFovf fov, float znear, float zfar) {
     float l = tanf(fov.angleLeft), r = tanf(fov.angleRight);
     float b = tanf(fov.angleDown), t = tanf(fov.angleUp);
     float iw = r - l, ih = t - b;
+    float s = sBodyScale > 0.001f ? sBodyScale : 1.0f;
     Mat4 m = {{0}};
 
-    m.m[0] = 2.0f / iw;
-    m.m[5] = 2.0f / ih;
+    /* the same scale as the eye separation, on the focal length. Near and far stay in world
+     * units. Close and far surfaces then change size together when Page Up sets the scale. */
+    m.m[0] = 2.0f / iw * s;
+    m.m[5] = 2.0f / ih * s;
     m.m[8] = (r + l) / iw;
     m.m[9] = (t + b) / ih;
     m.m[10] = -(zfar + znear) / (zfar - znear);
@@ -796,6 +1159,9 @@ int vr_open(void) {
     load_proc(sInstance, "xrAttachSessionActionSets", &xrAttachSessionActionSets);
     load_proc(sInstance, "xrSyncActions", &xrSyncActions);
     load_proc(sInstance, "xrGetActionStateVector2f", &xrGetActionStateVector2f);
+    load_proc(sInstance, "xrGetActionStateBoolean", &xrGetActionStateBoolean);
+    load_proc(sInstance, "xrGetActionStateFloat", &xrGetActionStateFloat);
+    load_proc(sInstance, "xrCreateActionSpace", &xrCreateActionSpace);
     LOAD(sInstance, xrCreateReferenceSpace);
     LOAD(sInstance, xrDestroySpace);
     LOAD(sInstance, xrEnumerateSwapchainFormats);
@@ -850,10 +1216,15 @@ int vr_open(void) {
     }
     space.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     space.poseInReferenceSpace.orientation.w = 1.0f;
+    if (!xr_ok(xrCreateReferenceSpace(sSession, &space, &sLocal), "xrCreateReferenceSpace")) {
+        vr_close();
+        return 0;
+    }
     if (!xr_ok(xrCreateReferenceSpace(sSession, &space, &sSpace), "xrCreateReferenceSpace")) {
         vr_close();
         return 0;
     }
+    sOrigin.orientation.w = 1.0f;
     space.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
     if (xrLocateSpace == NULL || XR_FAILED(xrCreateReferenceSpace(sSession, &space, &sStage))) {
         sStage = XR_NULL_HANDLE;   /* no floor space: height is the local tracking Y */
@@ -926,10 +1297,25 @@ void vr_close(void) {
         xrDestroySpace(sSpace);
         sSpace = XR_NULL_HANDLE;
     }
+    if (sLocal != XR_NULL_HANDLE && xrDestroySpace != NULL) {
+        xrDestroySpace(sLocal);
+        sLocal = XR_NULL_HANDLE;
+    }
+    if (xrDestroySpace != NULL) {
+        int h;
+
+        for (h = 0; h < 2; h++) {
+            if (sHand[h].space != XR_NULL_HANDLE) {
+                xrDestroySpace(sHand[h].space);
+                sHand[h].space = XR_NULL_HANDLE;
+            }
+        }
+    }
     if (sSession != XR_NULL_HANDLE && xrDestroySession != NULL) {
         xrDestroySession(sSession);
         sSession = XR_NULL_HANDLE;
     }
+    sNeutralSet = 0;
     if (sActions != XR_NULL_HANDLE && xrDestroyActionSet != NULL) {
         xrDestroyActionSet(sActions);
         sActions = XR_NULL_HANDLE;
@@ -953,8 +1339,11 @@ int vr_active(void) { return sActive; }
 
 void vr_lock_pose(int on) { sLockPose = on != 0; }
 
-static int sScreenOn;
+static int sScreenOn, sScreenSnap, sScreenLoose;
 static float sScreenYaw;
+
+void vr_screen_face(void) { sScreenSnap = 1; }
+void vr_screen_loose(int on) { sScreenLoose = on != 0; }
 
 static float wrap_pi(float a) {
     const float pi = 3.14159265f;
@@ -984,14 +1373,17 @@ void vr_cutscene_screen(int active, Vec3 corners[4]) {
         sScreenOn = 0;
         return;
     }
-    head = pose_delta(head_pose());
+    head = head_look();
     yaw = quat_yaw(head.orientation);
-    if (!sScreenOn) {
-        sScreenYaw = yaw;
+    if (!sScreenOn || sScreenSnap) {
+        sScreenYaw = yaw;   /* open in front of wherever she is looking, then hold */
         sScreenOn = 1;
+        sScreenSnap = 0;
     } else {
         diff = wrap_pi(yaw - sScreenYaw);
-        if (diff > 0.40f || diff < -0.40f) {   /* a real turn: creep back in front, not a glance */
+        if (sScreenLoose && (diff > 1.2f || diff < -1.2f)) {
+            sScreenYaw = yaw;   /* left behind the head: bring it forward and lock it there */
+        } else if (diff > 0.40f || diff < -0.40f) {   /* a real turn: creep back in front, not a glance */
             sScreenYaw = wrap_pi(sScreenYaw + diff * 0.04f);
         }
     }
@@ -1016,13 +1408,93 @@ void vr_cutscene_screen(int active, Vec3 corners[4]) {
     }
 }
 
-int vr_begin_frame(void) {
-    XrFrameWaitInfo wait = {XR_TYPE_FRAME_WAIT_INFO};
-    XrFrameBeginInfo begin = {XR_TYPE_FRAME_BEGIN_INFO};
+static int locate_views(XrSpace space) {
     XrViewLocateInfo locate = {XR_TYPE_VIEW_LOCATE_INFO};
     XrViewState view_state = {XR_TYPE_VIEW_STATE};
     uint32_t n = 0;
     int i;
+
+    if (space == XR_NULL_HANDLE) {
+        return 0;
+    }
+    locate.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+    locate.displayTime = sFrame.predictedDisplayTime;
+    locate.space = space;
+    for (i = 0; i < sViewCount; i++) {
+        sViews[i].type = XR_TYPE_VIEW;
+        sViews[i].next = NULL;
+    }
+    if (!xr_ok(xrLocateViews(sSession, &locate, &view_state, (uint32_t)sViewCount, &n, sViews), "xrLocateViews") ||
+        (int)n != sViewCount) {
+        return 0;
+    }
+    sViewFlags = view_state.viewStateFlags;
+    for (i = 0; i < sViewCount; i++) {
+        sLayerViews[i].type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
+        sLayerViews[i].next = NULL;
+        sLayerViews[i].pose = sViews[i].pose;
+        sLayerViews[i].fov = sViews[i].fov;
+        sLayerViews[i].subImage.swapchain = sSwap[i];
+        sLayerViews[i].subImage.imageRect.offset.x = 0;
+        sLayerViews[i].subImage.imageRect.offset.y = 0;
+        sLayerViews[i].subImage.imageRect.extent.width = sW[i];
+        sLayerViews[i].subImage.imageRect.extent.height = sH[i];
+        sLayerViews[i].subImage.imageArrayIndex = 0;
+    }
+    return 1;
+}
+
+static int pose_tracked(void) {
+    XrQuaternionf q = head_pose().orientation;
+    float n = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+
+    return (sViewFlags & XR_VIEW_STATE_POSITION_VALID_BIT) != 0 &&
+           (sViewFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT) != 0 && n > 0.5f;
+}
+
+/* yaw about Y only. The play space stays upright; a tilted head is not the new level. */
+static XrQuaternionf upright_yaw(XrQuaternionf q) {
+    float yaw = quat_yaw(q);
+    XrQuaternionf o;
+
+    o.x = 0.0f;
+    o.y = sinf(yaw * 0.5f);
+    o.z = 0.0f;
+    o.w = cosf(yaw * 0.5f);
+    return o;
+}
+
+/* origin at the head, orientation upright. The first lock takes the head's heading.
+ * A later reset keeps that heading, so looking down or aside does not become forward. */
+static int recenter_play_space(int keep_heading) {
+    XrReferenceSpaceCreateInfo info = {XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+    XrSpace play = XR_NULL_HANDLE;
+    XrPosef head = head_pose();
+
+    info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+    info.poseInReferenceSpace.position = head.position;
+    if (!keep_heading || !sNeutralSet) {
+        sNeutralYaw = upright_yaw(head.orientation);
+        sNeutralSet = 1;
+    }
+    info.poseInReferenceSpace.orientation = sNeutralYaw;
+    if (XR_FAILED(xrCreateReferenceSpace(sSession, &info, &play))) {
+        return 0;
+    }
+    if (sSpace != XR_NULL_HANDLE && xrDestroySpace != NULL) {
+        xrDestroySpace(sSpace);
+    }
+    sSpace = play;
+    sOrigin.orientation.x = sOrigin.orientation.y = sOrigin.orientation.z = 0.0f;
+    sOrigin.orientation.w = 1.0f;
+    sOrigin.position.x = sOrigin.position.y = sOrigin.position.z = 0.0f;
+    sHaveOrigin = 1;
+    return 1;
+}
+
+int vr_begin_frame(void) {
+    XrFrameWaitInfo wait = {XR_TYPE_FRAME_WAIT_INFO};
+    XrFrameBeginInfo begin = {XR_TYPE_FRAME_BEGIN_INFO};
 
     if (!sActive || sQuit) {
         return 0;
@@ -1044,31 +1516,23 @@ int vr_begin_frame(void) {
     if (!sFrame.shouldRender) {
         return 1;
     }
-    locate.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
-    locate.displayTime = sFrame.predictedDisplayTime;
-    locate.space = sSpace;
-    for (i = 0; i < sViewCount; i++) {
-        sViews[i].type = XR_TYPE_VIEW;
-        sViews[i].next = NULL;
+    /* the first tracked pose takes an upright heading. Both stick clicks keep that heading
+     * and drop the position offset. Pitch and roll stay live, so a tilted head is not saved
+     * as the new level. The layer is submitted in this same space. */
+    if (!sHaveOrigin || sRecenterReq) {
+        int keep = sHaveOrigin && sRecenterReq;
+
+        if (locate_views(sLocal) && pose_tracked() && recenter_play_space(keep)) {
+            sAlignRecenter = 1;
+            sRecenterReq = 0;
+            vr_screen_face();
+            sync_hands_late();
+        } else if (!sHaveOrigin) {
+            return 1;
+        }
     }
-    if (!xr_ok(xrLocateViews(sSession, &locate, &view_state, (uint32_t)sViewCount, &n, sViews), "xrLocateViews") ||
-        (int)n != sViewCount) {
+    if (!sHaveOrigin || !locate_views(sSpace)) {
         return 1;   /* the frame is begun: end it with nothing to present */
-    }
-    for (i = 0; i < sViewCount; i++) {
-        sLayerViews[i].type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
-        sLayerViews[i].next = NULL;
-        sLayerViews[i].pose = sViews[i].pose;
-        sLayerViews[i].fov = sViews[i].fov;
-        sLayerViews[i].subImage.swapchain = sSwap[i];
-        sLayerViews[i].subImage.imageRect.offset.x = 0;
-        sLayerViews[i].subImage.imageRect.offset.y = 0;
-        sLayerViews[i].subImage.imageRect.extent.width = sW[i];
-        sLayerViews[i].subImage.imageRect.extent.height = sH[i];
-        sLayerViews[i].subImage.imageArrayIndex = 0;
-    }
-    if (!sHaveOrigin) {
-        capture_origin();
     }
     sRender = 1;
     sSubmit = 1;

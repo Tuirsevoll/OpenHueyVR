@@ -25,6 +25,7 @@
 #include "../platform/music.h"
 #include "../platform/seq.h"
 #include "../platform/vr.h"
+#include "../game/vrhands.h"
 
 #include "../core/files.h"
 #include "../core/zip.h"
@@ -3426,8 +3427,26 @@ PRIM(p_vr_stick) {   /* ( -- ) ( F: -- x y ) the left controller: x right, y dow
     FPUSH(x);
     FPUSH(y);
 }
-PRIM(p_vr_look_yaw) {   /* ( -- ) ( F: -- yaw ) where she is looking, level */
+PRIM(p_vr_look_yaw) {   /* ( -- ) ( F: -- yaw ) where she is looking, level, camera heading */
     FPUSH(vr_move_yaw());
+}
+PRIM(p_vr_face) {   /* ( -- ) ( F: -- yaw ) that look as a body heading (0 along +z) */
+    FPUSH(vr_face_yaw());
+}
+PRIM(p_vr_down) {   /* ( button -- flag ) a Quest button held (circle, square, select, ...) */
+    PUSH(vr_pad_down((int)POP()) ? -1 : 0);
+}
+PRIM(p_vr_pressed) {   /* ( button -- flag ) that button went down this tick */
+    PUSH(vr_pad_pressed((int)POP()) ? -1 : 0);
+}
+PRIM(p_vr_run) {   /* ( -- flag ) the left stick click toggled running */
+    PUSH(vr_run_on() ? -1 : 0);
+}
+PRIM(p_vr_right) {   /* ( -- ) ( F: -- x ) the right stick, left/right */
+    FPUSH(vr_right_stick());
+}
+PRIM(p_vr_turn) {   /* ( -- ) ( F: yaw -- ) add to the view's yaw; her body is turned by the caller */
+    vr_add_turn((float)FPOP());
 }
 
 /* a cutscene's track is the movie's. The room's music, the stage music and the sound effects
@@ -3534,6 +3553,7 @@ void engine_tick(Engine *e) {
             snddrv_play_placed((uint32_t)d->sound, 5, 0, 0, at, ahead);
         }
     }
+    vrhands_tick(e);   /* grip grabs and doors, after the room has swung them itself */
     freecam_tick(e);   /* (last: over the shots and the cutscenes) */
     render_look_tick();
     cutscene_audio(cutscene_heard(e), 1);
@@ -4041,7 +4061,7 @@ void bind_engine(Forth *f) {
         {"motion-table", p_motion_table, "( id addr len -- )"}, {"exe-table", p_exe_table, "( addr len -- addr n | 0 0 )"}, {"root-delta", p_root_delta, "( id -- ) ( F: -- F: turn dx dy dz )"}, {"bone-pos", p_bone_pos, "( id bone -- ) ( F: -- F: x y z )"}, {"bone-point", p_bone_point, "( id bone -- ) ( F: ox oy oz -- F: x y z )"}, {"foot-down?", p_foot_down, "( id foot -- flag )"}, {"dog-legs", p_dog_legs, "( id on -- )"}, {"human-legs", p_human_legs, "( id right left -- )"}, {"legs-fit", p_legs_fit, "( id tri mask plant -- ) ( F: back front -- )"}, {"lorenzo-chair", p_lorenzo_chair, "( id on -- )"}, {"chair-fit", p_chair_fit, "( id tri mask -- ) ( F: front back pitch yaw -- )"}, {"chair-rises", p_chair_rises, "( id -- ) ( F: body front -- )"}, {"head-bones", p_head_bones, "( id head neck -- )"}, {"head-turn", p_head_turn, "( id -- ) ( F: pitch yaw -- )"}, {"legs-height", p_legs_height, "( id -- ) ( F: -- F: y )"}, {"motion-track", p_motion_track, "( id code prev? -- flag ) ( F: -- F: a b c )"}, {"motion-track-by", p_motion_track_by, "( id code prev? -- flag ) ( F: dt -- F: a b c )"}, {"foot-at", p_foot_at, "( id left? -- down? ) ( F: dt -- F: x y z )"}, {"motion-overlay", p_motion_overlay, "( id motion-id -- )"}, {"turns-clear", p_turns_clear, "( id -- )"}, {"turn+", p_turn_add, "( id bone -- ) ( F: pitch yaw -- )"}, {"motion@", p_motion_fetch, "( id -- motion-id | -1 )"}, {"motion-done?", p_motion_done, "( id -- flag )"},
         {"motion-frames", p_motion_frames, "( id -- frames )"}, {".motions", p_motions, "( id -- )"},
         {"rumble", p_rumble, "( channel strength frames -- )"}, {"rumble-buzz", p_rumble_buzz, "( channel on frames -- )"}, {"rumble-swell", p_rumble_swell, "( channel from to frames -- )"}, {"rumble-sequence-clear", p_rumble_seq_clear, "( -- )"}, {"rumble-step", p_rumble_seq_add, "( small? from to frames -- )"}, {"rumble-now", p_rumble_now, "( -- small? large )"}, {"rumble-allowed!", p_rumble_allow, "( flag -- )"}, {"game-volume!", p_game_volume, "( F: v -- )"}, {"world-volume!", p_world_volume, "( F: v -- )"}, {"world-volume", p_world_volume_q, "( F: -- v )"}, {"pad-stick", p_pad_stick, "( F: -- x y )"}, {"key-down?", p_key_down, "( key -- flag )"}, {"key-hold", p_key_hold, "( scancode flag -- )"}, {"controls", p_controls, "( -- n )"}, {"control-key", p_control_key, "( i -- scancode )"}, {"control-binding", p_control_binding, "( i which -- scancode )"}, {"control-bind", p_control_bind, "( scancode i which -- )"}, {"controls-reset", p_controls_reset, "( -- )"}, {"control-bind-next", p_control_bind_next, "( i -- )"}, {"control-waiting", p_control_waiting, "( -- i )"}, {"key-name", p_key_name, "( scancode -- addr len )"}, {"mod-camera", p_mod_camera, "( -- addr )"}, {"mod-camera!", p_mod_camera_set, "( on -- )"}, {"mod-camera?", p_mod_camera_has, "( -- flag )"}, {"mouse-capture", p_mouse_capture, "( on -- )"}, {"art-picture", p_art_picture, "( picture group -- h flag )"}, {"thumbnail", p_thumbnail, "( movie group -- flag )"}, {"alone", p_alone, "( id -- )"}, {"cam-keep", p_cam_keep, "( -- )"}, {"cam-kept", p_cam_kept, "( -- )"}, {"key-push", p_key_push, "( scancode -- )"}, {"key-pressed?", p_key_pressed, "( key -- flag )"}, {"mouse-dx", p_mouse_dx, "( F: -- F: dx )"},
-        {"mouse-dy", p_mouse_dy, "( F: -- F: dy )"}, {"freecam?", p_freecam, "( -- flag )"}, {"freecam!", p_freecam_set, "( on -- )"}, {"vr-calibrate", p_vr_calibrate, "( -- )"}, {"vr-height!", p_vr_height, "( F: metres -- )"}, {"vr-scale!", p_vr_scale, "( F: scale -- )"}, {"vr-body", p_vr_body, "( -- ) ( F: -- F: height scale )"}, {"vr-stick", p_vr_stick, "( -- ) ( F: -- F: x y )"}, {"vr-look-yaw", p_vr_look_yaw, "( -- ) ( F: -- F: yaw )"}, {"mouse-down?", p_mouse_down, "( button -- flag )"},
+        {"mouse-dy", p_mouse_dy, "( F: -- F: dy )"}, {"freecam?", p_freecam, "( -- flag )"}, {"freecam!", p_freecam_set, "( on -- )"}, {"vr-calibrate", p_vr_calibrate, "( -- )"}, {"vr-height!", p_vr_height, "( F: metres -- )"}, {"vr-scale!", p_vr_scale, "( F: scale -- )"}, {"vr-body", p_vr_body, "( -- ) ( F: -- F: height scale )"}, {"vr-stick", p_vr_stick, "( -- ) ( F: -- F: x y )"}, {"vr-look-yaw", p_vr_look_yaw, "( -- ) ( F: -- F: yaw )"}, {"vr-face", p_vr_face, "( -- ) ( F: -- F: yaw )"}, {"vr-down?", p_vr_down, "( button -- flag )"}, {"vr-pressed?", p_vr_pressed, "( button -- flag )"}, {"vr-run?", p_vr_run, "( -- flag )"}, {"vr-right", p_vr_right, "( -- ) ( F: -- F: x )"}, {"vr-turn!", p_vr_turn, "( -- ) ( F: yaw -- )"}, {"mouse-down?", p_mouse_down, "( button -- flag )"},
         {"on-tick", p_on_tick, "( xt -- )"}, {"off-tick", p_off_tick, "( xt -- )"}, {"ticks", p_ticks, "( -- ticks )"}, {"dt", p_dt, "( F: -- F: seconds )"},
         {"on-draw", p_on_draw, "( xt -- )"}, {"off-draw", p_off_draw, "( xt -- )"}, {"pen-color", p_pen_color, "( rgba -- )"},
         {"pen-scale", p_pen_scale, "( n -- )"}, {"draw-text", p_draw_text, "( addr len x y -- )"}, {"draw-rect", p_draw_rect, "( x y w h -- )"},

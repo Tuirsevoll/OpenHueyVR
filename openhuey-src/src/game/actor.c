@@ -1,4 +1,5 @@
 #include "actor.h"
+#include "vrhands.h"
 
 #include <math.h>
 
@@ -708,6 +709,7 @@ static void pose_hook(Mat4 *world, int n, void *user) {
     if (sHookActor->cloth != NULL) {
         cloth_pose(sHookActor->cloth, world, n, &sHookPlace, &sHookUnplace);
     }
+    vrhands_pose(sHookActor, world, &sHookPlace, &sHookUnplace);
 }
 
 /* room -> model space: the place undone (turn back, unscale; its origin at height y) */
@@ -851,7 +853,7 @@ static void skin(Actor *a) {
         place.m[13] = a->hlegs.on && a->hlegs.fitted ? a->hlegs.height : a->pos.y;   /* (BodyFrames' +0x804) */
         place.m[14] = a->pos.z;
         model_pose_turns(a->turns, a->nturns);
-        if (a->legs.on || a->hlegs.on || a->cloth != NULL) {
+        if (a->legs.on || a->hlegs.on || a->cloth != NULL || vrhands_wants(a)) {
             sHookActor = a;
             sHookPlace = place;
             sHookUnplace = unplace_of(a, place.m[13]);

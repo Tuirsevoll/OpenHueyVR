@@ -11,11 +11,19 @@ USING: engine vectors keys actors messages common paths doors fiona.state fiona.
 \ ---- the exit she may use: the first whose door area she stands in (Progress_WhoIsWhere: the
 \ area before its door), with a door nobody holds ----
 : in-door-area? ( exit -- flag )  0 her-pos door-in-area? ;
+\ the door leaf in front of where she is looking (about 120 degrees), not one behind her.
+\ the spot she walks to can sit on either side of the leaf, so the leaf itself is the target.
+: door-ahead? ( exit -- flag )
+    vr? 0= if  drop true exit  then
+    room-door-at 0= if  fdrop fdrop fdrop false exit  then
+    {: F: x y z :}
+    her-pos {: F: hx hy hz :}
+    x hx f-  z hz f-  fatan2  vr-face f-  angle-wrap fabs  60e deg>rad f<= ;
 : usable ( -- exit | -1 )
     8 0 do
-        i door-here? if  i in-door-area? if
+        i door-here? if  i in-door-area? if  i door-ahead? if
             i exit-door dup 0< 0= swap door-held? 0= and if  i unloop exit  then
-        then  then
+        then  then  then
     loop  -1 ;
 : quick? ( -- flag )  her-fear-bits @ 2 and 0=  her-danger @ chased <> and ;   \ not panicking, not chased
 

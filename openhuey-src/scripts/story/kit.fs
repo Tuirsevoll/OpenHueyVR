@@ -270,37 +270,70 @@ $80 constant music-cut    \ (the stage music cut with it, at once)
 : fade-in ( frames -- )  screen:from-black with-music or fade wait-fade ;
 
 \ ---- areas (the room's, C's facts): in one, or crossing into one since the last frame ----
-: in-area? ( id area -- flag )
-    over here? 0= if  2drop false exit  then  swap body-at vec@ area-in? ;
 : crossed ( id area -- n )   \ 1 into it, -1 out of it, 0 neither
     {: id area | i :}  id person-of to i  i 0< if  0 exit  then
     i cells seen + @ 0= if  0 exit  then
     i /vec * was-at + vec@  id body-at vec@  area area-cross ;
 : entered? ( id area -- flag )  crossed 1 = ;
+\ the rendered look, as a body heading (0 along +z). the same frame fatan2 uses.
+: look-yaw ( F: -- yaw )  vr-face ;
+\ in the headset she faces where she is looking, not where her body last walked
+: face-yaw ( id -- ) ( F: -- yaw )  dup fiona = vr? and if  drop look-yaw  else  body-yaw  then ;
+\ where the action she is testing sits. an A-button offer in the headset has to fall inside
+\ the forward cone (about 120 degrees). story checks keep their own compass test.
+variable aim-on
+create aim-at 2 floats allot
+: aim! ( F: x z -- )  aim-at float+ sf!  aim-at sf!  -1 aim-on ! ;
+: note-fiona ( id -- ) ( F: x z -- )   \ remember a target only for her, and only in the headset
+    vr? 0= over fiona <> or if  drop fdrop fdrop exit  then  drop aim! ;
+: aim-cone? ( -- flag )
+    aim-on @ 0= if  false exit  then
+    aim-at sf@  aim-at float+ sf@  fiona body-pos fswap fdrop  {: F: tx tz hx hz :}
+    tx hx f-  tz hz f-  {: F: dx dz :}
+    dx fdup f*  dz fdup f*  f+  1.5e f< if  true exit  then   \ the point is at her feet
+    dx dz fatan2  look-yaw f-  angle-wrap fabs  60e deg>rad f<= ;
+: faced-offer? ( -- flag )   \ an offer with a target: she is looking at it. no target: unchanged
+    vr? 0= aim-on @ 0= or if  true exit  then  aim-cone? ;
+: in-area? ( id area -- flag )
+    {: id area | hit :}
+    id here? 0= if  false exit  then
+    id body-at vec@ area area-in? to hit
+    hit vr? and id fiona = and if  area dup area-middle 0= if  drop fdrop fdrop fdrop  else  drop fswap fdrop aim!  then  then
+    hit ;
 : heading? ( id deg within -- flag )   \ facing deg (degrees), within so many
-    {: id deg within :}  id body-yaw angle-wrap rad>deg  deg s>f f-  fabs
-    fdup 180e f> if  360e fswap f-  then  within s>f f<= ;
+    {: id deg within | ok :}
+    id face-yaw angle-wrap rad>deg  deg s>f f-  fabs
+    fdup 180e f> if  360e fswap f-  then  within s>f f<=  to ok
+    \ looking at the target counts too, so a compass written for the old camera cannot
+    \ demand that she face away from it
+    vr? id fiona = and aim-on @ and if  ok aim-cone? or to ok  then
+    ok ;
 : faces-area? ( id area within -- flag )   \ inside it, facing its middle
     {: id area within :}  id area in-area? 0= if  false exit  then
+    vr? id fiona = and if  aim-cone? exit  then
     area area-middle drop fswap fdrop  id body-pos fswap fdrop  {: F: ax az mx mz :}
     ax mx f-  az mz f-  fatan2 angle-wrap rad>deg  {: F: toward :}
-    id body-yaw angle-wrap rad>deg toward f-  fabs  fdup 180e f> if  360e fswap f-  then  within s>f f<= ;
+    id face-yaw angle-wrap rad>deg toward f-  fabs  fdup 180e f> if  360e fswap f-  then  within s>f f<= ;
 : touches? ( id F: x y z r h -- flag )   \ its body overlapping the upright cylinder at (x y z), radius r, height h
     {: id F: x y zz r h :}  id here? 0= if  false exit  then
     id body-at vec@ id body-dims {: F: cx cy cz cr ch :}
     cy ch 2e f/ f+  y h 2e f/ f+ f- fabs  h fabs ch fabs f+ 2e f/ f<=
-    zz cz f- fdup f*  x cx f- fdup f* f+  r cr f+ fdup f* f<=  and ;
+    zz cz f- fdup f*  x cx f- fdup f* f+  r cr f+ fdup f* f<=  and
+    dup if  x zz id note-fiona  then ;
 : centred-in? ( id F: x y z r h -- flag )   \ its centre inside the upright cylinder across, overlapping it in height
     {: id F: x y zz r h :}  id here? 0= if  false exit  then
     id body-at vec@ id body-dims {: F: cx cy cz cr ch :}
     cy ch 2e f/ f+  y h 2e f/ f+ f- fabs  h fabs ch fabs f+ 2e f/ f<=
-    zz cz f- fdup f*  x cx f- fdup f* f+  r fdup f* f<=  and ;
+    zz cz f- fdup f*  x cx f- fdup f* f+  r fdup f* f<=  and
+    dup if  x zz id note-fiona  then ;
 : centre-across? ( id F: x z r -- flag )   \ its centre within r of (x, z) across - anyone or anything with a body
     {: id F: x z r :}  id dup 0< swap body? 0= or if  false exit  then   \ (the rooms' zone bit 8)
-    id body-pos fswap fdrop {: F: cx cz :}  cx x f- fdup f*  cz z f- fdup f* f+  r fdup f* f<= ;
+    id body-pos fswap fdrop {: F: cx cz :}  cx x f- fdup f*  cz z f- fdup f* f+  r fdup f* f<=
+    dup if  x z id note-fiona  then ;
 : reaches-across? ( id F: x z r -- flag )   \ its body within r of (x, z) across, whatever its height (the rooms' zone bit 2)
     {: id F: x z r :}  id here? 0= if  false exit  then
-    id body-at vec@ id body-dims {: F: cx cy cz cr ch :}  cx x f- fdup f*  cz z f- fdup f* f+  r cr f+ fdup f* f<= ;
+    id body-at vec@ id body-dims {: F: cx cy cz cr ch :}  cx x f- fdup f*  cz z f- fdup f* f+  r cr f+ fdup f* f<=
+    dup if  x z id note-fiona  then ;
 : before-door? ( id exit -- flag )   \ before the exit's door (the original's cond 0x18)
     {: id ex :}  id here? 0= if  false exit  then  id body-pos ex 0 door-in-area? ;
 : remember-people ( -- )
@@ -716,7 +749,7 @@ $8016 constant no-time-message  \ "I have to get away! I don't have time for thi
 : busy? ( -- flag )   \ (chased, the stalker here, or another than Hewie held)
     chased?  stalker here? or  fiona-p holder-of @ 0< 0= or  stalker-p holder-of @ 0< 0= or ;
 : offer ( xt when -- )   \ her doing xt (an activity, Fiona held for it), the first offered wins
-    {: xt when :}  offer-closed? if  exit  then
+    {: xt when :}  faced-offer? 0= if  exit  then  offer-closed? if  exit  then
     in-panic? when any-time <> and if  exit  then
     when unhurried = chased? and if  no-time-message offer-msg !  exit  then
     when calm-hewie-up = if
@@ -725,9 +758,9 @@ $8016 constant no-time-message  \ "I have to get away! I don't have time for thi
     then
     xt offer-xt ! ;
 : offer-remark-now ( msg -- )   \ a message to read, whatever goes on
-    offer-closed? if  drop exit  then  offer-msg ! ;
+    faced-offer? 0= if  drop exit  then  offer-closed? if  drop exit  then  offer-msg ! ;
 : offer-remark ( msg when -- )   \ a message to read
-    {: msg when :}  offer-closed? if  exit  then
+    {: msg when :}  faced-offer? 0= if  exit  then  offer-closed? if  exit  then
     in-panic? when any-time <> and if  exit  then
     when unhurried = chased? and if  no-time-message to msg  then
     msg offer-msg ! ;
@@ -962,19 +995,21 @@ $30 constant swing-phase  $34 constant swing-offset  $38 constant swing-left  $3
 : point-seen? ( F: x y z -- flag )  out-of-view? 0= ;   \ (on the screen: the rooms' "point-on-camera? not" - their cond 0x4F is the camera's out-of-view test)
 : faces-point? ( id within F: x z -- flag )   \ facing the point, within so many degrees
     {: id within F: x z :}  id here? 0= if  false exit  then
+    vr? id fiona = and if  x z aim!  aim-cone? exit  then
     id body-pos fswap fdrop {: F: mx mz :}  x mx f-  z mz f-  fatan2
-    id body-yaw f- angle-wrap fabs rad>deg  within s>f f<= ;
+    id face-yaw f- angle-wrap fabs rad>deg  within s>f f<= ;
 : close-to? ( a b margin -- flag )   \ their bodies within margin of each other across, overlapping in height
     {: a b margin | F: ay F: ah F: ar F: by F: bh F: br :}  a here?  b here? and 0= if  false exit  then
     a body-pos fdrop fswap fdrop to ay  a body-dims to ah to ar
     b body-pos fdrop fswap fdrop to by  b body-dims to bh to br
     ay by f< if  by ay f-  ah  else  ay by f-  bh  then  f> if  false exit  then
-    a body-at b body-at vec-dist-xz  ar br f+ margin s>f f+  f<= ;
+    a body-at b body-at vec-dist-xz  ar br f+ margin s>f f+  f<=
+    dup if  b body-pos fswap fdrop a note-fiona  then ;
 : touches-facing? ( a b margin within -- flag )   \ a close to b, and facing it within so many degrees
     {: a b margin within | F: bx F: bz F: ax F: az :}  a here? b here? and 0= if  false exit  then
     a b margin close-to? 0= if  false exit  then
     b body-pos fswap fdrop  to bz  to bx  a body-pos fswap fdrop  to az  to ax
-    bx ax f-  bz az f-  fatan2  a body-yaw f- angle-wrap fabs rad>deg  within s>f f<= ;
+    bx ax f-  bz az f-  fatan2  a face-yaw f- angle-wrap fabs rad>deg  within s>f f<= ;
 : point-in? ( v F: x y z r h -- flag )   \ the point inside the upright cylinder standing on (x y z)
     {: v F: x y zz r h :}  v vec@ {: F: px py pz :}
     py  y h 2e f/ f+  f- fabs  h fabs 2e f/ f<=   pz zz f- fdup f*  px x f- fdup f* f+  r fdup f* f<=  and ;
@@ -1480,7 +1515,7 @@ $72 constant unlock-sound   $8008 constant unlocked-msg   \ (the common bank's; 
         i cells in-here + !
     loop ;
 : text-gone ( -- )  shown-msg @ 0< if  exit  then  shown-msg @ window send close-text  -1 shown-msg ! ;   \ (ours left up: closed)
-: frame-start ( -- )  0 offer-xt !  0 offer-msg !  broadcast zone-targets-off ;   \ (the breakables say so again)
+: frame-start ( -- )  0 offer-xt !  0 offer-msg !  0 aim-on !  broadcast zone-targets-off ;   \ (the breakables say so again)
 \ what every room does, played as a place (story/common.fs: the original's shared scripts run
 \ after a room's own phases - crouching, ... - and the item uses' scripts)
 defer every-room ( -- )   ' noop is every-room
