@@ -22,6 +22,24 @@ void vr_lock_pose(int on);
  * where the cutscene began and only eases back if the player turns well away; pitch and roll
  * are not followed. corners: bottom left, bottom right, top left, top right. */
 void vr_cutscene_screen(int active, Vec3 corners[4]);
+/* this eye's view of tracking space, head pose included (the UI panel lives there) */
+int vr_head_view(int eye, Mat4 *view);
+/* gameplay view: the headset relative to the calibrated eye height, translations scaled.
+ * 0 when there is no pose yet. */
+int vr_body_view(Mat4 *view);
+/* stand straight and call this: the headset's height above the floor becomes the eye height,
+ * and the world scale becomes Fiona's height over that. 0 if the headset has no height. */
+int vr_calibrate(float *height_m, float *scale);
+void vr_set_height(float height_m);
+void vr_set_scale(float scale);
+void vr_body(float *height_m, float *scale);
+/* the headset's yaw relative to where it was at startup (radians, right is positive) */
+float vr_head_yaw(void);
+/* the yaw movement should use: her facing plus where the headset is looking */
+void vr_set_move_yaw(float yaw);
+float vr_move_yaw(void);
+/* the left controller stick: x right, y down, length 1 past the dead zone (0 0 at rest) */
+void vr_stick(float *x, float *y);
 /* this eye's image. `view` maps camera space onto the eye (headset pose, in world units);
  * `proj` is its OpenXR field of view over the camera's near and far. `fbo` is the swapchain. */
 int vr_eye_begin(int eye, float znear, float zfar, int *w, int *h, Mat4 *proj, Mat4 *view, unsigned *fbo);

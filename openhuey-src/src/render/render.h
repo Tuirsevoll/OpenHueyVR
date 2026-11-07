@@ -210,11 +210,14 @@ float render_line_height(float scale);
 /* save the last drawn frame as a PNG; 0 on failure */
 int render_screenshot(const char *path);
 
-/* an offscreen colour target the size asked (a cutscene picture, drawn once). The framebuffer
- * is what render_set_present wants; the texture is that picture. */
+/* an offscreen colour target the size asked (a cutscene picture, or the UI, drawn once). The
+ * framebuffer is what render_set_present wants; the texture is that picture. */
 unsigned render_stage_fbo(int w, int h);
 unsigned render_stage_tex(void);
-/* that picture on four world corners (bottom left, bottom right, top left, top right) */
+/* 2D into that target: cleared transparent, no scene pass. */
+void render_overlay_begin(int w, int h, unsigned fbo);
+/* that picture on four world corners (bottom left, bottom right, top left, top right).
+ * A transparent texel leaves the scene behind it. */
 void render_show_stage(unsigned tex, const Mat4 *vp, const Vec3 corners[4]);
 
 #endif

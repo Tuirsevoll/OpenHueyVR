@@ -558,8 +558,14 @@ float doorway_faded(const Engine *e, const Actor *a) {
     return 0.0f;
 }
 
+static Actor *sFp;   /* her model, hidden while the headset is inside it */
+
 static void draw_actor(Engine *e, Actor *a, const Mat4 *vp) {
     float alpha = a->alpha, faded = doorway_faded(e, a);
+
+    if (a == sFp) {
+        return;
+    }
 
     a->alpha = alpha * (1.0f - faded);
     use_lights(e, a);
@@ -666,7 +672,8 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
         if (e->alone - 1 < MAX_ACTORS && e->actors[e->alone - 1].used) {
             draw_actor(e, &e->actors[e->alone - 1], &vp);
         }
-        goto the_2d;
+        render_post();
+        return;
     }
     room_draw_begin(&e->room, eye, forward);
     rv = room_view(proj, view, eye, e->camera.znear, e->camera.zfar);
@@ -711,8 +718,11 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
         }
         post_shine_end();
     }
-the_2d:
     render_post();
+}
+
+/* menus, prompts, the console: one layer, in the picture's pixels */
+static void draw_flat(Engine *e) {
     engine_draw_2d(e);   /* scripts' 2D (on-draw hooks) */
     if (e->hud[0] != 0) {
         float scale = e->height >= 900 ? 3.0f : 2.0f;
@@ -734,7 +744,11 @@ the_2d:
 
 static void draw_eye(Engine *e, const Mat4 *proj, const Mat4 *view) {
     draw_scene(e, proj, view, view_position(view), view_forward(view));
+    draw_flat(e);
 }
+
+/* the menu's picture: a 4:3 panel, laid out once. The headset shows that one picture. */
+enum { UI_W = 1280, UI_H = 960 };
 
 static void prepare_shadows(Engine *e) {
     int i;
@@ -756,6 +770,85 @@ static int cutscene_on_screen(void) {
     return gCamDir.scene || (movie_status() == MOVIE_PLAYING && !movie_paused());
 }
 
+/* where "looking ahead" sits in the world. her body and the old camera keep turning on their own;
+ * this does not, so the headset is the only thing that changes where she looks. it is taken again
+ * after a cutscene or the free camera. the half turn is her model's yaw, which faces the other way. */
+static float sAlign;
+static int sAlignSet;
+static int sRecenter;
+
+/* her eyes. the headset's own orientation is applied on top of sAlign, so looking around does not
+ * go through her body yaw. a cutscene and the free camera keep the game's camera. */
+static int fiona_view(Engine *e, Camera *out) {
+    int i;
+    Actor *pick = NULL;
+    float head;
+
+    sFp = NULL;
+    if (gCamDir.scene || freecam_active()) {
+        sRecenter = 1;
+        return 0;
+    }
+    for (i = 0; i < MAX_ACTORS; i++) {
+        Actor *a = &e->actors[i];
+
+        if (!a->used || strncmp(a->name, "O_FI", 4) != 0) {
+            continue;
+        }
+        if (a->visible) {
+            pick = a;
+            break;
+        }
+        if (pick == NULL) {
+            pick = a;
+        }
+    }
+    if (pick == NULL) {
+        return 0;
+    }
+    head = vr_head_yaw();
+    if (!sAlignSet || sRecenter) {
+        sAlign = pick->yaw + 3.14159265f - head;
+        sAlignSet = 1;
+        sRecenter = 0;
+    }
+    *out = e->camera;
+    out->yaw = sAlign;
+    out->pitch = 0.0f;
+    out->roll = 0.0f;
+    {
+        Vec3 bone = pick->head.head > 0 ? actor_bone(pick, pick->head.head)
+                                        : vec3(pick->pos.x, pick->pos.y + 14.0f, pick->pos.z);
+
+        /* height from the head, but not its walk-cycle sway: that yaw is the old camera's fight */
+        out->pos.x = pick->pos.x + sinf(sAlign);
+        out->pos.y = bone.y + 1.5f;
+        out->pos.z = pick->pos.z - cosf(sAlign);
+    }
+    sFp = pick;
+    return 1;
+}
+
+static void hear_from_her(Engine *e) {
+    Camera cam;
+    Mat4 body;
+
+    if (vr_active() && fiona_view(e, &cam) && vr_body_view(&body)) {
+        Mat4 view = mat4_mul(body, camera_view(&cam));
+        Vec3 fwd = view_forward(&view);
+        float flat = sqrtf(fwd.x * fwd.x + fwd.z * fwd.z);
+
+        /* the same forward the eyes will render, levelled. the stick moves along it. */
+        if (flat > 0.25f) {
+            vr_set_move_yaw(atan2f(fwd.x, -fwd.z));
+        }
+        engine_set_ear(&view);
+        return;
+    }
+    sFp = NULL;
+    engine_set_ear(NULL);
+}
+
 static void draw(Engine *e) {
     prepare_shadows(e);
     if (vr_active()) {
@@ -764,6 +857,7 @@ static void draw(Engine *e) {
         int screen = cutscene_on_screen();
 
         if (screen) {
+            sFp = NULL;   /* the scene shows her; the picture is the projected screen */
             /* the cutscene is drawn once, then put on a screen in front of the player. The
              * eyes keep the real head pose, so looking around is looking around the screen. */
             Mat4 proj, view;
@@ -804,26 +898,48 @@ static void draw(Engine *e) {
                 vr_eye_end(i);
             }
         } else {
-            gRender.aspect = 0;   /* an eye is the whole picture; the headset's field of view replaces the window's */
-            vr_cutscene_screen(0, NULL);
-            /* a story shot keeps the scripted camera in front of the player */
-            vr_lock_pose(gCamDir.event);
-            for (i = 0; i < n; i++) {
-                Mat4 proj, offset, view;
-                int w, h;
-                unsigned fbo;
+            /* menus and prompts are drawn once, then put on the same kind of screen as a cutscene.
+             * Each eye keeps the real head pose, so the panel is one picture at a fixed distance. */
+            Vec3 corners[4];
+            unsigned ui = render_stage_fbo(UI_W, UI_H);
 
-                if (!vr_eye_begin(i, e->camera.znear, e->camera.zfar, &w, &h, &proj, &offset, &fbo)) {
-                    vr_eye_end(i);
-                    continue;
+            gRender.aspect = 1;
+            e->width = UI_W;
+            e->height = UI_H;
+            render_overlay_begin(UI_W, UI_H, ui);
+            draw_flat(e);
+            vr_cutscene_screen(1, corners);
+            gRender.aspect = 0;   /* an eye is the whole picture; the headset's field of view replaces the window's */
+            vr_lock_pose(gCamDir.event);
+            {
+                Camera played;
+                Mat4 body;
+                int fp = fiona_view(e, &played) && vr_body_view(&body);
+
+                if (!fp) {
+                    sFp = NULL;
                 }
-                e->width = w;
-                e->height = h;
-                render_set_present(fbo);
-                render_begin(w, h, e->clear);
-                view = mat4_mul(offset, camera_view(&e->camera));
-                draw_eye(e, &proj, &view);
-                vr_eye_end(i);
+                for (i = 0; i < n; i++) {
+                    Mat4 proj, offset, view, head, vp;
+                    int w, h;
+                    unsigned fbo;
+
+                    if (!vr_eye_begin(i, e->camera.znear, e->camera.zfar, &w, &h, &proj, &offset, &fbo)) {
+                        vr_eye_end(i);
+                        continue;
+                    }
+                    e->width = w;
+                    e->height = h;
+                    render_set_present(fbo);
+                    render_begin(w, h, e->clear);
+                    view = mat4_mul(fp ? body : offset, camera_view(fp ? &played : &e->camera));
+                    draw_scene(e, &proj, &view, view_position(&view), view_forward(&view));
+                if (vr_head_view(i, &head)) {
+                    vp = mat4_mul(proj, head);
+                    render_show_stage(render_stage_tex(), &vp, corners);
+                }
+                    vr_eye_end(i);
+                }
             }
             vr_lock_pose(0);
         }
@@ -855,6 +971,7 @@ static void start_scripts(Engine *e, int hidden) {
     forth_set_effect(e->forth, forth_prim(e->forth, "exit-status", p_exit_status), "( n -- )");
     forth_set_effect(e->forth, forth_prim(e->forth, "error-count", p_error_count), "( -- n )");
     forth_constant(e->forth, "hidden?", hidden ? -1 : 0);   /* (no window: tests, screenshots - no title, a new game at once; --title: the title even so) */
+    forth_constant(e->forth, "vr?", vr_active() ? -1 : 0);
     forth_constant(e->forth, "full-tests?", sFullTests ? -1 : 0);   /* (a full test run: the long tests too) */
     if (!load_scripts(e->forth)) {
         fprintf(stderr, "openhuey: the scripts didn't load (see above); the console is open\n");
@@ -1021,6 +1138,15 @@ int main(int argc, char **argv) {
             fullscreen = gRender.fullscreen;
             platform_fullscreen(fullscreen);
         }
+        if (vr_active() && !freecam_active() && e->input.pressed[SDL_SCANCODE_PAGEUP]) {
+            float h, s;
+
+            e->input.pressed[SDL_SCANCODE_PAGEUP] = false;
+            if (e->forth != NULL && vr_calibrate(&h, &s)) {
+                forth_printf(e->forth, "vr: height %.2f m, scale %.2f\n", h, s);
+            }
+        }
+        hear_from_her(e);
         if (e->input.pressed[SDL_SCANCODE_GRAVE]) {
             e->console.open = !e->console.open;
             e->input.pressed[SDL_SCANCODE_GRAVE] = false;   /* (taken here, once) */
@@ -1037,6 +1163,10 @@ int main(int argc, char **argv) {
             e->input.mouse_dx = e->input.mouse_dy = 0;
         }
 
+        if (vr_active()) {   /* scripts lay the menus out for the panel, not for one eye */
+            e->width = UI_W;
+            e->height = UI_H;
+        }
         /* fixed ticks: as many as real time asks for (at least one in --frames runs) */
         lag += now - last;
         last = now;

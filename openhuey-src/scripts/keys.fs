@@ -30,7 +30,11 @@ enum: button  circle square l1 triangle r1 cross start-button select-button ;
 \ ---- the sticks ----
 \ the left stick: W A S D (and a gamepad's left stick as far as it is pushed), x right, z down
 : stick@ ( F: -- x z )
-    0e 0e  {: F: x F: z :}
+    {: | F: vx F: vy F: x F: z :}
+    vr? if
+        vr-stick to vy to vx
+        vx f0= vy f0= and 0= if  vx vy exit  then
+    then
     key: D key-held? if  1e to x  then  key: A key-held? if  x 1e f- to x  then
     key: S key-held? if  1e to z  then  key: W key-held? if  z 1e f- to z  then
     pad-stick  fover f0= fdup f0= and if  fdrop fdrop x z exit  then ;

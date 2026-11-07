@@ -56,7 +56,8 @@ variable line-y
     loop
     buttons
     $20 opt-row @ row-y $1C $80 part   \ the cursor
-    $82 menu-line $46 $186 false text ;
+    $82 menu-line $46 $186 false text
+    vr? if  3 s" Page Up: set height"  $30  $1B8  $D8D0C8FF 2 ui-text  then ;
 
 : change ( d -- )   \ the row's setting changed (left / right)
     opt-row @ case

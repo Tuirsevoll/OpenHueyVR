@@ -67,6 +67,8 @@ behaviour filming
   on camera-hold ( -- )  -1 held !  cam-next-set ;
   on tick ( -- )  cam-started? if  cam-ease  then ;
   on frame-end ( -- )   \ (after everyone has moved)
+      \ the headset is the camera while she is free to walk. a cutscene still runs this.
+      vr? cam-scene? 0= and freecam? 0= and if  exit  then
       cam-started? 0= if  exit  then
       held @ 0= if  cam-take-followed  then
       cam-track

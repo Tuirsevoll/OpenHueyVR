@@ -148,7 +148,8 @@ $D8D0C400 constant plain-colour   \ (the font's own, palette 0: its white tinted
     stage @ closed = if  exit  then
     frame!  screen-size nip 224 / 1 max pen !
     pause-layer  0 0 screen-size  dim  ui-rect
-    in-movie? if  unpause-msg $140 $190 line-at  skip-msg $140 $1A4 line-at  else  play-lines  then ;
+    in-movie? if  unpause-msg $140 $190 line-at  skip-msg $140 $1A4 line-at  else  play-lines  then
+    vr? in-movie? 0= and if  pause-layer s" Page Up: set height"  48  36  $D8D0C8FF 2 ui-text  then ;
 
 behaviour pausing
   on spawned ( -- )  closed stage !  self subscribe tick  self subscribe held-tick  self subscribe frame-end ;

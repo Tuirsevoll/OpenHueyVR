@@ -14,6 +14,8 @@ USING: engine keys common vectors messages facts fiona.state fiona.anims ;
     stick@ stick-z f!  stick-x f! ;
 : run-held? ( -- flag )  hands-off? 0=  cross button-down? and ;   \ (Fiona_Move: cross held)
 : turned ( F: cam-yaw nx nz -- dx dz )  stick-turned ;
+\ in the headset, the stick points where she is looking, not where the old camera sits
+: steer-yaw ( F: -- a )  vr? if  vr-look-yaw  else  cam-yaw  then ;
 : small? ( F: x z -- flag )  fabs 0.5e f<= fabs 0.5e f<= and ;
 : dir! ( F: x z -- )  her-dir v.z sf!  0e her-dir v.y sf!  her-dir v.x sf! ;
 : dir-by ( F: yaw -- )  nx nz turned dir! ;
@@ -27,8 +29,8 @@ enum: turn-mode  camera-relative steered turning-round door-steered ;
     her-mode @ dup own-mode = swap down-mode = or 0= if  exit  then
     her-heading f@ her-yaw f!  0 her-still !
     nx nz small? if  exit  then
-    3 her-lock !  steered her-turn-mode !  cam-yaw her-steer-yaw f!
-    cam-yaw nx nz turned fswap fatan2 her-heading f! ;
+    3 her-lock !  steered her-turn-mode !  steer-yaw her-steer-yaw f!
+    steer-yaw nx nz turned fswap fatan2 her-heading f! ;
 defer settled-for-stand ( -- how )   \ (2 once her animation has faded in, else 1: fiona.moving)
 \ how the direction is taken: the camera now, her facing, none, the steering camera
 enum: direction-from  by-camera by-facing by-none by-steering ;
@@ -42,7 +44,7 @@ enum: direction-from  by-camera by-facing by-none by-steering ;
                   her-lock @ if  -1 her-lock +!  her-cam-yaw f@ her-steer-yaw f!
                   else
                       sx her-stick v.x sf@ f-  sz her-stick v.z sf@ f-  vlen 0.01e f< if
-                          turning-round her-turn-mode !  0.5e deg>rad her-turn-rate f!  cam-yaw her-steer-yaw f!
+                          turning-round her-turn-mode !  0.5e deg>rad her-turn-rate f!  steer-yaw her-steer-yaw f!
                       then
                   then
                   her-steer-yaw f@ nx nz turned fswap fatan2 her-turn-to f!
@@ -55,7 +57,22 @@ enum: direction-from  by-camera by-facing by-none by-steering ;
               then  endof
         >r by-camera r>
     endcase ;
+\ the headset is the only steering. the old camera's cuts and its "keep the last camera" turn
+\ are not used, and she moves the way the stick points without waiting to face it.
+: vr-move ( -- )
+    read-stick
+    sx sz vlen fdup f0> if  fdup sx fswap f/ way-x f!  sz fswap f/ way-z f!  else  fdrop 0e way-x f!  0e way-z f!  then
+    sx sz small? dup if  1 her-still +!  her-still @ 6 min her-still !  else  0 her-still !  then  drop
+    steer-yaw dir-by
+    her-still @ 0= if  stick-heading her-heading f!  then
+    camera-relative her-turn-mode !
+    0 her-cut !
+    sx her-stick v.x sf!  0e her-stick v.y sf!  sz her-stick v.z sf!
+    steer-yaw her-cam-yaw f!
+    nx her-last v.x sf!  0e her-last v.y sf!  nz her-last v.z sf!
+    run-held? her-run? ! ;
 : read-controls ( -- )
+    vr? if  vr-move exit  then
     read-stick
     sx sz vlen fdup f0> if  fdup sx fswap f/ way-x f!  sz fswap f/ way-z f!  else  fdrop 0e way-x f!  0e way-z f!  then
     her-turn-mode @ door-steered =  her-cut @ or if  after-cut  then  0 her-cut !
@@ -65,10 +82,10 @@ enum: direction-from  by-camera by-facing by-none by-steering ;
         by-steering of  her-cam-yaw f@ dir-by  endof
         by-none of  0e 0e dir!  endof
         by-facing of  her-yaw f@ fdup fsin fswap fcos dir!  endof
-        by-camera of  cam-yaw dir-by  endof
+        by-camera of  steer-yaw dir-by  endof
     endcase
     sx her-stick v.x sf!  0e her-stick v.y sf!  sz her-stick v.z sf!
-    her-turn-mode @ camera-relative = if  cam-yaw her-cam-yaw f!  then
+    her-turn-mode @ camera-relative = if  steer-yaw her-cam-yaw f!  then
     her-turn-mode @ turning-round <> if  nx her-last v.x sf!  0e her-last v.y sf!  nz her-last v.z sf!  then
     run-held? her-run? ! ;
 

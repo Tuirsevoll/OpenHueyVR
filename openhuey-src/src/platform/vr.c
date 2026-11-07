@@ -33,6 +33,30 @@ void vr_end_frame(void) {}
 int vr_eye_count(void) { return 0; }
 void vr_lock_pose(int on) { (void)on; }
 void vr_cutscene_screen(int active, Vec3 corners[4]) { (void)active; (void)corners; }
+int vr_head_view(int eye, Mat4 *view) { (void)eye; (void)view; return 0; }
+int vr_body_view(Mat4 *view) { (void)view; return 0; }
+float vr_head_yaw(void) { return 0.0f; }
+void vr_set_move_yaw(float yaw) { (void)yaw; }
+float vr_move_yaw(void) { return 0.0f; }
+void vr_stick(float *x, float *y) {
+    if (x != NULL) {
+        *x = 0.0f;
+    }
+    if (y != NULL) {
+        *y = 0.0f;
+    }
+}
+int vr_calibrate(float *height_m, float *scale) { (void)height_m; (void)scale; return 0; }
+void vr_set_height(float height_m) { (void)height_m; }
+void vr_set_scale(float scale) { (void)scale; }
+void vr_body(float *height_m, float *scale) {
+    if (height_m != NULL) {
+        *height_m = 1.6f;
+    }
+    if (scale != NULL) {
+        *scale = 1.0f;
+    }
+}
 int vr_eye_begin(int eye, float znear, float zfar, int *w, int *h, Mat4 *proj, Mat4 *view, unsigned *fbo) {
     (void)eye; (void)znear; (void)zfar; (void)w; (void)h; (void)proj; (void)view; (void)fbo;
     return 0;
@@ -57,6 +81,7 @@ static HMODULE sLoader;
 static XrInstance sInstance;
 static XrSession sSession;
 static XrSpace sSpace;
+static XrSpace sStage;   /* the floor, when the runtime has one */
 static XrSystemId sSystem;
 static XrEnvironmentBlendMode sBlend = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
 static XrFrameState sFrame;
@@ -94,6 +119,19 @@ static PFN_xrWaitFrame xrWaitFrame;
 static PFN_xrBeginFrame xrBeginFrame;
 static PFN_xrEndFrame xrEndFrame;
 static PFN_xrLocateViews xrLocateViews;
+static PFN_xrLocateSpace xrLocateSpace;
+static PFN_xrCreateActionSet xrCreateActionSet;
+static PFN_xrDestroyActionSet xrDestroyActionSet;
+static PFN_xrCreateAction xrCreateAction;
+static PFN_xrStringToPath xrStringToPath;
+static PFN_xrSuggestInteractionProfileBindings xrSuggestInteractionProfileBindings;
+static PFN_xrAttachSessionActionSets xrAttachSessionActionSets;
+static PFN_xrSyncActions xrSyncActions;
+static PFN_xrGetActionStateVector2f xrGetActionStateVector2f;
+static XrActionSet sActions;
+static XrAction sMove;
+static float sStickX, sStickY;
+static float sMoveYaw;
 static PFN_xrCreateReferenceSpace xrCreateReferenceSpace;
 static PFN_xrDestroySpace xrDestroySpace;
 static PFN_xrEnumerateSwapchainFormats xrEnumerateSwapchainFormats;
@@ -293,6 +331,221 @@ static XrPosef head_pose(void) {
     h.position.y /= (float)sViewCount;
     h.position.z /= (float)sViewCount;
     return h;
+}
+
+/* Fiona is about 1.6 m. The scale makes a measured player that tall in the world. */
+static float sEyeHeight = 1.6f;
+static float sBodyScale = 1.0f;
+static int sEyeSet;      /* a calibration, or the first pose, chose the eye height */
+static int sEyeManual;   /* the console set it; the first pose must not replace it */
+
+static int floor_height(float *out) {
+    XrPosef head;
+
+    if (sViewCount <= 0) {
+        return 0;
+    }
+    head = head_pose();
+    if (sStage != XR_NULL_HANDLE && xrLocateSpace != NULL && sFrame.predictedDisplayTime != 0) {
+        XrSpaceLocation loc = {XR_TYPE_SPACE_LOCATION};
+        XrVector3f p;
+
+        if (XR_SUCCEEDED(xrLocateSpace(sSpace, sStage, sFrame.predictedDisplayTime, &loc)) &&
+            (loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0) {
+            p = quat_rotate(loc.pose.orientation, head.position);
+            *out = p.y + loc.pose.position.y;
+            return 1;
+        }
+    }
+    *out = head.position.y;
+    return 1;
+}
+
+static float clamp_scale(float s) {
+    return s < 0.4f ? 0.4f : s > 2.0f ? 2.0f : s;
+}
+
+int vr_body_view(Mat4 *view) {
+    XrPosef d;
+    float h;
+
+    if (view == NULL || !sHaveOrigin || sViewCount <= 0 || !floor_height(&h)) {
+        return 0;
+    }
+    if (!sEyeSet && !sEyeManual) {
+        sEyeHeight = h;   /* standing as the session started: her eyes, no crouch yet */
+        sEyeSet = 1;
+    }
+    d = pose_delta(head_pose());
+    d.position.x *= sBodyScale;
+    d.position.z *= sBodyScale;
+    d.position.y = (h - sEyeHeight) * sBodyScale;
+    *view = pose_to_view(d);
+    return 1;
+}
+
+int vr_calibrate(float *height_m, float *scale) {
+    float h;
+
+    if (!floor_height(&h)) {
+        return 0;
+    }
+    sEyeHeight = h;
+    sEyeSet = 1;
+    sEyeManual = 1;
+    /* a real floor height sizes the world to her. Anything else (a seated origin) keeps scale 1. */
+    sBodyScale = (h >= 0.8f && h <= 2.3f) ? clamp_scale(1.6f / h) : 1.0f;
+    if (height_m != NULL) {
+        *height_m = sEyeHeight;
+    }
+    if (scale != NULL) {
+        *scale = sBodyScale;
+    }
+    return 1;
+}
+
+void vr_set_height(float height_m) {
+    sEyeHeight = height_m;
+    sEyeSet = 1;
+    sEyeManual = 1;
+}
+
+void vr_set_scale(float scale) {
+    sBodyScale = clamp_scale(scale);
+    sEyeManual = 1;
+}
+
+void vr_body(float *height_m, float *scale) {
+    if (height_m != NULL) {
+        *height_m = sEyeHeight;
+    }
+    if (scale != NULL) {
+        *scale = sBodyScale;
+    }
+}
+
+static float quat_yaw(XrQuaternionf q);
+
+float vr_head_yaw(void) {
+    if (!sHaveOrigin || sViewCount <= 0) {
+        return 0.0f;
+    }
+    return quat_yaw(pose_delta(head_pose()).orientation);
+}
+
+void vr_set_move_yaw(float yaw) { sMoveYaw = yaw; }
+float vr_move_yaw(void) { return sMoveYaw; }
+
+void vr_stick(float *x, float *y) {
+    if (x != NULL) {
+        *x = sStickX;
+    }
+    if (y != NULL) {
+        *y = sStickY;
+    }
+}
+
+static void sync_stick(void) {
+    XrActiveActionSet active;
+    XrActionsSyncInfo sync = {XR_TYPE_ACTIONS_SYNC_INFO};
+    XrActionStateGetInfo get = {XR_TYPE_ACTION_STATE_GET_INFO};
+    XrActionStateVector2f state = {XR_TYPE_ACTION_STATE_VECTOR2F};
+    float x, y, len;
+
+    sStickX = sStickY = 0.0f;
+    if (sMove == XR_NULL_HANDLE || xrSyncActions == NULL || xrGetActionStateVector2f == NULL) {
+        return;
+    }
+    active.actionSet = sActions;
+    active.subactionPath = XR_NULL_PATH;
+    sync.countActiveActionSets = 1;
+    sync.activeActionSets = &active;
+    if (XR_FAILED(xrSyncActions(sSession, &sync))) {
+        return;
+    }
+    get.action = sMove;
+    get.subactionPath = XR_NULL_PATH;
+    if (XR_FAILED(xrGetActionStateVector2f(sSession, &get, &state)) || !state.isActive) {
+        return;
+    }
+    x = state.currentState.x;
+    y = -state.currentState.y;   /* stick up is forward: the game's stick z grows downward */
+    len = sqrtf(x * x + y * y);
+    if (len < 0.2f) {
+        return;
+    }
+    if (len > 1.0f) {
+        len = 1.0f;
+    }
+    sStickX = x / len;
+    sStickY = y / len;
+}
+
+/* the left stick, on the profiles a headset is likely to be using */
+static void bind_stick(void) {
+    static const char *const profiles[] = {
+        "/interaction_profiles/oculus/touch_controller",
+        "/interaction_profiles/valve/index_controller",
+        "/interaction_profiles/microsoft/motion_controller",
+        "/interaction_profiles/hp/mixed_reality_controller",
+        "/interaction_profiles/htc/vive_cosmos_controller",
+        "/interaction_profiles/htc/vive_focus3_controller",
+    };
+    XrActionSetCreateInfo set = {XR_TYPE_ACTION_SET_CREATE_INFO};
+    XrActionCreateInfo act = {XR_TYPE_ACTION_CREATE_INFO};
+    XrPath stick;
+    XrSessionActionSetsAttachInfo attach = {XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
+    size_t i;
+
+    if (xrCreateActionSet == NULL || xrCreateAction == NULL || xrStringToPath == NULL ||
+        xrSuggestInteractionProfileBindings == NULL || xrAttachSessionActionSets == NULL) {
+        return;
+    }
+    strcpy(set.actionSetName, "gameplay");
+    strcpy(set.localizedActionSetName, "Gameplay");
+    if (XR_FAILED(xrCreateActionSet(sInstance, &set, &sActions))) {
+        return;
+    }
+    act.actionType = XR_ACTION_TYPE_VECTOR2F_INPUT;
+    strcpy(act.actionName, "move");
+    strcpy(act.localizedActionName, "Move");
+    if (XR_FAILED(xrCreateAction(sActions, &act, &sMove)) ||
+        XR_FAILED(xrStringToPath(sInstance, "/user/hand/left/input/thumbstick", &stick))) {
+        return;
+    }
+    for (i = 0; i < sizeof(profiles) / sizeof(profiles[0]); i++) {
+        XrPath profile;
+        XrActionSuggestedBinding binding;
+        XrInteractionProfileSuggestedBinding sug = {XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+
+        if (XR_FAILED(xrStringToPath(sInstance, profiles[i], &profile))) {
+            continue;
+        }
+        binding.action = sMove;
+        binding.binding = stick;
+        sug.interactionProfile = profile;
+        sug.countSuggestedBindings = 1;
+        sug.suggestedBindings = &binding;
+        xrSuggestInteractionProfileBindings(sInstance, &sug);
+    }
+    {
+        XrPath profile, pad;
+        XrActionSuggestedBinding binding;
+        XrInteractionProfileSuggestedBinding sug = {XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+
+        if (XR_SUCCEEDED(xrStringToPath(sInstance, "/interaction_profiles/htc/vive_controller", &profile)) &&
+            XR_SUCCEEDED(xrStringToPath(sInstance, "/user/hand/left/input/trackpad", &pad))) {
+            binding.action = sMove;
+            binding.binding = pad;
+            sug.interactionProfile = profile;
+            sug.countSuggestedBindings = 1;
+            sug.suggestedBindings = &binding;
+            xrSuggestInteractionProfileBindings(sInstance, &sug);
+        }
+    }
+    attach.countActionSets = 1;
+    attach.actionSets = &sActions;
+    xrAttachSessionActionSets(sSession, &attach);
 }
 
 /* this eye relative to the head: stereo, without the head's look */
@@ -534,6 +787,15 @@ int vr_open(void) {
     LOAD(sInstance, xrBeginFrame);
     LOAD(sInstance, xrEndFrame);
     LOAD(sInstance, xrLocateViews);
+    load_proc(sInstance, "xrLocateSpace", &xrLocateSpace);   /* the floor height; the session still runs without it */
+    load_proc(sInstance, "xrCreateActionSet", &xrCreateActionSet);
+    load_proc(sInstance, "xrDestroyActionSet", &xrDestroyActionSet);
+    load_proc(sInstance, "xrCreateAction", &xrCreateAction);
+    load_proc(sInstance, "xrStringToPath", &xrStringToPath);
+    load_proc(sInstance, "xrSuggestInteractionProfileBindings", &xrSuggestInteractionProfileBindings);
+    load_proc(sInstance, "xrAttachSessionActionSets", &xrAttachSessionActionSets);
+    load_proc(sInstance, "xrSyncActions", &xrSyncActions);
+    load_proc(sInstance, "xrGetActionStateVector2f", &xrGetActionStateVector2f);
     LOAD(sInstance, xrCreateReferenceSpace);
     LOAD(sInstance, xrDestroySpace);
     LOAD(sInstance, xrEnumerateSwapchainFormats);
@@ -592,6 +854,10 @@ int vr_open(void) {
         vr_close();
         return 0;
     }
+    space.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
+    if (xrLocateSpace == NULL || XR_FAILED(xrCreateReferenceSpace(sSession, &space, &sStage))) {
+        sStage = XR_NULL_HANDLE;   /* no floor space: height is the local tracking Y */
+    }
     if (xr_ok(xrEnumerateEnvironmentBlendModes(sInstance, sSystem, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
                                                4, &nblends, blends), "blend modes") && nblends > 0) {
         sBlend = blends[0];
@@ -601,6 +867,7 @@ int vr_open(void) {
             }
         }
     }
+    bind_stick();   /* before the session begins: the left controller's stick */
     for (spins = 0; spins < 1000 && !sRunning && !sQuit; spins++) {
         if (!poll_events()) {
             vr_close();
@@ -651,6 +918,10 @@ void vr_close(void) {
         }
         sImageCount[eye] = 0;
     }
+    if (sStage != XR_NULL_HANDLE && xrDestroySpace != NULL) {
+        xrDestroySpace(sStage);
+        sStage = XR_NULL_HANDLE;
+    }
     if (sSpace != XR_NULL_HANDLE && xrDestroySpace != NULL) {
         xrDestroySpace(sSpace);
         sSpace = XR_NULL_HANDLE;
@@ -658,6 +929,11 @@ void vr_close(void) {
     if (sSession != XR_NULL_HANDLE && xrDestroySession != NULL) {
         xrDestroySession(sSession);
         sSession = XR_NULL_HANDLE;
+    }
+    if (sActions != XR_NULL_HANDLE && xrDestroyActionSet != NULL) {
+        xrDestroyActionSet(sActions);
+        sActions = XR_NULL_HANDLE;
+        sMove = XR_NULL_HANDLE;
     }
     if (sInstance != XR_NULL_HANDLE && xrDestroyInstance != NULL) {
         xrDestroyInstance(sInstance);
@@ -762,6 +1038,7 @@ int vr_begin_frame(void) {
         return 0;
     }
     sFrameOn = 1;
+    sync_stick();
     sRender = 0;
     sSubmit = 0;
     if (!sFrame.shouldRender) {
@@ -824,6 +1101,14 @@ void vr_end_frame(void) {
 }
 
 int vr_eye_count(void) { return sViewCount; }
+
+int vr_head_view(int eye, Mat4 *view) {
+    if (view == NULL || eye < 0 || eye >= sViewCount) {
+        return 0;
+    }
+    *view = pose_view(sViews[eye].pose);
+    return 1;
+}
 
 int vr_eye_begin(int eye, float znear, float zfar, int *w, int *h, Mat4 *proj, Mat4 *view, unsigned *fbo) {
     XrSwapchainImageAcquireInfo acquire = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};

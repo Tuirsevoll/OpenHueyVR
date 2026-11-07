@@ -59,6 +59,7 @@ defer exhausted   ' noop is exhausted   \ (Fiona_Exhausted: fiona.fear)
     else  0 her-run-t !  walk-look  then ;
 defer push-check ( F: reach -- )   ' fdrop is push-check   \ (something to push that far ahead: fiona/push.fs)
 : turn-to-stick ( -- )   \ toward the stick's heading 10 degrees a frame - or, after a cut, the
+    vr? if  her-still @ 0= if  her-heading f@ her-yaw f!  then  exit  then
     her-turn-mode @ turning-round = if   \ accelerating turn toward the old camera's heading
         her-turn-rate f@ 0.0013083e f+ 3e deg>rad fmin her-turn-rate f!
         her-yaw f@ her-turn-to f@ her-turn-rate f@ turn-toward  fswap her-yaw f!
@@ -96,7 +97,7 @@ defer push-check ( F: reach -- )   ' fdrop is push-check   \ (something to push 
     \ the root motion by her heading-to-be, less the further the stick points from her facing
     rz slope-keep f* {: F: ahead :}
     rx ahead her-heading f@ rotate-by  {: F: dx dz :}
-    her-heading f@ her-yaw f@ f- fcos 1e f+ 2e f/ her-stick-k f@ f*  {: F: k :}
+    vr? if  1e  else  her-heading f@ her-yaw f@ f- fcos 1e f+ 2e f/  then  her-stick-k f@ f*  {: F: k :}
     dx k f* to dx  dz k f* to dz
     dx dz move-by
     \ moved backwards (pushed along a wall corner): she stays where she was

@@ -1267,6 +1267,29 @@ unsigned render_stage_fbo(int w, int h) {
 
 unsigned render_stage_tex(void) { return sStageTex; }
 
+void render_overlay_begin(int w, int h, unsigned fbo) {
+    const float clear[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    if (w < 16) {
+        w = 16;
+    }
+    if (h < 16) {
+        h = 16;
+    }
+    R.w = w;
+    R.h = h;
+    R.pw = w;
+    R.ph = h;
+    R.px = 0;
+    R.py = 0;
+    R.present = fbo;
+    R.n2d = 0;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glViewport(0, 0, w, h);
+    glDisable(GL_FRAMEBUFFER_SRGB);
+    glClearNamedFramebufferfv(fbo, GL_COLOR, 0, clear);
+}
+
 void render_show_stage(unsigned tex, const Mat4 *vp, const Vec3 corners[4]) {
     float v[4][5];
     int i;
@@ -1300,7 +1323,8 @@ void render_show_stage(unsigned tex, const Mat4 *vp, const Vec3 corners[4]) {
     glNamedBufferData(sStageVbo, sizeof(v), v, GL_STREAM_DRAW);
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
-    glDisable(GL_BLEND);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_CULL_FACE);
     glUseProgram(sStageProg);
     glProgramUniformMatrix4fv(sStageProg, 0, 1, GL_FALSE, vp->m);
@@ -1309,6 +1333,7 @@ void render_show_stage(unsigned tex, const Mat4 *vp, const Vec3 corners[4]) {
     glBindVertexArray(sStageVao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindVertexArray(0);
+    glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
 }
