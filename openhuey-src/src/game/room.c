@@ -375,6 +375,7 @@ void room_door_move(Room *r, int exit, int open, int slam) {
     d = &r->doors[exit];
     d->mode = slam ? 3 : 2;
     d->closing = !open;
+    d->target = open ? -90.0f : 0.0f;
     d->sounded = 0;
     d->keys = NULL;
 }
@@ -620,6 +621,7 @@ int room_door_set_opened(Room *r, int exit, int open) {
     }
     d->mode = 3;
     d->closing = !open;
+    d->target = open ? -90.0f : 0.0f;
     d->keys = NULL;
     door_side_flags(r, d, open ? 0 : 1, 0x60000, 0);
     door_side_flags(r, d, open ? 1 : 0, 0x60000, 1);
@@ -743,33 +745,36 @@ void room_tick(Room *r) {
             }
             break;
         case 2:
-        case 3:
-            if (!d->closing) {
-                d->swing -= step;
-                if (d->swing < -90.0f) {
-                    d->swing = -90.0f;
-                    d->mode = 0;
-                    d->settled = 1;
-                }
-            } else {
-                d->swing += step;
-                if (d->mode == 2 && !d->sounded && d->swing > -6.0f) {   /* (the latch, silent) */
+        case 3: {
+            /* toward target: shut at 0, open at -90, or the other way at +90 */
+            float goal = d->target;
+            float prev = d->swing;
+            float left = goal - prev;
+
+            if (left > step) {
+                left = step;
+            } else if (left < -step) {
+                left = -step;
+            }
+            d->swing = prev + left;
+            if (d->mode == 2 && d->closing && !d->sounded && prev <= -6.0f && d->swing > -6.0f) {
+                d->sounded = 1;
+                d->sound = 0x28;   /* the latch, silent */
+            }
+            if (d->swing == goal || (goal - prev) * (goal - d->swing) <= 0.0f) {
+                d->swing = goal;
+                if (d->closing && !d->sounded) {   /* the latch, including a physics swing already past -6 */
                     d->sounded = 1;
                     d->sound = 0x28;
-                }
-                if (d->swing > 0.0f) {
-                    if (d->mode == 3) {   /* slammed: the latch, loud */
-                        d->sounded = 1;
-                        d->sound = 0x28;
+                    if (d->mode == 3) {
                         d->sound_how = 4;
                     }
-                    d->swing = 0.0f;
-                    d->mode = 0;
-                    d->settled = 0;
                 }
+                d->mode = 0;
+                d->settled = (goal <= -45.0f || goal >= 45.0f) ? 1 : 0;
             }
-            d->target = d->swing;
             break;
+        }
         }
     }
 }
@@ -992,7 +997,8 @@ int room_door_shades(const Room *r, const RoomView *v, RoomShade *out, int max) 
         int lights[3];
         Mat4 m;
 
-        if (!d->present || !d->shown || !leaf_shown(d) || !(d->swing < 0.0f)) {
+        /* the leaf shadow is built for the original swing (negative). The other way leaves it on the wood. */
+        if (!d->present || !d->shown || !leaf_shown(d) || !(d->swing < -0.5f)) {
             continue;
         }
         /* a shadow may fall at it (lights +0x2C): the eye above its triangle's plane */
