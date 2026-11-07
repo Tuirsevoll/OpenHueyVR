@@ -1,10 +1,13 @@
 /* Arms follow the controllers. Finger shapes are the model's hand morphs (one blend): the
  * index trigger and the grip share it, and a third shape is the point when the mesh has one.
- * Doors already swing in degrees (0 shut, -90 open); a grip holds that angle, and after it
- * lets go the door eases to whichever of those it is nearer. */
+ * Doors swing in degrees (0 shut, -90 open). A hand moves one only while it is touching it.
+ * A shut door follows a grip on the knob; an open door can be pushed from the near side.
+ * After the hand lets go, the door finishes open or shut and that state is the one the
+ * game walks through. A locked door never moves. */
 #include "vrhands.h"
 
 #include "engine.h"
+#include "progress.h"
 #include "room.h"
 
 #include "../platform/vr.h"
@@ -471,27 +474,116 @@ static float dist2(Vec3 a, Vec3 b) {
     return dx * dx + dy * dy + dz * dz;
 }
 
-static int nearest_door(Room *r, Vec3 hand, int *axis, float *best) {
-    int i, found = -1;
+#define DOOR_TOUCH 4.0f    /* world units: the controller has to be against the wood or the knob */
+#define DOOR_AJAR  -15.0f  /* swing below this has already left the latch */
 
-    *best = 12.0f * 12.0f;
-    for (i = 0; i < ROOM_DOORS; i++) {
-        RoomDoor *d = &r->doors[i];
-        float a0, a1, d0;
+static Mat4 door_place(const RoomDoor *d) {
+    float y = d->rot.y + d->swing * 3.14159265f / 180.0f;
+    float cx = cosf(d->rot.x), sx = sinf(d->rot.x), cy = cosf(y), sy = sinf(y);
+    float cz = cosf(d->rot.z), sz = sinf(d->rot.z);
+    Mat4 rx = mat4_identity(), ry = mat4_identity(), rz = mat4_identity(), t = mat4_identity();
 
-        if (!d->present || d->mode == 1) {
-            continue;
-        }
-        a0 = dist2(hand, handle_at(d, 0));
-        a1 = dist2(hand, handle_at(d, 1));
-        d0 = a0 < a1 ? a0 : a1;
-        if (d0 < *best) {
-            *best = d0;
-            *axis = a0 <= a1 ? 0 : 1;
-            found = i;
-        }
+    rx.m[5] = cx;  rx.m[6] = sx;  rx.m[9] = -sx;  rx.m[10] = cx;
+    ry.m[0] = cy;  ry.m[2] = -sy; ry.m[8] = sy;   ry.m[10] = cy;
+    rz.m[0] = cz;  rz.m[1] = sz;  rz.m[4] = -sz;  rz.m[5] = cz;
+    t.m[12] = d->pos.x;
+    t.m[13] = d->pos.y;
+    t.m[14] = d->pos.z;
+    return mat4_mul(t, mat4_mul(rz, mat4_mul(ry, rx)));
+}
+
+static int in_box(Vec3 p, Vec3 lo, Vec3 hi, float margin) {
+    return p.x >= lo.x - margin && p.x <= hi.x + margin && p.y >= lo.y - margin && p.y <= hi.y + margin &&
+           p.z >= lo.z - margin && p.z <= hi.z + margin;
+}
+
+/* the controller against the leaf, in the door's own space */
+static int touching_leaf(const RoomDoor *d, Vec3 hand) {
+    Mat4 place = door_place(d);
+    Mat4 inv = rigid_inverse(&place);
+    Vec3 lo, hi, local;
+    local = mat4_point(&inv, hand);
+    lo = d->mesh.lo;
+    hi = d->mesh.hi;
+    if (!(hi.x > lo.x + 0.2f || hi.y > lo.y + 0.2f || hi.z > lo.z + 0.2f)) {
+        lo = vec3(-1.0f, 0.0f, -1.0f);
+        hi = vec3(12.0f, 22.0f, 1.0f);
     }
-    return found;
+    return in_box(local, lo, hi, DOOR_TOUCH);
+}
+
+static int touching_knob(const RoomDoor *d, Vec3 hand, int *axis) {
+    float a0 = dist2(hand, handle_at(d, 0));
+    float a1 = dist2(hand, handle_at(d, 1));
+    float reach = DOOR_TOUCH * DOOR_TOUCH;
+
+    if (a0 > reach && a1 > reach) {
+        return 0;
+    }
+    *axis = a0 <= a1 ? 0 : 1;
+    return 1;
+}
+
+static int door_index(const Engine *e, int exit) {
+    int room = e->room.id;
+
+    if (room < 0 || room >= WORLD_ROOMS || exit < 0 || exit >= ROOM_EXITS) {
+        return -1;
+    }
+    return e->world.exits[room][exit].door;
+}
+
+/* a locked door, a doorway, or one a character already holds: the hands leave it alone */
+static int door_blocked(const Engine *e, int exit) {
+    int d = door_index(e, exit);
+    uint32_t state;
+
+    if (d < 0 || d >= DOORS || d >= e->world.ndoors) {
+        return 1;
+    }
+    if (e->world.doors[d].flags & 1u) {
+        return 1;
+    }
+    state = gProgress.doors[d];
+    return (state & 8u) != 0 || (state & 1u) != 0;
+}
+
+/* the swing that is about to finish is held, so the doors actor's let-go writes the open bit
+ * and the passage when it comes to rest. A stuck door is not marked held on the way open. */
+static void claim_for_letgo(Engine *e, int exit, int open) {
+    int d = door_index(e, exit);
+    uint32_t state;
+
+    if (d < 0 || d >= DOORS) {
+        return;
+    }
+    state = gProgress.doors[d];
+    if ((state & 8u) != 0 || ((state & 4u) != 0 && open)) {
+        return;
+    }
+    gProgress.doors[d] = state | 1u;
+}
+
+/* increasing swing swings the leaf toward the hand's side of it. A push is the other way. */
+static int push_delta(const RoomDoor *d, int axis, Vec3 hand, float *delta) {
+    float y = d->rot.y + d->swing * (3.14159265f / 180.0f);
+    float lx = axis ? sinf(y) : cosf(y);
+    float lz = axis ? cosf(y) : sinf(y);
+    float hx = hand.x - d->pos.x, hz = hand.z - d->pos.z;
+    float side = lx * hz - lz * hx;
+    float step = clamp_swing(swing_of(d, hand, axis)) - d->swing;
+
+    if ((side >= 0.0f && step > 0.0f) || (side < 0.0f && step < 0.0f)) {
+        return 0;
+    }
+    if (step > 5.0f) {
+        step = 5.0f;
+    }
+    if (step < -5.0f) {
+        step = -5.0f;
+    }
+    *delta = step;
+    return step > 0.4f || step < -0.4f;
 }
 
 static int nearest_prop(PlacedSet *s, Vec3 hand, int other, float *best) {
@@ -531,17 +623,17 @@ static void release_hand(Room *r, int side) {
     (void)r;
 }
 
-static void drive_door(Room *r, int id, int axis, Vec3 hand) {
+static void drive_door(Engine *e, int id, int axis, Vec3 hand) {
     RoomDoor *d;
 
-    if (id < 0 || id >= ROOM_DOORS) {
+    if (id < 0 || id >= ROOM_DOORS || door_blocked(e, id)) {
         return;
     }
-    d = &r->doors[id];
-    if (!d->present) {
+    d = &e->room.doors[id];
+    if (!d->present || d->mode == 1) {
         return;
     }
-    room_door_swing(r, id, clamp_swing(swing_of(d, hand, axis)), 1);
+    room_door_swing(&e->room, id, clamp_swing(swing_of(d, hand, axis)), 1);
     sSettle[id] = 0;
 }
 
@@ -572,13 +664,29 @@ void vrhands_tick(Engine *e) {
                 release_hand(&e->room, side);
             }
         } else if (sHold[side] == HOLD_NONE && rising) {
-            door = nearest_door(&e->room, at, &axis, &doorD);
+            door = -1;
+            doorD = DOOR_TOUCH * DOOR_TOUCH;
+            for (i = 0; i < ROOM_DOORS; i++) {
+                RoomDoor *d = &e->room.doors[i];
+                int ax = 0;
+                float kn = 0.0f;
+
+                if (!d->present || d->mode == 1 || door_blocked(e, i) || !touching_knob(d, at, &ax)) {
+                    continue;
+                }
+                kn = dist2(at, handle_at(d, ax));
+                if (door < 0 || kn < doorD) {
+                    door = i;
+                    axis = ax;
+                    doorD = kn;
+                }
+            }
             prop = nearest_prop(&e->room.placed, at, side ^ 1, &propD);
             if (door >= 0 && (prop < 0 || doorD <= propD)) {
                 sHold[side] = HOLD_DOOR;
                 sHoldId[side] = door;
                 sDoorAxis[side] = axis;
-                drive_door(&e->room, door, axis, at);
+                drive_door(e, door, axis, at);
             } else if (prop >= 0) {
                 sHold[side] = HOLD_PROP;
                 sHoldId[side] = prop;
@@ -586,7 +694,11 @@ void vrhands_tick(Engine *e) {
                 sGrabRot[side] = e->room.placed.p[prop].rot;
             }
         } else if (sHold[side] == HOLD_DOOR) {
-            drive_door(&e->room, sHoldId[side], sDoorAxis[side], at);
+            if (door_blocked(e, sHoldId[side])) {
+                release_hand(&e->room, side);
+            } else {
+                drive_door(e, sHoldId[side], sDoorAxis[side], at);
+            }
         } else if (sHold[side] == HOLD_PROP) {
             Placed *p = sHoldId[side] >= 0 && sHoldId[side] < e->room.placed.n ? &e->room.placed.p[sHoldId[side]] : NULL;
 
@@ -599,23 +711,25 @@ void vrhands_tick(Engine *e) {
             }
         }
         if (sHold[side] == HOLD_NONE && grip <= 0.4f) {
-            door = nearest_door(&e->room, at, &axis, &doorD);
-            if (door >= 0 && doorD < 8.0f * 8.0f &&
-                !(sHold[side ^ 1] == HOLD_DOOR && sHoldId[side ^ 1] == door)) {
-                float want = clamp_swing(swing_of(&e->room.doors[door], at, axis));
-                float now = e->room.doors[door].swing;
-                float step = want - now;
+            for (i = 0; i < ROOM_DOORS; i++) {
+                RoomDoor *d = &e->room.doors[i];
+                float step;
 
-                if (step > 5.0f) {
-                    step = 5.0f;
+                if (!d->present || d->mode == 1 || d->swing >= DOOR_AJAR || door_blocked(e, i)) {
+                    continue;
                 }
-                if (step < -5.0f) {
-                    step = -5.0f;
+                if (sHold[side ^ 1] == HOLD_DOOR && sHoldId[side ^ 1] == i) {
+                    continue;
                 }
-                if (step > 0.4f || step < -0.4f) {
-                    room_door_swing(&e->room, door, now + step, 1);
-                    sSettle[door] = 18;
+                if (!touching_leaf(d, at)) {
+                    continue;
                 }
+                axis = dist2(at, handle_at(d, 0)) <= dist2(at, handle_at(d, 1)) ? 0 : 1;
+                if (!push_delta(d, axis, at, &step)) {
+                    continue;
+                }
+                room_door_swing(&e->room, i, d->swing + step, 1);
+                sSettle[i] = 18;
             }
         }
         sGripWas[side] = grip;
@@ -625,8 +739,11 @@ void vrhands_tick(Engine *e) {
 
         if (held) {
             sSettle[i] = 0;
-        } else if (sSettle[i] > 0 && --sSettle[i] == 0 && e->room.doors[i].present) {
-            room_door_move(&e->room, i, e->room.doors[i].swing < -45.0f, 0);
+        } else if (sSettle[i] > 0 && --sSettle[i] == 0 && e->room.doors[i].present && !door_blocked(e, i)) {
+            int open = e->room.doors[i].swing < -45.0f;
+
+            claim_for_letgo(e, i, open);
+            room_door_move(&e->room, i, open, 0);
         }
     }
 }
