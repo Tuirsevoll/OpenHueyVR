@@ -24,7 +24,7 @@ end-state
 behaviour prompting
   on spawned ( -- )  -1 row !  load-art
       self subscribe tick  self subscribe frame-end  self subscribe arrived ;
-  on show-avoid ( row -- )  row !  showing-for left ! ;
+  on show-avoid ( row -- )  row @ 0< if  screen-face  then  row !  showing-for left ! ;
   on tick ( -- )  row @ 0< if  exit  then  -1 left +!  left @ 0= if  -1 row !  then ;
   on arrived ( room exit -- )  2drop  -1 row ! ;
   on frame-end ( -- )  draw ;

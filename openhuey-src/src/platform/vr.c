@@ -1341,23 +1341,11 @@ int vr_active(void) { return sActive; }
 
 void vr_lock_pose(int on) { sLockPose = on != 0; }
 
-static int sScreenOn, sScreenSnap, sScreenLoose;
-static float sScreenYaw;
+static int sScreenOn, sScreenSnap;
+static Vec3 sScreen[4];
 
 void vr_screen_face(void) { sScreenSnap = 1; }
-void vr_screen_loose(int on) { sScreenLoose = on != 0; }
-
-static float wrap_pi(float a) {
-    const float pi = 3.14159265f;
-
-    while (a > pi) {
-        a -= 2.0f * pi;
-    }
-    while (a < -pi) {
-        a += 2.0f * pi;
-    }
-    return a;
-}
+void vr_screen_loose(int on) { (void)on; }
 
 static float quat_yaw(XrQuaternionf q) {
     float siny = 2.0f * (q.w * q.y + q.x * q.z);
@@ -1366,47 +1354,45 @@ static float quat_yaw(XrQuaternionf q) {
     return atan2f(siny, cosy);
 }
 
+/* one placement: level, 1.8 m in front of the look at this moment. Stored, not rebuilt. */
+static void place_screen(Vec3 out[4]) {
+    XrPosef head = head_look();
+    float yaw = quat_yaw(head.orientation);
+    float dist = 1.8f * VR_UNITS_PER_METER;
+    float half_h = dist * 0.36f;
+    float half_w = half_h * (4.0f / 3.0f);
+    float fx = sinf(yaw);
+    float fz = -cosf(yaw);
+    float rx = cosf(yaw);
+    float rz = sinf(yaw);
+    Vec3 center = vec3(head.position.x * VR_UNITS_PER_METER + fx * dist,
+                       head.position.y * VR_UNITS_PER_METER - 0.08f * VR_UNITS_PER_METER,
+                       head.position.z * VR_UNITS_PER_METER + fz * dist);
+    Vec3 right = vec3(rx * half_w, 0.0f, rz * half_w);
+    Vec3 up = vec3(0.0f, half_h, 0.0f);
+
+    out[0] = vec3_sub(vec3_sub(center, right), up);
+    out[1] = vec3_sub(vec3_add(center, right), up);
+    out[2] = vec3_add(vec3_sub(center, right), up);
+    out[3] = vec3_add(vec3_add(center, right), up);
+}
+
 void vr_cutscene_screen(int active, Vec3 corners[4]) {
-    XrPosef head;
-    float yaw, diff, hx, hy, hz, dist, half_h, half_w, fx, fz, rx, rz;
-    Vec3 center, right, up;
+    int i;
 
     if (!active || !sHaveOrigin || sViewCount <= 0) {
         sScreenOn = 0;
         return;
     }
-    head = head_look();
-    yaw = quat_yaw(head.orientation);
     if (!sScreenOn || sScreenSnap) {
-        sScreenYaw = yaw;   /* open in front of wherever she is looking, then hold */
+        place_screen(sScreen);   /* in front of the current look, then left there */
         sScreenOn = 1;
         sScreenSnap = 0;
-    } else {
-        diff = wrap_pi(yaw - sScreenYaw);
-        if (sScreenLoose && (diff > 1.2f || diff < -1.2f)) {
-            sScreenYaw = yaw;   /* left behind the head: bring it forward and lock it there */
-        } else if (diff > 0.40f || diff < -0.40f) {   /* a real turn: creep back in front, not a glance */
-            sScreenYaw = wrap_pi(sScreenYaw + diff * 0.04f);
-        }
     }
-    hx = head.position.x * VR_UNITS_PER_METER;
-    hy = head.position.y * VR_UNITS_PER_METER;
-    hz = head.position.z * VR_UNITS_PER_METER;
-    dist = 1.8f * VR_UNITS_PER_METER;
-    half_h = dist * 0.36f;
-    half_w = half_h * (4.0f / 3.0f);
-    fx = sinf(sScreenYaw);
-    fz = -cosf(sScreenYaw);
-    rx = cosf(sScreenYaw);
-    rz = sinf(sScreenYaw);
-    center = vec3(hx + fx * dist, hy - 0.08f * VR_UNITS_PER_METER, hz + fz * dist);
-    right = vec3(rx * half_w, 0.0f, rz * half_w);
-    up = vec3(0.0f, half_h, 0.0f);
     if (corners != NULL) {
-        corners[0] = vec3_sub(vec3_sub(center, right), up);
-        corners[1] = vec3_sub(vec3_add(center, right), up);
-        corners[2] = vec3_add(vec3_sub(center, right), up);
-        corners[3] = vec3_add(vec3_add(center, right), up);
+        for (i = 0; i < 4; i++) {
+            corners[i] = sScreen[i];
+        }
     }
 }
 

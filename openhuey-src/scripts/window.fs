@@ -175,7 +175,7 @@ $2A constant cursor-sound   $2B constant decide-sound   $2C constant cancel-soun
 behaviour showing
   on spawned ( -- )  none shown !  self subscribe tick  self subscribe frame-end ;
   on show-text ( msg -- )
-      open? 0= if  -1 broadcast text-shown  then
+      open? 0= if  screen-face  -1 broadcast text-shown  then
       sender asked-by !  none chosen !  0 place !  lay-out ;
   on close-text ( msg -- )
       open? 0= if  drop exit  then

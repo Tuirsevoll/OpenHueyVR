@@ -18,9 +18,9 @@ int vr_eye_count(void);
 /* while locked, an eye is only its offset from the head: a cutscene or story shot keeps the
  * scripted camera in front of the player. Head look applies again once this is cleared. */
 void vr_lock_pose(int on);
-/* a 4:3 screen in tracking space, level, in front of the player. While `active`, its yaw stays
- * where the cutscene began and only eases back if the player turns well away; pitch and roll
- * are not followed. corners: bottom left, bottom right, top left, top right. */
+/* a 4:3 screen in tracking space, level, in front of the player. It is placed when it first
+ * appears, and again after vr_screen_face. After that it stays at that spot: looking around
+ * does not move it. corners: bottom left, bottom right, top left, top right. */
 void vr_cutscene_screen(int active, Vec3 corners[4]);
 /* this eye's view of tracking space, head pose included (the UI panel lives there) */
 int vr_head_view(int eye, Mat4 *view);
@@ -72,9 +72,9 @@ typedef struct VrController {
 } VrController;
 int vr_controller(int hand, VrController *out);   /* 0 left, 1 right */
 int vr_hands_tracked(void);
-/* the next panel placement locks to the current look; loose panels also jump if left behind */
+/* the next panel placement is once, in front of the current look, and then stays put */
 void vr_screen_face(void);
-void vr_screen_loose(int on);
+void vr_screen_loose(int on);   /* kept for callers; the panel does not follow the head */
 /* this eye's image. `view` maps camera space onto the eye (headset pose, in world units);
  * `proj` is its OpenXR field of view over the camera's near and far. `fbo` is the swapchain. */
 int vr_eye_begin(int eye, float znear, float zfar, int *w, int *h, Mat4 *proj, Mat4 *view, unsigned *fbo);

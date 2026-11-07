@@ -862,13 +862,14 @@ static void draw(Engine *e) {
         int screen = cutscene_on_screen();
 
         {
-            static int menu_was;
+            static int menu_was, screen_was;
             int menu = e->paused || e->console.open;
 
-            if (menu && !menu_was) {
-                vr_screen_face();   /* a menu opens in front of the current look, then stays put */
+            if ((menu && !menu_was) || (screen && !screen_was)) {
+                vr_screen_face();   /* a menu or a cutscene opens in front of the current look, then stays put */
             }
             menu_was = menu;
+            screen_was = screen;
         }
         if (screen) {
             vr_screen_loose(0);
@@ -914,8 +915,8 @@ static void draw(Engine *e) {
             }
         } else {
             vr_screen_loose(1);
-            /* menus and prompts are drawn once, then put on the same kind of screen as a cutscene.
-             * Each eye keeps the real head pose, so the panel is one picture at a fixed distance. */
+            /* menus and prompts share one picture. It is placed when something opens it, then
+             * stays in the room: turning the head does not slide it. */
             Vec3 corners[4];
             unsigned ui = render_stage_fbo(UI_W, UI_H);
 

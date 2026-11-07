@@ -154,7 +154,7 @@ behaviour menu
       sender tab-asker !
       swap case
           0 of  tab-item  0 tab-slide !  tab-asker @ send tab-done  endof
-          2 of  drop  2 tab !  endof
+          2 of  drop  screen-face  2 tab !  endof
           4 of  drop  4 tab !  endof
           3 of  drop  3 tab !  $40 tab-slide !  tab-asker @ send tab-done  endof
           >r drop  tab-asker @ send tab-done  r>
