@@ -780,6 +780,31 @@ static void coast_door(Engine *e, int id) {
     room_door_swing(&e->room, id, s, 1);
 }
 
+static int swing_open(float s) {
+    return s <= -8.0f || s >= 8.0f;
+}
+
+static int door_locked_id(int d) {
+    return d >= 0 && d < DOORS && (gProgress.doors[d] & 8u) != 0;
+}
+
+/* the leaf and the opened bit stay together, so a shut door is shut on the nav mesh too */
+static void match_progress(Engine *e, int exit, int d, float swing) {
+    int open = swing_open(swing);
+    uint32_t state = gProgress.doors[d];
+    uint32_t next = open ? (state | 2u) : (state & ~2u);
+
+    if (next != state) {
+        gProgress.doors[d] = next;
+    }
+    room_door_passage(&e->room, exit, open, 0);
+}
+
+void vrhands_forget_poses(void) {
+    memset(sDoorHave, 0, sizeof(sDoorHave));
+    sPoseRoom = -2;
+}
+
 /* the angle last seen on this door, on whichever side of it was loaded */
 static void poses_restore(Engine *e) {
     int room = e->room.id;
@@ -791,16 +816,13 @@ static void poses_restore(Engine *e) {
     sPoseRoom = room;
     for (i = 0; i < ROOM_DOORS; i++) {
         int d = door_index(e, i);
-        int open;
 
-        if (!e->room.doors[i].present || d < 0 || d >= DOORS || !sDoorHave[d]) {
+        if (!e->room.doors[i].present || d < 0 || d >= DOORS || !sDoorHave[d] || door_locked_id(d)) {
             continue;
         }
-        open = world_door_open(&e->world, d);
-        if (open != (int)sDoorOpen[d]) {
-            continue;   /* a script opened or shut it while we were away */
-        }
         room_door_swing(&e->room, i, sDoorSwing[d], 1);
+        match_progress(e, i, d, sDoorSwing[d]);
+        sDoorOpen[d] = (unsigned char)swing_open(sDoorSwing[d]);
     }
 }
 
@@ -812,12 +834,17 @@ static void poses_save(Engine *e) {
     }
     for (i = 0; i < ROOM_DOORS; i++) {
         int d = door_index(e, i);
+        float s;
 
         if (!e->room.doors[i].present || d < 0 || d >= DOORS) {
             continue;
         }
-        sDoorSwing[d] = e->room.doors[i].swing;
-        sDoorOpen[d] = (unsigned char)world_door_open(&e->world, d);
+        s = e->room.doors[i].swing;
+        if (sDoorHave[d] && !door_locked_id(d) && (s - sDoorSwing[d] > 0.5f || sDoorSwing[d] - s > 0.5f)) {
+            match_progress(e, i, d, s);   /* a hand moved it: the passage follows the leaf */
+        }
+        sDoorSwing[d] = s;
+        sDoorOpen[d] = (unsigned char)swing_open(s);
         sDoorHave[d] = 1;
     }
 }

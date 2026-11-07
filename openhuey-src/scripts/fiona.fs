@@ -20,9 +20,57 @@ USING: engine vectors game-state facts actors messages common paths doors saves 
 : arrive-anywhere ( -- )   \ (no exit: by the room's first camera's target, else its middle)
     room-cameras if  camera-target  else  0e 0e 0e  then
     nav-tris if  nav-nearest  then  0e put ;
-: arrive-at ( exit -- )   \ (the room scripts' char-to-exit: its outside spot, her heading kept)
-    0 exit-spot  dup 0< if  drop fdrop fdrop fdrop  arrive-anywhere exit  then
-    {: tri :}  her-yaw f@ put  tri her-tri !  tri her-was-tri ! ;   \ (on the exit's own triangle: over a storey, the search finds the one below)
+fvariable past-x   fvariable past-y   fvariable past-z
+fvariable try-x    fvariable try-y    fvariable try-z
+fvariable door-sx  fvariable door-sy  fvariable door-sz
+fvariable door-dx  fvariable door-dz  fvariable door-len
+variable past-best   variable past-dist
+: past-step ( exit dist -- tri | -1 )   \ along the inside direction; -1 off the mesh or still in the exit area
+    {: ex dist :}
+    door-sx f@  door-dx f@ door-len f@ f/  dist s>f f* f+  past-x f!
+    door-sy f@  past-y f!
+    door-sz f@  door-dz f@ door-len f@ f/  dist s>f f* f+  past-z f!
+    past-x f@ past-y f@ past-z f@ nav-tri dup 0< if  drop -1 exit  then
+    past-x f@ past-y f@ past-z f@ ex exit-area area-in? if  drop -1 exit  then
+    past-x f@ past-y f@ past-z f@ nav-floor past-y f! drop ;
+: kept-spot ( tri -- tri ) ( F: x y z -- x y z )
+    past-z f! past-y f! past-x f!
+    past-x f@ past-y f@ past-z f@ nav-tri dup 0< if  drop  else  nip  then
+    past-x f@ past-y f@ past-z f@ ;
+: stand-past   \ ( exit -- tri ) ( F: -- x y z ) past the leaf and the exit area; tri -1 if there is nowhere
+    -1 past-best !  0e past-x f!  0e past-y f!  0e past-z f!
+    dup 1 exit-spot dup 0< if
+        drop fdrop fdrop fdrop drop
+    else
+        try-z f! try-y f! try-x f!
+        over exit-stand 0= if
+            try-x f@ try-y f@ try-z f@ kept-spot  past-z f! past-y f! past-x f!  nip past-best !
+        else
+            door-sz f! door-sy f! door-sx f!
+            door-sx f@ try-x f@ f- door-dx f!
+            door-sz f@ try-z f@ f- door-dz f!
+            door-dx f@ fdup f*  door-dz f@ fdup f*  f+ fsqrt
+            fdup 1e f< if
+                fdrop  try-x f@ try-y f@ try-z f@ kept-spot  past-z f! past-y f! past-x f!  nip past-best !
+            else
+                door-len f!  drop  28 past-dist !
+                begin
+                    past-best @ 0< if
+                        dup past-dist @ past-step dup 0< if  drop  else  past-best !  then
+                    then
+                    12 past-dist +!
+                past-dist @ 72 < 0= until
+                drop
+            then
+        then
+    then
+    past-x f@ past-y f@ past-z f@  past-best @ ;
+: arrive-at ( exit -- )   \ (the room scripts' char-to-exit: its outside spot, her heading kept.
+    dup 0 exit-spot dup 0< if   \ no outside stand: further into the room than the leaf, clear of the exit area)
+        drop fdrop fdrop fdrop  stand-past
+    else  nip  then
+    dup 0< if  drop fdrop fdrop fdrop  arrive-anywhere
+    else  her-yaw f@ put  dup her-tri !  her-was-tri !  then ;   \ (on the exit's own triangle: over a storey, the search finds the one below)
 : stand-free ( -- )   \ (Fiona_ToIdle but for the turn mode: free, standing, her moves her own)
     free-doing her-doing !  own-mode her-mode !  her-yaw f@ her-heading f!  0 her-rest !  0 her-out-of-reach !
     -1 idle-anim  ['] idle-move her-act ! ;

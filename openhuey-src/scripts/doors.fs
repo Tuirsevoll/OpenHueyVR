@@ -65,6 +65,13 @@ $1000000 constant hewie-barred   $4000000 constant stalker-barred   \ (the nav m
 : refresh-door ( door -- )   \ its passage, if it is in the played room
     8 0 do  room-id i door-of over = if  i refresh  then  loop  drop ;
 : changed ( door -- )  dup refresh-door  broadcast door-changed ;
+: unlatch ( door -- )   \ the global lock and the per-side bars cleared; the leaf is left where it is
+    dup locked-bit has? over $F0 has? or if
+        dup locked-bit clear-bits
+        dup $F0 clear-bits
+        dup changed
+    then
+    drop ;
 : lock-against ( door kind on -- )   \ locked against a kind of character, or not
     {: door kind on :}  door  kind kind-bit 4 lshift  on if  set-bits  else  clear-bits  then  door changed ;
 : door-rooms ( door -- room0 room1 )  door-sides {: r0 e0 t0 r1 e1 t1 :}  r0 r1 ;

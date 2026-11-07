@@ -166,8 +166,7 @@ $3D constant bedroom-door
 : bedroom-open ( -- )
     found-file-201 fact? 0= if  exit  then
     c2f-3-flag1 fact?  hewie-found-in-wire fact? 0= and if  exit  then
-    bedroom-door doors:door-locked? if  bedroom-door unlock  then
-    bedroom-door doors:state@ 2 and 0= if  bedroom-door true open-mark  then ;
+    bedroom-door doors:unlatch ;
 : each-frame ( -- )
     bedroom-open  ways  shove?  ['] flags weakness  draughts  spots  walls-shade
     room-sounds-in? if  tired-sound keep-playing or room-bank fiona sound-by  then ;

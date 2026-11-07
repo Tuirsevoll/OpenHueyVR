@@ -11,5 +11,6 @@ struct Engine;
 int vrhands_wants(const struct Actor *a);
 void vrhands_pose(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace);
 void vrhands_tick(struct Engine *e);
+void vrhands_forget_poses(void);
 
 #endif

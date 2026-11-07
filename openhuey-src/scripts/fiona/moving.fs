@@ -52,8 +52,8 @@ USING: engine game-state actors messages common vectors facts items.names fiona.
                   1 her-rest +!  her-rest @ 90 >= if  rest-anim -1 play-table  else  -1 idle-anim  then
               else  stand  then  0 her-run-t !  endof
         resting-group of  ended? if  stand  then  0 her-run-t !  endof
-        walking-group of  her-still @ vr? if  18  else  6  then  < if  walk-look  else  stand  then  0 her-run-t !  endof
-        running-group of  her-still @ vr? if  18  else  6  then  < if  run-look  else  0 her-rest !  0 her-run-t !  -1 idle-anim  then  endof
+        walking-group of  her-still @ 6 < if  walk-look  else  stand  then  0 her-run-t !  endof
+        running-group of  her-still @ 6 < if  run-look  else  0 her-rest !  0 her-run-t !  -1 idle-anim  then  endof
         >r  0 her-rest !  0 her-run-t !  -1 idle-anim  r>
     endcase ;
 defer exhausted   ' noop is exhausted   \ (Fiona_Exhausted: fiona.fear)

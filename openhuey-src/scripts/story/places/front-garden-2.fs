@@ -117,8 +117,7 @@ create entries  2 , 2 ,   1 , 1 ,   3 , -1 ,                    \ (by exit 0, 1,
 $3C constant bedroom-door
 : bedroom-open ( -- )
     found-file-201 fact? 0= if  exit  then
-    bedroom-door doors:door-locked? if  bedroom-door unlock  then
-    bedroom-door doors:state@ 2 and 0= if  bedroom-door true open-mark  then ;
+    bedroom-door doors:unlatch ;
 : each-frame ( -- )
     events-held state? if  window-light exit  then
     bedroom-open  ways  grate-near  toward-the-cage  spots  window-light ;

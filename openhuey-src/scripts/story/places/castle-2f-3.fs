@@ -99,7 +99,9 @@ $A6 constant actions-doc   $AB constant costumes-doc
     world-held state!  fiona-dressing false no-shadow  3 figure-out  4 figure-out  5 figure-out
     0 dress  steps-in  clothes-part hide-part
     fiona $21 178 5.752e -41.411e place-at  1 1 her-camera  camera-restart
-    hall-door unlock  west-door unlock  hall-door true open-mark  west-door true open-mark
+    hall-door doors:unlatch  west-door doors:unlatch
+    hall-door doors:opened-bit doors:set-bits  west-door doors:opened-bit doors:set-bits
+    hall-door doors:changed  west-door doors:changed  doors-redone
     found-file-202 fact!  no-flee state-off
     15 fade-in  clothes-file give-file
     fiona rest-anim 10 play-blend  fiona 10 idle  now-what-msg say
@@ -208,7 +210,9 @@ $201 constant first-file
     clothes-part show-part  2 blown
     \ (door-shut here left the opened bit clear: the yard and the gallery can only be walked
     \ back through an open door, so the way she left stayed shut behind her)
-    hall-door unlock  west-door unlock  hall-door true open-mark  west-door true open-mark  doors-redone
+    hall-door doors:unlatch  west-door doors:unlatch
+    hall-door doors:opened-bit doors:set-bits  west-door doors:opened-bit doors:set-bits
+    hall-door doors:changed  west-door doors:changed
     fiona $10E 107 -27.455e -48.354e place-at  1 1 her-camera  camera-restart
     found-file-201 fact!  15 fade-in  first-file give-file ;
 : maid-comes? ( -- )   \ (stepping into her way, before the clothes: once a visit)
@@ -353,11 +357,9 @@ forced-exit 1 or constant from-the-wire   \ (sent from the front garden, Hewie f
 : keep-open ( -- )
     found-file-201 fact? 0= if  exit  then
     hiding-offered @ if  exit  then
-    hall-door doors:door-locked? if  hall-door unlock  then
-    hall-door doors:state@ 2 and 0= if  hall-door true open-mark  then
+    hall-door doors:unlatch
     night? if  exit  then
-    west-door doors:door-locked? if  west-door unlock  then
-    west-door doors:state@ 2 and 0= if  west-door true open-mark  then ;
+    west-door doors:unlatch ;
 : each-frame ( -- )
     events-held state? if  doorway-light exit  then   \ (a replay: only the doorway's light)
     keep-open  ambience  fan  ways  show-tv  maid-comes?  hewie-sniffs  spots  hewie-looks  doorway-light ;

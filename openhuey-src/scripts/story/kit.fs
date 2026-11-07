@@ -1159,9 +1159,10 @@ create replay-acts
 \ hidden, the stalker coming in (the rooms' hiding places): whether he will find her - by the
 \ odds (by how often he has come), a creature moving about here gives her away, his alert 4 never
 : will-find? ( odds -- flag )  chance?  2 creature-moving? or  4 stalker-alert? 0= and ;
-: hidden-calm ( -- )   \ (a frame hidden: calmer; he came while she hid and is gone - the prompt again)
-    2 ease-panic  6 calm-her  $1E recover
-    came-while-hidden @  stalker-in? 0= and if  0 came-while-hidden !  1 avoid-prompt  then ;
+: hidden-calm ( -- )   \ (a frame hidden: calmer. once he has been in while she hides and has
+    2 ease-panic  6 calm-her  $1E recover   \ left, the coast-clear prompt - including when she hid after he was already here)
+    stalker-in? if  -1 came-while-hidden !  exit  then
+    came-while-hidden @ if  0 came-while-hidden !  1 avoid-prompt  then ;
 
 \ ---- a recovery point (water to drink): walked to it, a sip, calmed - the room's motion 4 of her
 \ motions' file, its calm sound; the first time ever, its document. Once a visit: the room keeps that ----
