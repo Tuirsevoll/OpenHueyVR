@@ -111,9 +111,8 @@ defer push-check ( F: reach -- )   ' fdrop is push-check   \ (something to push 
     turn-to-stick
     rz slope-keep f* {: F: ahead :}
     vr? if
-        \ the pose plays, but the step is the stick itself, so a cancelled root step cannot pin her
-        stick-len  her-run? @ if  3.2e  else  1.8e  then  f*
-        vr-shove move-by
+        \ the pose plays. the distance is the animation's own root step, aimed along the stick
+        rx ahead vlen her-stick-k f@ f* vr-shove move-by
     else
         \ the root motion by her heading-to-be, less the further the stick points from her facing
         rx ahead her-heading f@ rotate-by  {: F: dx dz :}
