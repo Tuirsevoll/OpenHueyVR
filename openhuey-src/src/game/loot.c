@@ -477,29 +477,11 @@ static int mesh_for_item(int item) {
     return MESH_CARD;
 }
 
-/* a fact named for the item (c1f-3-camomile) still names it when the pickup line was missed */
-static int item_from_fact(int fact) {
-    const char *fn = NULL;
+/* the fact's own spelling (c1f-3-camomile, got-study-key), not whichever name shares its number */
+static int item_from_name(const char *fn) {
     int i, best = -1, bl = 0;
 
-    if (fact < 0) {
-        return -1;
-    }
-    for (i = 0; i < sNameN; i++) {
-        if (sNames[i].v == fact && sNames[i].v >= 0xC0) {
-            fn = sNames[i].s;
-            break;
-        }
-    }
-    if (fn == NULL) {
-        for (i = 0; i < sNameN; i++) {
-            if (sNames[i].v == fact) {
-                fn = sNames[i].s;
-                break;
-            }
-        }
-    }
-    if (fn == NULL) {
+    if (fn == NULL || fn[0] == 0) {
         return -1;
     }
     for (i = 0; i < sNameN; i++) {
@@ -522,6 +504,25 @@ static int item_from_fact(int fact) {
         }
     }
     return best;
+}
+
+static int item_from_fact(int fact) {
+    int i;
+
+    if (fact < 0) {
+        return -1;
+    }
+    for (i = 0; i < sNameN; i++) {
+        if (sNames[i].v == fact && sNames[i].v >= 0xC0) {
+            return item_from_name(sNames[i].s);
+        }
+    }
+    for (i = 0; i < sNameN; i++) {
+        if (sNames[i].v == fact) {
+            return item_from_name(sNames[i].s);
+        }
+    }
+    return -1;
 }
 
 static int token_item(const char *s) {
@@ -678,6 +679,7 @@ static void parse_one(const char *path) {
     struct {
         int fx, item, fact, mode, has, keyish;
         float x, y, z;
+        char factname[NAME_LEN];
     } flick[64], pick[64];
     int nf = 0, np = 0;
 
@@ -711,9 +713,10 @@ static void parse_one(const char *path) {
         }
     }
     free(text);
-    for (i = 0; i + 2 < nt; i++) {
+    for (i = 0; i < nt; i++) {
         int v = 0;
-        if (parse_num(tok[i].s, &v) && (strcmp(tok[i + 1].s, "constant") == 0 || strcmp(tok[i + 1].s, "fact:") == 0) &&
+        /* place! is the last word of a place file, so the scan has to include the tail */
+        if (i + 2 < nt && parse_num(tok[i].s, &v) && (strcmp(tok[i + 1].s, "constant") == 0 || strcmp(tok[i + 1].s, "fact:") == 0) &&
             nloc < 192) {
             snprintf(loc[nloc].s, NAME_LEN, "%s", tok[i + 2].s);
             loc[nloc].v = v;
@@ -747,17 +750,22 @@ static void parse_one(const char *path) {
             flick[nf].mode = -1;
             flick[nf].has = 1;
             flick[nf].keyish = 0;
+            flick[nf].factname[0] = 0;
             {
                 int back, saw_fact = 0;
                 for (back = i - 1; back >= 0 && back >= i - 48; back--) {
+                    if (strcmp(tok[back].s, ";") == 0 || strcmp(tok[back].s, ":") == 0) {
+                        break; /* the fact guarding this sparkle is in this word, not the previous one */
+                    }
                     if (ends_key(tok[back].s)) {
                         flick[nf].keyish = 1;
                     }
                     if (!saw_fact && strcmp(tok[back].s, "fact?") == 0 && back > 0) {
                         int f = local_get(loc, nloc, tok[back - 1].s);
+                        saw_fact = 1;
+                        snprintf(flick[nf].factname, NAME_LEN, "%s", tok[back - 1].s);
                         if (f != 0x80000000) {
                             flick[nf].fact = f;
-                            saw_fact = 1;
                         }
                     }
                 }
@@ -833,18 +841,29 @@ static void parse_one(const char *path) {
             int fact = pick[found].fact >= 0 ? pick[found].fact : flick[i].fact;
             int mode = pick[found].mode;
             if (item < 0) {
+                item = item_from_name(flick[i].factname);
+            }
+            if (item < 0) {
                 item = item_from_fact(fact);
             }
-            if (item >= 0 && mode < 0) {
+            if (item < 0) {
+                continue; /* a sparkle with no item: the effect stays, no blank card */
+            }
+            if (mode < 0) {
                 mode = MODE_UP;
             }
-            add_cat(room, item, fact, flick[i].fx, mode, item >= 0 ? mesh_for_item(item) : (flick[i].keyish ? MESH_KEY : MESH_CARD),
-                    flick[i].x, flick[i].y, flick[i].z, 1);
+            add_cat(room, item, fact, flick[i].fx, mode, mesh_for_item(item), flick[i].x, flick[i].y, flick[i].z, 1);
         } else {
-            int item = item_from_fact(flick[i].fact);
-            int mode = item >= 0 ? MODE_UP : -1;
-            int mesh = item >= 0 ? mesh_for_item(item) : (flick[i].keyish ? MESH_KEY : MESH_CARD);
-            add_cat(room, item, flick[i].fact, flick[i].fx, mode, mesh, flick[i].x, flick[i].y, flick[i].z, 1);
+            int item = item_from_name(flick[i].factname);
+            int mode;
+            if (item < 0) {
+                item = item_from_fact(flick[i].fact);
+            }
+            if (item < 0) {
+                continue;
+            }
+            mode = MODE_UP;
+            add_cat(room, item, flick[i].fact, flick[i].fx, mode, mesh_for_item(item), flick[i].x, flick[i].y, flick[i].z, 1);
         }
     }
     note_button_pickups(tok, nt, loc, nloc, room);
@@ -1259,7 +1278,14 @@ static Cat *cat_at(float x, float y, float z) {
             continue;
         }
         d = fabsf(sCat[i].x - x) + fabsf(sCat[i].y - y) + fabsf(sCat[i].z - z);
-        if (d < bd) {
+        if (d >= 12.0f) {
+            continue;
+        }
+        /* a named item beats a blank sparkle sitting on the same spot */
+        if (best != NULL && best->item >= 0 && sCat[i].item < 0) {
+            continue;
+        }
+        if (best == NULL || d < bd || (best->item < 0 && sCat[i].item >= 0)) {
             bd = d;
             best = &sCat[i];
         }
@@ -1459,25 +1485,16 @@ void loot_sparkle(int fx, float x, float y, float z) {
             }
         }
     }
+    if (c == NULL || c->item < 0) {
+        return; /* no catalog item: the game's sparkle stays, with no blank card */
+    }
     p = fresh();
     if (p == NULL) {
         return;
     }
-    if (c != NULL) {
-        fill_from_cat(p, c, x, y, z);
-        if (fx >= 0) {
-            p->fx = fx;
-        }
-    } else {
-        p->style = ST_SPAWN;
+    fill_from_cat(p, c, x, y, z);
+    if (fx >= 0) {
         p->fx = fx;
-        p->mesh = MESH_CARD;
-        p->home = p->pos = vec3(x, y, z);
-        recover_item(p);
-        ensure_card();
-        if (p->item >= 0) {
-            icon_tex(p->item);
-        }
     }
 }
 
@@ -1650,7 +1667,8 @@ void loot_offer(Forth *f, void *xt) {
         if (!sProp[i].used || sProp[i].pending) {
             continue;
         }
-        d = dist2(at, sProp[i].home);
+        /* shelf and table sparkles sit well above her feet */
+        d = xz2(at, sProp[i].home);
         if (d < bd) {
             bd = d;
             best = i;
