@@ -1063,15 +1063,30 @@ begin-structure /breakable
   field: bk.rgba  field: bk.kind  field: bk.tex
   ffield: bk.x  ffield: bk.y  ffield: bk.z  ffield: bk.r  ffield: bk.h
   ffield: bk.u  ffield: bk.v  ffield: bk.du  ffield: bk.dv  ffield: bk.floor
+  ffield: bk.r0  ffield: bk.h0  field: bk.vase
 end-structure
 $88 constant shatter-sound   $40 constant shatter-loudness   $80303030 constant shard-grey
+0 value vase-word?
 : breakable: ( fact whole-part broken-part F: x y z r h "name" -- )   \ (struck within r of x z, h up from y)
-    create  here /breakable allot  {: f w b a F: x y z r h :}
+    create  latest vase-named? to vase-word?
+    here /breakable allot  {: f w b a F: x y z r h :}
     f a bk.fact !  w a bk.whole !  b a bk.broken !  -1 a bk.group !  -1 a bk.tri !  breakables @ a bk.target !  1 breakables +!
     shatter-sound a bk.sound !  common-bank a bk.bank !
     shard-grey a bk.rgba !  0 a bk.kind !  0 a bk.tex !
-    x a bk.x f!  y a bk.y f!  z a bk.z f!  r a bk.r f!  h a bk.h f!
-    0e a bk.u f!  0e a bk.v f!  1e a bk.du f!  1e a bk.dv f!  0e a bk.floor f! ;
+    x a bk.x f!  y a bk.y f!  z a bk.z f!  r a bk.r f!  h a bk.h f!  r a bk.r0 f!  h a bk.h0 f!
+    0e a bk.u f!  0e a bk.v f!  1e a bk.du f!  1e a bk.dv f!  0e a bk.floor f!
+    vase-word? a bk.vase ! ;
+: at-it ( bk -- ) ( F: -- x y z )  dup bk.x f@  dup bk.y f@  bk.z f@ ;
+: fit-vase-body ( bk -- ) ( F: scale -- )
+    {: a F: s :}
+    a bk.whole @ parts-base + 1+  a at-it  s vase-part
+    a bk.broken @ parts-base + 1+  a at-it  s vase-part
+    a bk.r0 f@ s f* a bk.r f!
+    a bk.h0 f@ s f* a bk.h f! ;
+: fit-vase ( bk -- )   \ a vase, in VR: whole and broken parts grown from the foot with the world scale
+    dup bk.vase @ 0= if  drop exit  then
+    vr? 0= if  drop exit  then
+    vase-scale fit-vase-body ;
 : shard-look ( bk rgba kind tex -- )  {: a c k t :}  c a bk.rgba !  k a bk.kind !  t a bk.tex ! ;   \ (their colour, kind, texture)
 : shard-uv ( bk F: u v du dv -- )   \ (the cell of the texture they show)
     {: a F: u v du dv :}  u a bk.u f!  v a bk.v f!  du a bk.du f!  dv a bk.dv f! ;
@@ -1081,9 +1096,8 @@ $88 constant shatter-sound   $40 constant shatter-loudness   $80303030 constant 
 : broken? ( bk -- flag )  bk.fact @ fact? ;
 : bk-floor ( bk on -- )  over bk.group @ 0< if  2drop exit  then  swap bk.group @ keeps-people-off nav-group! ;
 : as-it-stands ( bk -- )   \ (whole or in pieces, its floor kept off while whole)
-    dup broken? {: a b :}  a b 0= bk-floor
+    dup fit-vase  dup broken? {: a b :}  a b 0= bk-floor
     b if  a bk.whole @ hide-part  a bk.broken @ show-part  else  a bk.whole @ show-part  a bk.broken @ hide-part  then ;
-: at-it ( bk -- ) ( F: -- x y z )  dup bk.x f@  dup bk.y f@  bk.z f@ ;
 : smash ( bk -- )   \ (in pieces now)
     {: a :}  a bk.fact @ fact!  a as-it-stands
     a bk.rgba @ a bk.kind @ a bk.tex @  a at-it  a bk.u f@ a bk.v f@ a bk.du f@ a bk.dv f@  a bk.floor f@  shards
@@ -1092,7 +1106,7 @@ $88 constant shatter-sound   $40 constant shatter-loudness   $80303030 constant 
 : a-target ( bk -- )   \ (whole: a stalker's blow may strike it instead of her - Events_NearestPoint)
     dup bk.target @ swap at-it xyz>cells broadcast zone-target ;
 : breaks? ( bk -- flag )   \ (whole, a blow in its place: broken now)
-    dup broken? if  drop false exit  then  dup a-target
+    dup broken? if  drop false exit  then  dup fit-vase  dup a-target
     dup at-it  dup bk.r f@  dup bk.h f@  struck-in? 0= if  drop false exit  then  smash true ;
 
 \ ---- what every room says the same way, as tables: its ways in (the camera for each exit she

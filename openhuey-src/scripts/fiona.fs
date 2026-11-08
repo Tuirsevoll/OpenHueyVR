@@ -196,6 +196,7 @@ create feet-off-acts   \ (the states that clear +0x1AD5BC)
     -1 her-cmd !
     touching 1 =  feet-set  her-act @ execute  keep-apart
     looks  tell-point
+    hand-strike
     command-sounds  motion-sounds
     footsteps
     show-her  weapon-shown  fit-legs ;
@@ -214,6 +215,7 @@ create feet-off-acts   \ (the states that clear +0x1AD5BC)
     hands-off? if  -1 her-cmd !  else  read-command  try-backstep  try-defend  try-doors  try-ladders  try-let-go  then
     touching 1 =  feet-set  her-act @ execute  keep-apart
     looks  tell-point
+    hand-strike
     command-sounds  motion-sounds
     footsteps
     show-her  weapon-shown  fit-legs ;

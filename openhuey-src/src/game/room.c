@@ -1,6 +1,7 @@
 #include "room.h"
 
 #include "../core/files.h"
+#include "../platform/vr.h"
 #include "../data/tex.h"
 #include "../data/texbank.h"
 #include "../data/roomgltf.h"
@@ -634,12 +635,128 @@ void room_door_angle(Room *r, int exit, float radians) {
     }
 }
 
+/* A vase grows from its foot by this times the Page Up world scale, so a standing hand meets it
+ * and a new calibration keeps that real height. */
+#define VASE_LIFT 3.0f
+static struct {
+    int group;
+    Vec3 origin;
+} sVase[48];
+static int sVaseN;
+static float sVaseScale = 1.0f;
+
+float room_vase_scale(void) {
+    float height, scale;
+
+    if (!vr_active()) {
+        return 1.0f;
+    }
+    vr_body(&height, &scale);
+    (void)height;
+    if (scale < 0.05f) {
+        scale = 1.0f;
+    }
+    return VASE_LIFT * scale;
+}
+
+void room_vases_reset(void) {
+    sVaseN = 0;
+    sVaseScale = 1.0f;
+}
+
+static void vase_scale_group(Room *r, int group, Vec3 origin, float k) {
+    int i;
+
+    if (group <= 0 || group > 255 || fabsf(k - 1.0f) < 1.0e-4f) {
+        return;
+    }
+    for (i = 0; i < r->mesh.nd; i++) {
+        MeshDraw *d = &r->mesh.d[i];
+        int v, end;
+
+        if ((int)d->group != group || d->count <= 0) {
+            continue;
+        }
+        end = d->first + d->count;
+        if (end > r->mesh.nv) {
+            end = r->mesh.nv;
+        }
+        for (v = d->first; v < end; v++) {
+            MeshVertex *p = &r->mesh.v[v];
+
+            p->x = origin.x + (p->x - origin.x) * k;
+            p->y = origin.y + (p->y - origin.y) * k;
+            p->z = origin.z + (p->z - origin.z) * k;
+        }
+    }
+}
+
+void room_vase_note(Room *r, int group, Vec3 origin, float scale) {
+    int i, found = 0, dirty = 0;
+
+    if (r == NULL || r->id < 0 || r->mesh.v == NULL || group <= 0 || group > 255) {
+        return;
+    }
+    if (scale < 0.05f) {
+        scale = 0.05f;
+    }
+    for (i = 0; i < sVaseN; i++) {
+        if (sVase[i].group == group) {
+            sVase[i].origin = origin;
+            found = 1;
+        }
+    }
+    if (!found && sVaseN < (int)(sizeof(sVase) / sizeof(sVase[0]))) {
+        sVase[sVaseN].group = group;
+        sVase[sVaseN].origin = origin;
+        sVaseN++;
+        if (fabsf(sVaseScale - 1.0f) >= 1.0e-4f) {
+            vase_scale_group(r, group, origin, sVaseScale);
+            dirty = 1;
+        }
+    }
+    if (fabsf(scale - sVaseScale) >= 1.0e-4f) {
+        float k = scale / sVaseScale;
+
+        for (i = 0; i < sVaseN; i++) {
+            vase_scale_group(r, sVase[i].group, sVase[i].origin, k);
+        }
+        sVaseScale = scale;
+        dirty = 1;
+    }
+    if (dirty && r->mesh.nv > 0) {
+        render_mesh_upload(&r->gpu, r->mesh.v, r->mesh.nv);
+    }
+}
+
+static void room_vases_sync(Room *r) {
+    float scale, k;
+    int i;
+
+    if (r == NULL || sVaseN <= 0 || !vr_active()) {
+        return;
+    }
+    scale = room_vase_scale();
+    if (fabsf(scale - sVaseScale) < 1.0e-4f) {
+        return;
+    }
+    k = scale / sVaseScale;
+    for (i = 0; i < sVaseN; i++) {
+        vase_scale_group(r, sVase[i].group, sVase[i].origin, k);
+    }
+    sVaseScale = scale;
+    if (r->mesh.nv > 0) {
+        render_mesh_upload(&r->gpu, r->mesh.v, r->mesh.nv);
+    }
+}
+
 int room_load(Room *r, int id) {
     char path[64];
     size_t size;
     const uint8_t *sec;
 
     room_free(r);
+    room_vases_reset();
     pac_room_path(id, path, sizeof(path));
     r->pac.data = files_read(path, &r->pac.size);
     if (r->pac.data == NULL) {
@@ -826,6 +943,7 @@ static void draw_layer_runs(Room *r, const GpuMesh *g, const Mat4 *vp, const Mes
 }
 
 void room_draw_begin(Room *r, Vec3 eye, Vec3 forward) {
+    room_vases_sync(r);
     r->nmoving = 0;
     if (r->id >= 0 && r->mesh.ndyn > 0) {
         int n = roommesh_dynamic(&r->mesh, eye, forward, r->moving_v, r->moving_d), nv = 0, i;

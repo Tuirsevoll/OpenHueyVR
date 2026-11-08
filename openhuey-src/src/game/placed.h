@@ -58,6 +58,8 @@ Placed *placed_named(PlacedSet *s, const char *name);
 void placed_anim(PlacedSet *s, Placed *p, int id, int loop);
 /* a tick: the animations step (PlacedObject_Animate) */
 void placed_tick(PlacedSet *s);
+/* its model placed in the room */
+Mat4 placed_world(const struct Placed *p);
 /* its renderer layer by its name (PlacedObject_Draw): "g_..." $26 (the bloom mask only), "a_..."
  * $19 (see-through), others 1 */
 int placed_layer(const Placed *p);

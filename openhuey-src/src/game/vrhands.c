@@ -10,6 +10,7 @@
 #include "engine.h"
 #include "progress.h"
 #include "room.h"
+#include "placed.h"
 
 #include "../platform/vr.h"
 
@@ -1281,6 +1282,211 @@ void vrhands_pet_pose(Actor *a, Mat4 *world, int nbones, const Mat4 *unplace) {
     }
 }
 
+/* a hard swing on a surface. About 3 cm, and fast enough that a rest or a pet does not count. */
+#define SWING_SKIN 0.40f
+#define SWING_SPEED 1.25f
+#define SWING_FAST 8.0f
+#define ENV_COOL 12
+#define VOICE_COOL 12
+/* about 1.4 m past the skin, so a shove lands beside him */
+#define SHOVE_REACH 18.0f
+#define SHOVE_WINDOW 20
+#define SHOVE_COOL 24
+static int sBlowOn, sShoveOn, sSwingOn, sEnvCool, sShoveCool, sVoiceCool;
+static Vec3 sBlowAt;
+static int sStalkTick[2] = {-1, -1};
+
+int vrhands_blow_at(float out[3]) {
+    if (!sBlowOn) {
+        return 0;
+    }
+    if (out != NULL) {
+        out[0] = sBlowAt.x;
+        out[1] = sBlowAt.y;
+        out[2] = sBlowAt.z;
+    }
+    return 1;
+}
+
+int vrhands_swing(void) { return sSwingOn; }
+
+int vrhands_shove_ready(void) { return sShoveOn; }
+
+void vrhands_shove_take(void) {
+    sShoveOn = 0;
+    sShoveCool = SHOVE_COOL;
+    sStalkTick[0] = sStalkTick[1] = -1;
+}
+
+static int group_shown(const Room *r, int group) {
+    if (group <= 0) {
+        return 1;
+    }
+    if (group >= 256) {
+        return 0;
+    }
+    return (r->groups[group >> 5] >> (group & 31) & 1u) != 0;
+}
+
+static int tris_near(const MeshVertex *v, int nv, const MeshDraw *d, int nd, Vec3 p, float lim2) {
+    int i;
+
+    for (i = 0; i < nd; i++) {
+        int n, end;
+
+        if (d[i].count < 3 || d[i].mask) {
+            continue;
+        }
+        end = d[i].first + d[i].count;
+        if (end > nv) {
+            end = nv;
+        }
+        for (n = d[i].first; n + 2 < end; n += 3) {
+            Vec3 a = vec3(v[n].x, v[n].y, v[n].z);
+            Vec3 b = vec3(v[n + 1].x, v[n + 1].y, v[n + 1].z);
+            Vec3 c = vec3(v[n + 2].x, v[n + 2].y, v[n + 2].z);
+
+            if (tri_dist2(p, a, b, c) <= lim2) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int room_touch(const Room *r, Vec3 p) {
+    const RoomMesh *m = &r->mesh;
+    float lim2 = SWING_SKIN * SWING_SKIN;
+    int i;
+
+    for (i = 0; i < m->nd; i++) {
+        const MeshDraw *d = &m->d[i];
+        int n, end;
+
+        if (d->count < 3 || d->mask || !group_shown(r, d->group)) {
+            continue;
+        }
+        end = d->first + d->count;
+        if (end > m->nv) {
+            end = m->nv;
+        }
+        for (n = d->first; n + 2 < end; n += 3) {
+            Vec3 a = vec3(m->v[n].x, m->v[n].y, m->v[n].z);
+            Vec3 b = vec3(m->v[n + 1].x, m->v[n + 1].y, m->v[n + 1].z);
+            Vec3 c = vec3(m->v[n + 2].x, m->v[n + 2].y, m->v[n + 2].z);
+
+            if (tri_dist2(p, a, b, c) <= lim2) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int placed_touch(const PlacedSet *s, Vec3 p) {
+    float lim2 = SWING_SKIN * SWING_SKIN;
+    int i;
+
+    for (i = 0; i < s->n; i++) {
+        const Placed *o = &s->p[i];
+        Mat4 w;
+        int n;
+
+        if (!o->shown || o->mesh.v == NULL || o->mesh.nv < 3) {
+            continue;
+        }
+        w = placed_world(o);
+        for (n = 0; n + 2 < o->mesh.nv; n += 3) {
+            Vec3 a = mat4_point(&w, vec3(o->mesh.v[n].x, o->mesh.v[n].y, o->mesh.v[n].z));
+            Vec3 b = mat4_point(&w, vec3(o->mesh.v[n + 1].x, o->mesh.v[n + 1].y, o->mesh.v[n + 1].z));
+            Vec3 c = mat4_point(&w, vec3(o->mesh.v[n + 2].x, o->mesh.v[n + 2].y, o->mesh.v[n + 2].z));
+
+            if (tri_dist2(p, a, b, c) <= lim2) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int stalker_name(const char *name) {
+    return strncmp(name, "O_DB", 4) == 0 || strncmp(name, "O_DN", 4) == 0 || strncmp(name, "O_LR", 4) == 0 ||
+           strncmp(name, "O_RC", 4) == 0;
+}
+
+static int stalker_touch(Vec3 p) {
+    float lim2 = SHOVE_REACH * SHOVE_REACH;
+    int i;
+
+    for (i = 0; i < MAX_ACTORS; i++) {
+        const Actor *a = &gEngine.actors[i];
+
+        if (!a->used || !a->visible || a->posed == NULL || a->model.d == NULL || !stalker_name(a->name)) {
+            continue;
+        }
+        if (tris_near(a->posed, a->model.nv, a->model.d, a->model.nd, p, lim2)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* the script frame just read last tick's blows. A fast hand on a mesh sets the next one. */
+static void swing_begin(void) {
+    sBlowOn = 0;
+    sShoveOn = 0;
+    sSwingOn = 0;
+    if (sEnvCool > 0) {
+        sEnvCool--;
+    }
+    if (sShoveCool > 0) {
+        sShoveCool--;
+    }
+    if (sVoiceCool > 0) {
+        sVoiceCool--;
+    }
+}
+
+static void swing_hand(int side, Vec3 at) {
+    float speed = 0.0f;
+    int now = (int)gEngine.ticks;
+    int on_stalker;
+
+    if (sHandHave[side]) {
+        speed = vec3_len(vec3_sub(at, sHandAt[side]));
+    }
+    if (speed < SWING_SPEED || speed > SWING_FAST) {
+        return;
+    }
+    if (sVoiceCool <= 0) {
+        sSwingOn = 1;
+        sVoiceCool = VOICE_COOL;
+    }
+    on_stalker = stalker_touch(at);
+    if (on_stalker && sShoveCool <= 0) {
+        sStalkTick[side] = now;
+        return;
+    }
+    if (!on_stalker && sEnvCool <= 0 && (room_touch(&gEngine.room, at) || placed_touch(&gEngine.room.placed, at))) {
+        sBlowAt = at;
+        sBlowOn = 1;
+        sEnvCool = ENV_COOL;
+    }
+}
+
+static void swing_finish(void) {
+    int now = (int)gEngine.ticks;
+    int a = sStalkTick[0], b = sStalkTick[1];
+
+    if (sShoveCool > 0 || a < 0 || b < 0) {
+        return;
+    }
+    if (now - a <= SHOVE_WINDOW && now - b <= SHOVE_WINDOW) {
+        sShoveOn = 1;
+        sStalkTick[0] = sStalkTick[1] = -1;
+    }
+}
+
 int vrhands_petting(int side) {
     const Actor *dog;
     Vec3 at, right, up, fwd;
@@ -1318,6 +1524,7 @@ void vrhands_tick(Engine *e) {
     if (e == NULL) {
         return;
     }
+    swing_begin();
     pet_settle();
     poses_restore(e);
     if (!vr_active() || !vr_anchor_get(NULL, NULL)) {
@@ -1457,6 +1664,7 @@ void vrhands_tick(Engine *e) {
                 }
             }
         }
+        swing_hand(side, at);
         sHandAt[side] = at;
         sHandHave[side] = 1;
         sGripWas[side] = grip;
@@ -1464,6 +1672,7 @@ void vrhands_tick(Engine *e) {
             sGrace[side]--;
         }
     }
+    swing_finish();
     for (i = 0; i < ROOM_DOORS; i++) {
         int held = (sHold[0] == HOLD_DOOR && sHoldId[0] == i) || (sHold[1] == HOLD_DOOR && sHoldId[1] == i);
         float sw;

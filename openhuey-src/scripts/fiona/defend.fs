@@ -185,6 +185,23 @@ create poi /vec allot
 : point-ahead ( F: up ahead -- )   \ (from her place, turned by her heading)
     {: F: up ahead :}  0e ahead her-yaw f@ rotate-by  {: F: dx dz :}
     her-at v.x sf@ dx f+ poi v.x sf!  her-at v.y sf@ up f+ poi v.y sf!  her-at v.z sf@ dz f+ poi v.z sf! ;
+\ a fast controller swing: her kick grunt, hit or miss. A mesh it meets is her blow. A stalker
+\ answers only a two-hand shove, and that shove is a kick.
+: hand-voice ( -- )
+    form dup illegal-outfit <> swap cowgirl-outfit <> and if  effort-sound 0 her-sound  then ;
+: hand-strike ( -- )
+    vr? 0= if  exit  then
+    her-mode @ defend-mode = if  exit  then
+    hand-shove? if
+        hands-off?  free-to-act? 0= or  her-panic-stage @ panicking >= or  no-flee state-flag? or 0= if
+            hand-shove-take
+            1 her-blow-n +!
+            0 her-struck !
+            boosted-power
+            blow-kind @ blow-dmg @ blow-how @ 1 strike
+        then
+    then
+    hand-swing? if  hand-voice  then ;
 : tell-point ( -- )
     her-mode @ defend-mode <> if  body-point-off exit  then
     her-sub @ shove-sub = if

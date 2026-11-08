@@ -2,6 +2,8 @@
  * actor's body - where it is in the house, as anyone may read and only it may change - and the words for it. */
 #include "hactor.h"
 
+#include "../game/vrhands.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -106,14 +108,22 @@ PRIM(p_body_head_store) {   /* ( F: x y z -- ) my head is there */
     a->has_head = 1;
 }
 PRIM(p_body_point) {   /* ( id -- v true | false ) its point of interest, if it has one now */
-    HBody *a = bodied(f, POP(), "body-point");
+    Cell id = POP();
+    HBody *a = bodied(f, id, "body-point");
+    static float hand_pt[3];
 
     if (a->has_point) {
         PUSH(a->point);
         PUSH(-1);
-    } else {
-        PUSH(0);
+        return;
     }
+    /* a hard controller swing, while she is not already kicking: the same point a kick would set */
+    if (strcmp(hactor_name((int)id), "fiona") == 0 && vrhands_blow_at(hand_pt)) {
+        PUSH(hand_pt);
+        PUSH(-1);
+        return;
+    }
+    PUSH(0);
 }
 PRIM(p_body_point_store) {   /* ( F: x y z -- ) my point of interest is there (until body-point-off) */
     HBody *a = me(f, "body-point! (no actor is being run)");

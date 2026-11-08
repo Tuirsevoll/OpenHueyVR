@@ -339,7 +339,7 @@ void placed_tick(PlacedSet *s) {
 }
 
 /* scaled, turned about X, then Y, then Z, then placed (obj_mvp) */
-static Mat4 placed_matrix(const Placed *p) {
+Mat4 placed_world(const Placed *p) {
     float cx = cosf(p->rot.x), sx = sinf(p->rot.x), cy = cosf(p->rot.y), sy = sinf(p->rot.y);
     float cz = cosf(p->rot.z), sz = sinf(p->rot.z);
     Mat4 rx = mat4_identity(), ry = mat4_identity(), rz = mat4_identity(), t = mat4_identity(), sc = mat4_identity();
@@ -369,7 +369,7 @@ void placed_draw(PlacedSet *s, const Mat4 *view_proj, const GpuTexture *textures
         Placed *p = &s->p[i];
 
         if (p->shown && p->mesh.nd > 0 && placed_layer(p) == layer) {
-            Mat4 mvp = mat4_mul(*view_proj, placed_matrix(p));
+            Mat4 mvp = mat4_mul(*view_proj, placed_world(p));
 
             render_mesh(&p->gpu, &mvp, p->mesh.d, p->mesh.nd, textures, ntextures, kAll);
         }

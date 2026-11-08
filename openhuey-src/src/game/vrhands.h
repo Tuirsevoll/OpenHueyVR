@@ -16,5 +16,12 @@ void vrhands_tick(struct Engine *e);
 void vrhands_forget_poses(void);
 /* 1 when that controller is on Hewie. A touch also gives that hand a mild buzz. */
 int vrhands_petting(int side);
+/* a hard swing that met the room or a placed mesh. The point is Fiona's blow for one script frame. */
+int vrhands_blow_at(float out[3]);
+/* 1 when a hand moved fast enough to count, whether or not it touched anything. */
+int vrhands_swing(void);
+/* both hands met a stalker, fast, within a few frames of each other. One script frame, until taken. */
+int vrhands_shove_ready(void);
+void vrhands_shove_take(void);
 
 #endif
