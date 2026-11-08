@@ -395,6 +395,7 @@ behaviour free
       cell>f her-move-yaw f!  cells>xyz her-move-at vec!
       her-move-b !  her-move-a !  dup her-move !  start-move ;
   on hold-anim ( anim flags blend -- )   \ (the scripts' 0x9D: in it, held - its flags hers)
+      vr? if  2drop drop done exit  then   \ (headset: not posed, not taken from the player)
       nip -1 play-blend  led-mode her-mode !  anim-doing her-doing !  ['] root-move her-act !  done ;
   on show ( on -- )  0<> 1 and her act.visible l! ;
   \ the story's (F5): calmer (Fiona_CalmDown: n / 30 off her fear), her recovery shorter

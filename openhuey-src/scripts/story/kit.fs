@@ -169,6 +169,7 @@ variable acting   -1 acting !   \ the activity being run (-1: none)
 
 \ ---- holding a person: a place moves only those its activity holds ----
 : hold ( id -- )   \ (taken from any other activity holding it: the original's forced actions)
+    vr? over fiona = and if  drop exit  then   \ (headset: she is never taken from the player)
     person-of dup 0< if  drop exit  then  acting @ 0< abort" hold: not in an activity"
     dup holder-of @ acting @ = if  drop exit  then
     acting @ over holder-of !  0 over cells asked + !  -1 tell-held ;   \ (nothing asked of it yet)
@@ -190,24 +191,31 @@ create mv-at /vec allot
 : move ( id kind a b F: x y z yaw -- )
     {: id kind a b F: x y z yaw | i :}  id person-of to i
     i 0< if  exit  then
-    i mine? 0= if  lost  then   \ (taken by another doing: this one is over)
+    vr? id fiona = and  kind open-door-move <> and  kind shut-door-move <> and if   \ (headset: the event goes on; she is not walked or posed. a story door still opens)
+        -1 i cells move-done + !  -1 i cells anim-ended + !  exit
+    then
+    i mine? 0= if  vr? id fiona = and 0= if  lost  then  then   \ (taken by another doing: this one is over)
     0 i cells move-done + !  0 i cells anim-ended + !  0 i cells marks + !  -1 i cells asked + !
     kind a b  x f>cell y f>cell z f>cell yaw f>cell  id send scripted-move ;
 : keep ( id -- )  person-of dup 0< if  drop exit  then  mine? 0= if  lost  then ;   \ (still ours, else this doing is over)
 variable hand-pick   \ a gripped item's pickup: Fiona does not play her bend or reach
 : wait-move ( id -- )   \ its move done
+    dup fiona = vr? and if  drop exit  then
     dup fiona = hand-pick @ and if  drop exit  then
     person-of dup 0< if  drop exit  then  dup person-id here? 0= if  drop exit  then
     dup cells asked + @ 0= if  drop exit  then   \ (its own doings aren't ours to wait for)
     begin  dup cells move-done + @ 0= while  yield  repeat  drop ;
 : wait-anim ( id -- )   \ its animation come round
+    dup fiona = vr? and if  drop exit  then
     person-of dup 0< if  drop exit  then
     begin  yield  dup cells anim-ended + @  over person-id here? 0= or  until
     -1 swap cells move-done + ! ;
 : went-round? ( id -- flag )   \ its animation come round this time (its motion's $20 key: the original's cond 0x48)
+    dup fiona = vr? and if  drop true exit  then   \ (her pose was not played: the event may go on)
     person-of dup 0< if  drop false exit  then  cells anim-ended + @ 0<> ;
 : wait-mark ( id bits -- )   \ its animation come to a mark (an event key of it)
     {: id bits | i :}  id person-of to i  i 0< if  exit  then
+    vr? id fiona = and if  exit  then
     begin  yield  i cells marks + @ bits and  id here? 0= or  until ;
 : floor-at ( tri F: x z -- x y z )  {: tri F: x z :}  x  tri tri-center fdrop fswap fdrop  z ;
 : deg>yaw ( deg -- ) ( F: -- yaw )  s>f deg>rad angle-wrap ;
