@@ -22,8 +22,9 @@ create reactions  300 , 1 ,  300 , 1 ,  300 , 1 ,  750 , 1 ,  150 , 1 ,  1500 , 
 -2 constant wont-heed        \ he won't
 -4 constant pleased-heed     \ his mood pleased first
 -5 constant scolded-heed     \ his mood calmed, scolded
-: commandable-now? ( -- flag )  on-command breaks-in?  his-cooldown @ 0= and  his-mode @ struck-mode <> and ;
+: commandable-now? ( -- flag )  on-command breaks-in? voice-hold or  his-cooldown @ 0= and  his-mode @ struck-mode <> voice-hold or and ;
 : command-action ( code -- act )
+    voice-issued to voice-hold  0 to voice-issued
     his-busy @ 0= if
         his-cond @ down-cond = if  tend-cmd = if  tend-cmd  else  no-heed  then  exit  then
         commandable-now? 0= if  drop no-heed exit  then
@@ -38,11 +39,11 @@ create reactions  300 , 1 ,  300 , 1 ,  300 , 1 ,  750 , 1 ,  150 , 1 ,  1500 , 
         his-cond @ hurt-cond =  his-waiting @ 0<> or  his-mood @ pleased-mood > or  his-hp @ 80 < or if  no-heed exit  then
         his-pet-time @ 0<> rnd 0.25e f< or if  pleased-heed  else  no-heed  then  exit
     then
-    his-broke @ 1 <>  his-busy @ 0<> on-command breaks-in? or and
-    his-waiting @ 0= his-action @ whine-act = or and  his-mood @ angry-mood <> and
+    his-broke @ 1 <> voice-hold or  his-busy @ 0<> on-command breaks-in? or voice-hold or and
+    his-waiting @ 0= his-action @ whine-act = or voice-hold or and  his-mood @ angry-mood <> voice-hold or and
     0 his-broke !
     if  exit  then
-    drop  his-danger @ calm <> if  no-heed exit  then
+    drop  his-danger @ calm <> voice-hold 0= and if  no-heed exit  then
     anim-group dup in-sitting-down = swap in-sitting = or if  wont-heed  else  no-heed  then ;
 
 \ from another room (Hewie_ActOnCommand while disabled): "come back" - hidden away (the story's
@@ -97,7 +98,7 @@ create reactions  300 , 1 ,  300 , 1 ,  300 , 1 ,  750 , 1 ,  150 , 1 ,  1500 , 
     his-away @ if   \ (in another room: what it makes him do, straight - Hewie_FionaCommand's disabled)
         his-cmd-was @ command-action dup 0< if  drop false  else  act-on-command  then  exit
     then
-    his-busy @ 0= his-broke @ 1 = and if  false exit  then
+    his-busy @ 0= his-broke @ 1 = and voice-issued 0= and if  false exit  then
     his-action @ whine-act = his-cmd-was @ help-cmd <> and if  obeys  then
     his-cmd-was @ dup scold-near-cmd <> swap scold-cmd <> and if  0 his-praise-b !  0 his-praise-a !  then
     his-cmd-was @ go-there-cmd = his-waiting @ 0= and  his-broke @ 1 <> and  his-danger @ calm = and  ball 0< and  can-get-to-her? and if

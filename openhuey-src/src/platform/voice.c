@@ -17,7 +17,8 @@
 #define MAX_N (RATE * 5)
 #define MIN_N (RATE * 3 / 10)
 
-static const char *kPrompt = "come here. go. stay. sit. good boy. bad dog. shake.";
+static const char *kPrompt =
+    "come here. go. stay. sit. good boy. bad dog. shake. heel. follow. hang on. nice one. naughty. fuck her up.";
 
 static const char *kNames[] = {
     "models/ggml-tiny.en.bin", "models/ggml-tiny.bin", "models/ggml-base.en.bin", "models/ggml-base.bin",
@@ -31,6 +32,7 @@ void voice_shutdown(void) {}
 void voice_tick(int talk_held) { (void)talk_held; }
 int voice_take(void) { return VOICE_NONE; }
 int voice_gen(void) { return 0; }
+int voice_kind(void) { return VOICE_NONE; }
 void voice_copy(char *dst, int cap) { if (dst != NULL && cap > 0) dst[0] = 0; }
 void voice_set_debug(int on) { (void)on; }
 int voice_debug(void) { return 0; }
@@ -85,6 +87,7 @@ static int sJobReady;
 
 static char sText[192];
 static int sCmd;
+static int sKind;
 static int sGen;
 static char sModel[1024];
 
@@ -414,33 +417,94 @@ static int whole(const char *text, const char *phrase) {
     return 0;
 }
 
+/* his name, and the ways Whisper mishears it. Longer ones first. */
+static const char *const kDog[] = {
+    "who me", "wooee", "wooey", "hewey", "hewie", "huey", "hooey", "hooee", "kiwi", "hui", "hew"
+};
+
+static void cut_name(char *s, char *at, size_t n) {
+    char *from = at;
+    char *to = at + n;
+
+    if (from > s && from[-1] == ' ') {
+        from--;
+    } else if (*to == ' ') {
+        to++;
+    }
+    memmove(from, to, strlen(to) + 1);
+}
+
+/* drop his name wherever it sits, so "fuck her up hewie" is the same command as "fuck her up" */
+static void strip_names(char *s) {
+    int again = 1;
+
+    while (again) {
+        int i;
+
+        again = 0;
+        for (i = 0; i < (int)(sizeof(kDog) / sizeof(kDog[0])); i++) {
+            size_t n = strlen(kDog[i]);
+            char *p = s;
+
+            while ((p = strstr(p, kDog[i])) != NULL) {
+                int start = (p == s) || p[-1] == ' ';
+                int end = p[n] == 0 || p[n] == ' ';
+
+                if (start && end) {
+                    cut_name(s, p, n);
+                    again = 1;
+                    break;
+                }
+                p += n;
+            }
+            if (again) {
+                break;
+            }
+        }
+    }
+}
+
 static int phrase_kind(const char *text) {
     static const struct { const char *phrase; int kind; } table[] = {
         {"come here", VOICE_COME}, {"here boy", VOICE_COME}, {"come boy", VOICE_COME},
-        {"come hewie", VOICE_COME}, {"come on", VOICE_COME}, {"come", VOICE_COME},
+        {"come on", VOICE_COME}, {"keep up", VOICE_COME}, {"with me", VOICE_COME},
+        {"on me", VOICE_COME}, {"follow", VOICE_COME}, {"heel", VOICE_COME}, {"come", VOICE_COME},
+        {"attack him", VOICE_ATTACK}, {"get him", VOICE_ATTACK}, {"sic him", VOICE_ATTACK},
+        {"bite him", VOICE_ATTACK}, {"help me", VOICE_ATTACK}, {"save me", VOICE_ATTACK},
+        {"attack", VOICE_ATTACK}, {"help", VOICE_ATTACK}, {"sic", VOICE_ATTACK}, {"bite", VOICE_ATTACK},
+        {"fuck him up", VOICE_GO}, {"fuck her up", VOICE_GO}, {"get his ass", VOICE_GO},
+        {"get her ass", VOICE_GO}, {"get her", VOICE_GO},
         {"go ahead", VOICE_GO}, {"go on", VOICE_GO}, {"go there", VOICE_GO}, {"forward", VOICE_GO}, {"go", VOICE_GO},
-        {"stay there", VOICE_STAY}, {"stay", VOICE_STAY}, {"wait", VOICE_STAY}, {"heel", VOICE_STAY},
+        {"stay with me", VOICE_STAY}, {"wait there", VOICE_STAY}, {"stay still", VOICE_STAY},
+        {"stay there", VOICE_STAY}, {"hang on", VOICE_STAY}, {"stay", VOICE_STAY},
+        {"wait", VOICE_STAY}, {"hold", VOICE_STAY},
         {"sit down", VOICE_SIT}, {"sit", VOICE_SIT},
-        {"good boy", VOICE_PRAISE}, {"good dog", VOICE_PRAISE}, {"good hewie", VOICE_PRAISE},
-        {"good hew", VOICE_PRAISE}, {"who's a good", VOICE_PRAISE}, {"whos a good", VOICE_PRAISE},
+        {"good boy", VOICE_PRAISE}, {"good dog", VOICE_PRAISE}, {"nice one", VOICE_PRAISE},
+        {"who's a good", VOICE_PRAISE}, {"whos a good", VOICE_PRAISE},
         {"attaboy", VOICE_PRAISE}, {"well done", VOICE_PRAISE}, {"praise", VOICE_PRAISE},
-        {"bad dog", VOICE_SCOLD}, {"bad hewie", VOICE_SCOLD}, {"bad hew", VOICE_SCOLD},
-        {"bad boy", VOICE_SCOLD}, {"bad", VOICE_SCOLD}, {"scold", VOICE_SCOLD}, {"shame", VOICE_SCOLD},
+        {"bad dog", VOICE_SCOLD}, {"bad boy", VOICE_SCOLD}, {"naughty", VOICE_SCOLD},
+        {"bold", VOICE_SCOLD}, {"bad", VOICE_SCOLD}, {"scold", VOICE_SCOLD}, {"shame", VOICE_SCOLD},
         {"give paw", VOICE_SHAKE}, {"shake paw", VOICE_SHAKE}, {"shake", VOICE_SHAKE}, {"paw", VOICE_SHAKE}
     };
+    char bare[192];
     int i;
 
-    if (strcmp(text, "here") == 0) {
+    snprintf(bare, sizeof(bare), "%s", text);
+    strip_names(bare);
+    if (bare[0] == 0) {
+        return VOICE_COME;   /* just his name, or a mishearing of it */
+    }
+    if (strcmp(bare, "here") == 0) {
         return VOICE_COME;
     }
-    if (strcmp(text, "good") == 0) {
+    if (strcmp(bare, "good") == 0) {
         return VOICE_PRAISE;
     }
-    if (strcmp(text, "no") == 0) {
+    if (strcmp(bare, "no") == 0) {
         return VOICE_SCOLD;
     }
     for (i = 0; i < (int)(sizeof(table) / sizeof(table[0])); i++) {
-        if (whole(text, table[i].phrase)) {
+        if (whole(bare, table[i].phrase)) {
             return table[i].kind;
         }
     }
@@ -496,11 +560,10 @@ static void store_result(const char *raw) {
     EnterCriticalSection(&sMu);
     snprintf(sText, sizeof(sText), "%s", norm);
     sCmd = kind;
+    sKind = kind;
     sGen++;
     LeaveCriticalSection(&sMu);
-    if (kind != VOICE_NONE) {
-        fprintf(stderr, "voice: \"%s\"\n", norm);
-    }
+    fprintf(stderr, "voice: \"%s\"\n", norm);
 }
 
 static DWORD WINAPI worker_main(LPVOID unused) {
@@ -671,6 +734,18 @@ int voice_gen(void) {
     g = sGen;
     LeaveCriticalSection(&sMu);
     return g;
+}
+
+int voice_kind(void) {
+    int k = VOICE_NONE;
+
+    if (!sStarted) {
+        return VOICE_NONE;
+    }
+    EnterCriticalSection(&sMu);
+    k = sKind;
+    LeaveCriticalSection(&sMu);
+    return k;
 }
 
 void voice_copy(char *dst, int cap) {

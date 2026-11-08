@@ -70,19 +70,26 @@ create ch-at /vec allot
     her-heading f@ her-act-yaw f!  her-tri @ her-act-tri !  her-act-at her-at vec-copy ;
 : voice-react ( code -- )
     dup go-there-cmd = if  drop  go-reaction react  exit  then
+    dup go-for-it-cmd = if  drop  go-reaction react  exit  then
+    dup attack-now-cmd = if  drop  attack-now-reaction react  exit  then
+    dup come-back-cmd = if  drop  come-back-reaction react  exit  then
     dup come-cmd = if  drop  come-reaction react  exit  then
     dup stay-cmd = if  drop  come-reaction react  exit  then
     dup scold-cmd = if  drop  scold-reaction react  exit  then
+    dup scold-near-cmd = if  drop  scold-close-reaction react  exit  then
     dup praise-cmd = if  drop  praise-reaction react  exit  then
+    dup pat-cmd = if  drop  pat-reaction react  exit  then
+    dup rouse-cmd = if  drop  rouse-reaction react  exit  then
     drop ;
 : voice-give ( code -- )
+    dup 0< if  drop exit  then
     hewie-commandable state-flag? 0= if  drop exit  then
     her-busy-t @ if  drop exit  then
-    her-mode @ own-mode <> if  drop exit  then
-    still? if  drop exit  then
     voice-place
+    dup broadcast fiona-started
     dup go-there-cmd = if  go-spot  then
     plain-commands state-flag? 0=  hewie-played? 0= and if
+        1 to voice-issued
         dup  her-act-tri @  her-act-yaw f@ f>cell  her-act-at v.x sf@ f>cell  her-act-at v.z sf@ f>cell
         hewie-id send command
     then
@@ -90,26 +97,17 @@ create ch-at /vec allot
 : voice-shake-now ( -- )
     hewie-commandable state-flag? 0= if  exit  then
     her-busy-t @ if  exit  then
-    her-mode @ own-mode <> if  exit  then
-    still? if  exit  then
     plain-commands state-flag? hewie-played? or if  exit  then
     dog-ok? 0= if  exit  then
     dog-dist 15e f< 0= if  exit  then
     dog-sub @ sitting-sub = 0= if  exit  then
     dog-at her-at vec-heading  hewie-id body-yaw  f- angle-wrap fabs  60e deg>rad f< 0= if  exit  then
     hewie-id send asked-shake ;
-: spoken-order ( kind -- )
-    dup voice-come = if  drop  come-cmd voice-give  exit  then
-    dup voice-go = if  drop  go-there-cmd voice-give  exit  then
-    dup voice-stay = if  drop  stay-cmd voice-give  exit  then
-    dup voice-sit = if
-        drop  dog-ok? 0= if  exit  then  dog-dist 12e f< 0= if  exit  then
-        stay-cmd voice-give  exit
-    then
-    dup voice-praise = if  drop  praise-cmd voice-give  exit  then
-    dup voice-scold = if  drop  scold-cmd voice-give  exit  then
-    dup voice-shake = if  drop  voice-shake-now  exit  then
-    drop ;
+: voice-stay-now ( -- )
+    hewie-commandable state-flag? 0= if  exit  then
+    her-busy-t @ if  exit  then
+    plain-commands state-flag? hewie-played? or if  exit  then
+    hewie-id send asked-stay ;
 : command-hewie ( -- )   \ (in the run he is the one played: the command isn't his to take)
     plain-commands state-flag? 0=  hewie-played? 0= and if
         her-sub @ go-there-cmd = if  go-spot  then
@@ -157,6 +155,19 @@ create ch-at /vec allot
               if  scold-cmd  else  scold-near-cmd  then  endof
         >r -1 r>
     endcase ;
+
+\ the right stick, without her playing the gesture. Sit is not R3: he sits where he is, any distance.
+: from-stick ( gesture -- )  command-code voice-give ;
+: spoken-order ( kind -- )
+    dup voice-go = if  drop  go-gesture from-stick  exit  then
+    dup voice-scold = if  drop  scold-gesture from-stick  exit  then
+    dup voice-praise = if  drop  praise-gesture from-stick  exit  then
+    dup voice-come = if  drop  back-gesture from-stick  exit  then
+    dup voice-stay = if  drop  stay-gesture from-stick  exit  then
+    dup voice-sit = if  drop  stay-cmd voice-give  exit  then
+    dup voice-attack = if  drop  go-for-it-cmd voice-give  exit  then
+    dup voice-shake = if  drop  voice-shake-now  exit  then
+    drop ;
 
 \ ---- after a command's gesture (Fiona_StateActionOver, the looks after it) ----
 : play-now ( anim -- )  -1 0  2 pick entry nip  start ;   \ (Motion_Play: cut in)

@@ -4001,6 +4001,72 @@ static void ui_draw(void) {
     render_blend_2d(RENDER_BLEND_NORMAL, 0);
 }
 
+static const char *voice_order_name(int kind) {
+    switch (kind) {
+    case VOICE_COME: return "come";
+    case VOICE_GO: return "go";
+    case VOICE_STAY: return "stay";
+    case VOICE_SIT: return "sit";
+    case VOICE_PRAISE: return "praise";
+    case VOICE_SCOLD: return "scold";
+    case VOICE_SHAKE: return "shake";
+    case VOICE_ATTACK: return "attack";
+    default: return NULL;
+    }
+}
+
+/* the last phrase, on the same world panel as the status menu, in the game font */
+static void voice_caption(Engine *e) {
+    static int seen, left;
+    char text[192];
+    const char *order;
+    int gen, sc, n;
+    float bw, bh, x, y, tw;
+
+    if (!voice_debug() || e->height < 16) {
+        return;
+    }
+    gen = voice_gen();
+    voice_copy(text, (int)sizeof text);
+    if (gen != seen) {
+        seen = gen;
+        if (text[0] != 0) {
+            left = 180;
+            vr_screen_face();   /* this draw places the panel, in front of the current look */
+        }
+    }
+    if (left <= 0 || text[0] == 0) {
+        return;
+    }
+    left--;
+    order = voice_order_name(voice_kind());
+    sc = e->height / 224;
+    if (sc < 1) {
+        sc = 1;
+    }
+    n = (int)strlen(text);
+    bw = (float)e->width * 2.0f / 3.0f;
+    bh = (float)sc * (order != NULL ? 52.0f : 32.0f);
+    x = ((float)e->width - bw) * 0.5f;
+    y = ((float)e->height - bh) * 0.5f;
+    render_rect(x, y, bw, bh, 0x0A0A12D8u);
+    render_rect(x, y, bw, 2.0f, 0x8C7A5AC0u);
+    render_rect(x, y + bh - 2.0f, bw, 2.0f, 0x8C7A5AC0u);
+    render_rect(x, y, 2.0f, bh, 0x8C7A5AC0u);
+    render_rect(x + bw - 2.0f, y, 2.0f, bh, 0x8C7A5AC0u);
+    tw = text_width(text, n, (float)sc);
+    if (!game_text(x + (bw - tw) * 0.5f, y + (float)sc * 4.0f, (float)sc, 0xF0EBE0FFu, text, 0)) {
+        render_text(x + (bw - tw) * 0.5f, y + (float)sc * 4.0f, (float)sc, 0xF0EBE0FFu, text, n);
+    }
+    if (order != NULL) {
+        n = (int)strlen(order);
+        tw = text_width(order, n, (float)sc);
+        if (!game_text(x + (bw - tw) * 0.5f, y + (float)sc * 26.0f, (float)sc, 0xF0EBE0FFu, order, 0)) {
+            render_text(x + (bw - tw) * 0.5f, y + (float)sc * 26.0f, (float)sc, 0xF0EBE0FFu, order, n);
+        }
+    }
+}
+
 void engine_draw_2d(Engine *e) {
     int i;
 
@@ -4016,6 +4082,7 @@ void engine_draw_2d(Engine *e) {
     }
 
     ui_draw();
+    voice_caption(e);
     for (i = 0; i < e->ndraw_hooks; i++) {
         if (forth_call(e->forth, e->draw_hooks[i]) != 0) {
             forth_printf(e->forth, "on-draw: %s removed after an error\n", e->draw_hooks[i]->name);
