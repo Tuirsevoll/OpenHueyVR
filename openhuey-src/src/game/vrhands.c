@@ -49,11 +49,25 @@ static const Model *sExtentModel;
 static int sExtentVerts;
 static float sExtent[2];
 static Vec3 sCenter[2];
+static float sGirth = 1.0f;   /* torso and arm cross-section, this pose */
+static int sVrik;
+static float sPole[2][3];
 
 #define VR_UNITS_PER_METER 12.5f
 #define HAND_METRES 0.19f   /* wrist to fingertip before HAND_SCALE */
 /* Both hands, every pose. 1 leaves the fitted size; 1.5 is half again as large. */
 #define HAND_SCALE 1.5f
+
+/* Skyrim VRIK (prog) upper body at its 1.6 m eye-height reference — the same target
+ * vr_calibrate uses. Metres from the eyes: shoulders a little forward and out, the chest
+ * below them, and an arm that still bends. Applied in the same room units as the controllers. */
+#define VRIK_SHOULDER_HALF 0.18f
+#define VRIK_SHOULDER_DROP 0.20f
+#define VRIK_SHOULDER_FWD  0.02f
+#define VRIK_CHEST_DROP    0.34f
+#define VRIK_CHEST_FWD     0.05f
+#define VRIK_UPPER_ARM     0.30f
+#define VRIK_FOREARM       0.26f
 
 int vrhands_wants(const Actor *a) {
     return a != NULL && a->used && vr_active() && strncmp(a->name, "O_FI", 4) == 0;
@@ -376,6 +390,122 @@ static Mat4 grip_matrix(Vec3 at, Vec3 fwd, Vec3 up, float scale, Vec3 center, in
     return m;
 }
 
+static float metres_to_room(float metres) {
+    float body = 1.0f;
+
+    vr_body(NULL, &body);
+    if (body < 0.2f) {
+        body = 1.0f;
+    }
+    return metres * VR_UNITS_PER_METER / body;
+}
+
+static int bone_parent(const Model *m, int bone) {
+    if (bone < 0 || bone >= m->nbones) {
+        return -1;
+    }
+    return m->bones[bone].parent;
+}
+
+static Vec3 room_of(const Mat4 *place, const Mat4 *bone) {
+    Mat4 room = mat4_mul(*place, *bone);
+
+    return vec3(room.m[12], room.m[13], room.m[14]);
+}
+
+static void write_room_origin(Mat4 *bone, const Mat4 *place, const Mat4 *unplace, Vec3 at) {
+    Mat4 room = mat4_mul(*place, *bone);
+
+    room.m[12] = at.x;
+    room.m[13] = at.y;
+    room.m[14] = at.z;
+    *bone = mat4_mul(*unplace, room);
+}
+
+/* columns 0..2. The translation stays, so the joint does not drift. */
+static void scale_basis(Mat4 *bone, const Mat4 *place, const Mat4 *unplace, float g) {
+    Mat4 room = mat4_mul(*place, *bone);
+    int c;
+
+    for (c = 0; c < 3; c++) {
+        room.m[c * 4] *= g;
+        room.m[c * 4 + 1] *= g;
+        room.m[c * 4 + 2] *= g;
+    }
+    *bone = mat4_mul(*unplace, room);
+}
+
+/* X runs along the limb. Y and Z thicken it so the elbow stays where the IK put it. */
+static void thicken_room(Mat4 *room, float g) {
+    room->m[4] *= g;
+    room->m[5] *= g;
+    room->m[6] *= g;
+    room->m[8] *= g;
+    room->m[9] *= g;
+    room->m[10] *= g;
+}
+
+/* shoulders out to VRIK's width, chest under the eyes, torso thickened to match.
+ * Legs and the head are left where the pose put them. */
+static void fit_vrik_torso(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace) {
+    const Model *m = &a->model;
+    Vec3 eye, span, chest_at = vec3(0.0f, 0.0f, 0.0f), sh_at[2];
+    float yaw, width, g;
+    int side, chest, spine, clav, have_chest = 0;
+
+    sVrik = 0;
+    sGirth = 1.0f;
+    if (!sArmFound[0] || !sArmFound[1] || !vr_anchor_get(&eye, &yaw)) {
+        return;
+    }
+    span = vec3_sub(room_of(place, &world[sShoulder[0]]), room_of(place, &world[sShoulder[1]]));
+    width = vec3_len(span);
+    g = width > 0.05f ? metres_to_room(VRIK_SHOULDER_HALF * 2.0f) / width : 1.5f;
+    if (g < 1.25f) {
+        g = 1.25f;
+    }
+    if (g > 2.0f) {
+        g = 2.0f;
+    }
+    sGirth = g;
+    sVrik = 1;
+    chest = bone_parent(m, bone_parent(m, sShoulder[0]));
+    if (chest < 0 || leg_bone(a, chest)) {
+        chest = bone_parent(m, sShoulder[0]);
+    }
+    if (chest >= 0 && !leg_bone(a, chest)) {
+        spine = bone_parent(m, chest);
+        if (spine >= 0 && bone_parent(m, spine) >= 0 && !leg_bone(a, spine)) {
+            scale_basis(&world[spine], place, unplace, g);
+        }
+        chest_at = play_to_world(eye, yaw, vec3(0.0f, -metres_to_room(VRIK_CHEST_DROP), -metres_to_room(VRIK_CHEST_FWD)));
+        write_room_origin(&world[chest], place, unplace, chest_at);
+        scale_basis(&world[chest], place, unplace, g);
+        have_chest = 1;
+    }
+    for (side = 0; side < 2; side++) {
+        float x = (side == 0 ? -1.0f : 1.0f) * metres_to_room(VRIK_SHOULDER_HALF);
+        Vec3 was = room_of(place, &world[sShoulder[side]]);
+        Vec3 elbow = room_of(place, &world[sElbow[side]]);
+        Vec3 bend = vec3_sub(elbow, was);
+
+        sPole[side][0] = bend.x;
+        sPole[side][1] = bend.y;
+        sPole[side][2] = bend.z;
+        sh_at[side] = play_to_world(eye, yaw,
+                                    vec3(x, -metres_to_room(VRIK_SHOULDER_DROP), -metres_to_room(VRIK_SHOULDER_FWD)));
+        clav = bone_parent(m, sShoulder[side]);
+        if (clav >= 0 && clav != chest && !leg_bone(a, clav)) {
+            Vec3 from = have_chest ? chest_at : sh_at[side];
+            Vec3 mid = vec3_add(vec3_scale(from, 0.4f), vec3_scale(sh_at[side], 0.6f));
+
+            write_room_origin(&world[clav], place, unplace, mid);
+            scale_basis(&world[clav], place, unplace, g);
+        }
+        write_room_origin(&world[sShoulder[side]], place, unplace, sh_at[side]);
+    }
+}
+
 static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace, int side, Vec3 at, Vec3 fwd, Vec3 up) {
     const Model *m = &a->model;
     int sh = sShoulder[side], el = sElbow[side], ha = sHandBone[side];
@@ -397,6 +527,13 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
     end[1] = room[2].m[13] - mid[1];
     end[2] = room[2].m[14] - mid[2];
     l2 = v_len(end);
+    if (sVrik) {
+        pole[0] = sPole[side][0];
+        pole[1] = sPole[side][1];
+        pole[2] = sPole[side][2];
+        l1 = metres_to_room(VRIK_UPPER_ARM);
+        l2 = metres_to_room(VRIK_FOREARM);
+    }
     {
         float scale = hand_scale(a, side, ha);
 
@@ -408,6 +545,10 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
         place_middle(root, mid, reach, pole, l1, l2);
         aim(&room[0], root, mid, pole);
         aim(&room[1], mid, reach, pole);
+        if (sVrik) {
+            thicken_room(&room[0], sGirth);
+            thicken_room(&room[1], sGirth);
+        }
         world[sh] = mat4_mul(*unplace, room[0]);
         world[el] = mat4_mul(*unplace, room[1]);
     }
@@ -445,6 +586,7 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         return;
     }
     find_arms(a, world);
+    fit_vrik_torso(a, world, place, unplace);
     for (side = 0; side < 2; side++) {
         Vec3 at, right, fwd, up;
         float grip, index, thumb;
