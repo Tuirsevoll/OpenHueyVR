@@ -501,11 +501,17 @@ create foot-bones  $B , $F , $17 , $1C ,   \ (front right, front left, hind righ
 0 value pet-gap
 0 value pet-held
 : petting? ( -- flag )  0 vr-petting?  1 vr-petting? or ;
+: pet-look-off ( -- )  0 his-look-pt? ! ;
+: pet-look
+    -1 his-look-char !
+    vr-head if
+        his-look-pt v.z sf!  his-look-pt v.y sf!  his-look-pt v.x sf!  1 his-look-pt? !
+    else  0 his-look-pt? !  her his-target !  target-look look!  then ;
 : st-pet-still ( -- )
-    his-danger @ calm <> if  0 to pet-held  to-default exit  then
-    pet-frames 10 < if  0 to pet-held  to-default exit  then
+    his-danger @ calm <> if  0 to pet-held  pet-look-off  to-default exit  then
+    pet-frames 10 < if  0 to pet-held  pet-look-off  to-default exit  then
     sit-pose step-to-pose if  exit  then
-    sit-pose keep-pose  her his-target !  target-look look!  1 his-no-root ! ;
+    sit-pose keep-pose  pet-look  1 his-no-root ! ;
 : pet-behaviour? ( -- flag )  his-act @ ['] st-pet-still = ;
 : pet-sit ( -- )
     pet-held if  exit  then
@@ -522,14 +528,14 @@ create foot-bones  $B , $F , $17 , $1C ,   \ (front right, front left, hind righ
     praise-reaction react  300 his-pet-time !
     his-busy @ 0=  his-mode @ struck-mode <> and  his-danger @ calm = and
     his-cond @ down-cond <> and  pet-held and if
-        0 to pet-held  heard-her-act 0 want
-    else  0 to pet-held  bark-sound make-sound  then ;
+        0 to pet-held  pet-look-off  heard-her-act 0 want
+    else  0 to pet-held  pet-look-off  bark-sound make-sound  then ;
 : pet-hands ( -- )
     his-in-cast @ if  0 to pet-frames  0 to pet-gap  0 to pet-held  exit  then
     his-away @ if  0 to pet-frames  0 to pet-gap  exit  then
     pet-held pet-behaviour? 0= and if
         pet-frames 10 >= if  praise-reaction react  300 his-pet-time !  then
-        0 to pet-held  0 to pet-frames  0 to pet-gap
+        0 to pet-held  pet-look-off  0 to pet-frames  0 to pet-gap
     then
     petting? if  0 to pet-gap  pet-frames 1+ 90 min to pet-frames  pet-sit exit  then
     pet-frames 10 < if  0 to pet-frames  exit  then

@@ -10,6 +10,8 @@ struct Engine;
 
 int vrhands_wants(const struct Actor *a);
 void vrhands_pose(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace);
+/* a pet pushes the bone under the hand. Called from the pose, after the skeleton is built. */
+void vrhands_pet_pose(struct Actor *a, Mat4 *world, int nbones, const Mat4 *unplace);
 void vrhands_tick(struct Engine *e);
 void vrhands_forget_poses(void);
 /* 1 when that controller is on Hewie. A touch also gives that hand a mild buzz. */

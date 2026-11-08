@@ -710,6 +710,7 @@ static void pose_hook(Mat4 *world, int n, void *user) {
         cloth_pose(sHookActor->cloth, world, n, &sHookPlace, &sHookUnplace);
     }
     vrhands_pose(sHookActor, world, &sHookPlace, &sHookUnplace);
+    vrhands_pet_pose(sHookActor, world, n, &sHookUnplace);
 }
 
 /* room -> model space: the place undone (turn back, unscale; its origin at height y) */

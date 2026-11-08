@@ -955,12 +955,27 @@ static const Actor *hewie_mesh(void) {
     return NULL;
 }
 
-static int mesh_touch(const Actor *dog, Vec3 p) {
+static int primary_bone(const SkinVertex *v) {
+    int k, best = v->bones[0];
+    float w = v->weights[0];
+
+    for (k = 1; k < 4; k++) {
+        if (v->weights[k] > w) {
+            w = v->weights[k];
+            best = v->bones[k];
+        }
+    }
+    return best;
+}
+
+/* 1 when the hand is on the mesh. `bone` is the joint that owns the hit. */
+static int mesh_touch(const Actor *dog, Vec3 p, int *bone) {
     const Model *m = &dog->model;
     float lim = PET_SKIN * PET_SKIN;
     float reach = actor_radius(dog) + PET_SKIN;
+    float best = lim;
     Vec3 d = vec3_sub(p, actor_center(dog));
-    int i;
+    int i, hit = 0;
 
     if (vec3_dot(d, d) > reach * reach) {
         return 0;
@@ -980,23 +995,302 @@ static int mesh_touch(const Actor *dog, Vec3 p) {
             Vec3 a = vec3(dog->posed[v].x, dog->posed[v].y, dog->posed[v].z);
             Vec3 b = vec3(dog->posed[v + 1].x, dog->posed[v + 1].y, dog->posed[v + 1].z);
             Vec3 c = vec3(dog->posed[v + 2].x, dog->posed[v + 2].y, dog->posed[v + 2].z);
+            float dist = tri_dist2(p, a, b, c);
+            float da, db, dc;
+            int pick;
 
-            if (tri_dist2(p, a, b, c) <= lim) {
-                return 1;
+            if (dist > best) {
+                continue;
+            }
+            da = vec3_len(vec3_sub(p, a));
+            db = vec3_len(vec3_sub(p, b));
+            dc = vec3_len(vec3_sub(p, c));
+            pick = v;
+            if (db < da && db <= dc) {
+                pick = v + 1;
+            } else if (dc < da && dc < db) {
+                pick = v + 2;
+            }
+            best = dist;
+            hit = 1;
+            if (bone != NULL && pick < m->nv) {
+                *bone = primary_bone(dog->shaped != NULL ? &dog->shaped[pick] : &m->v[pick]);
             }
         }
     }
+    return hit;
+}
+
+/* a shove on one joint, in room space. Past the part's reach it lets go. */
+#define PET_HEAD 0x1F
+#define PET_NECK 0x1D
+static Vec3 sPetOff[MODEL_MAX_BONES];
+static Vec3 sPetWant[MODEL_MAX_BONES];
+static int sPetTick = -1;
+
+static int bone_of(const Model *m, int bone, int anc) {
+    int guard = 0;
+
+    while (bone >= 0 && bone < m->nbones && guard++ < MODEL_MAX_BONES) {
+        if (bone == anc) {
+            return 1;
+        }
+        bone = m->bones[bone].parent;
+    }
     return 0;
+}
+
+static int foot_chain(const Model *m, int bone) {
+    static const int kFeet[] = {0x0B, 0x0F, 0x17, 0x1C};
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        if (bone_of(m, bone, kFeet[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* 1 the head, 2 an ear, 3 the tail, 4 the jaw. 0 stays on the skeleton. */
+#define PET_JAW 0x25
+static int pet_part(const Actor *dog, int bone) {
+    const Model *m = &dog->model;
+    Vec3 p, head, rel, fwd;
+    float along;
+
+    if (bone < 0 || bone >= m->nbones || bone >= MODEL_MAX_BONES) {
+        return 0;
+    }
+    if (bone_of(m, bone, PET_NECK) && !bone_of(m, bone, PET_HEAD)) {
+        return 0;
+    }
+    if (bone == PET_HEAD) {
+        return 1;
+    }
+    if (bone_of(m, bone, PET_JAW)) {
+        return 4;
+    }
+    if (bone_of(m, bone, PET_HEAD)) {
+        return 2;
+    }
+    p = dog->bones[bone];
+    if (p.x == 0.0f && p.y == 0.0f && p.z == 0.0f) {
+        return 0;
+    }
+    if (m->nbones > PET_HEAD) {
+        head = dog->bones[PET_HEAD];
+        rel = vec3_sub(p, head);
+        /* an ear that is not parented under the skull still sits just above it */
+        if (head.y != 0.0f && rel.y > 0.2f && vec3_len(rel) < 5.5f) {
+            return 2;
+        }
+    }
+    if (bone == 0 || bone_of(m, bone, 0x10) || foot_chain(m, bone)) {
+        return 0;
+    }
+    fwd = vec3(sinf(dog->yaw), 0.0f, cosf(dog->yaw));
+    along = (p.x - dog->pos.x) * fwd.x + (p.z - dog->pos.z) * fwd.z;
+    return along < -2.5f ? 3 : 0;
+}
+
+/* v turned about a unit axis. The joint itself is not moved. */
+static Vec3 pet_spin_vec(Vec3 v, Vec3 axis, float ang) {
+    float c = cosf(ang), s = sinf(ang);
+
+    return vec3_add(vec3_add(vec3_scale(v, c), vec3_scale(vec3_cross(axis, v), s)),
+                    vec3_scale(axis, vec3_dot(axis, v) * (1.0f - c)));
+}
+
+/* last frame's axis, with the pet swing taken back off, so the turn does not pile up */
+static Vec3 pet_rest_axis(Vec3 axis, Vec3 spin) {
+    float ang = vec3_len(spin);
+    Vec3 n = vec3_norm(axis);
+
+    if (ang < 0.001f) {
+        return n;
+    }
+    return vec3_norm(pet_spin_vec(n, vec3_scale(spin, 1.0f / ang), -ang));
+}
+
+static void pet_open(void) {
+    int i;
+
+    if (sPetTick == (int)gEngine.ticks) {
+        return;
+    }
+    sPetTick = (int)gEngine.ticks;
+    for (i = 0; i < MODEL_MAX_BONES; i++) {
+        sPetWant[i] = vec3(0.0f, 0.0f, 0.0f);
+    }
+}
+
+static void pet_push(const Actor *dog, int bone, Vec3 hand) {
+    int kind = pet_part(dog, bone);
+    int k, bestk = -1;
+    Vec3 pivot, to, best, axis, want;
+    float d, maxa, letgo, reach, bestd = -1.0f, ang, al;
+
+    if (kind == 0 || bone < 0 || bone >= MODEL_MAX_BONES) {
+        return;
+    }
+    /* head stays a short nod; an ear can fold most of the way over */
+    if (kind == 1) {
+        maxa = 0.55f; letgo = 1.15f; reach = 6.0f;
+    } else if (kind == 2) {
+        maxa = 1.90f; letgo = 2.55f; reach = 8.0f;
+    } else if (kind == 4) {
+        maxa = 0.50f; letgo = 1.20f; reach = 5.5f;
+    } else {
+        maxa = 1.05f; letgo = 1.90f; reach = 9.0f;
+    }
+    pivot = dog->bones[bone];
+    to = vec3_sub(hand, pivot);
+    d = vec3_len(to);
+    if (d < 0.35f || d > reach) {
+        return;   /* off the socket: the part goes back to rest */
+    }
+    to = vec3_scale(to, 1.0f / d);
+    for (k = 0; k < 3; k++) {
+        Vec3 ax = pet_rest_axis(dog->bone_axes[bone][k], sPetOff[bone]);
+        float dp;
+
+        if (vec3_len(ax) < 0.5f) {
+            continue;
+        }
+        dp = vec3_dot(ax, to);
+        if (fabsf(dp) > bestd) {
+            bestd = fabsf(dp);
+            bestk = k;
+            best = dp >= 0.0f ? ax : vec3_scale(ax, -1.0f);
+        }
+    }
+    if (bestk < 0) {
+        return;
+    }
+    ang = acosf(fminf(1.0f, fmaxf(-1.0f, vec3_dot(best, to))));
+    if (ang > letgo || ang < 0.02f) {
+        return;   /* past the stop, or already aimed: let the joint ease home */
+    }
+    if (ang > maxa) {
+        ang = maxa;
+    }
+    axis = vec3_cross(best, to);
+    al = vec3_len(axis);
+    if (al < 1.0e-4f) {
+        return;
+    }
+    want = vec3_scale(axis, ang / al);
+    if (vec3_len(sPetWant[bone]) < vec3_len(want)) {
+        sPetWant[bone] = want;
+    }
+}
+
+static void pet_settle(void) {
+    int i;
+
+    if (sPetTick != (int)gEngine.ticks) {
+        sPetTick = (int)gEngine.ticks;
+        for (i = 0; i < MODEL_MAX_BONES; i++) {
+            sPetWant[i] = vec3(0.0f, 0.0f, 0.0f);
+        }
+    }
+    for (i = 0; i < MODEL_MAX_BONES; i++) {
+        sPetOff[i] = vec3_add(sPetOff[i], vec3_scale(vec3_sub(sPetWant[i], sPetOff[i]), 0.45f));
+        if (vec3_len(sPetOff[i]) < 0.02f && vec3_len(sPetWant[i]) < 0.02f) {
+            sPetOff[i] = vec3(0.0f, 0.0f, 0.0f);
+        }
+    }
+}
+
+static int bone_depth(const Model *m, int bone) {
+    int depth = 0, guard = 0;
+
+    while (bone >= 0 && bone < m->nbones && guard++ < MODEL_MAX_BONES) {
+        int parent = m->bones[bone].parent;
+
+        if (parent < 0 || parent >= m->nbones) {
+            break;
+        }
+        depth++;
+        bone = parent;
+    }
+    return depth;
+}
+
+/* turn a posed bone about `pivot`. The bone that owns the pivot stays put; its children keep their length. */
+static void pet_turn_about(Mat4 *w, Vec3 pivot, Vec3 axis, float ang) {
+    Vec3 p = pet_spin_vec(vec3_sub(vec3(w->m[12], w->m[13], w->m[14]), pivot), axis, ang);
+    int c;
+
+    for (c = 0; c < 3; c++) {
+        Vec3 v = pet_spin_vec(vec3(w->m[c * 4], w->m[c * 4 + 1], w->m[c * 4 + 2]), axis, ang);
+
+        w->m[c * 4] = v.x;
+        w->m[c * 4 + 1] = v.y;
+        w->m[c * 4 + 2] = v.z;
+    }
+    w->m[12] = pivot.x + p.x;
+    w->m[13] = pivot.y + p.y;
+    w->m[14] = pivot.z + p.z;
+}
+
+void vrhands_pet_pose(Actor *a, Mat4 *world, int nbones, const Mat4 *unplace) {
+    const Model *m;
+    int pass, i;
+
+    if (a == NULL || world == NULL || unplace == NULL || strncmp(a->name, "O_HEW", 5) != 0) {
+        return;
+    }
+    m = &a->model;
+    if (nbones > m->nbones) {
+        nbones = m->nbones;
+    }
+    if (nbones > MODEL_MAX_BONES) {
+        nbones = MODEL_MAX_BONES;
+    }
+    for (pass = 0; pass < nbones; pass++) {
+        for (i = 0; i < nbones; i++) {
+            Vec3 spin = sPetOff[i];
+            Vec3 axis;
+            float ang;
+            int j;
+
+            if (bone_depth(m, i) != pass || vec3_len(spin) < 0.02f) {
+                continue;
+            }
+            ang = vec3_len(spin);
+            spin = vec3_scale(spin, 1.0f / ang);
+            axis = vec3(unplace->m[0] * spin.x + unplace->m[4] * spin.y + unplace->m[8] * spin.z,
+                        unplace->m[1] * spin.x + unplace->m[5] * spin.y + unplace->m[9] * spin.z,
+                        unplace->m[2] * spin.x + unplace->m[6] * spin.y + unplace->m[10] * spin.z);
+            if (vec3_len(axis) < 1.0e-4f) {
+                continue;
+            }
+            axis = vec3_norm(axis);
+            {
+                Vec3 pivot = vec3(world[i].m[12], world[i].m[13], world[i].m[14]);
+
+                for (j = 0; j < nbones; j++) {
+                    if (bone_of(m, j, i)) {
+                        pet_turn_about(&world[j], pivot, axis, ang);
+                    }
+                }
+            }
+        }
+    }
 }
 
 int vrhands_petting(int side) {
     const Actor *dog;
     Vec3 at, right, up, fwd;
     float grip, index, thumb;
+    int bone = -1;
 
     if (side < 0 || side > 1 || !vr_active()) {
         return 0;
     }
+    pet_open();
     dog = hewie_mesh();
     if (dog == NULL) {
         return 0;
@@ -1010,9 +1304,10 @@ int vrhands_petting(int side) {
     (void)grip;
     (void)index;
     (void)thumb;
-    if (!mesh_touch(dog, at)) {
+    if (!mesh_touch(dog, at, &bone)) {
         return 0;
     }
+    pet_push(dog, bone, at);
     vr_haptic(side, 0.075f, 0.04f);
     return 1;
 }
@@ -1023,6 +1318,7 @@ void vrhands_tick(Engine *e) {
     if (e == NULL) {
         return;
     }
+    pet_settle();
     poses_restore(e);
     if (!vr_active() || !vr_anchor_get(NULL, NULL)) {
         poses_save(e);
