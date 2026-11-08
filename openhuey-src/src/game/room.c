@@ -381,6 +381,20 @@ void room_door_move(Room *r, int exit, int open, int slam) {
     d->keys = NULL;
 }
 
+void room_door_burst(Room *r, int exit, int positive) {
+    RoomDoor *d;
+
+    if (exit < 0 || exit >= ROOM_DOORS || !r->doors[exit].present) {
+        return;
+    }
+    d = &r->doors[exit];
+    d->mode = 3;
+    d->closing = 0;
+    d->target = positive ? 90.0f : -90.0f;
+    d->sounded = 0;
+    d->keys = NULL;
+}
+
 /* ---- the doors' animations for their users (FIN_D000.MTN) ---- */
 static uint8_t *sDoorMtn;
 static size_t sDoorMtnSize;

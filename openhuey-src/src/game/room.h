@@ -120,6 +120,8 @@ int room_door_in_area(const Room *r, int exit, int kind, Vec3 p);
 void room_door_passage(Room *r, int exit, int open, uint32_t locks);
 /* door `exit` swung open or shut by 5 degrees a frame (Door_Swing 2), or slammed shut (3) */
 void room_door_move(Room *r, int exit, int open, int slam);
+/* slammed open at 15 degrees a frame, toward +90 or -90 */
+void room_door_burst(Room *r, int exit, int positive);
 /* Doors_SetOpened: door `exit` (not along a user's animation) set swinging open - with a loud
  * creak (0x91), heard from Fiona's noise source - or shut, by 15 degrees a frame, its passage
  * flags 0x60000 moved to the other side at once; 0 if it can't */

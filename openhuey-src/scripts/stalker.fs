@@ -7,6 +7,18 @@ USING: engine game-state actors messages common facts flag-names room-names path
 
 : him ( -- a )  my-model @ actor ;   \ (his model's fields)
 : played? ( -- flag )  in-game @ if  my-room room-id =  else  false  then ;   \ (Npc_InPlayedRoom)
+\ a leaf that swept him (a slam, a hand, a coast): one door-blow, the same as a door she kicked
+: swept-by-door ( -- )
+    reeling @ away? or if  exit  then
+    door-hits dup 0= if  drop exit  then
+    8 0 do
+        dup 1 i lshift and if
+            fiona striker !
+            door-blow 3 i struck
+            fiona send door-impact
+            drop unloop exit
+        then
+    loop drop ;
 
 \ his model where his body is, shown in the room being played (Daniella on her back: her hair
 \ and back by her animation - the engine's, DaniellaModel_Vt3C)
@@ -382,7 +394,7 @@ behaviour stalking
       my-model @ scene-has?  dup 0=  in-cast @ and if  0 hidden !  then  in-cast !
       in-game @ in-cast @ and if  tell-doing  loaded @ if  status  then  exit  then
       in-game @ still-held @ and if  tell-doing  loaded @ if  status  then  exit  then   \ (held still: OpenHuey's)
-      in-game @ if  frame  script-held @ 0= if  own-frame @ ?dup if  execute  then  then  tell-doing  then   \ (held: his Think, not his own frame)
+      in-game @ if  script-held @ 0= if  swept-by-door  then  frame  script-held @ 0= if  own-frame @ ?dup if  execute  then  then  tell-doing  then   \ (held: his Think, not his own frame)
       figure? self body? and  in-game @ 0= and if  posed @ if  posed-frame  else  pose  then  then   \ (a scene's figure: moved only posed)
       loaded @ if  status  then ;
   \ Hewie: his attack asked, his letting go, his bites, his growls

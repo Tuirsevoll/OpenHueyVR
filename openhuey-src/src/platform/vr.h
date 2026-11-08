@@ -77,6 +77,10 @@ int vr_hands_tracked(void);
 void vr_haptic(int hand, float amplitude, float seconds);
 /* the headset in the room, the same point the eyes are drawn from. 0 if it is not tracking. */
 int vr_head_at(Vec3 *out);
+/* the headset in the same space and units as a controller's `at`. 0 if it is not tracking. */
+int vr_head_local(Vec3 *out);
+/* horizontal forward in that space, where the headset is looking. 0 if it is not tracking. */
+int vr_head_forward(Vec3 *out);
 /* the next panel placement is once, in front of the current look, and then stays put */
 void vr_screen_face(void);
 void vr_screen_loose(int on);   /* kept for callers; the panel does not follow the head */

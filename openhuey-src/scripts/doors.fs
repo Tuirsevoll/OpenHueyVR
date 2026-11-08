@@ -143,6 +143,7 @@ behaviour keeping
   \ open or shut at rest by its user, as a swing along an animation is)
   on slam ( exit source -- )  over user !  dup grab  false true door-move ;
   on barge ( exit source -- )  over user !  dup grab  true true door-move ;
+  on burst-way ( exit sign source -- )  {: ex sign source :}  source ex user !  ex grab  ex sign 0> door-burst ;
   \ pulled shut behind a stalker come in by it (his DoorBreak): held, swung shut, let go shut at rest
   on pull-shut ( exit source -- )  over user !  dup grab  false false door-move ;
   on hold-door ( room exit kind -- )

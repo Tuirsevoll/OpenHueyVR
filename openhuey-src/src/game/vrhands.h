@@ -23,5 +23,12 @@ int vrhands_swing(void);
 /* both hands met a stalker, fast, within a few frames of each other. One script frame, until taken. */
 int vrhands_shove_ready(void);
 void vrhands_shove_take(void);
+/* the exit a two-hand shove met while it was shut and free, or -1. One script frame, until taken. */
+int vrhands_door_shove(void);
+/* +1 opens toward +90, -1 toward -90: the side the hands pushed from. */
+int vrhands_door_way(void);
+void vrhands_door_take(void);
+/* bits of the exits whose leaf swept a stalker last tick. */
+int vrhands_door_hits(void);
 
 #endif

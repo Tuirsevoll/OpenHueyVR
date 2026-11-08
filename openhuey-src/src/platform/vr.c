@@ -66,6 +66,8 @@ int vr_controller(int hand, VrController *out) { (void)hand; (void)out; return 0
 int vr_hands_tracked(void) { return 0; }
 void vr_haptic(int hand, float amplitude, float seconds) { (void)hand; (void)amplitude; (void)seconds; }
 int vr_head_at(Vec3 *out) { (void)out; return 0; }
+int vr_head_local(Vec3 *out) { (void)out; return 0; }
+int vr_head_forward(Vec3 *out) { (void)out; return 0; }
 void vr_screen_face(void) {}
 void vr_screen_loose(int on) { (void)on; }
 int vr_calibrate(float *height_m, float *scale) { (void)height_m; (void)scale; return 0; }
@@ -778,6 +780,39 @@ int vr_anchor_get(Vec3 *eye, float *yaw) {
     if (yaw != NULL) {
         *yaw = sAnchorYaw;
     }
+    return 1;
+}
+
+int vr_head_local(Vec3 *out) {
+    XrPosef h;
+    float s;
+
+    if (out == NULL || sViewCount <= 0) {
+        return 0;
+    }
+    h = head_pose();
+    s = sBodyScale > 0.001f ? sBodyScale : 1.0f;
+    *out = vec3(h.position.x * VR_UNITS_PER_METER / s, h.position.y * VR_UNITS_PER_METER / s,
+                h.position.z * VR_UNITS_PER_METER / s);
+    return 1;
+}
+
+int vr_head_forward(Vec3 *out) {
+    XrPosef h;
+    Vec3 f;
+    float xz;
+
+    if (out == NULL || sViewCount <= 0) {
+        return 0;
+    }
+    h = head_pose();
+    f = quat_dir(h.orientation, 0.0f, 0.0f, -1.0f);
+    xz = sqrtf(f.x * f.x + f.z * f.z);
+    if (xz < 0.25f) {
+        *out = vec3(0.0f, 0.0f, -1.0f);
+        return 1;
+    }
+    *out = vec3(f.x / xz, 0.0f, f.z / xz);
     return 1;
 }
 

@@ -511,8 +511,8 @@ static float dist2(Vec3 a, Vec3 b) {
 #define RATTLE_SOUND 0x71u  /* Fiona's bank: the locked handle */
 #define RATTLE_BANK  5
 
-static Mat4 door_place(const RoomDoor *d) {
-    float y = d->rot.y + d->swing * 3.14159265f / 180.0f;
+static Mat4 door_place_at(const RoomDoor *d, float swing) {
+    float y = d->rot.y + swing * 3.14159265f / 180.0f;
     float cx = cosf(d->rot.x), sx = sinf(d->rot.x), cy = cosf(y), sy = sinf(y);
     float cz = cosf(d->rot.z), sz = sinf(d->rot.z);
     Mat4 rx = mat4_identity(), ry = mat4_identity(), rz = mat4_identity(), t = mat4_identity();
@@ -525,6 +525,8 @@ static Mat4 door_place(const RoomDoor *d) {
     t.m[14] = d->pos.z;
     return mat4_mul(t, mat4_mul(rz, mat4_mul(ry, rx)));
 }
+
+static Mat4 door_place(const RoomDoor *d) { return door_place_at(d, d->swing); }
 
 static int in_box(Vec3 p, Vec3 lo, Vec3 hi, float margin) {
     return p.x >= lo.x - margin && p.x <= hi.x + margin && p.y >= lo.y - margin && p.y <= hi.y + margin &&
@@ -592,12 +594,14 @@ static void claim_for_letgo(Engine *e, int exit, int open) {
     gProgress.doors[d] = state | 1u;
 }
 
-static Vec3 door_local(const RoomDoor *d, Vec3 hand) {
-    Mat4 place = door_place(d);
+static Vec3 door_local_at(const RoomDoor *d, Vec3 hand, float swing) {
+    Mat4 place = door_place_at(d, swing);
     Mat4 inv = rigid_inverse(&place);
 
     return mat4_point(&inv, hand);
 }
+
+static Vec3 door_local(const RoomDoor *d, Vec3 hand) { return door_local_at(d, hand, d->swing); }
 
 /* the segment crosses the leaf, even when a fast hand would skip the wood between frames */
 static int seg_leaf(Vec3 a, Vec3 b, float *tHit) {
@@ -1292,9 +1296,18 @@ void vrhands_pet_pose(Actor *a, Mat4 *world, int nbones, const Mat4 *unplace) {
 #define SHOVE_REACH 18.0f
 #define SHOVE_WINDOW 20
 #define SHOVE_COOL 24
+/* above the 5° ease and a slow push; a slammed door moves at 15° */
+#define DOOR_HIT_SPEED 10.0f
+#define DOOR_HIT_MARGIN 8.0f
 static int sBlowOn, sShoveOn, sSwingOn, sEnvCool, sShoveCool, sVoiceCool;
 static Vec3 sBlowAt;
+static Vec3 sHandLocal[2], sHeadLocal, sBodyDelta, sFwd;
+static int sHeadHave;
 static int sStalkTick[2] = {-1, -1};
+static int sDoorTick[2] = {-1, -1}, sDoorHit[2] = {-1, -1}, sDoorShove = -1, sDoorWay = -1;
+static float sDoorZ[2];
+static float sSwingWas[ROOM_DOORS];
+static int sLeafArm[ROOM_DOORS], sLeafHits, sLeafRoom = -2;
 
 int vrhands_blow_at(float out[3]) {
     if (!sBlowOn) {
@@ -1311,6 +1324,18 @@ int vrhands_blow_at(float out[3]) {
 int vrhands_swing(void) { return sSwingOn; }
 
 int vrhands_shove_ready(void) { return sShoveOn; }
+
+int vrhands_door_shove(void) { return sDoorShove; }
+
+int vrhands_door_way(void) { return sDoorWay < 0 ? -1 : 1; }
+
+void vrhands_door_take(void) {
+    sDoorShove = -1;
+    sDoorTick[0] = sDoorTick[1] = -1;
+    sDoorHit[0] = sDoorHit[1] = -1;
+}
+
+int vrhands_door_hits(void) { return sLeafHits; }
 
 void vrhands_shove_take(void) {
     sShoveOn = 0;
@@ -1431,11 +1456,81 @@ static int stalker_touch(Vec3 p) {
     return 0;
 }
 
+static float box_gap(Vec3 p, Vec3 lo, Vec3 hi) {
+    float dx = p.x < lo.x ? lo.x - p.x : p.x > hi.x ? p.x - hi.x : 0.0f;
+    float dy = p.y < lo.y ? lo.y - p.y : p.y > hi.y ? p.y - hi.y : 0.0f;
+    float dz = p.z < lo.z ? lo.z - p.z : p.z > hi.z ? p.z - hi.z : 0.0f;
+
+    return sqrtf(dx * dx + dy * dy + dz * dz);
+}
+
+/* shut, unlocked, not held, not stuck, and not already swinging */
+static int door_shut_free(const Engine *e, int exit) {
+    const RoomDoor *d;
+    int id;
+
+    if (exit < 0 || exit >= ROOM_DOORS) {
+        return 0;
+    }
+    d = &e->room.doors[exit];
+    if (!d->present || d->mode != 0 || fabsf(d->swing) > DOOR_LATCH || door_blocked(e, exit)) {
+        return 0;
+    }
+    id = door_index(e, exit);
+    return id < 0 || (gProgress.doors[id] & 4u) == 0;
+}
+
+static int door_shove_touch(const Engine *e, Vec3 hand, int *exit) {
+    int i, found = -1;
+    float best = SHOVE_REACH;
+
+    for (i = 0; i < ROOM_DOORS; i++) {
+        Vec3 q;
+        float dist;
+
+        if (!door_shut_free(e, i)) {
+            continue;
+        }
+        q = door_local(&e->room.doors[i], hand);
+        dist = box_gap(q, vec3(0.0f, 0.0f, -0.5f), vec3(12.0f, 22.0f, 0.5f));
+        if (dist <= best) {
+            best = dist;
+            found = i;
+        }
+    }
+    if (found < 0) {
+        return 0;
+    }
+    *exit = found;
+    return 1;
+}
+
+/* the headset's own step this frame, so a run does not count as a swing */
+static void swing_body(void) {
+    Vec3 head;
+
+    sBodyDelta = vec3(0.0f, 0.0f, 0.0f);
+    sFwd = vec3(0.0f, 0.0f, -1.0f);
+    if (!vr_head_local(&head)) {
+        sHeadHave = 0;
+        return;
+    }
+    if (!vr_head_forward(&sFwd)) {
+        sFwd = vec3(0.0f, 0.0f, -1.0f);
+    }
+    if (sHeadHave) {
+        sBodyDelta = vec3_sub(head, sHeadLocal);
+    }
+    sHeadLocal = head;
+    sHeadHave = 1;
+}
+
 /* the script frame just read last tick's blows. A fast hand on a mesh sets the next one. */
 static void swing_begin(void) {
     sBlowOn = 0;
     sShoveOn = 0;
     sSwingOn = 0;
+    sDoorShove = -1;
     if (sEnvCool > 0) {
         sEnvCool--;
     }
@@ -1448,19 +1543,37 @@ static void swing_begin(void) {
 }
 
 static void swing_hand(int side, Vec3 at) {
-    float speed = 0.0f;
+    VrController c;
+    Vec3 moved;
+    float speed, forward;
     int now = (int)gEngine.ticks;
-    int on_stalker;
+    int door = -1, on_stalker;
 
-    if (sHandHave[side]) {
-        speed = vec3_len(vec3_sub(at, sHandAt[side]));
+    if (!vr_controller(side, &c) || !c.tracked) {
+        sHandHave[side] = 0;
+        return;
     }
-    if (speed < SWING_SPEED || speed > SWING_FAST) {
+    if (!sHandHave[side]) {
+        sHandLocal[side] = c.at;
+        return;
+    }
+    /* play space, with the body's own step taken off, and only a shove toward where she looks */
+    moved = vec3_sub(vec3_sub(c.at, sHandLocal[side]), sBodyDelta);
+    sHandLocal[side] = c.at;
+    forward = vec3_dot(moved, sFwd);
+    speed = vec3_len(moved);
+    if (forward < SWING_SPEED || speed > SWING_FAST) {
         return;
     }
     if (sVoiceCool <= 0) {
         sSwingOn = 1;
         sVoiceCool = VOICE_COOL;
+    }
+    if (door_shove_touch(&gEngine, at, &door)) {
+        sDoorTick[side] = now;
+        sDoorHit[side] = door;
+        sDoorZ[side] = door_local(&gEngine.room.doors[door], at).z;
+        return;
     }
     on_stalker = stalker_touch(at);
     if (on_stalker && sShoveCool <= 0) {
@@ -1477,14 +1590,96 @@ static void swing_hand(int side, Vec3 at) {
 static void swing_finish(void) {
     int now = (int)gEngine.ticks;
     int a = sStalkTick[0], b = sStalkTick[1];
+    int da = sDoorTick[0], db = sDoorTick[1];
 
-    if (sShoveCool > 0 || a < 0 || b < 0) {
-        return;
-    }
-    if (now - a <= SHOVE_WINDOW && now - b <= SHOVE_WINDOW) {
+    if (sShoveCool <= 0 && a >= 0 && b >= 0 && now - a <= SHOVE_WINDOW && now - b <= SHOVE_WINDOW) {
         sShoveOn = 1;
         sStalkTick[0] = sStalkTick[1] = -1;
     }
+    if (da >= 0 && db >= 0 && sDoorHit[0] == sDoorHit[1] && now - da <= SHOVE_WINDOW && now - db <= SHOVE_WINDOW &&
+        door_shut_free(&gEngine, sDoorHit[0])) {
+        sDoorShove = sDoorHit[0];
+        sDoorWay = (sDoorZ[0] + sDoorZ[1]) >= 0.0f ? 1 : -1;
+        sDoorTick[0] = sDoorTick[1] = -1;
+        sDoorHit[0] = sDoorHit[1] = -1;
+    }
+}
+
+static int on_leaf(const RoomDoor *d, float swing, Vec3 p) {
+    Vec3 q = door_local_at(d, p, swing);
+
+    return q.x >= -DOOR_HIT_MARGIN && q.x <= 12.0f + DOOR_HIT_MARGIN && q.y >= -DOOR_HIT_MARGIN &&
+           q.y <= 22.0f + DOOR_HIT_MARGIN && q.z >= -DOOR_HIT_MARGIN && q.z <= DOOR_HIT_MARGIN;
+}
+
+static int leaf_meets_point(const RoomDoor *d, float from, float to, Vec3 p) {
+    float span = to - from;
+    int n = (int)(fabsf(span) / 8.0f) + 1;
+    int i;
+
+    if (n > 6) {
+        n = 6;
+    }
+    for (i = 0; i <= n; i++) {
+        if (on_leaf(d, from + span * ((float)i / (float)n), p)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int leaf_meets(const RoomDoor *d, float from, float to) {
+    int i;
+
+    for (i = 0; i < MAX_ACTORS; i++) {
+        const Actor *a = &gEngine.actors[i];
+        Vec3 p, mid, high;
+
+        if (!a->used || !a->visible || !stalker_name(a->name)) {
+            continue;
+        }
+        p = a->pos;
+        mid = vec3(p.x, p.y + 10.0f, p.z);
+        high = vec3(p.x, p.y + 18.0f, p.z);
+        if (leaf_meets_point(d, from, to, p) || leaf_meets_point(d, from, to, mid) || leaf_meets_point(d, from, to, high)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* a leaf that moved fast this frame, however it was driven, and a stalker standing in that sweep */
+static void leaf_scan(Engine *e) {
+    int i, hits = 0;
+
+    if (e->room.id != sLeafRoom) {
+        sLeafRoom = e->room.id;
+        for (i = 0; i < ROOM_DOORS; i++) {
+            sSwingWas[i] = e->room.doors[i].swing;
+            sLeafArm[i] = 0;
+        }
+        sLeafHits = 0;
+        return;
+    }
+    for (i = 0; i < ROOM_DOORS; i++) {
+        RoomDoor *d = &e->room.doors[i];
+        float s = d->present ? d->swing : sSwingWas[i];
+        float delta = s - sSwingWas[i];
+
+        sSwingWas[i] = s;
+        if (!d->present || fabsf(delta) < DOOR_HIT_SPEED) {
+            sLeafArm[i] = 0;
+            continue;
+        }
+        if (sLeafArm[i]) {
+            continue;
+        }
+        if (leaf_meets(d, s - delta, s)) {
+            sLeafArm[i] = 1;
+            hits |= 1 << i;
+        }
+    }
+    sLeafHits = hits;
 }
 
 int vrhands_petting(int side) {
@@ -1529,8 +1724,10 @@ void vrhands_tick(Engine *e) {
     poses_restore(e);
     if (!vr_active() || !vr_anchor_get(NULL, NULL)) {
         poses_save(e);
+        leaf_scan(e);
         return;
     }
+    swing_body();
     if (sPushRoom != e->room.id) {
         memset(sPushNow, 0, sizeof(sPushNow));
         memset(sPushWas, 0, sizeof(sPushWas));
@@ -1721,4 +1918,5 @@ void vrhands_tick(Engine *e) {
         }
     }
     poses_save(e);
+    leaf_scan(e);
 }

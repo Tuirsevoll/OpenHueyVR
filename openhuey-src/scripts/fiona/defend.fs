@@ -168,12 +168,15 @@ create ahead-pt /vec allot   \ (her radius ahead)
 : by-dog? ( -- flag )  sender hewie-id = ;
 : dog-mistreated ( -- )   \ (her blow on Hewie: 3 more in his treatment - the progress' +0xFB6)
     progress pr.hewie-mistreated dup l@ 3 + 0 max 10000 min swap l! ;
+: hit-landed ( -- )   \ (her kick meeting him: costume 6 its own, costume 7 none)
+    form illegal-outfit = if  illegal-hit-sound 0 her-sound exit  then
+    form cowgirl-outfit <> if  kick-hit-sound 0 her-sound  then ;
 : struck-home ( -- )
     by-dog? if  dog-mistreated  then
     her-sub @ shove-sub = if   \ (her shove landed: the rumble only on the stalker or a creature)
         by-dog? 0= if  $C0 12 fiona-jolt  then  shove-hit-sound 0 her-sound  recoil exit
     then
-    form illegal-outfit = if  illegal-hit-sound 0 her-sound  else  form cowgirl-outfit <> if  kick-hit-sound 0 her-sound  then  then
+    hit-landed
     form cowgirl-outfit = if  sender spray-on  then
     blow-big @ if  sender body-at vec@ puffs  then
     recoil ;
@@ -185,13 +188,16 @@ create poi /vec allot
 : point-ahead ( F: up ahead -- )   \ (from her place, turned by her heading)
     {: F: up ahead :}  0e ahead her-yaw f@ rotate-by  {: F: dx dz :}
     her-at v.x sf@ dx f+ poi v.x sf!  her-at v.y sf@ up f+ poi v.y sf!  her-at v.z sf@ dz f+ poi v.z sf! ;
-\ a fast controller swing: her kick grunt, hit or miss. A mesh it meets is her blow. A stalker
-\ answers only a two-hand shove, and that shove is a kick.
+\ a forward swing of a controller: her kick grunt, hit or miss. A mesh it meets is her blow.
+\ A stalker answers only a two-hand shove, and that shove is a kick. The same shove on a shut,
+\ unlocked door bursts it open.
 : hand-voice ( -- )
     form dup illegal-outfit <> swap cowgirl-outfit <> and if  effort-sound 0 her-sound  then ;
 : hand-strike ( -- )
     vr? 0= if  exit  then
     her-mode @ defend-mode = if  exit  then
+    hand-door? dup 0< if  drop
+    else  slam-sound 0 her-sound  hand-door-way fiona-noise doors-id send burst-way  hand-door-take  then
     hand-shove? if
         hands-off?  free-to-act? 0= or  her-panic-stage @ panicking >= or  no-flee state-flag? or 0= if
             hand-shove-take

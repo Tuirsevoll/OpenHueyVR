@@ -103,6 +103,8 @@ message set-door-opened ( exit open -- )     \ set swinging open (a loud creak, 
 message pull-shut ( exit source -- )         \ taken hold of and swung shut behind its user (DoorHold_Take, DoorHold_Shut)
 message slam ( exit source -- )
 message barge ( exit source -- )             \ burst open (Fiona running into it)
+message burst-way ( exit sign source -- )    \ slammed open toward sign (+1 / -1), held first
+message door-impact ( -- )                   \ a moving door struck a stalker: Fiona's kick-landed sound
 \ any room's doors (off-screen users too): take hold of one before going through, then let
 \ it go open or shut; the doors answer `door-held` or `door-refused`
 message hold-door ( room exit kind -- )

@@ -369,6 +369,7 @@ behaviour free
   on flinch ( -- )  flinch ;   \ (a room's command)
   on count-shakes ( on? -- )  if  0 her-shake-count !  -1 her-shake-rest !  else  -1 her-shake-count !  then ;
   on blow-taken ( -- )  struck-home ;   \ (her kick or shove struck home)
+  on door-impact ( -- )  hit-landed ;   \ (a door swept a stalker: the same landed sound)
   on danger ( level -- )  her-danger ! ;
   on panic ( stage level -- )  cell>f her-panic-level f!  her-panic-stage ! ;
   on door-held ( room exit -- )  2drop  got-hold ;
