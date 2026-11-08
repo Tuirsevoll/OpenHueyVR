@@ -3,7 +3,9 @@
 
 #include "engine.h"
 #include "placed.h"
+#include "progress.h"
 #include "room.h"
+#include "sprites.h"
 #include "things.h"
 #include "../data/pac.h"
 #include "../data/texbank.h"
@@ -25,7 +27,7 @@
 #endif
 
 #define LOOT_N 32
-#define CAT_N 512
+#define CAT_N 1024
 #define NAME_N 4096
 #define NAME_LEN 48
 #define KEY_ROOM 0x9
@@ -36,6 +38,9 @@
 #define MESH_CARD 2
 #define MESH_ICON 3
 #define MESH_THING 4
+#define MESH_PART 5
+#define MESH_POWDER 6
+#define MESH_BALL 7
 #define ST_SPAWN 0
 #define ST_PART 1
 #define ST_PLACED 2
@@ -49,7 +54,7 @@ typedef struct Name {
 } Name;
 
 typedef struct Cat {
-    int room, item, fact, fx, mode, mesh;
+    int room, item, fact, fx, mode, mesh, group;
     float x, y, z;
     int has;
 } Cat;
@@ -89,7 +94,7 @@ static int sParsed;
 static Cat sCat[CAT_N];
 static int sCatN;
 static Prop sProp[LOOT_N];
-static Template sKey, sDoll, sCard;
+static Template sKey, sDoll, sCard, sPowder, sBall;
 static int sSpark[16], sSparkN;
 static int sQn, sArmed, sSettle;
 static struct {
@@ -434,11 +439,32 @@ static int gfm_of(int item, int *model, int *pal) {
     return 0;
 }
 
+static int named_id(const char *s) {
+    int id = name_get(s);
+
+    return id == (int)0x80000000 ? -1 : id;
+}
+
+static int is_powder(int item) {
+    return item >= 0 && (item == named_id("antimony-powder") || item == named_id("refined-antimony") ||
+                         item == named_id("antimony-tube"));
+}
+
+static int is_ball(int item) {
+    return item >= 0 && item == named_id("ball");
+}
+
 static int mesh_for_item(int item) {
     int i, model, pal;
 
     if (gfm_of(item, &model, &pal)) {
         return MESH_THING;
+    }
+    if (is_powder(item)) {
+        return MESH_POWDER;
+    }
+    if (is_ball(item)) {
+        return MESH_BALL;
     }
     for (i = 0; i < sNameN; i++) {
         if (sNames[i].v == item && ends_key(sNames[i].s) && item < 0x100) {
@@ -449,6 +475,71 @@ static int mesh_for_item(int item) {
         return MESH_ICON;
     }
     return MESH_CARD;
+}
+
+/* a fact named for the item (c1f-3-camomile) still names it when the pickup line was missed */
+static int item_from_fact(int fact) {
+    const char *fn = NULL;
+    int i, best = -1, bl = 0;
+
+    if (fact < 0) {
+        return -1;
+    }
+    for (i = 0; i < sNameN; i++) {
+        if (sNames[i].v == fact && sNames[i].v >= 0xC0) {
+            fn = sNames[i].s;
+            break;
+        }
+    }
+    if (fn == NULL) {
+        for (i = 0; i < sNameN; i++) {
+            if (sNames[i].v == fact) {
+                fn = sNames[i].s;
+                break;
+            }
+        }
+    }
+    if (fn == NULL) {
+        return -1;
+    }
+    for (i = 0; i < sNameN; i++) {
+        size_t n = strlen(sNames[i].s);
+        size_t f = strlen(fn);
+        int id = sNames[i].v;
+
+        if (n < 3 || n > f || id < 0 || id >= 0xC0) {
+            continue;
+        }
+        {
+            int model = 0, pal = 0;
+            if (sIcon[id][0] == 0 && !ends_key(sNames[i].s) && !is_powder(id) && !is_ball(id) && !gfm_of(id, &model, &pal)) {
+                continue;
+            }
+        }
+        if (strcmp(fn + f - n, sNames[i].s) == 0 && (int)n > bl) {
+            bl = (int)n;
+            best = id;
+        }
+    }
+    return best;
+}
+
+static int token_item(const char *s) {
+    int id = name_get(s);
+
+    if (id == (int)0x80000000 || id < 0 || id >= 0xC0) {
+        return -1;
+    }
+    if (sIcon[id][0] || ends_key(s) || is_powder(id) || is_ball(id)) {
+        return id;
+    }
+    {
+        int model, pal;
+        if (gfm_of(id, &model, &pal)) {
+            return id;
+        }
+    }
+    return -1;
 }
 
 typedef struct Tok {
@@ -480,10 +571,100 @@ static void add_cat(int room, int item, int fact, int fx, int mode, int mesh, fl
     c->fx = fx;
     c->mode = mode;
     c->mesh = mesh;
+    c->group = -1;
     c->x = x;
     c->y = y;
     c->z = z;
     c->has = has;
+}
+
+static int cat_has_item(int room, int item, float x, float z) {
+    int i;
+
+    for (i = 0; i < sCatN; i++) {
+        if (sCat[i].room == room && sCat[i].item == item && fabsf(sCat[i].x - x) < 3.0f && fabsf(sCat[i].z - z) < 3.0f) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* an action-button pickup that never sparkles: the word gives the item, often hiding a room part */
+static void note_button_pickups(Tok *tok, int nt, Name *loc, int nloc, int room) {
+    int i;
+
+    for (i = 0; i + 1 < nt; i++) {
+        char name[NAME_LEN];
+        int end, k, item, fact, part, gives;
+
+        if (strcmp(tok[i].s, ":") != 0) {
+            continue;
+        }
+        if (strlen(tok[i + 1].s) >= NAME_LEN) {
+            continue;
+        }
+        snprintf(name, NAME_LEN, "%s", tok[i + 1].s);
+        end = i + 2;
+        while (end < nt && strcmp(tok[end].s, ";") != 0) {
+            end++;
+        }
+        item = -1;
+        fact = -1;
+        part = -1;
+        gives = 0;
+        for (k = i + 2; k < end; k++) {
+            if (strcmp(tok[k].s, "give-item") == 0) {
+                int b;
+                gives = 1;
+                for (b = k - 1; b >= i + 2 && b >= k - 4; b--) {
+                    int id = token_item(tok[b].s);
+                    if (id >= 0) {
+                        item = id;
+                        break;
+                    }
+                }
+            }
+            if (strcmp(tok[k].s, "fact!") == 0 && k > i + 2) {
+                int f = local_get(loc, nloc, tok[k - 1].s);
+                if (f != (int)0x80000000) {
+                    fact = f;
+                }
+            }
+            if (strcmp(tok[k].s, "hide-part") == 0 && k > i + 2) {
+                int p = local_get(loc, nloc, tok[k - 1].s);
+                if (p != (int)0x80000000 && p >= 0 && p < 64) {
+                    part = p;
+                }
+            }
+        }
+        if (!gives || item < 0) {
+            continue;
+        }
+        for (k = 1; k < nt; k++) {
+            int b;
+            float x, y, z, w, h;
+            if (strcmp(tok[k].s, name) != 0 || strcmp(tok[k - 1].s, "[']") != 0) {
+                continue;
+            }
+            for (b = k; b >= 0 && b >= k - 28; b--) {
+                if (strcmp(tok[b].s, "touches?") != 0 || b < 5) {
+                    continue;
+                }
+                if (!is_float_tok(tok[b - 1].s, &h) || !is_float_tok(tok[b - 2].s, &w) || !is_float_tok(tok[b - 3].s, &z) ||
+                    !is_float_tok(tok[b - 4].s, &y) || !is_float_tok(tok[b - 5].s, &x)) {
+                    continue;
+                }
+                if (cat_has_item(room, item, x, z)) {
+                    break;
+                }
+                add_cat(room, item, fact, -1, MODE_THE, part >= 0 ? MESH_PART : mesh_for_item(item), x, y, z, 1);
+                if (part >= 0 && sCatN > 0) {
+                    sCat[sCatN - 1].group = 0x15 + part;
+                }
+                break;
+            }
+        }
+    }
 }
 
 static void parse_one(const char *path) {
@@ -616,33 +797,57 @@ static void parse_one(const char *path) {
         }
     }
     for (i = 0; i < nf; i++) {
-        int j, found = -1;
-        for (j = 0; j < np; j++) {
-            if (!pick[j].has) {
-                continue;
-            }
-            if (fabsf(pick[j].x - flick[i].x) < 0.35f && fabsf(pick[j].z - flick[i].z) < 0.35f) {
-                found = j;
-                break;
-            }
-        }
-        if (found < 0) {
+        int j, found = -1, hits = 0, one = -1;
+        if (flick[i].fact >= 0) {
             for (j = 0; j < np; j++) {
-                if (!pick[j].has && pick[j].fx == flick[i].fx) {
+                if (pick[j].fact == flick[i].fact) {
                     found = j;
                     break;
                 }
             }
         }
+        if (found < 0) {
+            for (j = 0; j < np; j++) {
+                if (!pick[j].has) {
+                    continue;
+                }
+                if (fabsf(pick[j].x - flick[i].x) < 0.35f && fabsf(pick[j].z - flick[i].z) < 0.35f) {
+                    found = j;
+                    break;
+                }
+            }
+        }
+        if (found < 0) {
+            for (j = 0; j < np; j++) {
+                if (!pick[j].has && pick[j].fx == flick[i].fx && flick[i].fx >= 0) {
+                    hits++;
+                    one = j;
+                }
+            }
+            if (hits == 1) {
+                found = one;
+            }
+        }
         if (found >= 0) {
             int item = pick[found].item;
             int fact = pick[found].fact >= 0 ? pick[found].fact : flick[i].fact;
-            add_cat(room, item, fact, flick[i].fx, pick[found].mode, mesh_for_item(item), flick[i].x, flick[i].y, flick[i].z, 1);
+            int mode = pick[found].mode;
+            if (item < 0) {
+                item = item_from_fact(fact);
+            }
+            if (item >= 0 && mode < 0) {
+                mode = MODE_UP;
+            }
+            add_cat(room, item, fact, flick[i].fx, mode, item >= 0 ? mesh_for_item(item) : (flick[i].keyish ? MESH_KEY : MESH_CARD),
+                    flick[i].x, flick[i].y, flick[i].z, 1);
         } else {
-            add_cat(room, -1, flick[i].fact, flick[i].fx, -1, flick[i].keyish ? MESH_KEY : MESH_CARD, flick[i].x, flick[i].y,
-                    flick[i].z, 1);
+            int item = item_from_fact(flick[i].fact);
+            int mode = item >= 0 ? MODE_UP : -1;
+            int mesh = item >= 0 ? mesh_for_item(item) : (flick[i].keyish ? MESH_KEY : MESH_CARD);
+            add_cat(room, item, flick[i].fact, flick[i].fx, mode, mesh, flick[i].x, flick[i].y, flick[i].z, 1);
         }
     }
+    note_button_pickups(tok, nt, loc, nloc, room);
     for (i = 0; i < nt; i++) {
         free(tok[i].s);
     }
@@ -905,6 +1110,38 @@ static void make_card(RoomMesh *m) {
     m->d[0].part = MESH_SOLID;
 }
 
+static void make_quad(RoomMesh *m, float s, float u0, float v0, float u1, float v1) {
+    MeshVertex *v;
+    int i, side;
+    float xy[6][2] = {{-s, -s}, {s, -s}, {s, s}, {-s, -s}, {s, s}, {-s, s}};
+    float uv[6][2] = {{u0, v1}, {u1, v1}, {u1, v0}, {u0, v1}, {u1, v0}, {u0, v0}};
+
+    memset(m, 0, sizeof(*m));
+    m->v = calloc(12, sizeof(MeshVertex));
+    m->d = calloc(1, sizeof(MeshDraw));
+    m->nv = 12;
+    m->nd = 1;
+    v = m->v;
+    for (side = 0; side < 2; side++) {
+        for (i = 0; i < 6; i++) {
+            int k = side == 0 ? i : 5 - i;
+            MeshVertex *dst = &v[side * 6 + i];
+
+            dst->x = xy[k][0];
+            dst->y = xy[k][1];
+            dst->z = 0;
+            dst->s = side == 0 ? uv[k][0] : (u0 + u1 - uv[k][0]);
+            dst->t = uv[k][1];
+            dst->nz = side == 0 ? 1.0f : -1.0f;
+            dst->rgba[0] = dst->rgba[1] = dst->rgba[2] = 0xFF;
+            dst->rgba[3] = 0xFF;
+        }
+    }
+    m->d[0].count = 12;
+    m->d[0].texture = 0;
+    m->d[0].part = MESH_SOLID;
+}
+
 static void ensure_key(void) {
     if (sKey.ready) {
         return;
@@ -948,6 +1185,32 @@ static void ensure_card(void) {
     sCard.ready = 1;
 }
 
+/* the thrown powder and the ball: the game draws them as sprites, so the hand gets that picture on a small two-sided quad */
+static void ensure_sprites(void) {
+    int w = 0, h = 0;
+    GpuTexture tex;
+    uint8_t white[16] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
+
+    if (sPowder.ready) {
+        return;
+    }
+    tex = (GpuTexture)sprites_texture_of(0x10, 1, -1, &w, &h);
+    if (w < 32) {
+        w = 512;
+    }
+    if (h < 32) {
+        h = 256;
+    }
+    make_quad(&sPowder.mesh, 0.7f, 128.0f / (float)w, 64.0f / (float)h, 160.0f / (float)w, 96.0f / (float)h);
+    render_mesh_upload(&sPowder.gpu, sPowder.mesh.v, sPowder.mesh.nv);
+    sPowder.icon = tex != 0 ? tex : render_texture(white, 2, 2);
+    sPowder.ready = 1;
+    make_quad(&sBall.mesh, 0.55f, 0.0f, 0.0f, 1.0f, 1.0f);
+    render_mesh_upload(&sBall.gpu, sBall.mesh.v, sBall.mesh.nv);
+    sBall.icon = render_texture(white, 2, 2);
+    sBall.ready = 1;
+}
+
 static GpuTexture icon_tex(int item) {
     TexBank *b;
     int i, w = 0, h = 0;
@@ -979,17 +1242,47 @@ static GpuTexture icon_tex(int item) {
     return sIcons[sIconN++].tex;
 }
 
+static float xz2(Vec3 a, Vec3 b) {
+    float dx = a.x - b.x, dz = a.z - b.z;
+
+    return dx * dx + dz * dz;
+}
+
 static Cat *cat_at(float x, float y, float z) {
     int i, room = gEngine.room.id;
     Cat *best = NULL;
-    float bd = 1.0f;
+    float bd = 12.0f;
 
     for (i = 0; i < sCatN; i++) {
         float d;
-        if (sCat[i].room != room || !sCat[i].has) {
+        if (sCat[i].room != room || !sCat[i].has || sCat[i].group > 0) {
             continue;
         }
         d = fabsf(sCat[i].x - x) + fabsf(sCat[i].y - y) + fabsf(sCat[i].z - z);
+        if (d < bd) {
+            bd = d;
+            best = &sCat[i];
+        }
+    }
+    return best;
+}
+
+static Cat *cat_fx(int fx, float x, float z) {
+    int i, room = gEngine.room.id;
+    Cat *best = NULL;
+    float bd = 30.0f * 30.0f;
+
+    if (fx < 0) {
+        return NULL;
+    }
+    for (i = 0; i < sCatN; i++) {
+        float dx, dz, d;
+        if (sCat[i].room != room || !sCat[i].has || sCat[i].group > 0 || sCat[i].fx != fx || sCat[i].item < 0) {
+            continue;
+        }
+        dx = sCat[i].x - x;
+        dz = sCat[i].z - z;
+        d = dx * dx + dz * dz;
         if (d < bd) {
             bd = d;
             best = &sCat[i];
@@ -1051,14 +1344,62 @@ static Prop *fresh(void) {
     return NULL;
 }
 
+static void recover_item(Prop *p) {
+    int id;
+    Cat *c;
+
+    if (p->item < 0) {
+        c = cat_at(p->home.x, p->home.y, p->home.z);
+        if (c == NULL) {
+            c = cat_fx(p->fx, p->home.x, p->home.z);
+        }
+        if (c != NULL) {
+            if (p->fact < 0) {
+                p->fact = c->fact;
+            }
+            if (p->fx < 0) {
+                p->fx = c->fx;
+            }
+            if (c->mode >= 0 && p->mode < 0) {
+                p->mode = c->mode;
+            }
+            if (c->item >= 0) {
+                p->item = c->item;
+                p->mesh = c->mesh;
+            }
+        }
+    }
+    if (p->item >= 0) {
+        if (p->mode < 0) {
+            p->mode = MODE_UP;
+        }
+        return;
+    }
+    id = item_from_fact(p->fact);
+    if (id < 0) {
+        return;
+    }
+    p->item = id;
+    p->mesh = mesh_for_item(id);
+    if (p->mode < 0) {
+        p->mode = MODE_UP;
+    }
+}
+
 static void fill_from_cat(Prop *p, Cat *c, float x, float y, float z) {
     p->item = c->item;
     p->fact = c->fact;
     p->fx = c->fx;
     p->mode = c->mode;
     p->mesh = c->mesh;
-    p->style = ST_SPAWN;
+    p->group = c->group;
+    if (c->group > 0) {
+        p->style = ST_PART;
+    } else {
+        p->style = ST_SPAWN;
+    }
     p->home = p->pos = vec3(x, y, z);
+    recover_item(p);
     if (p->mesh == MESH_KEY) {
         ensure_key();
     } else if (p->mesh == MESH_DOLL) {
@@ -1094,10 +1435,20 @@ void loot_sparkle(int fx, float x, float y, float z) {
             if (fx >= 0) {
                 p->fx = fx;
             }
+            if (p->item < 0) {
+                recover_item(p);
+                if (p->item >= 0) {
+                    ensure_card();
+                    icon_tex(p->item);
+                }
+            }
         }
         return;
     }
     c = cat_at(x, y, z);
+    if (c == NULL) {
+        c = cat_fx(fx, x, z);
+    }
     if (c != NULL && c->item >= 0) {
         int i;
         for (i = 0; i < LOOT_N; i++) {
@@ -1122,7 +1473,11 @@ void loot_sparkle(int fx, float x, float y, float z) {
         p->fx = fx;
         p->mesh = MESH_CARD;
         p->home = p->pos = vec3(x, y, z);
+        recover_item(p);
         ensure_card();
+        if (p->item >= 0) {
+            icon_tex(p->item);
+        }
     }
 }
 
@@ -1329,12 +1684,16 @@ static void queue_prop(Prop *p) {
         return;
     }
     p->pending = 1;
+    recover_item(p);
     sQ[sQn].item = p->item;
     sQ[sQn].fact = p->fact;
     sQ[sQn].fx = p->fx;
     sQ[sQn].mode = p->xt != NULL ? MODE_XT : p->mode;
     if (p->xt == NULL && p->item < 0) {
         sQ[sQn].mode = 3; /* back on the sparkle: this one has no pickup word yet */
+    }
+    if (sQ[sQn].mode < 0 && p->item >= 0) {
+        sQ[sQn].mode = MODE_UP;
     }
     sQ[sQn].xt = p->xt;
     sQ[sQn].prop = i;
@@ -1422,30 +1781,53 @@ int loot_keep(float *x, float *y, float *z, int *fx) {
     return p->fx >= 0;
 }
 
-void loot_got(int item) {
-    Vec3 at = fiona_at();
-    int i, best = -1;
-    float bd = 1e30f;
-
-    for (i = 0; i < LOOT_N; i++) {
-        float d;
-        if (!sProp[i].used || sProp[i].item != item) {
-            continue;
-        }
-        d = dist2(at, sProp[i].pos);
-        if (d < bd) {
-            bd = d;
-            best = i;
-        }
-    }
-    if (best < 0) {
+static void retire_prop(int i) {
+    if (i < 0 || i >= LOOT_N || !sProp[i].used) {
         return;
     }
-    hide_world(&sProp[best]);
-    if (best == sSettle) {
+    hide_world(&sProp[i]);
+    if (i == sSettle) {
         sSettle = -2;
     }
-    sProp[best].used = 0;
+    sProp[i].used = 0;
+}
+
+void loot_got(int item) {
+    Vec3 at = fiona_at();
+    int i, best = -1, stray = -1;
+    float bd = 80.0f * 80.0f, sd = 40.0f * 40.0f;
+
+    /* the prop this pickup is already resolving, wherever the hand is holding it */
+    if (sSettle >= 0 && sSettle < LOOT_N && sProp[sSettle].used) {
+        retire_prop(sSettle);
+    }
+    for (i = 0; i < LOOT_N; i++) {
+        float d, h;
+        if (!sProp[i].used) {
+            continue;
+        }
+        if (sProp[i].pending && (sProp[i].item < 0 || sProp[i].item == item)) {
+            retire_prop(i);
+            continue;
+        }
+        d = xz2(at, sProp[i].pos);
+        h = xz2(at, sProp[i].home);
+        if (h < d) {
+            d = h;
+        }
+        if (sProp[i].item == item && d < bd) {
+            bd = d;
+            best = i;
+        } else if (sProp[i].item < 0 && d < sd) {
+            sd = d;
+            stray = i;
+        }
+    }
+    if (best >= 0) {
+        retire_prop(best);
+    } else if (stray >= 0) {
+        retire_prop(stray);
+    }
 }
 
 int loot_nearest(Vec3 hand, int skip, float *d2) {
@@ -1584,11 +1966,143 @@ static void draw_template(const Template *t, const Mat4 *vp, const Mat4 *world, 
     render_mesh(&t->gpu, &mvp, t->mesh.d, t->mesh.nd, t->room.textures, t->room.ntextures, all);
 }
 
+static void powder_tint(int item, float *r, float *g, float *b) {
+    if (item == named_id("refined-antimony")) {
+        *r = 128.0f / 255.0f;
+        *g = 100.0f / 255.0f;
+        *b = 0.0f;
+    } else if (item == named_id("antimony-tube")) {
+        *r = *g = *b = 128.0f / 255.0f;
+    } else {
+        *r = 64.0f / 255.0f;
+        *g = 32.0f / 255.0f;
+        *b = 128.0f / 255.0f;
+    }
+}
+
+static void draw_flat(const Template *t, const Mat4 *vp, const Mat4 *world, float r, float g, float b) {
+    Mat4 mvp;
+    static const uint32_t all[8] = {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u};
+    GpuTexture one;
+
+    if (!t->ready || t->mesh.nd <= 0) {
+        return;
+    }
+    one = t->icon;
+    mvp = mat4_mul(*vp, *world);
+    render_mesh_tint(r, g, b, 1.0f);
+    render_mesh(&t->gpu, &mvp, t->mesh.d, t->mesh.nd, &one, 1, all);
+    render_mesh_tint(1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+static int group_center(int group, Vec3 *out) {
+    int k, n = 0;
+    Vec3 c = vec3(0, 0, 0);
+
+    if (group <= 0) {
+        return 0;
+    }
+    for (k = 0; k < gEngine.room.mesh.nd; k++) {
+        MeshDraw *d = &gEngine.room.mesh.d[k];
+        int v;
+        if (d->group != group) {
+            continue;
+        }
+        for (v = 0; v < d->count; v++) {
+            MeshVertex *mv = &gEngine.room.mesh.v[d->first + v];
+            c.x += mv->x;
+            c.y += mv->y;
+            c.z += mv->z;
+            n++;
+        }
+    }
+    if (n <= 0) {
+        return 0;
+    }
+    *out = vec3_scale(c, 1.0f / (float)n);
+    return 1;
+}
+
+static int draw_room_group(int group, const Mat4 *hand, const Mat4 *vp) {
+    static MeshDraw draws[96];
+    static const uint32_t all[8] = {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u};
+    int k, nd = 0, n = 0;
+    Vec3 c = vec3(0, 0, 0);
+    float ext = 0, scale = 1.0f;
+    Mat4 tr, sc, world, mvp;
+    Room *r = &gEngine.room;
+
+    if (group <= 0 || r->gpu.vao == 0) {
+        return 0;
+    }
+    for (k = 0; k < r->mesh.nd && nd < 96; k++) {
+        MeshDraw *d = &r->mesh.d[k];
+        int v;
+        if (d->group != group) {
+            continue;
+        }
+        draws[nd] = *d;
+        draws[nd].group = 0;
+        nd++;
+        for (v = 0; v < d->count; v++) {
+            MeshVertex *mv = &r->mesh.v[d->first + v];
+            c.x += mv->x;
+            c.y += mv->y;
+            c.z += mv->z;
+            n++;
+        }
+    }
+    if (nd <= 0 || n <= 0) {
+        return 0;
+    }
+    c = vec3_scale(c, 1.0f / (float)n);
+    for (k = 0; k < nd; k++) {
+        int v;
+        for (v = 0; v < draws[k].count; v++) {
+            MeshVertex *mv = &r->mesh.v[draws[k].first + v];
+            float dx = fabsf(mv->x - c.x), dy = fabsf(mv->y - c.y), dz = fabsf(mv->z - c.z);
+            ext = dx > ext ? dx : ext;
+            ext = dy > ext ? dy : ext;
+            ext = dz > ext ? dz : ext;
+        }
+    }
+    if (ext > 4.0f) {
+        scale = 3.2f / ext;
+    } else if (ext > 0.05f && ext < 0.8f) {
+        scale = 1.6f / ext;
+    }
+    tr = mat4_identity();
+    tr.m[12] = -c.x;
+    tr.m[13] = -c.y;
+    tr.m[14] = -c.z;
+    sc = mat4_identity();
+    sc.m[0] = sc.m[5] = sc.m[10] = scale;
+    world = mat4_mul(*hand, mat4_mul(sc, tr));
+    mvp = mat4_mul(*vp, world);
+    render_mesh(&r->gpu, &mvp, draws, nd, r->textures, r->ntextures, all);
+    return 1;
+}
+
 static void draw_spawned(Prop *p, const Mat4 *vp) {
     int model, pal;
     Mat4 world = prop_world(p);
 
     if (gfm_of(p->item, &model, &pal) && things_model_draw(model, pal, &world, vp)) {
+        return;
+    }
+    if (p->mesh == MESH_PART && draw_room_group(p->group, &world, vp)) {
+        return;
+    }
+    if (p->mesh == MESH_POWDER || is_powder(p->item)) {
+        float r, g, b;
+        ensure_sprites();
+        powder_tint(p->item, &r, &g, &b);
+        draw_flat(&sPowder, vp, &world, r, g, b);
+        return;
+    }
+    if (p->mesh == MESH_BALL || is_ball(p->item)) {
+        ensure_sprites();
+        draw_flat(&sBall, vp, &world, 1.0f, 1.0f, 0.45f);
         return;
     }
     if (p->mesh == MESH_KEY) {
@@ -1654,4 +2168,99 @@ void loot_draw(const Mat4 *view_proj, int layer) {
         }
         draw_spawned(p, view_proj);
     }
+}
+
+static int fact_on(int fact) {
+    if (fact < 0 || fact >= STORY_FLAGS) {
+        return 0;
+    }
+    return (gProgress.story[fact >> 5] >> (fact & 31)) & 1;
+}
+
+static int group_on(int g) {
+    if (g <= 0 || g > 255) {
+        return 0;
+    }
+    return (gEngine.room.groups[g >> 5] & (1u << (g & 31))) != 0;
+}
+
+void loot_maintain(void) {
+    int i, room;
+
+    if (!vr_active()) {
+        return;
+    }
+    ensure_catalog();
+    room = gEngine.room.id;
+    for (i = 0; i < sCatN; i++) {
+        Cat *c = &sCat[i];
+        int j, have = 0;
+        Prop *p;
+        Vec3 at, cen;
+        if (c->room != room || c->group <= 0 || fact_on(c->fact) || !group_on(c->group)) {
+            continue;
+        }
+        for (j = 0; j < LOOT_N; j++) {
+            if (!sProp[j].used) {
+                continue;
+            }
+            if (sProp[j].group == c->group || (c->item >= 0 && sProp[j].item == c->item)) {
+                have = 1;
+                break;
+            }
+        }
+        if (have) {
+            continue;
+        }
+        p = fresh();
+        if (p == NULL) {
+            return;
+        }
+        p->style = ST_PART;
+        p->item = c->item;
+        p->fact = c->fact;
+        p->fx = c->fx;
+        p->mode = c->mode < 0 ? MODE_THE : c->mode;
+        p->mesh = MESH_PART;
+        p->group = c->group;
+        at = vec3(c->x, c->y, c->z);
+        if (group_center(c->group, &cen)) {
+            float dx = cen.x - c->x, dz = cen.z - c->z;
+            if (dx * dx + dz * dz < 64.0f) {
+                at = cen;
+            }
+        }
+        p->home = p->pos = at;
+    }
+}
+
+void loot_draw_held(int item, const Mat4 *world, const Mat4 *view_proj) {
+    int model, pal;
+    float r, g, b;
+
+    if (item < 0 || world == NULL || view_proj == NULL) {
+        return;
+    }
+    ensure_catalog();
+    if (gfm_of(item, &model, &pal) && things_model_draw(model, pal, world, view_proj)) {
+        return;
+    }
+    if (is_powder(item)) {
+        ensure_sprites();
+        powder_tint(item, &r, &g, &b);
+        draw_flat(&sPowder, view_proj, world, r, g, b);
+        return;
+    }
+    if (is_ball(item)) {
+        ensure_sprites();
+        draw_flat(&sBall, view_proj, world, 1.0f, 1.0f, 0.45f);
+        return;
+    }
+    if (mesh_for_item(item) == MESH_KEY) {
+        ensure_key();
+        draw_template(&sKey, view_proj, world, -1);
+        return;
+    }
+    ensure_card();
+    draw_template(&sCard, view_proj, world, item);
 }

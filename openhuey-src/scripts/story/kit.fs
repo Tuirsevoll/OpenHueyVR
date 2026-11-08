@@ -450,6 +450,7 @@ enum: scene-progress  no-scene-yet scene-loading scene-is-ready scene-running sc
         dup other-game-file if  $8000 invert and  -1 items send add-file  else  drop  then
     else  dup other-game-file if  drop  else  -1 items send add-file  then  then ;
 : give-item ( item n -- )   \ counted (the play record) and given
+    vr? if over loot-got then
     progress pr.items-counted dup l@ 1+ swap l!  items send give-item ;
 : item-full? ( item -- flag )  items:items-of 99 < 0= ;
 $8010 constant cant-carry-msg   \ "It's a . Unfortunately you can't carry anymore items." (the item named)

@@ -56,10 +56,11 @@ T{ breaker-area -90 at  said -> breaker-msg }T
 T{ breaker-lowered story-flag?  breaker-door doors:door-locked?  spark-part part?  breaker-file $7FFF and filed? -> -1 0 0 0 }T
 T{ breaker-area -90 at  said -> lowered-msg }T
 
-testing the gate held up as she comes by castle-1f-4's way (exit 1, the plate pressed): up, then - nobody on the plate - falling shut
+testing the gate held up as she comes by castle-1f-4's way (exit 1, the plate pressed): the fact kept, the gate stays up
 floor-plate-pressed story-flag-set  1 by-exit
-T{ [: floor-plate-pressed story-flag? 0= ;] 120 soon  gate-floor barred? -> -1 -1 }T
-T{ [: gate-y -25.3e f- fabs 0.01e f< ;] 600 soon  gate-rising story-flag? -> -1 0 }T
+T{ floor-plate-pressed story-flag?  gate-floor barred? 0=  gate-y fabs 0.01e f< -> -1 -1 -1 }T
+120 run-frames
+T{ floor-plate-pressed story-flag?  gate-y fabs 0.01e f<  gate-rising story-flag? -> -1 -1 0 }T
 
 testing Hewie, the breaker up: over by it, barking at it
 breaker-lowered story-flag-clear  c1f-7-flag1 story-flag-clear  hewie-freed story-flag-set  hewie-commandable state-flag-set

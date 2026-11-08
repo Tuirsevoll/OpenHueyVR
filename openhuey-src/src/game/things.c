@@ -348,7 +348,7 @@ void things_step(int room, int running) {
 
 /* ---- drawing: the ball and the powders as sprites, the others GAME_FIX.GFM models ---- */
 
-static int sBall = -1, sPowder = -1;
+static int sBall = -1, sPowder = -1, sPowderN;
 static uint8_t *sGfm;
 static size_t sGfmSize;
 typedef struct GfmModel {
@@ -562,7 +562,26 @@ void things_draw(int room, const Mat4 *view_proj) {
     if (sBall >= 0) {
         sprites_records(sBall, nb);
     }
+    sPowderN = np;
     if (sPowder >= 0) {
         sprites_records(sPowder, np);
     }
+}
+
+void things_extra_powder(Vec3 at, int kind) {
+    static const int kCol[3][3] = {{64, 32, 128}, {128, 100, 0}, {128, 128, 128}};
+    Sprite *p;
+    int c;
+
+    sprite_batches();
+    if (sPowder < 0 || sPowderN >= THINGS_MAX) {
+        return;
+    }
+    p = sprites_records(sPowder, -1);
+    if (p == NULL) {
+        return;
+    }
+    c = kind == 1 ? 0 : kind == 4 ? 1 : 2;
+    sprite_of(&p[sPowderN], at, 1.5f, kCol[c][0], kCol[c][1], kCol[c][2], 1.0f);
+    sprites_records(sPowder, ++sPowderN);
 }

@@ -70,6 +70,16 @@ $20020008 constant hand-stops   \ (the floors her hand can't pass over)
     ['] letting-go her-act ! ;
 \ the triangle (Progress_PlayerButtons): free, a thing in slot 2 - not panicking (the threat at
 \ 4: the buttons after the action button are skipped), nor under progress flag $14
+\ a grip, after the model is in the hand, then a release: magnesia is set down, antimony is thrown.
+\ the triangle still lets go through her animation.
+: hand-defense ( -- )
+    vr? if defense-let else 0 0 0e 0e 0e 0e 0e 0e then
+    {: k flag F: x y z vx vy vz :}
+    flag 0= if exit then
+    k -1 x f>cell y f>cell z f>cell vx f>cell vy f>cell vz f>cell
+    s" things" actor-named send thing-made
+    throw-slot equipped dup 0< if drop exit then
+    s" items" actor-named send take-item ;
 : try-let-go ( -- )
     her-mode @ own-mode <>  her-doing @ free-doing <> or  no-flee state-flag? or  her-panic-stage @ panicking >= or if  exit  then
     triangle button-pressed? 0= if  exit  then

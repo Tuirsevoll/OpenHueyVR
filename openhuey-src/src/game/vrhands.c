@@ -7,6 +7,7 @@
  * moves; gripping its knob rattles once. */
 #include "vrhands.h"
 #include "loot.h"
+#include "things.h"
 
 #include "engine.h"
 #include "progress.h"
@@ -1684,6 +1685,188 @@ static void leaf_scan(Engine *e) {
     sLeafHits = hits;
 }
 
+/* an equipped magnesia (dropped) or antimony (thrown), shown in the right hand until a
+ * grip closes after it appears and then opens. */
+static struct {
+    int item, kind, drop, side;
+    int armed, saw_low, shown;
+    int pending, pkind;
+    Vec3 at, right, up, fwd;
+    Vec3 hist[4];
+    int histN;
+    Vec3 pat, pvel;
+} sDef = {.item = -1, .kind = -1, .side = 1};
+
+static int defense_kind(int item, int *drop) {
+    switch (item) {
+    case 0x90: *drop = 0; return 0; /* ball */
+    case 0x91: *drop = 0; return 1; /* antimony powder */
+    case 0x93: *drop = 0; return 3; /* bisque doll */
+    case 0x94: *drop = 0; return 4; /* refined antimony */
+    case 0x97: *drop = 0; return 6; /* antimony tube */
+    case 0x92: *drop = 1; return 2; /* magnesia */
+    case 0x95: *drop = 1; return 5; /* refined magnesia */
+    case 0x98: *drop = 1; return 7; /* prima magnesia */
+    case 0x9B: *drop = 1; return 8; /* weeping stone */
+    default: return -1;
+    }
+}
+
+static int world_held(void) { return (gProgress.state[0] & (1u << 8)) != 0; }
+
+static void defense_hide(void) {
+    sDef.item = -1;
+    sDef.kind = -1;
+    sDef.armed = 0;
+    sDef.saw_low = 0;
+    sDef.shown = 0;
+    sDef.histN = 0;
+}
+
+static void defense_note(Vec3 at) {
+    if (sDef.histN < 4) {
+        sDef.hist[sDef.histN++] = at;
+        return;
+    }
+    sDef.hist[0] = sDef.hist[1];
+    sDef.hist[1] = sDef.hist[2];
+    sDef.hist[2] = sDef.hist[3];
+    sDef.hist[3] = at;
+}
+
+static Vec3 defense_flick(Vec3 fwd, Vec3 up) {
+    Vec3 best = vec3(0.0f, 0.0f, 0.0f);
+    float bd = 0.0f;
+    int i;
+
+    for (i = 1; i < sDef.histN; i++) {
+        Vec3 d = vec3_sub(sDef.hist[i], sDef.hist[i - 1]);
+        float L = vec3_len(d);
+
+        if (L > bd) {
+            bd = L;
+            best = d;
+        }
+    }
+    if (bd < 2.0f) {
+        return vec3_add(vec3_scale(fwd, 6.0f), vec3_scale(up, 0.4f));
+    }
+    if (bd > 12.0f) {
+        return vec3_scale(best, 12.0f / bd);
+    }
+    return best;
+}
+
+static Vec3 defense_place(Vec3 at, Vec3 up, Vec3 fwd) {
+    return vec3_add(at, vec3_add(vec3_scale(up, 0.35f), vec3_scale(fwd, 0.6f)));
+}
+
+static void defense_tick(void) {
+    int item, kind, drop = 0, side;
+    Vec3 at, right, up, fwd, place;
+    float grip, index, thumb;
+
+    if (!vr_active()) {
+        defense_hide();
+        return;
+    }
+    item = gProgress.equipped[2];
+    kind = defense_kind(item, &drop);
+    if (kind < 0) {
+        defense_hide();
+        return;
+    }
+    if (item != sDef.item || kind != sDef.kind) {
+        sDef.item = item;
+        sDef.kind = kind;
+        sDef.drop = drop;
+        sDef.armed = 0;
+        sDef.saw_low = 0;
+        sDef.histN = 0;
+        sDef.side = 1;
+    }
+    side = sDef.side;
+    if (!hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
+        if (!hand_world(side ^ 1, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
+            return;
+        }
+        side = side ^ 1;
+        if (side != sDef.side) {
+            sDef.side = side;
+            sDef.armed = 0;
+            sDef.saw_low = 0;
+            sDef.histN = 0;
+        }
+    }
+    place = defense_place(at, up, fwd);
+    sDef.at = place;
+    sDef.right = right;
+    sDef.up = up;
+    sDef.fwd = fwd;
+    sDef.shown = 1;
+    sDef.kind = kind;
+    sDef.drop = drop;
+    defense_note(place);
+    if (world_held() || sHold[side] != HOLD_NONE) {
+        return;
+    }
+    if (!sDef.armed) {
+        if (grip <= 0.4f) {
+            sDef.saw_low = 1;
+        }
+        if (sDef.saw_low && grip > 0.65f) {
+            sDef.armed = 1;
+        }
+        return;
+    }
+    if (grip <= 0.4f) {
+        sDef.pending = 1;
+        sDef.pkind = kind;
+        sDef.pat = place;
+        sDef.pvel = sDef.drop ? vec3(0.0f, 0.0f, 0.0f) : defense_flick(fwd, up);
+        defense_hide();
+    }
+}
+
+void vrhands_defense_draw(const Mat4 *view_proj) {
+    Mat4 m;
+
+    if (!sDef.shown || sDef.kind < 0 || view_proj == NULL) {
+        return;
+    }
+    m = mat4_identity();
+    m.m[0] = sDef.right.x;
+    m.m[1] = sDef.right.y;
+    m.m[2] = sDef.right.z;
+    m.m[4] = sDef.up.x;
+    m.m[5] = sDef.up.y;
+    m.m[6] = sDef.up.z;
+    m.m[8] = sDef.fwd.x;
+    m.m[9] = sDef.fwd.y;
+    m.m[10] = sDef.fwd.z;
+    m.m[12] = sDef.at.x;
+    m.m[13] = sDef.at.y;
+    m.m[14] = sDef.at.z;
+    loot_draw_held(sDef.item, &m, view_proj);
+}
+
+int vrhands_defense_take(int *kind, float *x, float *y, float *z, float *vx, float *vy, float *vz) {
+    if (!sDef.pending) {
+        *kind = 0;
+        *x = *y = *z = *vx = *vy = *vz = 0.0f;
+        return 0;
+    }
+    *kind = sDef.pkind;
+    *x = sDef.pat.x;
+    *y = sDef.pat.y;
+    *z = sDef.pat.z;
+    *vx = sDef.pvel.x;
+    *vy = sDef.pvel.y;
+    *vz = sDef.pvel.z;
+    sDef.pending = 0;
+    return 1;
+}
+
 int vrhands_petting(int side) {
     const Actor *dog;
     Vec3 at, right, up, fwd;
@@ -1943,4 +2126,6 @@ void vrhands_tick(Engine *e) {
     }
     poses_save(e);
     leaf_scan(e);
+    loot_maintain();
+    defense_tick();
 }

@@ -53,5 +53,7 @@ void things_step(int room, int running);
 void things_draw(int room, const Mat4 *view_proj);
 /* GAME_FIX.GFM model (1 the magnesias, 2 the doll, 3 the stone) at `world`. 1 when it drew. */
 int things_model_draw(int model, int palette, const Mat4 *world, const Mat4 *view_proj);
+/* one more powder sprite (kinds 1 / 4 / 6) after things_draw has filled that batch. */
+void things_extra_powder(Vec3 at, int kind);
 
 #endif

@@ -205,6 +205,7 @@ create feet-off-acts   \ (the states that clear +0x1AD5BC)
 : followed ( -- )
     her-at self body-at vec-copy  self body-tri dup 0< if  drop  else  her-tri !  then ;
 : frame ( -- )
+    hand-defense
     hewie-played? if  run-frame exit  then  0 mate-was-run !
     her-offered @ offer-stood !  0 her-offered !
     her-at her-was-at /vec move  her-tri @ her-was-tri !  her-yaw f@ her-yaw-was f!

@@ -27,6 +27,7 @@
 #include "game/particles.h"
 #include "game/progress.h"
 #include "game/things.h"
+#include "game/vrhands.h"
 #include "game/sprites.h"
 #include "game/mods.h"
 #include "data/exetables.h"
@@ -705,6 +706,7 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
     }
     render_fog_after(0);
     things_draw(e->room.id, &vp);   /* the things lying about (their sprites written for the next) */
+    vrhands_defense_draw(&vp);      /* an equipped magnesia or antimony, still in the hand */
     sprites_draw(&vp, view);   /* the effects (after the opaque scene: they don't write depth) */
     if (sprites_glowing() && post_glow_begin()) {   /* the glow pass: the glowing ones again */
         sprites_draw_glow(&vp);

@@ -1,5 +1,6 @@
 \ hewie/offscreen.fs - Hewie in the rooms Fiona isn't in: when she leaves his room he follows
-\ her the way she went (Hewie_Vt34), or later finds his own way through the house door by door
+\ her the way she went (Hewie_Vt34), unless she told him to sit or stay. That holds, in the room
+\ she left him in, until she calls him. Otherwise he later finds his own way door by door
 \ (Hewie_StateToDoor / State1920, Hewie_ThroughExit); when he or she comes into the other's
 \ room he is put there (Hewie_Arrive). Off screen nothing moves him but time: each stretch to
 \ the next door takes its length at his pace.
@@ -114,6 +115,11 @@ create ex-at /vec allot
 : at-stalker? ( -- flag )   \ (leaping at him, biting, this frame)
     his-on-him @ 0= if  false exit  then
     his-action @ dup at-flank-act at-leg-2-act 1+ within  swap tackle-act = or ;
+: ordered-stay? ( -- flag )   \ sit / stay, including while he is still sitting down: he remains in this room
+    his-action @
+    dup stay-act =  over stay-a-while-act = or  over wait-a-while-act = or
+    over sit-then-stay-act = or  over lie-then-stay-act = or  over stand-then-stay-act = or
+    swap drop ;
 : fiona-left ( exit -- )
     his-room room-id <> if  drop exit  then
     his-hp @ 0=  hard-mode? floor-free? 0= or and if  1 hp!  hurt-cond cond!  then
@@ -136,8 +142,8 @@ create ex-at /vec allot
         rest his-left f!
     then  drop
     at-stalker? if  his-action @ his-attack-was !  after-attack-act 0 want exit  then
-    his-action @ dup stay-act = swap stay-a-while-act = or if   \ (by her: a while first)
-        his-wait @ 150 + his-wanted !  anim-group his-t2 !  wait-a-while-act 0 want
+    ordered-stay? if   \ stay where she left him, until she calls him (come / come back)
+        $7FFFFFFF his-wanted !  1 his-t1 !  anim-group his-t2 !  wait-a-while-act 0 want
     else
         avoid-clear  his-waiting @ 0= if  to-her-room-act  else  choose-act  then  0 want
     then ;

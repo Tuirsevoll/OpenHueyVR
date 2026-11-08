@@ -29,6 +29,10 @@ void loot_consume(void);
 /* back on its sparkle. 1: light the sparkle again (fx, and x y z). */
 int loot_keep(float *x, float *y, float *z, int *fx);
 void loot_got(int item);
+/* room parts that are picked up with the action button (no sparkle of their own). */
+void loot_maintain(void);
+/* an equipped item, in the hand: its model, or the thrown sprite when that is its art. */
+void loot_draw_held(int item, const Mat4 *world, const Mat4 *view_proj);
 
 int loot_nearest(Vec3 hand, int skip, float *d2);
 void loot_grab(int index, int side);

@@ -30,5 +30,9 @@ int vrhands_door_way(void);
 void vrhands_door_take(void);
 /* bits of the exits whose leaf swept a stalker last tick. */
 int vrhands_door_hits(void);
+/* the equipped magnesia or antimony, in the hand. Drawn with the things. */
+void vrhands_defense_draw(const Mat4 *view_proj);
+/* a grip release that should become a thing. 1 once, then cleared. */
+int vrhands_defense_take(int *kind, float *x, float *y, float *z, float *vx, float *vy, float *vz);
 
 #endif

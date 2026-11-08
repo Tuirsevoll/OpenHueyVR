@@ -195,7 +195,17 @@ $1F constant doll-noise
         here? if  doll-near  else  doll-away exit  then
     then
     it @ thing-used? here? and if  kick  then ;
+\ a powder through the stalker: the same blow as treading on it, then it breaks
+: powder-meets ( -- )
+    quiet? 0= kind powder? and if
+        stalker dup 0< if drop exit then
+        it @ 12e 24e thing-reaches? if
+            powder-blow kind powder-damage kind powder-stun at vec@ xyz>cells stalker send blow-from
+            powder-splash gone
+        then
+    then ;
 : one-frame ( -- )
+    powder-meets  it @ thing-used? 0= if exit then
     burst-event event? if  powder-splash exit  then   \ (freed next step)
     fell-event event? if   \ (through a hole: freed next step)
         kind ball-thing = if  ball-back  then  kind keri-thing = if  keri-gone  then  exit

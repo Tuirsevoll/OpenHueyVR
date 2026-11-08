@@ -1,6 +1,6 @@
 \ story/places/castle-1f-7.fs - the breaker room in Belli Castle's 1F ($15): the gate (a lid,
-\ "kousi") over the way in, held up while someone stands on castle-1f-4's floor plate - it falls
-\ once nobody does and nobody is under it; the breaker box humming - in among its wires before its
+\ "kousi") over the way in, held up while castle-1f-4's floor plate stays pressed. That fact is
+\ kept across the room change, so coming in does not drop the gate; the breaker box humming - in among its wires before its
 \ handle is lowered, she is killed (a game over); lowered, the door (9) unlocked; the stabbed doll;
 \ Hewie barking at the breaker; brought back in by the forced way, the gate rattles shut on her and
 \ she is sent back. A place (story/kit.fs). The original's scripts, for checking:
@@ -67,7 +67,7 @@ $30 constant not-landed   $34 constant speed   -25.3e fconstant shut-y
         drop gate-shut  floor-plate-pressed fact-off
     else
         stalker-in?  stalker gate-floor on-group? and if  stalker clear-tri put-on-tri  then   \ (not left under the gate)
-        gate-exit <> if  gate-rising fact-off  floor-plate-pressed fact-off  then
+        gate-exit <> if  gate-rising fact-off  then
         gate-rising fact? 0=  floor-plate-pressed fact? 0= and if
             gate-floor barred-floor floor-on  gate-shut
         else
@@ -80,20 +80,16 @@ $30 constant not-landed   $34 constant speed   -25.3e fconstant shut-y
         lever-object object-show  handle-part hide-part  spark-part show-part  breaker-floor keeps-hewie-off floor-on
     then ;
 
-\ ---- the gate: held while Hewie waits (or lies hurt) on the plate next door; let go, it falls -
-\ unless someone is under it (Hewie kept from leaving meanwhile) ----
-: hewie-on-plate? ( -- flag )
-    hewie body? 0= if  false exit  then  hewie body-room castle-1f-4 <> if  false exit  then
-    hewie-act-now @ dup wait-a-while-act = swap knocked-down-act = or ;
-: someone-under? ( -- flag )
-    fiona gate-floor on-group?  hewie gate-floor on-group? or  stalker gate-floor on-group? or ;
+\ ---- the gate: held up for as long as castle-1f-4's plate fact stays set. Coming in does not
+\ clear that fact or start the gate down. The plate room clears it when the plate is actually let go. ----
 : gate-down ( -- )  gate-rising fact!  gate-sound gate-at room-sound  gate-falls ;
 : gate-watch ( -- )
-    floor-plate-pressed fact? 0=  hewie-on-plate? 0= or if  0 gate-held !  then
-    castle-1f-7 hewie-slot 0 doors-into
-    floor-plate-pressed fact?  gate-held @ 0= and if
-        someone-under? if  castle-1f-7 hewie-slot 1 doors-into
-        else  floor-plate-pressed fact-off  gate-floor barred-floor floor-on  ['] gate-down start drop  then
+    floor-plate-pressed fact? if
+        -1 gate-held !
+        gate-floor barred-floor floor-off
+    else
+        0 gate-held !
+        castle-1f-7 hewie-slot 0 doors-into
     then ;
 
 \ ---- the breaker's hum: begun once the room's sounds are in (not once lowered), then kept going;
