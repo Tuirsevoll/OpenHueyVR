@@ -780,8 +780,9 @@ $8016 constant no-time-message  \ "I have to get away! I don't have time for thi
     in-panic? when any-time <> and if  exit  then
     when unhurried = chased? and if  no-time-message to msg  then
     msg offer-msg ! ;
+: item-notice? ( -- flag )  shown-msg @ dup $8011 = swap $8012 = or ;
 : offer-out ( -- )   \ (each frame, with no message up: told to her and the prompt shown)
-    shown-msg @ 0< 0= if  exit  then
+    shown-msg @ 0< 0= item-notice? 0= and if  exit  then
     offer-xt @ if  act-scene offer-xt @  else  offer-msg @ if  read-scene offer-msg @  else  exit  then  then
     fiona send offer  1 window send prompt ;
 \ her doing, run: she is held for it
@@ -1597,7 +1598,8 @@ behaviour placing
       st-age @ 100 < if  1 st-age +!  then  #creatures 0 do  i cells cr-age + dup @ 100 < if  1 swap +!  else  drop  then  loop
       going @ 0< 0= if  going @  -1 going !  -1 leaving !  rooms-actor send go-through  then ;
   on take-offer ( scene arg -- )
-      leaving @ shown-msg @ 0< 0= or if  2drop exit  then
+      leaving @ if  2drop exit  then
+      shown-msg @ 0< 0= item-notice? 0= and if  2drop exit  then
       swap case
           act-scene of  start-spot  endof
           read-scene of  show  endof

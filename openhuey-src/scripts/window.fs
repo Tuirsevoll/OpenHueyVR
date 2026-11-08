@@ -14,6 +14,9 @@ USING: engine actors messages keys ;
 3 constant prompt-layer
 
 $FFFF constant no-message   \ (an option leading nowhere; to close-text: whatever is shown)
+$8011 constant obtained-msg   \ "You've obtained ."
+$8012 constant obtained-2-msg
+60 constant notice-ticks      \ two seconds at 30 ticks a second
 $C000 constant message-table-bits   \ (bit 15 a system message, bit 14 the second table)
 2 constant starts-on-last   \ (a choice's flag: the cursor starts on the last option - "no")
 -1 constant none
@@ -33,9 +36,12 @@ state: window-state
   cell field scale  cell field line-height  cell field pad
   cell field box-x  cell field box-y  cell field box-w  cell field box-h
   cell field text-w         \ the page's widest line
+  cell field notice-age     \ frames an item-pickup notice has been up (-1: not one)
 end-state
 
 : open? ( -- flag )  shown @ none <> ;
+: obtained? ( msg -- flag )  dup obtained-msg = swap obtained-2-msg = or ;
+: notice? ( -- flag )  open? shown @ obtained? and ;
 : last-page? ( -- flag )  page @ pages @ 1- >= ;
 : choosing? ( -- flag )  last-page? message-options 0> and ;
 : last-option ( -- i )  message-options 1- 0 max ;
@@ -173,16 +179,33 @@ $2A constant cursor-sound   $2B constant decide-sound   $2C constant cancel-soun
     page-button? if  last-page? if  close  else  next-page  then  then ;
 
 behaviour showing
-  on spawned ( -- )  none shown !  self subscribe tick  self subscribe frame-end ;
-  on show-text ( msg -- )
-      open? 0= if  screen-face  -1 broadcast text-shown  then
+  on spawned ( -- )  none shown !  -1 notice-age !  self subscribe tick  self subscribe frame-end ;
+  on show-text ( msg -- )   \ an item notice stays up without holding her; any other message still does
+      dup obtained? {: notice :}
+      open? 0= if
+          screen-face
+          notice 0= if  -1 broadcast text-shown  then
+      else
+          notice if  0 broadcast text-shown
+          else  shown @ obtained? if  -1 broadcast text-shown  then  then
+      then
+      notice if  0  else  -1  then  notice-age !
       sender asked-by !  none chosen !  0 place !  lay-out ;
   on close-text ( msg -- )
       open? 0= if  drop exit  then
       dup no-message = swap shown @ = or if  close  then ;
   on prompt ( kind -- )  prompt-kind !  0 prompt-age ! ;
   on tick ( -- )
-      open? if  shown @ message-layout drop  keys  1 typed +!  then
+      open? if
+          shown @ message-layout drop  keys
+          open? if
+              notice? if
+                  1 notice-age +!
+                  page-typed? notice-age @ notice-ticks >= and if  close  then
+              then
+              open? if  1 typed +!  then
+          then
+      then
       1 prompt-age +!  prompt-age @ 2 > if  0 prompt-kind !  then ;
   on frame-end ( -- )  1 blink +!  draw  draw-prompt ;
 end-behaviour
