@@ -51,5 +51,7 @@ int things_events(int i);
 void things_step(int room, int running);
 /* drawn: those in `room` (the models; the sprites as they're written) */
 void things_draw(int room, const Mat4 *view_proj);
+/* GAME_FIX.GFM model (1 the magnesias, 2 the doll, 3 the stone) at `world`. 1 when it drew. */
+int things_model_draw(int model, int palette, const Mat4 *world, const Mat4 *view_proj);
 
 #endif

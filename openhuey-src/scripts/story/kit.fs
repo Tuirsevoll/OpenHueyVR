@@ -194,7 +194,9 @@ create mv-at /vec allot
     0 i cells move-done + !  0 i cells anim-ended + !  0 i cells marks + !  -1 i cells asked + !
     kind a b  x f>cell y f>cell z f>cell yaw f>cell  id send scripted-move ;
 : keep ( id -- )  person-of dup 0< if  drop exit  then  mine? 0= if  lost  then ;   \ (still ours, else this doing is over)
+variable hand-pick   \ a gripped item's pickup: Fiona does not play her bend or reach
 : wait-move ( id -- )   \ its move done
+    dup fiona = hand-pick @ and if  drop exit  then
     person-of dup 0< if  drop exit  then  dup person-id here? 0= if  drop exit  then
     dup cells asked + @ 0= if  drop exit  then   \ (its own doings aren't ours to wait for)
     begin  dup cells move-done + @ 0= while  yield  repeat  drop ;
@@ -217,16 +219,20 @@ create mv-at /vec allot
 : go-to ( id tri face b kind F: x z -- )   \ (a move to (x, z) on tri, then facing: b its animation, -1 the usual)
     {: id tri face b kind F: x z :}  id kind tri b  tri x z floor-at  face deg>yaw  move  id wait-move ;
 : path-to ( id tri b kind -- )  {: id tri b kind :}  id kind tri b  tri tri-center  id body-yaw  move  id wait-move ;
-: play ( id anim -- )  {: id anim :}  id anim-move anim -1  0e 0e 0e 0e  move  id wait-anim ;   \ (played out)
+: play ( id anim -- )  {: id anim :}   \ (played out)
+    hand-pick @ id fiona = and if  exit  then
+    id anim-move anim -1  0e 0e 0e 0e  move  id wait-anim ;
 : play-blend ( id anim frames -- )  {: id anim n :}  id blend-move anim n  0e 0e 0e 0e  move  id wait-anim ;
-: start-anim ( id anim -- )  {: id anim :}  id anim-move anim -1  0e 0e 0e 0e  move ;   \ (not waited for)
+: start-anim ( id anim -- )  {: id anim :}  hand-pick @ id fiona = and if  exit  then
+    id anim-move anim -1  0e 0e 0e 0e  move ;   \ (not waited for)
 : start-blend ( id anim frames -- )  {: id anim n :}  id blend-move anim n  0e 0e 0e 0e  move ;
 : start-blend8 ( id anim frames -- )  {: id anim n :}  id blend8-move anim n  0e 0e 0e 0e  move ;
 : idle ( id v -- )  {: id v :}  id idle-anim-move 0 v  0e 0e 0e 0e  move ;   \ (her idle, variant v; -1 the plain one)
 : turn-yaw ( id F: yaw -- )  {: id F: yaw :}  id turn-to-heading-move 0 -1  0e 0e 0e yaw  move  id wait-move ;
 : turn ( id deg -- )  deg>yaw turn-yaw ;
 : turn-to-xz ( id F: x z -- )
-    {: id F: x z :}  id body-pos fswap fdrop {: F: mx mz :}  id  x mx f-  z mz f-  fatan2 angle-wrap  turn-yaw ;
+    {: id F: x z :}  hand-pick @ id fiona = and if  exit  then
+    id body-pos fswap fdrop {: F: mx mz :}  id  x mx f-  z mz f-  fatan2 angle-wrap  turn-yaw ;
 : look-at ( id who -- )   \ (her head on who; -1 nobody)
     {: id who :}  id look-move who who person-of  0e 0e 0e 0e  move ;
 : place-at ( id tri face F: x z -- )   \ put there at once (the triangle's height)
@@ -749,7 +755,8 @@ $8016 constant no-time-message  \ "I have to get away! I don't have time for thi
 : busy? ( -- flag )   \ (chased, the stalker here, or another than Hewie held)
     chased?  stalker here? or  fiona-p holder-of @ 0< 0= or  stalker-p holder-of @ 0< 0= or ;
 : offer ( xt when -- )   \ her doing xt (an activity, Fiona held for it), the first offered wins
-    {: xt when :}  faced-offer? 0= if  exit  then  offer-closed? if  exit  then
+    {: xt when :}  vr? if  xt loot-offer  then
+    faced-offer? 0= if  exit  then  offer-closed? if  exit  then
     in-panic? when any-time <> and if  exit  then
     when unhurried = chased? and if  no-time-message offer-msg !  exit  then
     when calm-hewie-up = if
@@ -847,7 +854,9 @@ $FF constant no-track
 : background ( track F: vol -- )  0 f>cell music send bgm-want ;   \ the room's own track (no-track: none)
 : music-part ( stage -- )  music send music-stage ;
 : rgba ( r g b a -- rgba )  {: r g b a :}  r 24 lshift  g 16 lshift or  b 8 lshift or  a or ;
-: flicker-at ( k F: x y z -- )  0 effects:flicker swap effect! ;   \ effect k: a sparkle
+: flicker-at ( k F: x y z -- )   \ effect k: a sparkle, and in VR the item itself
+    vr? if  loot-sparkle  then
+    0 effects:flicker swap effect! ;
 : moths-at ( k n F: x y z -- )  effects:butterflies swap effect! ;   \ effect k: n moths (0: 8) making for the point (0x35)
 : moths-to ( k n F: x y z -- )   \ effect k's moths off for another point; n of them (0: as many as they are) - 0x33
     {: k n F: x y z :}  k live-effect 0= if  drop exit  then  >r  n x f>cell y f>cell z f>cell  r> send effect-to ;
@@ -1161,9 +1170,9 @@ create replay-acts
 \ fact, its sparkle (an effect of the place's, -1 none) off - its tab shown, the fanfare
 : takes-up ( item fact fx -- )
     {: it f fx :}  it item-named  it item-full? if  cant-carry-msg say exit  then
-    f fact!  fx 0< 0= if  fx effect-off  then  it 1 give-item  it show-item-tab  fanfare  obtained-msg say ;
+    f fact!  fx 0< 0= if  fx effect-off  then  it 1 give-item  it show-item-tab  fanfare  it loot-got  obtained-msg say ;
 : takes-the ( item fact fx -- )   \ (a thing there is only one of: its fact, its sparkle off, given - "You've obtained the ...")
-    {: it f fx :}  f fact!  fx 0< 0= if  fx effect-off  then  it item-named  it 1 give-item  it show-item-tab  fanfare  obtained-2-msg say ;
+    {: it f fx :}  f fact!  fx 0< 0= if  fx effect-off  then  it item-named  it 1 give-item  it show-item-tab  fanfare  it loot-got  obtained-2-msg say ;
 : picks-up ( item fact fx F: x z -- )   \ (on the floor there: turned to it, bent down to it - not in a panic)
     fiona wait-move  fiona turn-to-xz  in-panic? if  drop 2drop exit  then
     fiona fiona.anims:pick-up-anim play  4 frames  takes-up  fiona fiona.anims:up-from-pick-anim play ;
@@ -1531,6 +1540,21 @@ $72 constant unlock-sound   $8008 constant unlocked-msg   \ (the common bank's; 
     loop ;
 : text-gone ( -- )  shown-msg @ 0< if  exit  then  shown-msg @ window send close-text  -1 shown-msg ! ;   \ (ours left up: closed)
 : frame-start ( -- )  0 offer-xt !  0 offer-msg !  0 aim-on !  broadcast zone-targets-off ;   \ (the breakables say so again)
+: loot-keep-spark ( -- )
+    loot-keep? if  0 effects:flicker swap effect!  else  drop fdrop fdrop fdrop  then ;
+: loot-finish ( -- )
+    loot-fact dup -2 = if  drop exit  then
+    dup 0< if  drop loot-keep-spark exit  then
+    fact? if  loot-consume  else  loot-keep-spark  then ;
+: loot-one ( item fact fx mode xt -- )
+    over 3 = if  nip drop drop drop drop loot-keep-spark exit  then
+    over 2 = if  nip >r drop drop drop r>  -1 hand-pick ! execute  0 hand-pick ! loot-finish exit  then
+    drop  3 pick item-full? if  drop drop drop drop loot-keep-spark cant-carry-msg say exit  then
+    0= if  takes-up  else  takes-the  then ;
+: loot-run ( -- )  begin loot-take? while loot-one repeat  loot-idle ;
+: loot-sync ( -- )
+    begin loot-spark? while effect-off repeat
+    loot-waiting? if  ['] loot-run start dup 0< if  drop loot-idle  else  drop  then  then ;
 \ what every room does, played as a place (story/common.fs: the original's shared scripts run
 \ after a room's own phases - crouching, ... - and the item uses' scripts)
 defer every-room ( -- )   ' noop is every-room
@@ -1556,6 +1580,7 @@ behaviour placing
       camera-starts  camera-placed ;
   on tick ( -- )
       entered @ 0= if  exit  then
+      vr? if  loot-sync  then
       people-in  frame-start  ['] d.frame run-desc  every-room  0 request-now !  -1 started-now !   \ (read: gone)
       offer-out  onset @ 0= if  run-acts  then ;
   on frame-end ( -- )

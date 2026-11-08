@@ -1,4 +1,5 @@
 #include "room.h"
+#include "loot.h"
 
 #include "../core/files.h"
 #include "../platform/vr.h"
@@ -770,6 +771,7 @@ int room_load(Room *r, int id) {
     const uint8_t *sec;
 
     room_free(r);
+    loot_reset();
     room_vases_reset();
     pac_room_path(id, path, sizeof(path));
     r->pac.data = files_read(path, &r->pac.size);
@@ -810,6 +812,34 @@ int room_load(Room *r, int id) {
     if (r->mesh.ndyn > 0) {
         r->moving_v = malloc((size_t)r->mesh.ndv * 3 * sizeof(MeshVertex));
         r->moving_d = malloc((size_t)r->mesh.ndyn * sizeof(MeshDraw));
+    }
+    return 1;
+}
+
+int room_load_prop(Room *r, int id) {
+    char path[64];
+    size_t size = 0;
+    const uint8_t *sec;
+
+    memset(r, 0, sizeof(*r));
+    r->id = -1;
+    pac_room_path(id, path, sizeof(path));
+    r->pac.data = files_read(path, &r->pac.size);
+    if (r->pac.data == NULL) {
+        return 0;
+    }
+    r->id = id;
+    sec = pac_section(&r->pac, PAC_MESH, &size);
+    if (sec != NULL) {
+        roommesh_build(&r->mesh, sec, size);
+    }
+    load_textures(r);
+    sec = pac_section(&r->pac, PAC_PLACED, &size);
+    {
+        size_t asize = 0;
+        const uint8_t *anims = pac_section(&r->pac, PAC_PLACED2, &asize);
+
+        placed_load(&r->placed, sec, sec != NULL ? size : 0, anims, asize);
     }
     return 1;
 }
@@ -990,6 +1020,7 @@ void room_draw_layer(Room *r, const Mat4 *view_proj, int layer) {
         }
     }
     placed_draw(&r->placed, view_proj, r->textures, r->ntextures, layer);
+    loot_draw(view_proj, layer);
     render_mesh_ps2_clip(0);
 }
 

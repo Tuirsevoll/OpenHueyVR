@@ -80,6 +80,8 @@ typedef struct Room {
 int room_exists(int id);
 /* load room `id` in place of the current one; 0 if it can't be read */
 int room_load(Room *r, int id);
+/* mesh, textures and placed objects only: no vase reset, no effect-bank swap. For a prop's model. */
+int room_load_prop(Room *r, int id);
 /* breakable vases: uniform scale about the foot, tracking the Page Up world scale. 1 when not in VR. */
 float room_vase_scale(void);
 void room_vases_reset(void);

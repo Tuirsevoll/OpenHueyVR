@@ -63,7 +63,7 @@ $18 constant shelf-seen   $19 constant shelf-night-seen   $E constant shelf-door
         shelf-floor solid-floor floor-edge or pushable or floor-on  shelf-stalker-floor keeps-debilitas-off floor-on
     then
     c1f-3-camomile fact? 0= if  camomile-fx -6e 11.5e -46e flicker-at  then
-    got-garden-key fact? 0= if  key-part show-part  then
+    got-garden-key fact? 0= if  key-part show-part  vr? if  garden-key got-garden-key -1 key-part loot-part  then  then
     awakened? if  thing-part show-part  else  table-part show-part  then
     tinted  1 $2300 sound-reverb! ;
 

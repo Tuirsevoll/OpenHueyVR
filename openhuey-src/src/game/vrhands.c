@@ -6,6 +6,7 @@
  * already moving, in which case it coasts to the stop it is heading for. A locked door never
  * moves; gripping its knob rattles once. */
 #include "vrhands.h"
+#include "loot.h"
 
 #include "engine.h"
 #include "progress.h"
@@ -21,6 +22,7 @@
 #define HOLD_NONE 0
 #define HOLD_DOOR 1
 #define HOLD_PROP 2
+#define HOLD_LOOT 3
 
 static int sHold[2], sHoldId[2], sDoorAxis[2];
 static float sGripWas[2], sGrabYaw[2];
@@ -697,7 +699,7 @@ static int nearest_prop(PlacedSet *s, Vec3 hand, int other, float *best) {
         Vec3 ext;
         float edge, d2;
 
-        if (!p->shown || (other >= 0 && sHold[other] == HOLD_PROP && sHoldId[other] == i)) {
+        if (!p->shown || (other >= 0 && sHold[other] == HOLD_PROP && sHoldId[other] == i) || loot_claims_placed(i)) {
             continue;
         }
         ext = vec3_sub(p->mesh.hi, p->mesh.lo);
@@ -1739,7 +1741,10 @@ void vrhands_tick(Engine *e) {
         int rising, door, axis = 0, prop;
 
         if (!hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
-            if (sHold[side] != HOLD_NONE) {
+            if (sHold[side] == HOLD_LOOT) {
+                loot_let_go(sHoldId[side], side);
+                sHold[side] = HOLD_NONE;
+            } else if (sHold[side] != HOLD_NONE) {
                 release_hand(&e->room, side);
             }
             sGripWas[side] = 0.0f;
@@ -1777,7 +1782,10 @@ void vrhands_tick(Engine *e) {
             }
         }
         if (grip <= 0.4f) {
-            if (sHold[side] != HOLD_NONE) {
+            if (sHold[side] == HOLD_LOOT) {
+                loot_let_go(sHoldId[side], side);
+                sHold[side] = HOLD_NONE;
+            } else if (sHold[side] != HOLD_NONE) {
                 release_hand(&e->room, side);
             }
         } else if (sHold[side] == HOLD_NONE && rising) {
@@ -1799,6 +1807,20 @@ void vrhands_tick(Engine *e) {
                 }
             }
             prop = nearest_prop(&e->room.placed, at, side ^ 1, &propD);
+            {
+                int skip = sHold[side ^ 1] == HOLD_LOOT ? sHoldId[side ^ 1] : -1;
+                float lootD = 0;
+                int loot = loot_nearest(at, skip, &lootD);
+
+                if (loot >= 0 && (door < 0 || lootD < doorD) && (prop < 0 || lootD <= propD)) {
+                    sHold[side] = HOLD_LOOT;
+                    sHoldId[side] = loot;
+                    loot_grab(loot, side);
+                    loot_follow(loot, at, right, up, fwd);
+                    door = -1;
+                    prop = -1;
+                }
+            }
             if (door >= 0 && (prop < 0 || doorD <= propD)) {
                 sHold[side] = HOLD_DOOR;
                 sHoldId[side] = door;
@@ -1816,6 +1838,8 @@ void vrhands_tick(Engine *e) {
             } else {
                 drive_door(e, sHoldId[side], sDoorAxis[side], at);
             }
+        } else if (sHold[side] == HOLD_LOOT) {
+            loot_follow(sHoldId[side], at, right, up, fwd);
         } else if (sHold[side] == HOLD_PROP) {
             Placed *p = sHoldId[side] >= 0 && sHoldId[side] < e->room.placed.n ? &e->room.placed.p[sHoldId[side]] : NULL;
 

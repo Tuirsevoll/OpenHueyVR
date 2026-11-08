@@ -140,7 +140,8 @@ create doll-pt /vec allot
         0 doll-down !
         c2f-2-flag1 fact?  c2f-2-flag5 fact? 0= and if  doll-up  -1 doll-down !  -1 doll-falling !  then
     then
-    warned?  ex forced-exit <> and if  ['] ticking start drop  then ;
+    warned?  ex forced-exit <> and if  ['] ticking start drop  then
+    vr? if  bisque-doll got-bisque-doll -1 loot-doll  then ;
 
 \ ---- her first steps by the chandeliers: Debilitas's scene - he comes in and looks about ----
 : looks-about ( -- )   \ (his look round, then about now and then - till the camera leaves its fourth set, or 450 frames)

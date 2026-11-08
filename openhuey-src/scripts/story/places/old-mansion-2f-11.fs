@@ -30,9 +30,9 @@ $237 constant journal-file   $67 constant near-door
 create key-at /vec allot   fvariable key-speed
 
 \ ---- the key on the stepladder: shaken nearer the edge, at last falling (bouncing till it rests) ----
-: key-moved ( -- )  key-fx live-effect 0= if  drop exit  then  >r  key-at vec@ xyz>cells  r> send effect-place ;
+: key-moved ( -- )  key-fx live-effect 0= if  drop exit  then  >r  key-at vec@  vr? if  key-at vec@ jupiter-key loot-move  then  xyz>cells  r> send effect-place ;
 : key-rest ( n -- )  key-fx live-effect if  send effect-rest  else  2drop  then ;
-: key-up-there ( -- )  5.19e 35.3e -34e key-at vec!  key-fx key-at vec@ flicker-at  0e key-speed f! ;
+: key-up-there ( -- )  5.19e 35.3e -34e key-at vec!  key-fx key-at vec@ flicker-at  vr? if  jupiter-key key-at vec@ loot-at  then  0e key-speed f! ;
 : key-on-floor ( -- )  key-fx 7.3e 0.7e -28.3e flicker-at ;
 : shaken-nearer ( -- )  key-at v.z sf@ 0.5e f+ key-at v.z sf!  key-moved ;
 : bounced? ( -- flag )   \ (off the floor at 0.7, keeping 30% - slower than 0.2: at rest)

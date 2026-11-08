@@ -466,6 +466,20 @@ static void model_draw(int m, int palette, Mat4 place, const Mat4 *view_proj, fl
     render_mesh_tint(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
+int things_model_draw(int model, int palette, const Mat4 *world, const Mat4 *view_proj) {
+    if (model < 0 || model >= 4 || world == NULL || view_proj == NULL) {
+        return 0;
+    }
+    if (sModels[model].loaded == 0) {
+        gfm_load(model);
+    }
+    if (sModels[model].loaded != 1) {
+        return 0;
+    }
+    model_draw(model, palette, *world, view_proj, 1.0f);
+    return 1;
+}
+
 static void sprite_batches(void) {
     if (sBall < 0) {
         sBall = sprites_new();
