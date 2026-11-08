@@ -138,6 +138,11 @@ behaviour hewie-own
   on danger-signals ( bits -- )  his-signals ! ;
   on fiona-struck-by ( who -- )  her-struck-by ! ;
   \ her commands (H2)
+  on asked-shake ( -- )   \ spoken, and only once she has already checked he is sitting, facing and close
+      along? 0= if  exit  then
+      his-busy @ if  exit  then
+      commandable-now? 0= if  exit  then
+      heard-her-act sit-trick-act want  60 his-cooldown !  0 his-broke !  tell-doing ;
   on command ( code tri yaw x z -- )   \ (Hewie_StateBlock's 13)
       along? 0= if  2drop 2drop drop exit  then
       cells>xyz                                                ( code tri ) ( F: yaw x z )

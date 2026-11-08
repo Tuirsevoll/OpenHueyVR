@@ -54,6 +54,7 @@ int vr_pad_down(int button) { (void)button; return 0; }
 int vr_pad_pressed(int button) { (void)button; return 0; }
 void vr_pad_clear(void) {}
 int vr_run_on(void) { return 0; }
+int vr_talk_held(void) { return 0; }
 float vr_right_stick(void) { return 0.0f; }
 void vr_add_turn(float yaw) { (void)yaw; }
 float vr_take_turn(void) { return 0.0f; }
@@ -168,7 +169,7 @@ static Vec3 sAnchorEye;
 static float sAnchorYaw;
 static float sStickX, sStickY, sRightX;
 static float sMoveYaw, sFaceYaw, sTurn;
-static int sDown[8], sPressed[8], sRun, sClickWas, sBothWas, sRecenterReq, sAlignRecenter;
+static int sDown[8], sPressed[8], sRun, sClickWas, sBothWas, sRecenterReq, sAlignRecenter, sTalk;
 static PFN_xrCreateReferenceSpace xrCreateReferenceSpace;
 static PFN_xrDestroySpace xrDestroySpace;
 static PFN_xrEnumerateSwapchainFormats xrEnumerateSwapchainFormats;
@@ -640,6 +641,7 @@ static void sync_stick(void) {
     int click;
 
     sStickX = sStickY = sRightX = 0.0f;
+    sTalk = 0;
     if (sMove == XR_NULL_HANDLE || xrSyncActions == NULL) {
         return;
     }
@@ -680,6 +682,7 @@ static void sync_stick(void) {
             if (click && !sClickWas) {
                 sRun = !sRun;
             }
+            sTalk = right && !click;   /* right click alone: hold to talk. both clicks stay the recenter */
         }
     }
     sClickWas = click;
@@ -734,6 +737,7 @@ void vr_pad_clear(void) {
 }
 
 int vr_run_on(void) { return sRun ? 1 : 0; }
+int vr_talk_held(void) { return sTalk ? 1 : 0; }
 
 float vr_right_stick(void) { return sRightX; }
 

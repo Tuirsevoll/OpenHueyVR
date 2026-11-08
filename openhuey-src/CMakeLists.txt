@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(hga VERSION 0.2.32 LANGUAGES C)   # the version: shown with the debug mode (F2)
+project(hga VERSION 0.2.32 LANGUAGES C CXX)   # the version: shown with the debug mode (F2). CXX: whisper.cpp
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -37,6 +37,18 @@ endif()
 enable_testing()
 set(CLANKFORTH_TESTS ON CACHE BOOL "the language's tests (ctest)")
 add_subdirectory(external/clankforth)
+
+# Hewie's voice: whisper.cpp in-process (tiny or base). Tests, examples and GPU backends stay off.
+set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+set(WHISPER_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
+set(GGML_CUDA OFF CACHE BOOL "" FORCE)
+set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+set(GGML_METAL OFF CACHE BOOL "" FORCE)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+add_subdirectory(external/whisper.cpp)
 add_library(forth ALIAS clankforth)
 
 # the game state the scripts share (no SDL: the forth tool and the tests have it too)
@@ -75,18 +87,24 @@ endif()
 
 add_executable(hga
     src/main.c
-    src/platform/gl.c src/platform/platform.c src/platform/vr.c src/platform/update.c src/platform/sound.c src/platform/movie.c src/platform/music.c src/platform/seq.c src/platform/spu.c src/platform/snddrv.c
+    src/platform/gl.c src/platform/platform.c src/platform/vr.c src/platform/voice.c src/platform/update.c src/platform/sound.c src/platform/movie.c src/platform/music.c src/platform/seq.c src/platform/spu.c src/platform/snddrv.c
     src/render/render.c src/render/post.c
     src/game/room.c src/game/console.c src/game/actor.c src/game/doglegs.c src/game/humanlegs.c src/game/vrhands.c src/game/chair.c src/game/cloth.c src/game/world.c
     src/game/camdirector.c src/game/areas.c src/game/exits.c src/game/messages.c src/game/cutscene.c src/game/placed.c src/game/sprites.c src/game/mods.c src/game/particles.c src/game/things.c src/game/obstacles.c src/game/swimpath.c src/game/rumble.c
     src/forth/bind_engine.c)
-target_link_libraries(hga PRIVATE hgadata forth gamestate hactor SDL3::SDL3)
+target_link_libraries(hga PRIVATE hgadata forth gamestate hactor SDL3::SDL3 whisper)
+if(WIN32)
+    target_link_libraries(hga PRIVATE ole32 uuid)
+endif()
 target_include_directories(hga PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/external/openxr/include")
 if(WIN32)
     add_custom_command(TARGET hga POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/external/openxr/openxr_loader.dll"
-            "$<TARGET_FILE_DIR:hga>/openxr_loader.dll")
+            "$<TARGET_FILE_DIR:hga>/openxr_loader.dll"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:whisper>" "$<TARGET_FILE:ggml>" "$<TARGET_FILE:ggml-base>" "$<TARGET_FILE:ggml-cpu>"
+            "$<TARGET_FILE_DIR:hga>")
 endif()
 set_target_properties(hga PROPERTIES OUTPUT_NAME openhuey)   # (the target keeps its old name: the tests' COMMAND hga)   # (GL through SDL_GL_GetProcAddress: platform/gl.c)
 target_compile_definitions(hga PRIVATE "HGA_VERSION=\"${PROJECT_VERSION}\"" "HGA_BUILD=\"${HGA_BUILD}\"" "HG2_SCRIPT_DIR=\"${SCRIPT_DIR}\"" "HG2_DEFAULT_DATA=\"${DEFAULT_DATA}\""

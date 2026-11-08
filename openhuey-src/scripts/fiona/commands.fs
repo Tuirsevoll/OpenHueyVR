@@ -63,6 +63,53 @@ create ch-at /vec allot
         5e f-  her-act-yaw f@ fswap ch-at her-act-at vec-ahead
         her-tri @ her-at ch-at hewie-floor v-walk dup 0< if  drop  else  her-act-tri !  her-act-at ch-at vec-copy  then
     else  fdrop  then ;
+\ a spoken command: the same `command` Hewie already takes (his trust and the bark stay his),
+\ without her mode, her action or her walk state. Close praise and scold are the immediate
+\ ones; the pat and the close scold are her gesture, and a spoken line does not start it.
+: voice-place ( -- )
+    her-heading f@ her-act-yaw f!  her-tri @ her-act-tri !  her-act-at her-at vec-copy ;
+: voice-react ( code -- )
+    dup go-there-cmd = if  drop  go-reaction react  exit  then
+    dup come-cmd = if  drop  come-reaction react  exit  then
+    dup stay-cmd = if  drop  come-reaction react  exit  then
+    dup scold-cmd = if  drop  scold-reaction react  exit  then
+    dup praise-cmd = if  drop  praise-reaction react  exit  then
+    drop ;
+: voice-give ( code -- )
+    hewie-commandable state-flag? 0= if  drop exit  then
+    her-busy-t @ if  drop exit  then
+    her-mode @ own-mode <> if  drop exit  then
+    still? if  drop exit  then
+    voice-place
+    dup go-there-cmd = if  go-spot  then
+    plain-commands state-flag? 0=  hewie-played? 0= and if
+        dup  her-act-tri @  her-act-yaw f@ f>cell  her-act-at v.x sf@ f>cell  her-act-at v.z sf@ f>cell
+        hewie-id send command
+    then
+    voice-react ;
+: voice-shake-now ( -- )
+    hewie-commandable state-flag? 0= if  exit  then
+    her-busy-t @ if  exit  then
+    her-mode @ own-mode <> if  exit  then
+    still? if  exit  then
+    plain-commands state-flag? hewie-played? or if  exit  then
+    dog-ok? 0= if  exit  then
+    dog-dist 15e f< 0= if  exit  then
+    dog-sub @ sitting-sub = 0= if  exit  then
+    dog-at her-at vec-heading  hewie-id body-yaw  f- angle-wrap fabs  60e deg>rad f< 0= if  exit  then
+    hewie-id send asked-shake ;
+: spoken-order ( kind -- )
+    dup voice-come = if  drop  come-cmd voice-give  exit  then
+    dup voice-go = if  drop  go-there-cmd voice-give  exit  then
+    dup voice-stay = if  drop  stay-cmd voice-give  exit  then
+    dup voice-sit = if
+        drop  dog-ok? 0= if  exit  then  dog-dist 12e f< 0= if  exit  then
+        stay-cmd voice-give  exit
+    then
+    dup voice-praise = if  drop  praise-cmd voice-give  exit  then
+    dup voice-scold = if  drop  scold-cmd voice-give  exit  then
+    dup voice-shake = if  drop  voice-shake-now  exit  then
+    drop ;
 : command-hewie ( -- )   \ (in the run he is the one played: the command isn't his to take)
     plain-commands state-flag? 0=  hewie-played? 0= and if
         her-sub @ go-there-cmd = if  go-spot  then
@@ -210,6 +257,15 @@ create ch-at /vec allot
     root-move ;
 : asked? ( -- flag )  her-act @ ['] meet-waiting =  meeting? and ;
 
+\ a resolved command (come, go, stay, the praise and scold codes). the gesture already chose which.
+: order-code ( code -- )
+    dup come-back-cmd = over go-for-it-cmd = or  her-sub @ 0<> and  over go-for-it-cmd = her-danger @ followed = and 0= and if   \ (on the move)
+        mark-action-start  command-hewie  order-line  60 her-busy-t !
+        plain-commands state-flag? 0= if  hewie-id her-look-who !  30 her-look-hold !  then   \ (a glance at him)
+        exit
+    then
+    command-mode her-mode !  command-doing her-doing !  mark-action-start  ['] action-over her-act ! ;
+
 \ ---- Fiona_ControlCommand: her command - in a panic or held a cry for him; otherwise the
 \ command's action (on the move, "come back" and "go for it" without stopping) ----
 : control-command ( -- )
@@ -220,12 +276,7 @@ create ch-at /vec allot
     then
     her-mode @ own-mode <>  still? or if  drop exit  then
     command-code dup -1 = if  drop exit  then
-    dup come-back-cmd = over go-for-it-cmd = or  her-sub @ 0<> and  over go-for-it-cmd = her-danger @ followed = and 0= and if   \ (on the move)
-        mark-action-start  command-hewie  order-line  60 her-busy-t !
-        plain-commands state-flag? 0= if  hewie-id her-look-who !  30 her-look-hold !  then   \ (a glance at him)
-        exit
-    then
-    command-mode her-mode !  command-doing her-doing !  mark-action-start  ['] action-over her-act ! ;
+    order-code ;
 
 \ ---- her lines on the gestures' key frames (Fiona_MotionSounds' event 1, commanding) ----
 : call-anim? ( anim -- flag )   \ (the gestures that call to him)

@@ -265,6 +265,11 @@ message hewie-doing ( here action mode sub cond mood group commandable near reac
 message hewie-came ( exit -- )               \ broadcast as Hewie arrives in the room being played: the exit he came in by (-1 none: +0x14D4)
 message command ( code tri yaw x z -- )      \ Fiona's command (0x23 go there: the spot; floats f>cell)
 message reaction ( n -- )                    \ how her doing strikes him (Fiona_HewieReact's row: hewie-reaction)
+\ a phrase the recogniser matched (voice.fs). Fiona resolves it and sends `command`; she does not gesture.
+1 constant voice-come  2 constant voice-go  3 constant voice-stay  4 constant voice-sit
+5 constant voice-praise  6 constant voice-scold  7 constant voice-shake
+message voice-order ( kind -- )              \ (Fiona) that phrase: Hewie hears the command, she keeps moving
+message asked-shake ( -- )                   \ (Hewie) shake, once he is sitting, facing her and close
 \ what she did, as it strikes Hewie: her "go", "come back", "come" / "stay", a scolding and a praise
 \ from afar, a scolding close up, a pat, rousing him; the story's (its 0xBC); her step back, her
 \ kick, her shove, a throw; (13: none); her cry for help, her "attack now"; his nudge (obedience)

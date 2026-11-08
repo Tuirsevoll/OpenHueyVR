@@ -40,6 +40,7 @@
 #include "platform/sound.h"
 #include "platform/platform.h"
 #include "platform/vr.h"
+#include "platform/voice.h"
 #include "platform/movie.h"
 #include "platform/gl.h"
 #include "render/render.h"
@@ -1134,6 +1135,9 @@ int main(int argc, char **argv) {
         failed = forth_include(e->forth, opt.test) != 0;
         return failed ? 1 : sTestStatus;
     }
+    if (vr_active()) {
+        voice_init();   /* after tests: they stay headless and do not open the microphone */
+    }
 
     last = SDL_GetTicksNS();
     while (!e->forth->bye) {
@@ -1146,6 +1150,7 @@ int main(int argc, char **argv) {
                 break;
             }
             vr_frame = 1;
+            voice_tick(vr_talk_held());
             now = SDL_GetTicksNS();
         }
 
@@ -1239,6 +1244,7 @@ int main(int argc, char **argv) {
     }
     room_free(&e->room);
     forth_free(e->forth);
+    voice_shutdown();
     vr_close();
     render_shutdown();
     platform_close();

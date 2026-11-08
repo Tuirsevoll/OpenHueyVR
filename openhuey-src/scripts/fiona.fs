@@ -403,6 +403,7 @@ behaviour free
   on fear-less ( n -- )  s>f 30e f/ fnegate her-fear f@ f+ 0e fmax her-fear f! ;
   on recovery-less ( n -- )  1 max 60 swap / negate her-recovery +!  her-recovery @ 0 max her-recovery ! ;
   \ Hewie (F3)
+  on voice-order ( kind -- )  spoken-order ;
   on hewie-doing ( here action mode sub cond mood group commandable near reachable breakable way trust -- )
       drop dog-way !  2drop 2drop  dog-group !  dog-mood !  dog-cond !  dog-sub !  dog-mode !  dog-action !  dog-here ! ;
   on meet-at ( tri x y z face -- )

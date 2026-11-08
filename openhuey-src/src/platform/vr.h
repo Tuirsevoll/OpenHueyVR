@@ -52,6 +52,7 @@ int vr_pad_down(int button);
 int vr_pad_pressed(int button);
 void vr_pad_clear(void);   /* a tick took the presses */
 int vr_run_on(void);       /* left stick click toggles this */
+int vr_talk_held(void);    /* right stick click held, and not the left (both clicks still recenter) */
 /* right stick x, -1..1, after the dead zone. Both stick clicks request a yaw reset. */
 float vr_right_stick(void);
 void vr_add_turn(float yaw);

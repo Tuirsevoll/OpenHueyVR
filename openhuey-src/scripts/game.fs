@@ -21,6 +21,7 @@ scenes:scenes-spawn constant scenes
 music:music-spawn constant music
 pause:pause-spawn constant pause
 fiona:fiona-spawn constant fiona
+voice:voice-spawn constant voice-ear
 hewie:hewie-spawn constant hewie
 stalker:debilitas-spawn constant debilitas
 stalker:daniella-spawn constant daniella
