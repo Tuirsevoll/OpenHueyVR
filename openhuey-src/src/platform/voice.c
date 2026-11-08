@@ -18,7 +18,7 @@
 #define MIN_N (RATE * 3 / 10)
 
 static const char *kPrompt =
-    "come here. go. stay. sit. good boy. bad dog. shake. heel. follow. hang on. nice one. naughty. fuck her up.";
+    "come here. go. stay. sit. good boy. bad dog. shake. heel. follow. hang on. nice one. naughty. fuck her up. you e. pukui. queep. queen. hee. cut.";
 
 static const char *kNames[] = {
     "models/ggml-tiny.en.bin", "models/ggml-tiny.bin", "models/ggml-base.en.bin", "models/ggml-base.bin",
@@ -419,7 +419,8 @@ static int whole(const char *text, const char *phrase) {
 
 /* his name, and the ways Whisper mishears it. Longer ones first. */
 static const char *const kDog[] = {
-    "who me", "wooee", "wooey", "hewey", "hewie", "huey", "hooey", "hooee", "kiwi", "hui", "hew"
+    "who me", "you e", "pukui", "queep", "wooee", "wooey", "queen", "hewey", "hewie", "huey",
+    "hooey", "hooee", "kiwi", "hee", "hui", "hew", "cut"
 };
 
 static void cut_name(char *s, char *at, size_t n) {
@@ -469,6 +470,8 @@ static int phrase_kind(const char *text) {
         {"come here", VOICE_COME}, {"here boy", VOICE_COME}, {"come boy", VOICE_COME},
         {"come on", VOICE_COME}, {"keep up", VOICE_COME}, {"with me", VOICE_COME},
         {"on me", VOICE_COME}, {"follow", VOICE_COME}, {"heel", VOICE_COME}, {"come", VOICE_COME},
+        {"you e", VOICE_COME}, {"pukui", VOICE_COME}, {"queep", VOICE_COME},
+        {"queen", VOICE_COME}, {"hee", VOICE_COME}, {"cut", VOICE_COME},
         {"attack him", VOICE_ATTACK}, {"get him", VOICE_ATTACK}, {"sic him", VOICE_ATTACK},
         {"bite him", VOICE_ATTACK}, {"help me", VOICE_ATTACK}, {"save me", VOICE_ATTACK},
         {"attack", VOICE_ATTACK}, {"help", VOICE_ATTACK}, {"sic", VOICE_ATTACK}, {"bite", VOICE_ATTACK},

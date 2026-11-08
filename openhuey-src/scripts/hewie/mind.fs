@@ -493,6 +493,49 @@ create foot-bones  $B , $F , $17 , $1C ,   \ (front right, front left, hind righ
 : full-stop ( -- )   \ Hewie_FullStop: what a script's letting go clears
     0 his-broke !  0 his-hits !  -1 his-look-char !  0 his-scene-req !  0 his-look-pt? !
     hewie-hidden state-flag-clear ;
+\ a controller on his mesh. it buzzes while it stays. calm, and held there a short while,
+\ he sits and looks at her: the lowest thing he does, so a command or a stalker takes him
+\ back. letting go barks once and the pet counts as praise. a script that already has him
+\ sitting (a find) is left as it is: the pet still counts.
+0 value pet-frames
+0 value pet-gap
+0 value pet-held
+: petting? ( -- flag )  0 vr-petting?  1 vr-petting? or ;
+: st-pet-still ( -- )
+    his-danger @ calm <> if  0 to pet-held  to-default exit  then
+    pet-frames 10 < if  0 to pet-held  to-default exit  then
+    sit-pose step-to-pose if  exit  then
+    sit-pose keep-pose  her his-target !  target-look look!  1 his-no-root ! ;
+: pet-behaviour? ( -- flag )  his-act @ ['] st-pet-still = ;
+: pet-sit ( -- )
+    pet-held if  exit  then
+    pet-frames 20 < if  exit  then
+    his-danger @ calm <> if  exit  then
+    his-busy @ if  exit  then
+    his-cond @ down-cond = if  exit  then
+    his-mode @ free-mode <> if  exit  then
+    his-cooldown @ if  exit  then
+    his-action @ dup fetch-act = swap heard-her-act = or if  exit  then
+    his-cmd @ 0<> on-command breaks-in? 0= and if  exit  then
+    1 to pet-held  0 his-pending !  breaks-any his-cmd !  ['] st-pet-still behave ;
+: pet-praise ( -- )
+    praise-reaction react  300 his-pet-time !
+    his-busy @ 0=  his-mode @ struck-mode <> and  his-danger @ calm = and
+    his-cond @ down-cond <> and  pet-held and if
+        0 to pet-held  heard-her-act 0 want
+    else  0 to pet-held  bark-sound make-sound  then ;
+: pet-hands ( -- )
+    his-in-cast @ if  0 to pet-frames  0 to pet-gap  0 to pet-held  exit  then
+    his-away @ if  0 to pet-frames  0 to pet-gap  exit  then
+    pet-held pet-behaviour? 0= and if
+        pet-frames 10 >= if  praise-reaction react  300 his-pet-time !  then
+        0 to pet-held  0 to pet-frames  0 to pet-gap
+    then
+    petting? if  0 to pet-gap  pet-frames 1+ 90 min to pet-frames  pet-sit exit  then
+    pet-frames 10 < if  0 to pet-frames  exit  then
+    pet-gap 1+ to pet-gap
+    pet-gap 15 < if  exit  then
+    0 to pet-frames  0 to pet-gap  pet-praise ;
 : think ( -- )   \ Hewie_Think: a frame of his while a script has him
     his-2b @ if  0  else  hewie-floor  then  body-mask!
     1 his-snd-t +!  his-snd-t @ 3000 > if  3000 his-snd-t !  then
@@ -502,7 +545,7 @@ create foot-bones  $B , $F , $17 , $1C ,   \ (front right, front left, hind righ
     turn-by-anim
     his-away @ 0= his-no-root @ 0= and if  root-move  then
     turn-head  neck  anim-sounds  feet
-    his-yaw his-yaw-was f!  his-action @ his-last-action !  show-him  tell-doing ;
+    his-yaw his-yaw-was f!  his-action @ his-last-action !  show-him  pet-hands  tell-doing ;
 : frame ( -- )
     his-busy @ if  -1 his-was-busy !  gesture!  think exit  then
     his-was-busy @ if  0 his-was-busy !  full-stop  to-default  then   \ (the script let him go)
@@ -528,7 +571,7 @@ create foot-bones  $B , $F , $17 , $1C ,   \ (front right, front left, hind righ
     his-no-root @ 0= if  root-move  then
     turn-head  neck  set-overlays  anim-sounds  feet
     his-yaw his-yaw-was f!  his-action @ his-last-action !  his-alert @ his-alert-was !
-    0 his-smells !  move-sub  show-him  tell-doing ;
+    0 his-smells !  move-sub  show-him  pet-hands  tell-doing ;
 
 \ Hewie_StartScene: calm, his default action - in the run, played afresh (hewie/steered.fs)
 : start-afresh ( -- )

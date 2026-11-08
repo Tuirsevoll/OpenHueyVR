@@ -73,6 +73,8 @@ typedef struct VrController {
 } VrController;
 int vr_controller(int hand, VrController *out);   /* 0 left, 1 right */
 int vr_hands_tracked(void);
+/* a short pulse on that controller. amplitude is 0..1. No session: nothing. */
+void vr_haptic(int hand, float amplitude, float seconds);
 /* the next panel placement is once, in front of the current look, and then stays put */
 void vr_screen_face(void);
 void vr_screen_loose(int on);   /* kept for callers; the panel does not follow the head */

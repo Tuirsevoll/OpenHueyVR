@@ -869,6 +869,154 @@ static void poses_save(Engine *e) {
     }
 }
 
+/* the controller point against the posed mesh. About 6 cm: a touch, not a reach. */
+#define PET_SKIN 0.75f
+
+/* closest distance squared from p to triangle abc (Christer Ericson) */
+static float tri_dist2(Vec3 p, Vec3 a, Vec3 b, Vec3 c) {
+    Vec3 ab = vec3_sub(b, a), ac = vec3_sub(c, a), ap = vec3_sub(p, a);
+    float d1 = vec3_dot(ab, ap), d2 = vec3_dot(ac, ap);
+
+    if (d1 <= 0.0f && d2 <= 0.0f) {
+        return vec3_dot(ap, ap);
+    }
+    {
+        Vec3 bp = vec3_sub(p, b);
+        float d3 = vec3_dot(ab, bp), d4 = vec3_dot(ac, bp);
+
+        if (d3 >= 0.0f && d4 <= d3) {
+            return vec3_dot(bp, bp);
+        }
+        {
+            float vc = d1 * d4 - d3 * d2;
+
+            if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+                float v = d1 / (d1 - d3);
+                Vec3 r = vec3_sub(vec3_add(a, vec3_scale(ab, v)), p);
+
+                return vec3_dot(r, r);
+            }
+            {
+                Vec3 cp = vec3_sub(p, c);
+                float d5 = vec3_dot(ab, cp), d6 = vec3_dot(ac, cp);
+
+                if (d6 >= 0.0f && d5 <= d6) {
+                    return vec3_dot(cp, cp);
+                }
+                {
+                    float vb = d5 * d2 - d1 * d6;
+
+                    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+                        float w = d2 / (d2 - d6);
+                        Vec3 r = vec3_sub(vec3_add(a, vec3_scale(ac, w)), p);
+
+                        return vec3_dot(r, r);
+                    }
+                    {
+                        float va = d3 * d6 - d5 * d4;
+
+                        if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+                            float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+                            Vec3 r = vec3_sub(vec3_add(b, vec3_scale(vec3_sub(c, b), w)), p);
+
+                            return vec3_dot(r, r);
+                        }
+                        {
+                            float sum = va + vb + vc;
+
+                            if (sum < 1.0e-8f && sum > -1.0e-8f) {
+                                return vec3_dot(ap, ap);
+                            }
+                            {
+                                float denom = 1.0f / sum;
+                                float v = vb * denom, w = vc * denom;
+                                Vec3 r = vec3_sub(vec3_add(a, vec3_add(vec3_scale(ab, v), vec3_scale(ac, w))), p);
+
+                                return vec3_dot(r, r);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+static const Actor *hewie_mesh(void) {
+    int i;
+
+    for (i = 0; i < MAX_ACTORS; i++) {
+        const Actor *a = &gEngine.actors[i];
+
+        if (a->used && a->visible && a->posed != NULL && strncmp(a->name, "O_HEW", 5) == 0) {
+            return a;
+        }
+    }
+    return NULL;
+}
+
+static int mesh_touch(const Actor *dog, Vec3 p) {
+    const Model *m = &dog->model;
+    float lim = PET_SKIN * PET_SKIN;
+    float reach = actor_radius(dog) + PET_SKIN;
+    Vec3 d = vec3_sub(p, actor_center(dog));
+    int i;
+
+    if (vec3_dot(d, d) > reach * reach) {
+        return 0;
+    }
+    for (i = 0; i < m->nd; i++) {
+        const MeshDraw *draw = &m->d[i];
+        int v, end;
+
+        if (draw->count < 3) {
+            continue;
+        }
+        end = draw->first + draw->count;
+        if (end > m->nv) {
+            end = m->nv;
+        }
+        for (v = draw->first; v + 2 < end; v += 3) {
+            Vec3 a = vec3(dog->posed[v].x, dog->posed[v].y, dog->posed[v].z);
+            Vec3 b = vec3(dog->posed[v + 1].x, dog->posed[v + 1].y, dog->posed[v + 1].z);
+            Vec3 c = vec3(dog->posed[v + 2].x, dog->posed[v + 2].y, dog->posed[v + 2].z);
+
+            if (tri_dist2(p, a, b, c) <= lim) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+int vrhands_petting(int side) {
+    const Actor *dog;
+    Vec3 at, right, up, fwd;
+    float grip, index, thumb;
+
+    if (side < 0 || side > 1 || !vr_active()) {
+        return 0;
+    }
+    dog = hewie_mesh();
+    if (dog == NULL) {
+        return 0;
+    }
+    if (!hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
+        return 0;
+    }
+    (void)right;
+    (void)up;
+    (void)fwd;
+    (void)grip;
+    (void)index;
+    (void)thumb;
+    if (!mesh_touch(dog, at)) {
+        return 0;
+    }
+    vr_haptic(side, 0.075f, 0.04f);
+    return 1;
+}
+
 void vrhands_tick(Engine *e) {
     int side, i;
 

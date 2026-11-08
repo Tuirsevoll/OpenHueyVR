@@ -64,6 +64,7 @@ void vr_anchor_set(int on, Vec3 eye, float yaw) { (void)on; (void)eye; (void)yaw
 int vr_anchor_get(Vec3 *eye, float *yaw) { (void)eye; (void)yaw; return 0; }
 int vr_controller(int hand, VrController *out) { (void)hand; (void)out; return 0; }
 int vr_hands_tracked(void) { return 0; }
+void vr_haptic(int hand, float amplitude, float seconds) { (void)hand; (void)amplitude; (void)seconds; }
 void vr_screen_face(void) {}
 void vr_screen_loose(int on) { (void)on; }
 int vr_calibrate(float *height_m, float *scale) { (void)height_m; (void)scale; return 0; }
@@ -153,11 +154,12 @@ static PFN_xrGetActionStateVector2f xrGetActionStateVector2f;
 static PFN_xrGetActionStateBoolean xrGetActionStateBoolean;
 static PFN_xrGetActionStateFloat xrGetActionStateFloat;
 static PFN_xrCreateActionSpace xrCreateActionSpace;
+static PFN_xrApplyHapticFeedback xrApplyHapticFeedback;
 static XrActionSet sActions;
 static XrAction sMove, sRunClick, sInteract, sMenu, sKick, sTurnStick, sRightClick;
 static XrAction sIndexL, sCancel, sPause;
 typedef struct VrHandSlot {
-    XrAction pose, squeeze, thumb;
+    XrAction pose, squeeze, thumb, haptic;
     XrSpace space;
     int tracked;
     Vec3 at, right, up, forward;
@@ -796,6 +798,23 @@ int vr_controller(int hand, VrController *out) {
     return h->tracked;
 }
 
+void vr_haptic(int hand, float amplitude, float seconds) {
+    XrHapticActionInfo info = {XR_TYPE_HAPTIC_ACTION_INFO};
+    XrHapticVibration vib = {XR_TYPE_HAPTIC_VIBRATION};
+
+    if (hand < 0 || hand > 1 || sSession == XR_NULL_HANDLE || xrApplyHapticFeedback == NULL) {
+        return;
+    }
+    if (sHand[hand].haptic == XR_NULL_HANDLE || amplitude <= 0.0f || seconds <= 0.0f) {
+        return;
+    }
+    info.action = sHand[hand].haptic;
+    vib.amplitude = amplitude > 1.0f ? 1.0f : amplitude;
+    vib.duration = (XrDuration)(seconds * 1000000000.0f);
+    vib.frequency = XR_FREQUENCY_UNSPECIFIED;
+    xrApplyHapticFeedback(sSession, &info, (const XrHapticBaseHeader *)&vib);
+}
+
 int vr_hands_tracked(void) {
     return (sHand[0].tracked || sHand[1].tracked) ? 1 : 0;
 }
@@ -874,6 +893,8 @@ static void bind_stick(void) {
     make_action(&sIndexL, XR_ACTION_TYPE_FLOAT_INPUT, "index_l", "Left index");
     make_action(&sHand[0].thumb, XR_ACTION_TYPE_BOOLEAN_INPUT, "thumb_l", "Left thumb");
     make_action(&sHand[1].thumb, XR_ACTION_TYPE_BOOLEAN_INPUT, "thumb_r", "Right thumb");
+    make_action(&sHand[0].haptic, XR_ACTION_TYPE_VIBRATION_OUTPUT, "buzz_l", "Left buzz");
+    make_action(&sHand[1].haptic, XR_ACTION_TYPE_VIBRATION_OUTPUT, "buzz_r", "Right buzz");
     for (i = 0; i < sizeof(sticks) / sizeof(sticks[0]); i++) {
         if (bind_path(sMove, "/user/hand/left/input/thumbstick", &one)) {
             suggest(sticks[i], &one, 1);
@@ -906,6 +927,8 @@ static void bind_stick(void) {
         n += bind_path(sIndexL, "/user/hand/left/input/trigger/value", &quest[n]);
         n += bind_path(sHand[0].thumb, "/user/hand/left/input/thumbrest/touch", &quest[n]);
         n += bind_path(sHand[1].thumb, "/user/hand/right/input/thumbrest/touch", &quest[n]);
+        n += bind_path(sHand[0].haptic, "/user/hand/left/output/haptic", &quest[n]);
+        n += bind_path(sHand[1].haptic, "/user/hand/right/output/haptic", &quest[n]);
         for (i = 0; i < sizeof(quest_profiles) / sizeof(quest_profiles[0]); i++) {
             suggest(quest_profiles[i], quest, n);
         }
@@ -1169,6 +1192,7 @@ int vr_open(void) {
     load_proc(sInstance, "xrGetActionStateBoolean", &xrGetActionStateBoolean);
     load_proc(sInstance, "xrGetActionStateFloat", &xrGetActionStateFloat);
     load_proc(sInstance, "xrCreateActionSpace", &xrCreateActionSpace);
+    load_proc(sInstance, "xrApplyHapticFeedback", &xrApplyHapticFeedback);
     LOAD(sInstance, xrCreateReferenceSpace);
     LOAD(sInstance, xrDestroySpace);
     LOAD(sInstance, xrEnumerateSwapchainFormats);
