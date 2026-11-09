@@ -24,6 +24,8 @@ void platform_poll(Input *in);
 /* the drawable size in pixels */
 void platform_size(int *w, int *h);
 void platform_swap(void);
+/* copies the colour of framebuffer fbo (w x h pixels) into the window, scaled to fit, without swapping */
+void platform_mirror(unsigned fbo, int w, int h);
 /* 0: the window presents whenever it can (a headset paces the frames); 1: wait for the display */
 void platform_swap_interval(int interval);
 /* text input on (the console) or off */

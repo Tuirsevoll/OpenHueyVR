@@ -914,6 +914,9 @@ static void draw(Engine *e) {
                 }
                 vp = mat4_mul(eye_proj, eye_view);
                 render_show_stage(render_stage_tex(), &vp, corners);
+                if (i == 0) {
+                    platform_mirror(fbo, w, h);
+                }
                 vr_eye_end(i);
             }
         } else {
@@ -966,11 +969,15 @@ static void draw(Engine *e) {
                     vp = mat4_mul(proj, head);
                     render_show_stage(render_stage_tex(), &vp, corners);
                 }
+                    if (i == 0) {
+                        platform_mirror(fbo, w, h);
+                    }
                     vr_eye_end(i);
                 }
             }
             vr_lock_pose(0);
         }
+        platform_swap();
         render_set_present(0);
         gRender.aspect = aspect;
     } else {

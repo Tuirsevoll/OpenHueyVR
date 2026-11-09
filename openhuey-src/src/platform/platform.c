@@ -311,6 +311,22 @@ void platform_swap(void) {
     SDL_GL_SwapWindow(sWindow);
 }
 
+void platform_mirror(unsigned fbo, int w, int h) {
+    int dw = 0, dh = 0;
+
+    fprintf(stderr, "mirror: start fbo %u %dx%d\n", fbo, w, h);
+    if (sWindow == NULL || fbo == 0 || w <= 0 || h <= 0) {
+        return;
+    }
+    platform_size(&dw, &dh);
+    glBlitNamedFramebuffer(fbo, 0, 0, 0, w, h, 0, 0, dw, dh, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    static int logged;
+    if (logged < 5) {
+        logged++;
+        fprintf(stderr, "mirror: fbo %u %dx%d -> %dx%d, gl error %d\n", fbo, w, h, dw, dh, (int)glGetError());
+    }
+}
+
 void platform_swap_interval(int interval) {
     SDL_GL_SetSwapInterval(interval);
 }
