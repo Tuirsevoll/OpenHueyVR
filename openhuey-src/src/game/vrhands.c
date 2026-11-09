@@ -210,15 +210,28 @@ static int place_middle(const float *root, float *mid, const float *end, const f
     return dist >= l1 + l2 - 1.0e-3f;
 }
 
-/* X along from->to, Z from `pole` made square to it */
+/* X along from->to, Z from `pole` made square to it. A pole parallel to the bone keeps a fixed up
+ * so a straight arm does not spin. */
 static void aim(Mat4 *m, const float *from, const float *to, const float *pole) {
-    float x[3], y[3], z[3];
+    float x[3], y[3], z[3], up[3];
 
     *m = mat4_identity();
     v_sub(x, to, from);
     v_norm(x, x);
     v_norm(z, pole);
     v_cross(y, z, x);
+    if (v_len(y) < 1.0e-4f) {
+        up[0] = 0.0f;
+        up[1] = 1.0f;
+        up[2] = 0.0f;
+        v_cross(y, up, x);
+        if (v_len(y) < 1.0e-4f) {
+            up[0] = 1.0f;
+            up[1] = 0.0f;
+            up[2] = 0.0f;
+            v_cross(y, up, x);
+        }
+    }
     v_norm(y, y);
     v_cross(z, x, y);
     v_norm(z, z);
@@ -228,6 +241,22 @@ static void aim(Mat4 *m, const float *from, const float *to, const float *pole) 
     m->m[12] = from[0];
     m->m[13] = from[1];
     m->m[14] = from[2];
+}
+
+/* VRIK long reach: the hand stays on the controller. The shoulder slides toward it until the
+ * arm is straight at l1 + l2, so neither bone is drawn longer than its length. */
+static void slide_shoulder(float *root, const float *hand, float reach) {
+    float d[3], dist;
+
+    v_sub(d, hand, root);
+    dist = v_len(d);
+    if (dist <= reach || dist < 1.0e-4f) {
+        return;
+    }
+    dist = (dist - reach) / dist;
+    root[0] += d[0] * dist;
+    root[1] += d[1] * dist;
+    root[2] += d[2] * dist;
 }
 
 static Mat4 rigid_inverse(const Mat4 *m) {
@@ -540,11 +569,28 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
         grip = grip_matrix(at, fwd, up, scale, sCenter[side], side);
     }
     if (l1 > 0.05f && l2 > 0.05f) {
-        float reach[3] = {grip.m[12], grip.m[13], grip.m[14]};
+        /* controller position only. Pitch, yaw, and roll stay off this solve. */
+        float reach[3] = {at.x, at.y, at.z};
+        float was[3] = {root[0], root[1], root[2]};
+        float twist[3];
+        int clav = bone_parent(m, sh);
 
+        slide_shoulder(root, reach, l1 + l2);
+        if (clav >= 0 && !leg_bone(a, clav) && (side == 0 ? !descends(m, sShoulder[1], clav) : !descends(m, sShoulder[0], clav))) {
+            Mat4 cr = mat4_mul(*place, world[clav]);
+
+            cr.m[12] += root[0] - was[0];
+            cr.m[13] += root[1] - was[1];
+            cr.m[14] += root[2] - was[2];
+            world[clav] = mat4_mul(*unplace, cr);
+        }
         place_middle(root, mid, reach, pole, l1, l2);
         aim(&room[0], root, mid, pole);
-        aim(&room[1], mid, reach, pole);
+        /* forearm points at the wrist. Its twist is the upper arm's, not the controller's. */
+        twist[0] = room[0].m[4];
+        twist[1] = room[0].m[5];
+        twist[2] = room[0].m[6];
+        aim(&room[1], mid, reach, twist);
         if (sVrik) {
             thicken_room(&room[0], sGirth);
             thicken_room(&room[1], sGirth);
@@ -552,7 +598,11 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
         world[sh] = mat4_mul(*unplace, room[0]);
         world[el] = mat4_mul(*unplace, room[1]);
     }
+    /* wrist forward: the hand and its children take the controller orientation. The forearm does not. */
     old = world[ha];
+    grip.m[12] = at.x;
+    grip.m[13] = at.y;
+    grip.m[14] = at.z;
     world[ha] = mat4_mul(*unplace, grip);
     {
         Mat4 delta = mat4_mul(world[ha], rigid_inverse(&old));
