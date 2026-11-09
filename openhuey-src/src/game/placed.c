@@ -269,6 +269,7 @@ void placed_anim(PlacedSet *s, Placed *p, int id, int loop) {
     p->keys = NULL;
     p->frames = 0;
     p->frame = 0;
+    p->paused = 0;
     if (s->anims == NULL || s->anims_size < 4) {
         return;
     }
@@ -297,6 +298,35 @@ void placed_anim(PlacedSet *s, Placed *p, int id, int loop) {
     }
 }
 
+void placed_frame_set(PlacedSet *s, Placed *p, int frame) {
+    Vec3 v;
+    const uint8_t *k;
+
+    (void)s;
+    if (p == NULL) {
+        return;
+    }
+    if (frame < 0) {
+        frame = 0;
+    }
+    if (p->frames > 0 && frame >= p->frames) {
+        frame = p->frames - 1;
+    }
+    p->frame = frame;
+    if (p->keys != NULL && p->frames > 0 && frame < p->frames) {   /* (the sample placed_tick takes) */
+        k = p->keys + frame * 12;
+        v = vec3(rdf(k), rdf(k + 4), rdf(k + 8));
+        if (p->format == 8 || p->format == 9) {
+            if (p->format == 9) {
+                p->pos = v;
+            } else {
+                p->rot = v;
+            }
+        }
+    }
+    p->paused = 1;   /* (held here: the track stays loaded, placed_tick does not advance it) */
+}
+
 void placed_tick(PlacedSet *s) {
     int i;
 
@@ -314,7 +344,7 @@ void placed_tick(PlacedSet *s) {
             }
         }
 
-        if (p->keys == NULL || p->frames <= 0) {
+        if (p->keys == NULL || p->frames <= 0 || p->paused) {
             continue;
         }
         if (p->format == 8 || p->format == 9) {   /* (Track_Sample: xyz floats, a key a frame) */
@@ -331,8 +361,8 @@ void placed_tick(PlacedSet *s) {
             if (p->loop) {
                 p->frame = 0;
             } else {
-                p->keys = NULL;
-                p->frames = 0;
+                p->frame = p->frames - 1;   /* (the last key: the track kept so its frames still show) */
+                p->paused = 1;
             }
         }
     }

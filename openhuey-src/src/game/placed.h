@@ -30,6 +30,7 @@ typedef struct Placed {
     /* the animation playing: its keys, format (8: the turn, 9: the place - xyz floats), frames */
     const uint8_t *keys;
     int format, frames, frame;
+    int paused;                 /* held at `frame` by hand (placed_frame_set): the track stays, not advancing */
     /* the rooms' own values kept on the object (the original's object words at +0x30..+0x7C:
      * a lid's speed, a chair's rock; read and written by their offset, `placed-word`) */
     uint32_t words[0x80 / 4];
@@ -56,6 +57,8 @@ void placed_free(PlacedSet *s);
 Placed *placed_named(PlacedSet *s, const char *name);
 /* start animation `id` of the object's record (PlacedObject_StartAnim); loop or once */
 void placed_anim(PlacedSet *s, Placed *p, int id, int loop);
+/* its animation's frame `frame` by hand, held there (the track stays loaded): the pose that frame gives */
+void placed_frame_set(PlacedSet *s, Placed *p, int frame);
 /* a tick: the animations step (PlacedObject_Animate) */
 void placed_tick(PlacedSet *s);
 /* its model placed in the room */
