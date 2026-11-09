@@ -35,6 +35,9 @@ static Vec3 sGrabRot[2];
  * rate of the leaf's turn track (frames, radians a frame) */
 static float sWardAng[2], sWardRate[2];
 static int sWardFrame[2], sWardLo[2], sWardHi[2];
+/* (temporary: the wardrobe grab's diagnostics - the hands that have buzzed for a leaf, and the log's
+ * count) */
+static int sWardNear[2], sWardLogs;
 static int sSettle[ROOM_DOORS];
 static int sCoast[ROOM_DOORS];
 static float sVel[ROOM_DOORS];
@@ -432,16 +435,9 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
 }
 
 static void log_hands(float left, float right, int posed) {
-    static unsigned n;
-
-    if (posed <= 0) {
-        return;
-    }
-    if (n % 120 == 0) {
-        fprintf(stderr, "vr hands: HAND_SCALE %.2f, fingers on -grip +Y (left quarter turn reversed), palms unflipped (bone scale %.2f %.2f)\n",
-                HAND_SCALE, left, right);
-    }
-    n++;
+    (void)left;
+    (void)right;
+    (void)posed;   /* (silent: the hand-fit line is off) */
 }
 
 void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace) {
@@ -723,21 +719,6 @@ static int ward_leaf(const char *name) {
     return strncmp(name, WARD_LEAF, 16) == 0;
 }
 
-/* a placed object's matrix the other way: world to its model space (uniform scale, turn, place) */
-static Mat4 placed_inverse(const Placed *p) {
-    Mat4 w = placed_world(p), r = mat4_identity();
-    float s = p->scale > 1.0e-5f ? p->scale : 1.0f;
-    float k = 1.0f / (s * s);   /* (its axes carry the scale: the inverse carries 1 / scale squared) */
-
-    r.m[0] = w.m[0] * k; r.m[1] = w.m[4] * k; r.m[2] = w.m[8] * k;
-    r.m[4] = w.m[1] * k; r.m[5] = w.m[5] * k; r.m[6] = w.m[9] * k;
-    r.m[8] = w.m[2] * k; r.m[9] = w.m[6] * k; r.m[10] = w.m[10] * k;
-    r.m[12] = -(w.m[0] * w.m[12] + w.m[4] * w.m[13] + w.m[8] * w.m[14]) * k;
-    r.m[13] = -(w.m[1] * w.m[12] + w.m[5] * w.m[13] + w.m[9] * w.m[14]) * k;
-    r.m[14] = -(w.m[2] * w.m[12] + w.m[6] * w.m[13] + w.m[10] * w.m[14]) * k;
-    return r;
-}
-
 /* the turn a frame of the leaf's track gives (format 8: a key's three floats are the turn) */
 static Vec3 ward_key(const Placed *p, int frame) {
     Vec3 r = vec3(0.0f, 0.0f, 0.0f);
@@ -778,22 +759,34 @@ static int ward_span(const Placed *p, int *lo, int *hi) {
     return 1;
 }
 
-/* a leaf's bounds in its own space (a placed mesh carries none of its own) */
+/* a leaf's bounds in the world the hands are in: its vertices through placed_world, the transform it
+ * is drawn with (a placed mesh carries no bounds of its own) */
 static void ward_bounds(const Placed *p, Vec3 *lo, Vec3 *hi) {
+    Mat4 w = placed_world(p);
     int i;
 
     *lo = vec3(1.0e30f, 1.0e30f, 1.0e30f);
     *hi = vec3(-1.0e30f, -1.0e30f, -1.0e30f);
     for (i = 0; i < p->mesh.nv; i++) {
-        Vec3 v = vec3(p->mesh.v[i].x, p->mesh.v[i].y, p->mesh.v[i].z);
+        Vec3 v = mat4_point(&w, vec3(p->mesh.v[i].x, p->mesh.v[i].y, p->mesh.v[i].z));
 
         *lo = vec3_min(*lo, v);
         *hi = vec3_max(*hi, v);
     }
 }
 
-/* the far corner of those bounds: the point of the leaf that swings widest about the place */
-static Vec3 ward_tip(Vec3 lo, Vec3 hi) {
+/* the far corner of the leaf in its own space: the point that swings widest about the place (the
+ * turn is applied there, so the tip is taken there too) */
+static Vec3 ward_tip(const Placed *p) {
+    Vec3 lo = vec3(1.0e30f, 1.0e30f, 1.0e30f), hi = vec3(-1.0e30f, -1.0e30f, -1.0e30f);
+    int i;
+
+    for (i = 0; i < p->mesh.nv; i++) {
+        Vec3 v = vec3(p->mesh.v[i].x, p->mesh.v[i].y, p->mesh.v[i].z);
+
+        lo = vec3_min(lo, v);
+        hi = vec3_max(hi, v);
+    }
     return vec3(fabsf(lo.x) > fabsf(hi.x) ? lo.x : hi.x, (lo.y + hi.y) * 0.5f,
                 fabsf(lo.z) > fabsf(hi.z) ? lo.z : hi.z);
 }
@@ -823,9 +816,8 @@ static int nearest_ward(PlacedSet *s, Vec3 hand, int other, float *best) {
     *best = WARD_TOUCH * WARD_TOUCH;
     for (i = 0; i < s->n; i++) {
         Placed *p = &s->p[i];
-        Mat4 inv;
-        Vec3 lo, hi, local, gap;
-        float scale, reach;
+        Vec3 lo, hi, gap;
+        float reach;
 
         if (!p->shown || p->mesh.nv <= 0 || !ward_leaf(p->name)) {
             continue;
@@ -833,15 +825,38 @@ static int nearest_ward(PlacedSet *s, Vec3 hand, int other, float *best) {
         if (other >= 0 && sHold[other] == HOLD_WARD && sHoldId[other] == i) {
             continue;
         }
-        scale = p->scale > 1.0e-5f ? p->scale : 1.0f;
         ward_bounds(p, &lo, &hi);
-        inv = placed_inverse(p);
-        local = mat4_point(&inv, hand);
-        gap = vec3(local.x - fminf(fmaxf(local.x, lo.x), hi.x), local.y - fminf(fmaxf(local.y, lo.y), hi.y),
-                   local.z - fminf(fmaxf(local.z, lo.z), hi.z));
-        reach = vec3_len(gap) * scale;
+        gap = vec3(hand.x - fminf(fmaxf(hand.x, lo.x), hi.x), hand.y - fminf(fmaxf(hand.y, lo.y), hi.y),
+                   hand.z - fminf(fmaxf(hand.z, lo.z), hi.z));
+        reach = vec3_len(gap);
         if (reach * reach < *best) {
             *best = reach * reach;
+            found = i;
+        }
+    }
+    return found;
+}
+
+/* (temporary: the leaf nearest a hand, out to `reach_max` world units: -1, and `best` left at that,
+ * when none is) */
+static int ward_near(PlacedSet *s, Vec3 hand, float reach_max, float *best) {
+    int i, found = -1;
+
+    *best = reach_max;
+    for (i = 0; i < s->n; i++) {
+        Placed *p = &s->p[i];
+        Vec3 lo, hi, gap;
+        float reach;
+
+        if (!p->shown || p->mesh.nv <= 0 || !ward_leaf(p->name)) {
+            continue;
+        }
+        ward_bounds(p, &lo, &hi);
+        gap = vec3(hand.x - fminf(fmaxf(hand.x, lo.x), hi.x), hand.y - fminf(fmaxf(hand.y, lo.y), hi.y),
+                   hand.z - fminf(fmaxf(hand.z, lo.z), hi.z));
+        reach = vec3_len(gap);
+        if (reach < *best) {
+            *best = reach;
             found = i;
         }
     }
@@ -860,7 +875,7 @@ static void ward_unload(Placed *p, int loaded) {
  * its pose already shows, so it does not jump into the hand */
 static int ward_take(PlacedSet *s, int side, int id, Vec3 hand) {
     Placed *p = &s->p[id];
-    Vec3 box_lo, box_hi, tip;
+    Vec3 tip;
     float rate;
     int loaded = 0, lo = 0, hi = 0, frame;
 
@@ -872,8 +887,7 @@ static int ward_take(PlacedSet *s, int side, int id, Vec3 hand) {
         ward_unload(p, loaded);
         return 0;
     }
-    ward_bounds(p, &box_lo, &box_hi);
-    tip = ward_tip(box_lo, box_hi);
+    tip = ward_tip(p);
     rate = ward_rate(p, lo, hi, tip);
     if (fabsf(rate) < 1.0e-5f) {
         ward_unload(p, loaded);
@@ -2153,6 +2167,7 @@ void vrhands_tick(Engine *e) {
             }
             sGripWas[side] = 0.0f;
             sHandHave[side] = 0;
+            sWardNear[side] = 0;   /* (temporary: no hand, no leaf in reach) */
             if (sGrace[side] > 0) {
                 sGrace[side]--;
             }
@@ -2183,6 +2198,26 @@ void vrhands_tick(Engine *e) {
             }
             if (rattled >= 0) {
                 engine_sound_at(RATTLE_SOUND, RATTLE_BANK, handle_at(&e->room.doors[rattled], rattAxis));
+            }
+            if (sWardLogs < 20) {   /* (temporary: what a rising grip sees of the wardrobe's leaves) */
+                float d = 0.0f;
+
+                if (ward_near(&e->room.placed, at, 60.0f, &d) >= 0) {
+                    sWardLogs++;
+                    fprintf(stderr, "ward: hand %d dist %.1f grip %.2f\n", side, d, grip);
+                }
+            }
+        }
+        {   /* (temporary: a buzz the first frame a hand is within reach of a leaf) */
+            float d = 0.0f;
+
+            if (ward_near(&e->room.placed, at, WARD_TOUCH, &d) >= 0) {
+                if (!sWardNear[side]) {
+                    sWardNear[side] = 1;
+                    vr_haptic(side, 0.3f, 0.05f);
+                }
+            } else {
+                sWardNear[side] = 0;   /* (out of range: in again buzzes again) */
             }
         }
         if (grip <= 0.4f) {
