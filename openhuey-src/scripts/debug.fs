@@ -54,6 +54,61 @@ variable jumped
     ." doing " fiona.state:her-doing @ .  leave-actor
     ." hidden " fiona-hidden state-flag? .  ." stay " stalkers-stay state-flag? .  ." activity " story.kit:acting @ .
     s" screen" actor-named dup 0< if  drop  ."  fade ?"  else  enter  ."  fade " screen:level @ .  leave-actor  then  cr ;
+\ the stick path's values just now (the console), one a line: free-doing and her doing, her fear bits
+\ and how still the stick has been, the stick's x and z as last read, the routine running her, faded in
+: stick-now ( -- )
+    fiona-id dup 0< if  drop  exit  then  enter
+    ." free-doing " free-doing . cr
+    ." her-doing " fiona.state:her-doing @ . cr
+    ." her-fear-bits " fiona.state:her-fear-bits @ . cr
+    ." her-still " fiona.state:her-still @ . cr
+    ." her-stick " fiona.state:her-stick vectors:v.x sf@ f. fiona.state:her-stick vectors:v.z sf@ f. cr
+    ." her-act " fiona.state:her-act @ . cr
+    ." settled? " fiona.model:settled? if  ." true"  else  ." false"  then  cr
+    leave-actor ;
+
+\ the game's held, locked and frozen flags as they stand - one a line, 0 off, -1 on - and last the
+\ screen's fade level (0 not fading, 0..1000), read as `fiona-flags` reads the screen
+: flags-now ( -- )
+    ." subscreen-locked " subscreen-locked state-flag? . cr
+    ." world-held " world-held state-flag? . cr
+    ." scene-locked " scene-locked state-flag? . cr
+    ." world-frozen " world-frozen state-flag? . cr
+    ." no-pause " no-pause state-flag? . cr
+    s" screen" actor-named dup 0< if  drop  ." fading ?"  else  enter  ." fading " screen:level @ .  leave-actor  then  cr ;
+\ the headset's input state and what the story is offering just now (the console), one a line: the
+\ aim, the place's pending offer, hers, who holds her, what the headset does with her, the activity
+: vr-now ( -- )
+    ." aim-on " story.kit:aim-on @ . cr
+    room-id room-name actor-named dup 0< if  drop  exit  then  enter
+    ." offer-xt " story.kit:offer-xt @ . cr
+    ." offer-msg " story.kit:offer-msg @ . cr
+    leave-actor
+    fiona-id dup 0< if  drop  exit  then  enter
+    ." offer-stood " fiona.state:offer-stood @ . cr
+    ." her-offered " fiona.state:her-offered @ . cr
+    leave-actor
+    room-id room-name actor-named enter
+    ." fiona holder " story.kit:fiona-p story.kit:holder-of @ . cr
+    ." posed-in-vr " story.kit:posed-in-vr @ . cr
+    ." skipped-in-vr " story.kit:skipped-in-vr @ . cr
+    leave-actor
+    ." acting " story.kit:acting @ . cr ;
+\ the message box's state just now (the console), one a line: what it shows, the answer, the option
+\ under the cursor, the action prompt, the page and how far it has typed - and the place's message
+: box-now ( -- )
+    s" window" actor-named dup 0< if  drop  exit  then  enter
+    ." shown " window:shown @ . cr
+    ." chosen " window:chosen @ . cr
+    ." picked " window:picked @ . cr
+    ." prompt-kind " window:prompt-kind @ . cr
+    ." page " window:page @ . cr
+    ." typed " window:typed @ . cr
+    leave-actor
+    room-id room-name actor-named dup 0< if  drop  exit  then  enter
+    ." shown-msg " story.kit:shown-msg @ . cr
+    leave-actor ;
+
 \ where a haze on the picture would come from (the bed hiding's, after it): the room's own fog and
 \ depth of field as they are now (`engine:room-look`), the engine's haze and the two switches the graphics menu
 \ has for the room's own (`gfx`), and the camera's range - a save load puts the room's back

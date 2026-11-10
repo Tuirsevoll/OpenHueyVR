@@ -159,7 +159,7 @@ variable acting   -1 acting !   \ the activity being run (-1: none)
     #people 0 do  i holder-of @ over = if  i let-go-person  then  loop  drop ;
 : stop-act ( k -- )   \ an activity stopped: its task killed, what it held let go (her posing over with it)
     dup act-slot @ ?dup if  forth:kill  then  0 over act-slot !
-    dup fiona-p holder-of @ = if  0 pose-her!  then   \ (the headset: the bed hiding, cut short)
+    dup fiona-p holder-of @ = if  0 pose-her!  0 skip-her!  then   \ (the headset: her posing, and a doing's skip, over with it)
     let-go-all ;
 : stop-all ( -- )  #activities 0 do  i stop-act  loop ;
 : start ( xt -- k | -1 )   \ an activity started (none free: not started)
@@ -177,7 +177,11 @@ variable acting   -1 acting !   \ the activity being run (-1: none)
         i act-slot @ ?dup if
             i acting !  resume 0= if  0 i act-slot !  i let-go-all  then  -1 acting !
         then
-    loop ;
+    loop
+    \ the last doing over: an animation she was left in is hers again - in the headset `hold` refused
+    \ her, so nothing told her `scripted 0`; the same call a hiding place's exit makes (out-and-free)
+    #activities 0 do  i act-slot @ if  unloop exit  then  loop
+    fiona-doing-now @ anim-doing =  fiona-p holder-of @ 0<  and if  fiona-p 0 tell-held  then ;
 : lost ( -- )  -1 acting @ cells act-lost + !  begin  yield  again ;   \ (this activity ends: run-acts stops it)
 
 \ ---- holding a person: a place moves only those its activity holds ----
