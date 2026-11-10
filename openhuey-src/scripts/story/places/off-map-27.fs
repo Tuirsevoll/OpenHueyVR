@@ -127,11 +127,13 @@ $42 constant quies-seen   $44 constant mundus-seen   \ (the sub screen's marks: 
         castle-outfit-msg yes? if  castle-outfit outfit-on  then
     else  scalpel-msg yes? if  scalpel-outfit outfit-on  then  then ;
 : the-costumes ( -- )
+    -1 skip-her!   \ (headset: the look-over not played - she stands where the player has her)
     fiona wait-move  fiona 180 turn  1 20e 10e 0e 0e shot
     change-msg yes? if
         no-track 1e background  costume-menu open-subscreen  shot-off  wrong-sound clothes-changed
         room-track 1e background  15 screen:from-black with-music or fade  wait-fade
-    else  16 frames  shot-off  then ;
+    else  16 frames  shot-off  then
+    0 skip-her! ;
 
 \ ---- the way out: faded, the world held ----
 : leaves ( -- )  fiona wait-move  15 screen:to-black fade  wait-fade  world-held state!  garden-way take-exit ;

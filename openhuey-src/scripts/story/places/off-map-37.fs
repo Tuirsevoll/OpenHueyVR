@@ -134,9 +134,10 @@ create challenges   \ (each challenge's first room, loaded ahead; its stalker ki
 
 \ ---- the changing area: the costumes' menu ----
 : changing ( -- )
-    stalkers-stay state!  fiona wait-move  fiona 180 turn  1 20e 10e 0e 0e shot  30 frames
+    stalkers-stay state!  -1 skip-her!   \ (headset: the look-over not played - she stands where the player has her)
+    fiona wait-move  fiona 180 turn  1 20e 10e 0e 0e shot  30 frames
     no-track!  costume-menu open-subscreen  shot-off  wrong-sound clothes-changed
-    room-track!  15 screen:from-black with-music or fade  wait-fade  stalkers-stay state-off ;
+    room-track!  15 screen:from-black with-music or fade  wait-fade  0 skip-her!  stalkers-stay state-off ;
 
 \ ---- the galleries: at the corner, its menu ----
 : gallery ( menu -- )   \ (looked at closely, the menu, the room's track again)

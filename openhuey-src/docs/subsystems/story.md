@@ -42,6 +42,13 @@ has one.
   `start-only`). Whoever an activity holds (`hold`: `scripted` to the character) is let go when
   it ends or is stopped (the room left, `room-left`); a move is sent only for a character the
   running activity holds, and `wait-move` waits only on a move it asked for.
+- **The headset** (`vr?`): the story plays her motions as the original has them - her own animation
+  turns her, the view with it (`story-turned`, fiona/controls.fs) - and never takes her from the
+  player (`hold` refused her), but for a doing that poses her: a hiding place says `hold-posed`
+  first. Two doings would take her from the player badly, the telephone's fright and the clothes'
+  look-over: those `skip-her!` for their length, and her moves are skipped - the event goes on, a
+  story door still opens. A hiding place's exit gives her back, the room's camera and fog with it
+  (`out-and-free`).
 - **Offers**: what she may do where she stands - `offer` (an activity, Fiona held for it),
   `offer-remark` - the first offered in a frame wins; `unhurried`, `calm-only`,
   `calm-hewie-up`, `any-time` as the original's kinds.

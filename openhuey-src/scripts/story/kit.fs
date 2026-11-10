@@ -90,6 +90,8 @@ state: place-state
   cell field word-right-now     \ the word plate just used named what the room wanted (items.fs: word-right)
   2 cells field word-vars       \ the word plate's letters, as items.fs hands them (item-var 0 and 1: four bytes each)
   cell field came-while-hidden  \ ... he came in while she hid (gone again: the prompt anew)
+  cell field posed-in-vr        \ the headset: this doing takes her all the same (her own motions played: the bed hiding)
+  cell field skipped-in-vr      \ the headset: this doing does not play her (the telephone's fright, the clothes' look-over)
   cell field hewie-came-now   \ the exit Hewie came in by (hewie-came; -1 none)
   cell field gesture-now      \ Hewie's gesture this frame, while he is the one played (hewie-gesture; -1 none)
   cell field st-blow-now      \ the stalker's blow under way (stalker-blow; -1 none)
@@ -142,12 +144,23 @@ variable acting   -1 acting !   \ the activity being run (-1: none)
 : act-slot ( k -- addr )  cells acts + ;
 : holder-of ( i -- addr )  cells holder + ;
 : tell-held ( i on -- )  swap person-id dup 0< if  2drop exit  then  send scripted ;
+\ in the headset the story plays her motions as the original has them - her own, and hers to turn,
+\ the view with her (fiona/controls.fs: story-turned). Two of its doings would take her from the
+\ player badly, the telephone's fright and the clothes' look-over: those say `-1 skip-her!` for their
+\ length, and her moves are skipped - the event goes on, she is not walked or posed
+: skip-her! ( on -- )  skipped-in-vr ! ;
+: skips-her? ( id -- flag )  fiona = vr? and skipped-in-vr @ and ;
+\ a doing that takes her in the headset all the same (a hiding place: her own motions, the view at
+\ her head) says so before it does - `hold` is refused her otherwise
+: pose-her! ( on -- )  posed-in-vr ! ;
 : let-go-person ( i -- )   \ (let go: standing, its own again)
     dup holder-of @ 0< if  drop exit  then  -1 over holder-of !  0 tell-held ;
 : let-go-all ( k -- )   \ (what activity k holds)
     #people 0 do  i holder-of @ over = if  i let-go-person  then  loop  drop ;
-: stop-act ( k -- )
-    dup act-slot @ ?dup if  forth:kill  then  0 over act-slot !  let-go-all ;
+: stop-act ( k -- )   \ an activity stopped: its task killed, what it held let go (her posing over with it)
+    dup act-slot @ ?dup if  forth:kill  then  0 over act-slot !
+    dup fiona-p holder-of @ = if  0 pose-her!  then   \ (the headset: the bed hiding, cut short)
+    let-go-all ;
 : stop-all ( -- )  #activities 0 do  i stop-act  loop ;
 : start ( xt -- k | -1 )   \ an activity started (none free: not started)
     leaving @ if  drop -1 exit  then
@@ -169,7 +182,7 @@ variable acting   -1 acting !   \ the activity being run (-1: none)
 
 \ ---- holding a person: a place moves only those its activity holds ----
 : hold ( id -- )   \ (taken from any other activity holding it: the original's forced actions)
-    vr? over fiona = and if  drop exit  then   \ (headset: she is never taken from the player)
+    vr? over fiona = and posed-in-vr @ 0= and if  drop exit  then   \ (headset: she is never taken from the player)
     person-of dup 0< if  drop exit  then  acting @ 0< abort" hold: not in an activity"
     dup holder-of @ acting @ = if  drop exit  then
     acting @ over holder-of !  0 over cells asked + !  -1 tell-held ;   \ (nothing asked of it yet)
@@ -178,6 +191,17 @@ variable acting   -1 acting !   \ the activity being run (-1: none)
     swap start dup 0< if  nip exit  then  tuck hold-for ;
 : let-go ( id -- )  person-of dup 0< if  drop exit  then  let-go-person ;
 : held? ( id -- flag )  person-of dup 0< if  drop false exit  then  holder-of @ 0< 0= ;
+: fiona-holder ( -- )   \ (console: the doing holding her - the value held? checks - and what the headset does with her)
+    room-id 0< if  ." fiona holder: no room" cr exit  then
+    room-id room-name actor-named dup 0< if  drop  ." fiona holder: no place" cr exit  then
+    enter   \ (the place's own state, as `<id> enter` at the console: its fields read from here)
+    ." fiona holder " fiona-p holder-of @ .  ." posed " posed-in-vr @ .  ." skipped " skipped-in-vr @ . cr  leave-actor ;
+\ (temporary: the console - `entry: <what>` and her place, for a doing's start and its end)
+: show-her-at ( addr len -- )
+    ." entry: " type space  fiona dup body? if  body-pos frot f. fswap f. f.  else  drop ." none"  then  cr ;
+
+: hold-posed ( id -- )   \ (the headset: taken, and her own motions played - a hiding place only)
+    -1 pose-her!  hold ;   \ (posed from here to the doing's end: nothing else sets or clears it)
 : mine? ( i -- flag )  holder-of @  acting @ =  acting @ 0< 0= and ;
 
 \ ---- waiting (in an activity) ----
@@ -191,7 +215,7 @@ create mv-at /vec allot
 : move ( id kind a b F: x y z yaw -- )
     {: id kind a b F: x y z yaw | i :}  id person-of to i
     i 0< if  exit  then
-    vr? id fiona = and  kind open-door-move <> and  kind shut-door-move <> and if   \ (headset: the event goes on; she is not walked or posed. a story door still opens)
+    id skips-her?  kind open-door-move <> and  kind shut-door-move <> and if   \ (headset: the doing skips her; the event goes on. a story door still opens)
         -1 i cells move-done + !  -1 i cells anim-ended + !  exit
     then
     i mine? 0= if  vr? id fiona = and 0= if  lost  then  then   \ (taken by another doing: this one is over)
@@ -200,22 +224,22 @@ create mv-at /vec allot
 : keep ( id -- )  person-of dup 0< if  drop exit  then  mine? 0= if  lost  then ;   \ (still ours, else this doing is over)
 variable hand-pick   \ a gripped item's pickup: Fiona does not play her bend or reach
 : wait-move ( id -- )   \ its move done
-    dup fiona = vr? and if  drop exit  then
-    dup fiona = hand-pick @ and if  drop exit  then
+    dup skips-her? if  drop exit  then
+    dup fiona = hand-pick @ and posed-in-vr @ 0= and if  drop exit  then   \ (a gripped item's pickup: her bend not played - but a posing does play hers)
     person-of dup 0< if  drop exit  then  dup person-id here? 0= if  drop exit  then
     dup cells asked + @ 0= if  drop exit  then   \ (its own doings aren't ours to wait for)
     begin  dup cells move-done + @ 0= while  yield  repeat  drop ;
 : wait-anim ( id -- )   \ its animation come round
-    dup fiona = vr? and if  drop exit  then
+    dup skips-her? if  drop exit  then
     person-of dup 0< if  drop exit  then
     begin  yield  dup cells anim-ended + @  over person-id here? 0= or  until
     -1 swap cells move-done + ! ;
 : went-round? ( id -- flag )   \ its animation come round this time (its motion's $20 key: the original's cond 0x48)
-    dup fiona = vr? and if  drop true exit  then   \ (her pose was not played: the event may go on)
+    dup skips-her? if  drop true exit  then   \ (her pose was not played: the event may go on)
     person-of dup 0< if  drop false exit  then  cells anim-ended + @ 0<> ;
 : wait-mark ( id bits -- )   \ its animation come to a mark (an event key of it)
     {: id bits | i :}  id person-of to i  i 0< if  exit  then
-    vr? id fiona = and if  exit  then
+    id skips-her? if  exit  then
     begin  yield  i cells marks + @ bits and  id here? 0= or  until ;
 : floor-at ( tri F: x z -- x y z )  {: tri F: x z :}  x  tri tri-center fdrop fswap fdrop  z ;
 : deg>yaw ( deg -- ) ( F: -- yaw )  s>f deg>rad angle-wrap ;
@@ -241,6 +265,14 @@ variable hand-pick   \ a gripped item's pickup: Fiona does not play her bend or 
 : turn-to-xz ( id F: x z -- )
     {: id F: x z :}  hand-pick @ id fiona = and if  exit  then
     id body-pos fswap fdrop {: F: mx mz :}  id  x mx f-  z mz f-  fatan2 angle-wrap  turn-yaw ;
+\ the headset: her heading turned toward a point, the way turn-to-xz finds it, the view turned with
+\ her. Her heading there is the player's look (fiona/controls.fs: vr-move), so a turn the story gives
+\ her cannot hold and a step the story plays goes where the player looks; out of the headset nothing -
+\ her own turn holds. It is the view's turn, not a move of hers, so nothing waits on it
+: face-way ( F: x z -- )
+    vr? 0= if  fdrop fdrop exit  then
+    {: F: x z :}  fiona body-pos fswap fdrop {: F: mx mz :}
+    x mx f-  z mz f-  fatan2 angle-wrap  fiona body-yaw f- angle-wrap  vr-turn! ;
 : look-at ( id who -- )   \ (her head on who; -1 nobody)
     {: id who :}  id look-move who who person-of  0e 0e 0e 0e  move ;
 : place-at ( id tri face F: x z -- )   \ put there at once (the triangle's height)
@@ -1218,16 +1250,22 @@ $84 constant calmed-sound   $40A8 constant recovery-doc-msg   $A8 constant recov
 \ motions for it (her file): 4 the walk there, 5 in, 1 lying low, 2 out, 3 hauled out; his (his
 \ file, Debilitas's): 0 the look in ----
 : hid-motion ( i -- anim )  room-motion + ;
+\ a hiding place's exit over: a doing that never held her (in the headset `hold` is refused) has
+\ nothing to let go - hers again here, free and standing (the release's own `scripted 0`: her idle,
+\ stand-free - and script-over when a script had her), the room's fog and camera back once
+: out-and-free ( -- )
+    fiona held? if  exit  then
+    fiona-p 0 tell-held  shot-off  hewie-played? 0= if  fiona follow  then ;
 : hauled-out ( -- )
     found-her @ if  2 avoid-prompt  then
     hewie-played? 0= if  fiona follow  then  fiona true shown  fiona-hidden state-off  fiona true noclip  fiona.sounds:slide-sound common-bank fiona sound-by
     fiona 3 hid-motion 10 play-blend  fiona false noclip
-    found-her @ 0= if  stalker let-go  then ;
+    found-her @ 0= if  stalker let-go  then  out-and-free ;
 : slips-out ( -- )
     stalker-in? if  hauled-out exit  then
     hewie-played? 0= if  fiona follow  then  fiona true shown  fiona-hidden state-off  fiona true noclip   \ (in the run the camera stays on Hewie)
     fiona 2 hid-motion 5 start-blend8  5 frames  fiona.sounds:slide-sound common-bank fiona sound-by  fiona wait-anim
-    fiona false noclip ;
+    fiona false noclip  out-and-free ;
 variable hide-unseen   \ (the hiding place next: she isn't drawn while in it - hides-in clears it)
 \ the old mansion's hiding places: a mandragora she carries cries out as she settles (the room's sound)
 variable hide-shriek   -1 hide-shriek !   \ (the hiding place next: that sound, -1 none - hides-in clears it)
@@ -1318,11 +1356,11 @@ variable cab-searched
 : cab-steps-out ( -- )
     cab-out  cab-him-off  fiona true noclip  2 cab-doors  fiona room-motion 2 + 0 start-blend
     16 frames  cab-open-sound room-bank fiona sound-by  56 frames  cab-shut-sound room-bank fiona sound-by
-    fiona wait-anim  fiona false noclip  cab-faces-him  cab @ cb.fact @ fact-off ;
+    fiona wait-anim  fiona false noclip  cab-faces-him  cab @ cb.fact @ fact-off  out-and-free ;
 : cab-bursts-out ( -- )
     cab-out  -1 cab-burst !  cab-stage @ 0= if  cab-him-off  then
     fiona true noclip  4 cab-doors  fiona room-motion 4 + 0 start-blend  7 frames  cab-open-sound room-bank fiona sound-by
-    fiona wait-anim  fiona false noclip  cab-faces-him  cabinet-shut ;
+    fiona wait-anim  fiona false noclip  cab-faces-him  cabinet-shut  out-and-free ;
 : cab-forced-out ( -- )  fiona hold  cab-bursts-out ;   \ (seen there: out of it, at once)
 : cab-pulled-out ( -- )
     begin  cab-stage @ 2 = 0= while  yield  repeat
@@ -1580,6 +1618,7 @@ behaviour placing
       over room-id <> if  2drop exit  then
       came-by !  dup this-room !  place-of desc !  -1 entered !
       -1 going !  -1 shown-msg !  #people 0 do  -1 i holder-of !  -1 i cells move-done + !  loop   \ (none held, none moving)
+      0 pose-her!  0 skip-her!   \ (the headset: no doing of this room's takes her or skips her yet)
       self subscribe tick  self subscribe frame-end  self subscribe moving  self subscribe danger
       self subscribe panic  self subscribe fiona-doing  self subscribe hewie-doing
       self subscribe stalker-doing  self subscribe creature-doing  self subscribe panic-onset  self subscribe hewie-came  -1 hewie-came-now !  self subscribe hewie-gesture  -1 gesture-now !  self subscribe stalker-blow  -1 st-blow-now !  self subscribe stalker-sees  0 st-sees-now !

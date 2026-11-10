@@ -98,23 +98,45 @@ $30 constant rock-phase   $34 constant rock-size   $38 constant rock-fade   $3C 
 
 \ ---- the wardrobe: in (Hewie with her, near), lying low; out - by the button, in a panic, or found ----
 : turns-to-him ( -- )  stalker-in? if  fiona stalker look-at  yield  fiona stalker body-pos fswap fdrop turn-to-xz  then ;
+\ the way out of it: the way in, from the far side - the spot `hides` walks her in from and the facing
+\ it takes her there with, kept here so both ends use the one store, so out she faces that spot. In
+\ the headset her heading is the player's look (story/kit.fs: face-way), so a look into the wardrobe
+\ would step her deeper into it
+16.729e fconstant wardrobe-x   33.985e fconstant wardrobe-z   \ (the spot just outside its doors)
+45 constant wardrobe-deg
+: out-facing ( -- )  wardrobe-x wardrobe-z face-way ;
+\ where the step in should leave her: inside, behind the doors. Their placed leaves are right_door
+\ (19.3, 38.5) and left_door (14.3, 43.5) - their mid point (16.8, 41.0), the doors along z, so the
+\ way in is +z: the mid point and `wardrobe-in-depth` past it, the x unchanged (16.8, 48.0 to start)
+16.8e fconstant wardrobe-in-x   41.0e fconstant wardrobe-doors-z
+7.0e fconstant wardrobe-in-depth
+\ (console: `16.8e 48e wardrobe-target!` - where the step in should take her, instead of the point
+\ above; `wardrobe-target-clear` for the point above again. A test tool: nothing else sets these)
+fvariable wardrobe-target-x   fvariable wardrobe-target-z
+variable wardrobe-target-set
+: wardrobe-target! ( F: x z -- )
+    wardrobe-target-z f!  wardrobe-target-x f!
+    -1 wardrobe-target-set !
+    ." wardrobe: target " wardrobe-target-x f@ f. wardrobe-target-z f@ f. cr ;
+: wardrobe-target-clear ( -- )  0 wardrobe-target-set ! ;
 : out-quietly ( -- )   \ (her own way out: the doors shut behind her; the wardrobe shut)
     1 hide-step +!  fiona follow  fiona-hidden state-off
     stalker-in? if  0 stalker-order  stalker let-go  then
-    fiona true noclip  2 doors-anim  fiona room-motion 2 + 0 start-blend
+    fiona true noclip  2 doors-anim  out-facing  fiona room-motion 2 + 0 start-blend
     16 frames  open-sound room-bank fiona sound-by  56 frames  shut-sound room-bank fiona sound-by  fiona wait-anim
-    fiona false noclip  turns-to-him  c2f-12-flag1 fact-off ;
+    fiona false noclip  turns-to-him  c2f-12-flag1 fact-off  out-and-free ;
 : out-in-panic ( -- )   \ (bursting out: the doors left open)
     fiona hold  1 hide-step +!  -1 left-in-panic !  fiona follow  fiona-hidden state-off
     stalker-in?  stage @ 0= and if  0 stalker-order  stalker let-go  then
-    fiona true noclip  4 doors-anim  fiona room-motion 4 + 0 start-blend  7 frames  open-sound room-bank fiona sound-by
-    fiona wait-anim  fiona false noclip  turns-to-him  c2f-12-flag1 fact!  wardrobe-floor barred-floor floor-on ;
+    fiona true noclip  4 doors-anim  out-facing  fiona room-motion 4 + 0 start-blend  7 frames  open-sound room-bank fiona sound-by
+    fiona wait-anim  fiona false noclip  turns-to-him  c2f-12-flag1 fact!  wardrobe-floor barred-floor floor-on  out-and-free ;
 : dragged-out ( -- )   \ (Debilitas has the doors open: out she comes)
     begin  stage @ 2 < while  yield  repeat
     1 hide-step +!  2 avoid-prompt  fiona follow  fiona-hidden state-off
-    fiona true noclip  fiona room-motion 3 + 0 play-blend  fiona false noclip
-    c2f-12-flag1 fact!  wardrobe-floor barred-floor floor-on ;
+    fiona true noclip  out-facing  fiona room-motion 3 + 0 play-blend  fiona false noclip
+    c2f-12-flag1 fact!  wardrobe-floor barred-floor floor-on  out-and-free ;
 : goes-in ( -- )   \ (the doors open - the first time shut - in, and shut)
+    s" start" show-her-at   \ (temporary: where she stands as she starts in)
     fiona true noclip  fiona -1 look-at  yield
     open? if
         fiona room-motion 5 start-blend8  5 frames  doors-part hide-part  left-door object-show  right-door object-show
@@ -123,9 +145,18 @@ $30 constant rock-phase   $34 constant rock-size   $38 constant rock-fade   $3C 
         fiona room-motion 1 + 5 start-blend8  5 frames  doors-part hide-part  left-door object-show  right-door object-show
         1 doors-anim  14 frames  open-sound room-bank fiona sound-by  60 frames  shut-sound room-bank fiona sound-by  fiona wait-anim
     then
-    fiona false noclip  wardrobe-floor barred-floor floor-off ;
+    wardrobe-floor barred-floor floor-off
+    ." wardrobe: placed " fiona body-pos fswap fdrop fswap f. f. cr   \ (temporary: where the motion in left her)
+    fiona $B4  fiona body-yaw 180e f* pi f/ f>s  -1  walk-move
+    wardrobe-target-set @ if  wardrobe-target-x f@  wardrobe-target-z f@
+    else  wardrobe-in-x wardrobe-doors-z wardrobe-in-depth f+  then
+    go-to
+    fiona false noclip
+    ." wardrobe: placed " fiona body-pos fswap fdrop fswap f. f. cr   \ (temporary: after the step inside)
+    s" end" show-her-at ;   \ (temporary: where the step in has left her)
+
 : hewie-hides ( -- )   \ (in with her; out after her)
-    hewie hold  hewie $B4 45 -1 walk-path-move 17.237e 27.889e go-to  hewie use-motions  -1 hewie-in-place !
+    hewie hold  hewie $B4 wardrobe-deg -1 walk-path-move 17.237e 27.889e go-to  hewie use-motions  -1 hewie-in-place !
     begin  hide-step @ 1 < while  yield  repeat
     hewie true noclip  first-time @ if  hewie room-motion 1 + 5 start-blend8  else  hewie room-motion 5 start-blend8  then
     hewie wait-anim  hewie false noclip  hewie-hidden state!
@@ -143,7 +174,7 @@ $30 constant rock-phase   $34 constant rock-size   $38 constant rock-fade   $3C 
         then
     then
     fiona her-motions motions-for  stalker stalker-motions motions-for
-    fiona $B4 45 -1 walk-move 16.729e 33.985e go-to  fiona use-motions
+    fiona $B4 wardrobe-deg -1 walk-move wardrobe-x wardrobe-z go-to  fiona use-motions
     hewie-along @ if  fiona hewie look-at  yield  begin  hewie-in-place @ 0= while  yield  repeat  then
     1 hide-step !  goes-in
     stalkers-stay state-off  fiona-hidden state!  0 avoid-prompt

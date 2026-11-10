@@ -782,7 +782,7 @@ void cutscene_end(void) {
         memcpy(gRoomLook.fog_far_color, C.look.fog_far_color, sizeof(gRoomLook.fog_far_color));
         gRoomLook.fog_near = C.look.fog_near;
         gRoomLook.fog_far = C.look.fog_far;
-        gRoomLook.fog_early = 0;
+        gRoomLook.fog_early = C.look.fog_early;
         gRoomLook.has_dof = C.look.has_dof;
         memcpy(gRoomLook.dof, C.look.dof, sizeof(gRoomLook.dof));
         memset(&gEngine.extra, 0, sizeof(gEngine.extra));

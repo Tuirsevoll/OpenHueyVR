@@ -140,12 +140,13 @@ $40 constant glass-strength
 
 \ the chest of clothes: her costumes (and his coats), once she has them (the front garden's $AE)
 : chest-costumes ( -- )
-    stalkers-stay state!  fiona wait-move  fiona 180 turn  20e 10e 0e 0e looking
+    stalkers-stay state!  -1 skip-her!   \ (headset: the look-over not played - she stands where the player has her)
+    fiona wait-move  fiona 180 turn  20e 10e 0e 0e looking
     chest-change-msg yes? if
         costume-menu open-subscreen  look-done  wrong-sound clothes-changed
         15 screen:from-black with-music or fade wait-fade
     else  16 frames  look-done  then
-    stalkers-stay state-off ;
+    0 skip-her!  stalkers-stay state-off ;
 
 \ ---- hiding under the bed: she crawls under (Hewie under the other one, if he's with her), lies
 \ there calming while the stalker searches - out with the action button, or found and hauled out
@@ -186,13 +187,15 @@ $40 constant glass-strength
     again ;
 : hide-under-bed ( under-xt out-xt -- )   \ (under-xt run once she's under it)
     {: under-xt out-xt :}
+    vr? if  fiona hold-posed  then   \ (headset: her own motions, played, the view at her head - out again below)
     stalkers-stay state!  0 came-while-hidden !  0 hiding-step !  0 hewie-along !  0 hewie-in-place !
     hewie-in? if   \ (Hewie, free and near her: under the other bed)
         hewie held? 0=  hewie-near-now @ and  fiona body-at hewie body-at vec-dist 50e f<= and if
             ['] hewie-hides start drop  -1 hewie-along !
         then
     then
-    crawl-under  under-xt execute  under-bed-camera -1 fixed-camera  out-xt lying-hidden ;
+    crawl-under  under-xt execute  under-bed-camera -1 fixed-camera  out-xt lying-hidden
+    0 pose-her!  out-and-free ;   \ (the headset: hers again - free, the room's fog and camera back)
 : stalker-to-bed ( -- )  stalker hold  stalker wait-move  0 door-for-him  1 door-for-him  stalker $1C 180 -0.663e -24.791e walk-to ;
 
 \ ---- Hewie about the room: what he sniffs out by the wall, what he looks up at ----

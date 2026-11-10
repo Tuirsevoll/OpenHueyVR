@@ -81,8 +81,10 @@ enum: direction-from  by-camera by-facing by-none by-steering ;
     sx sz vlen fdup f0> if  fdup sx fswap f/ way-x f!  sz fswap f/ way-z f!  else  fdrop 0e way-x f!  0e way-z f!  then
     \ a light tilt still counts as moving; only a dead stick is "let go"
     sx sz vlen 0.12e f< dup if  1 her-still +!  her-still @ 6 min her-still !  else  0 her-still !  then  drop
-    \ her body stays with the headset. the stick then points ahead of that, not behind her
-    vr-face fdup her-heading f! her-yaw f!
+    \ her body stays with the headset. the stick then points ahead of that, not behind her -
+    \ unless a story has her (the bed hiding, story/places/bedroom.fs): her animation turns her,
+    \ the view turning with her (story-turned, fiona.fs's frame after her doing)
+    her-scripted @ 0= if  vr-face fdup her-heading f! her-yaw f!  then
     vr-aim dir!
     camera-relative her-turn-mode !
     0 her-cut !
@@ -90,6 +92,10 @@ enum: direction-from  by-camera by-facing by-none by-steering ;
     steer-yaw her-cam-yaw f!
     nx her-last v.x sf!  0e her-last v.y sf!  nz her-last v.z sf!
     run-held? her-run? ! ;
+\ the headset: a story having her turns her by her own animation, and the view turns with her (by
+\ the turn she took since the frame's start: her-yaw-was) - she crawls in where the motion takes her
+: story-turned ( -- )
+    vr? her-scripted @ and if  her-yaw f@ her-yaw-was f@ f- angle-wrap vr-turn!  then ;
 : read-controls ( -- )
     vr? if  vr-move exit  then
     read-stick

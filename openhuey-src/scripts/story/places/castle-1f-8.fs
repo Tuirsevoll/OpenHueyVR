@@ -64,6 +64,7 @@ create flames  34.2e 18.3e 14.2e f, f, f,   34.2e 18.3e -14.2e f, f, f,
     hewie activate  castle-1f-8 299 0 hewie-to  hewie $12B -100 73.05e 6.36e place-at ;
 : telephone-rings ( -- )
     {: | was-in down :}  fiona hold  stalkers-stay state!
+    -1 skip-her!   \ (headset: her fright not played over the player - the call goes on without her)
     begin  room-sounds-in? 0= while  yield  repeat
     uneasy-sound 22e 10e -24e room-sound  fiona uneasy-anim 10 play-blend
     15 screen:to-black-2 with-music or fade
@@ -78,7 +79,7 @@ create flames  34.2e 18.3e 14.2e f, f, f,   34.2e 18.3e -14.2e f, f, f,
     summoner-on state!  sent-in  his-own-time  ['] comes-in start drop
     found-file-208 fact!  5 0 0 stage-music
     15 screen:from-black music-cut or fade  wait-fade
-    call-file give-file  stalkers-stay state-off ;
+    call-file give-file  stalkers-stay state-off  0 skip-her! ;
 
 \ ---- the hiding place (the kit's): in, lying low, calming; out by the button - or found, and
 \ hauled out ----

@@ -214,7 +214,7 @@ create feet-off-acts   \ (the states that clear +0x1AD5BC)
     read-controls
     her-mode @ own-mode = if  panic-controls  else  false  then  0=  hands-off? 0= and if  control-command  then
     hands-off? if  -1 her-cmd !  else  read-command  try-backstep  try-defend  try-doors  try-ladders  try-let-go  then
-    touching 1 =  feet-set  her-act @ execute  keep-apart
+    touching 1 =  feet-set  her-act @ execute  story-turned  keep-apart
     looks  tell-point
     hand-strike
     command-sounds  motion-sounds

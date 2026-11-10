@@ -6,7 +6,7 @@
  * already moving, in which case it coasts to the stop it is heading for. A locked door never
  * moves; gripping its knob rattles once. A placed leaf - the nursery wardrobe's doors - is held
  * by its animation's frame instead: the hand's angle about its hinge is the frame its track gives,
- * and the leaf stays at that frame when the hand lets go. */
+ * and a leaf let go while it was turning keeps that speed to the stop it was heading for. */
 #include "vrhands.h"
 #include "loot.h"
 #include "things.h"
@@ -35,9 +35,25 @@ static Vec3 sGrabRot[2];
  * rate of the leaf's turn track (frames, radians a frame) */
 static float sWardAng[2], sWardRate[2];
 static int sWardFrame[2], sWardLo[2], sWardHi[2];
+/* the frame the hand's drive gave that leaf last tick, before it is rounded */
+static float sWardLast[2];
+/* the track the hand took that leaf with: a script that plays the leaf after that (placed_anim: a
+ * track of its own, `paused` cleared) shows as a change here, and the leaf is taken again */
+static const uint8_t *sWardKeys[2];
+static int sWardFrames[2];
+/* a leaf a hand has let go: the speed it was turning at and the stop it runs to (ward_tick) */
+typedef struct WardMove {
+    int mode;      /* 0 still - in a hand, or let go slower than WARD_COAST - 1 coasting */
+    float at;      /* its frame, not yet rounded */
+    float speed;   /* frames a tick */
+} WardMove;
+static WardMove sWardMove[PLACED_MAX];
+static int sWardRoom = -2;   /* (the room the moves were made in: another room's indices are not these) */
 /* (temporary: the wardrobe grab's diagnostics - the hands that have buzzed for a leaf, and the log's
  * count) */
 static int sWardNear[2], sWardLogs;
+/* (temporary: the hiding spot's probe - the last line it gave, and the room it was read in) */
+static int sHideSeen, sHideInside, sHideFrame, sHideRoom = -2;
 static int sSettle[ROOM_DOORS];
 static int sCoast[ROOM_DOORS];
 static float sVel[ROOM_DOORS];
@@ -708,11 +724,19 @@ static int push_step(const RoomDoor *d, Vec3 prev, Vec3 curr, int have_prev, flo
  * A leaf is a placed object ("left_door") whose animation turns it about its place. Its track has
  * two flat ends - 0..30 flat open, 53..76 flat shut - and the frames between them are the swing.
  * A grip holds that frame, so the hand's angle about the hinge is the leaf's own turn; the frame
- * its track gives for that angle is where the leaf is put, and where it stays when let go.
+ * its track gives for that angle is where the leaf is put. Let go slowly, it stays there; let go
+ * while it is turning, it keeps that speed to the stop it was heading for (ward_release, ward_tick).
+ * The hiding plays the same leaves on tracks of their own (doors-anim: placed_anim, which clears
+ * `paused` and starts its track at frame 0), so a hand takes the leaf again on its own track when it
+ * finds another loaded (ward_own_track), and each tick while it holds it (ward_retake).
  * (right_door is the same path: its direction comes from its own track, not from a sign here.) */
 #define WARD_LEAF "left_door"   /* (the leaves driven by hand; right_door joins it once proven) */
 #define WARD_TOUCH 5.0f         /* world units from the leaf's face: a hand on it */
 #define WARD_STILL 1.0e-3f      /* radians a frame that barely turns: a flat end of the track */
+/* degrees a tick the leaf itself turns: let go faster than this, it keeps that speed to the stop
+ * it was heading for (the exit doors' COAST_SPEED, taken in the leaf's own swing so a track that
+ * turns more or less a frame than this one is judged by the same throw) */
+#define WARD_COAST 1.5f
 
 /* 1 when a placed object is a leaf a hand may turn (Placed.name: 16 bytes) */
 static int ward_leaf(const char *name) {
@@ -871,8 +895,28 @@ static void ward_unload(Placed *p, int loaded) {
     }
 }
 
-/* a hand takes the leaf: its track loaded if the room never played it, the leaf held at the frame
- * its pose already shows, so it does not jump into the hand */
+/* the leaf back on its own track: the first its record gives - the one the room poses it with, and
+ * the only one whose frames are this swing's. The hiding plays the leaves on tracks of their own
+ * (doors-anim: a short open, a short shut), whose frames are no frames of that swing - a hand that
+ * took the leaf on one would either scrub the wrong frames or be refused, a script track having no
+ * flat ends to know its stops by. 1 when `p` is already on it; else the leaf is put on it, its pose
+ * left as it stands (ward_take holds the end that pose sits at). */
+static int ward_own_track(PlacedSet *s, Placed *p) {
+    Placed own = *p;
+
+    placed_anim(s, &own, 0, 0);
+    if (own.keys == NULL || own.frames <= 0 || (own.keys == p->keys && own.frames == p->frames)) {
+        return 1;   /* (nothing to take it on but what the room left, or already on its own) */
+    }
+    p->loop = own.loop;
+    p->keys = own.keys;
+    p->frames = own.frames;
+    p->format = own.format;
+    return 0;
+}
+
+/* a hand takes the leaf: its track loaded if the room never played it (or left one of its own on
+ * it), the leaf held at the frame its pose already shows, so it does not jump into the hand */
 static int ward_take(PlacedSet *s, int side, int id, Vec3 hand) {
     Placed *p = &s->p[id];
     Vec3 tip;
@@ -882,6 +926,8 @@ static int ward_take(PlacedSet *s, int side, int id, Vec3 hand) {
     if (p->keys == NULL || p->frames <= 0) {
         placed_anim(s, p, 0, 0);   /* (its first track: the pose it is defined with) */
         loaded = 1;
+    } else if (!ward_own_track(s, p)) {
+        loaded = 1;   /* (a track of the room's on it: back to the leaf's own, to be scrubbed) */
     }
     if (p->mesh.nv <= 0 || !ward_span(p, &lo, &hi)) {
         ward_unload(p, loaded);
@@ -909,20 +955,142 @@ static int ward_take(PlacedSet *s, int side, int id, Vec3 hand) {
     sWardHi[side] = hi + 1 < p->frames - 1 ? hi + 1 : p->frames - 1;
     sWardRate[side] = rate;
     sWardAng[side] = atan2f(hand.x - p->pos.x, hand.z - p->pos.z);
+    sWardMove[id].mode = 0;   /* (taken again: what it did on its own ends here) */
+    sWardMove[id].speed = 0.0f;
+    sWardLast[side] = (float)frame;
+    sWardKeys[side] = p->keys;   /* (the track it is held on: a script's own is taken again) */
+    sWardFrames[side] = p->frames;
     return 1;
 }
 
-/* the hand turns the leaf about its hinge: the frame its track gives for the hand's angle */
-static void ward_drive(PlacedSet *s, int side, Placed *p, Vec3 hand) {
-    float ang = atan2f(hand.x - p->pos.x, hand.z - p->pos.z);
-    float frame = (float)sWardFrame[side] + wrap_rad(ang - sWardAng[side]) / sWardRate[side];
+/* a hand holds the leaf, but it is no longer the track it took it on: a script has played it since
+ * (placed_anim: a track of its own, `paused` cleared) or its frames are being played on - so the
+ * hand takes it again where it now stands, and its frames are the hand's once more. 1 when the leaf
+ * is held (taken again here, or held where it was), 0 when it cannot be held just now (a script's
+ * track with no stops of its own: nothing is driven on it, and the next tick tries again). */
+static int ward_retake(PlacedSet *s, int side, int id, Placed *p, Vec3 hand) {
+    if (p->paused && p->keys == sWardKeys[side] && p->frames == sWardFrames[side]) {
+        return 1;   /* (still held where the hand took it) */
+    }
+    return ward_take(s, side, id, hand);
+}
+
+/* the hand turns the leaf about its hinge: the frame its track gives for the hand's angle. The step
+ * a tick it takes is kept, so a hand that lets go while the leaf is turning leaves it its speed
+ * (ward_release); a hand held against a stop gives it no step, so the leaf stops there. */
+static void ward_drive(PlacedSet *s, int side, int id, Placed *p, Vec3 hand) {
+    float ang, frame;
+
+    if (!p->paused || p->keys != sWardKeys[side] || p->frames != sWardFrames[side]) {
+        return;   /* (not the track the hand holds: ward_retake takes the leaf again first) */
+    }
+    ang = atan2f(hand.x - p->pos.x, hand.z - p->pos.z);
+    frame = (float)sWardFrame[side] + wrap_rad(ang - sWardAng[side]) / sWardRate[side];
 
     if (frame < (float)sWardLo[side]) {
         frame = (float)sWardLo[side];
     } else if (frame > (float)sWardHi[side]) {
         frame = (float)sWardHi[side];
     }
+    if (id >= 0 && id < PLACED_MAX) {
+        sWardMove[id].speed = frame - sWardLast[side];   /* (frames a tick) */
+    }
+    sWardLast[side] = frame;
     placed_frame_set(s, p, (int)(frame + 0.5f));
+}
+
+/* the hand has let the leaf go: turning faster than WARD_COAST a tick, the leaf keeps that speed
+ * towards the stop it was heading for (ward_tick carries it there); slower, it stays where the
+ * hand left it. */
+static void ward_release(PlacedSet *s, int side, int id) {
+    WardMove *w = &sWardMove[id];
+    Placed *p = &s->p[id];
+    float degs;
+
+    w->mode = 0;
+    if (!p->shown || p->keys == NULL || p->frames <= 0 || !p->paused || p->format != 8) {
+        return;
+    }
+    /* the frames a tick in the degrees of the leaf's own swing (radians a frame of its track) */
+    degs = fabsf(w->speed) * fabsf(sWardRate[side]) * (180.0f / 3.14159265f);
+    if (degs < WARD_COAST) {
+        return;
+    }
+    w->at = (float)p->frame;
+    w->mode = 1;
+}
+
+/* a leaf no hand holds now: it coasts, as an exit door let go of while moving does, until it meets
+ * the stop it was heading for - the flat open end of its track one way, the flat shut end the
+ * other. Placed leaves are the room's, so a change of room drops what was running here. */
+static void ward_tick(Engine *e) {
+    PlacedSet *s = &e->room.placed;
+    int i;
+
+    if (sWardRoom != e->room.id) {
+        memset(sWardMove, 0, sizeof(sWardMove));
+        sWardRoom = e->room.id;
+        return;
+    }
+    for (i = 0; i < s->n; i++) {
+        WardMove *w = &sWardMove[i];
+        Placed *p = &s->p[i];
+        int lo = 0, hi = 0;
+
+        if (w->mode == 0) {
+            continue;
+        }
+        if (!p->shown || p->keys == NULL || !p->paused || p->format != 8 || !ward_leaf(p->name) ||
+            !ward_span(p, &lo, &hi)) {
+            w->mode = 0;   /* (a script has the leaf again, or it is put away: hands off) */
+            continue;
+        }
+        w->at += w->speed;
+        if (w->speed > 0.0f ? w->at >= (float)hi : w->at <= (float)lo) {
+            w->at = w->speed > 0.0f ? (float)hi : (float)lo;   /* (the stop it was heading for) */
+            w->mode = 0;
+        }
+        placed_frame_set(s, p, (int)(w->at + 0.5f));
+    }
+}
+
+/* (temporary: the hiding spot's own line - nothing here moves her or the leaf)
+ * Where she is, her eyes (vr_anchor_get: the anchor the hands and the grabs sit on), against the
+ * bounds the wardrobe's leaf has in the world: the same ward_bounds a hand reaches for it by, its
+ * vertices through placed_world, which is the pose its frame gives. A line to stderr the first time
+ * it is read, then only when the answer changes - she is in or out of those bounds, or the leaf
+ * stands at another frame - so a session in the nursery says whether those bounds can tell inside
+ * from outside at all. A room without the leaf, or no anchor to ask, says nothing and forgets the
+ * last line: the next look is read fresh. */
+static void hide_probe(Engine *e) {
+    PlacedSet *s = &e->room.placed;
+    Placed *p = NULL;
+    Vec3 eye, lo, hi;
+    int i, inside;
+
+    if (sHideRoom != e->room.id) {   /* (another room's leaves and frames are not these) */
+        sHideSeen = 0;
+        sHideRoom = e->room.id;
+    }
+    for (i = 0; i < s->n; i++) {
+        if (s->p[i].shown && s->p[i].mesh.nv > 0 && ward_leaf(s->p[i].name)) {
+            p = &s->p[i];
+            break;
+        }
+    }
+    if (p == NULL || !vr_anchor_get(&eye, NULL)) {
+        sHideSeen = 0;   /* (no leaf to stand in, or no eyes to stand there with: the next look says it) */
+        return;
+    }
+    ward_bounds(p, &lo, &hi);
+    inside = eye.x >= lo.x && eye.x <= hi.x && eye.y >= lo.y && eye.y <= hi.y && eye.z >= lo.z && eye.z <= hi.z;
+    if (sHideSeen && inside == sHideInside && p->frame == sHideFrame) {
+        return;   /* (the same answer as the last look: nothing new to say) */
+    }
+    sHideSeen = 1;
+    sHideInside = inside;
+    sHideFrame = p->frame;
+    fprintf(stderr, "hide: inside %d frame %d\n", inside, p->frame);
 }
 
 static int nearest_prop(PlacedSet *s, Vec3 hand, int other, float *best) {
@@ -968,9 +1136,10 @@ static void release_hand(Room *r, int side) {
             sCoast[id] = 0;
             sSettle[id] = 18;   /* about half a second, then it finishes the swing */
         }
+    } else if (sHold[side] == HOLD_WARD && id >= 0 && id < r->placed.n) {
+        ward_release(&r->placed, side, id);   /* (a leaf still turning keeps its speed) */
     }
     sHold[side] = HOLD_NONE;
-    (void)r;
 }
 
 static void drive_door(Engine *e, int id, int axis, Vec3 hand) {
@@ -2304,7 +2473,11 @@ void vrhands_tick(Engine *e) {
             if (p == NULL || !p->shown || !ward_leaf(p->name)) {
                 sHold[side] = HOLD_NONE;   /* (gone: a room away from it, or put away) */
             } else {
-                ward_drive(&e->room.placed, side, p, at);
+                /* (the hiding may have played it since, or left its track to run: the leaf is
+                 * taken again where it now stands, and then turned by the hand as before) */
+                if (ward_retake(&e->room.placed, side, sHoldId[side], p, at)) {
+                    ward_drive(&e->room.placed, side, sHoldId[side], p, at);
+                }
             }
         }
         if (sHold[side] == HOLD_NONE && grip <= 0.4f) {
@@ -2397,6 +2570,8 @@ void vrhands_tick(Engine *e) {
             ease_door(e, i, goal);
         }
     }
+    ward_tick(e);
+    hide_probe(e);   /* (temporary: where she is against the leaf's bounds, and the leaf's frame) */
     poses_save(e);
     leaf_scan(e);
     loot_maintain();

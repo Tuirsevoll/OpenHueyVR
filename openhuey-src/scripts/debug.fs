@@ -41,6 +41,35 @@ variable jumped
     ." room " room-id room-name type  ."  at " fiona-id body-pos  frot f. fswap f. f.
     ." tri " fiona-id body-tri .  ." areas:"
     area-count 0 ?do  fiona-id body-pos i area-in? if  space i .  then  loop  cr ;
+\ her own flags, read as `fiona-id enter` does at the console: what leaves her to the player
+\ (hands-off?: scripted, reading, scene - fiona/controls.fs), the story's noclip, what she does
+\ (her-doing: 0 free - with her-mode and her-sub, fiona/state.fs: led-mode 2, anim-doing 17),
+\ the hiding's flags: hidden, stalkers-stay - `acting`, the place's activity running her right
+\ now (-1: none, story/kit.fs) - and the screen's fade level (screen.fs: `level`, 0..1000)
+: fiona-flags ( -- )
+    fiona-id dup 0< if  drop  ." fiona flags: none" cr exit  then
+    enter
+    ." scripted " fiona.state:her-scripted @ .  ." reading " fiona.state:her-reading @ .  ." scene " fiona.state:her-in-scene @ .
+    ." noclip " fiona.state:her-noclip @ .  ." mode " fiona.state:her-mode @ .  ." sub " fiona.state:her-sub @ .
+    ." doing " fiona.state:her-doing @ .  leave-actor
+    ." hidden " fiona-hidden state-flag? .  ." stay " stalkers-stay state-flag? .  ." activity " story.kit:acting @ .
+    s" screen" actor-named dup 0< if  drop  ."  fade ?"  else  enter  ."  fade " screen:level @ .  leave-actor  then  cr ;
+\ where a haze on the picture would come from (the bed hiding's, after it): the room's own fog and
+\ depth of field as they are now (`engine:room-look`), the engine's haze and the two switches the graphics menu
+\ has for the room's own (`gfx`), and the camera's range - a save load puts the room's back
+: haze-flags ( -- )
+    ." room fog " engine:room-look look.fog l@ .  ." near " engine:room-look look.fog-near sf@ f.  ." far " engine:room-look look.fog-far sf@ f.
+    ." early " engine:room-look look.fog-early l@ .  ." dof " engine:room-look look.dof l@ .  cr
+    ." dof range " engine:room-look look.dof-range sf@ f.  engine:room-look look.dof-range 4 + sf@ f.
+    engine:room-look look.dof-range 8 + sf@ f.  engine:room-look look.dof-range 12 + sf@ f.  cr
+    ." fog near rgba " engine:room-look look.fog-near-color sf@ f.  engine:room-look look.fog-near-color 4 + sf@ f.
+    engine:room-look look.fog-near-color 8 + sf@ f.  engine:room-look look.fog-near-color 12 + sf@ f.  cr
+    ." fog far a " engine:room-look look.fog-far-color 12 + sf@ f.  cr
+    ." gfx haze " engine:gfx gfx.fog l@ .  ." density " engine:gfx gfx.fog-density sf@ f.
+    ." start " engine:gfx gfx.fog-start sf@ f.  ." room's own fog " engine:gfx gfx.room-fog l@ .
+    ." room's dof " engine:gfx gfx.room-dof l@ .  cr
+    ." clip " engine:camera cam.near sf@ f.  ." .. " engine:camera cam.far sf@ f.  cr ;
+
 \ the stalker: Debilitas into Fiona's room on a triangle (her own: `fiona-id body-tri debilitas-tri`), or out
 : debilitas-tri ( tri -- )  room-id swap debilitas-id send stalker-in ;
 : debilitas-out ( -- )  debilitas-id send stalker-out ;
