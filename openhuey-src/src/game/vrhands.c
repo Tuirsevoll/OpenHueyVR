@@ -86,6 +86,12 @@ static int sLenBones, sLenVerts;
 static int sPalmBone[2];
 static float sWristT[2];
 static Vec3 sGripCenter[2];
+/* the elbow's bend direction last frame (a fallback when the pole lies along the arm) and the
+ * wrist's twist last frame (so the half-twist does not flip when it passes +-180 degrees) */
+static float sBendWas[2][3];
+static int sBendHave[2];
+static float sTwistWas[2];
+static int sTwistHave[2];
 static const Model *sExtentModel;
 static int sExtentVerts;
 static float sExtent[2];
@@ -96,6 +102,8 @@ static Vec3 sCenter[2];
 /* the arm's length against Fiona's model's own, so the palm reaches a real arm's distance:
  * a value to be replaced by a calibrated one later */
 #define ARM_LENGTH_SCALE 1.5f
+/* the elbows' bend in her body's frame: down and out, a little behind her (her forward is +z) */
+#define ELBOW_BACK -0.3f
 /* Both hands, every pose. 1 leaves the fitted size; 1.5 is half again as large. */
 #define HAND_SCALE 1.5f
 
@@ -331,9 +339,13 @@ static void v_cross(float *o, const float *a, const float *b) {
     o[2] = a[0] * b[1] - a[1] * b[0];
 }
 
-/* the middle joint, bent to the side of `pole`. 1 when the target is out of reach. */
-static int place_middle(const float *root, float *mid, const float *end, const float *pole, float l1, float l2) {
-    float d[3], side[3], dist, a, h, ll;
+/* the middle joint, bent toward `pole` in the plane square to the arm. `outward` is the
+ * fallback bend (her left / right in room space) for a pole lying along the arm.
+ * 1 when the target is out of reach. */
+static int place_middle(const float *root, float *mid, const float *end, const float *pole,
+                        float l1, float l2, int side, const float *outward) {
+    float d[3], sidev[3], dist, a, h, ll, dot;
+    int have;
 
     v_sub(d, end, root);
     dist = v_len(d);
@@ -344,15 +356,61 @@ static int place_middle(const float *root, float *mid, const float *end, const f
     if (dist > l1 + l2) {
         dist = l1 + l2;
     }
-    v_cross(side, pole, d);
-    v_norm(side, side);
+    /* the pole is where the elbow goes: its part square to the shoulder-to-hand line */
+    dot = pole[0] * d[0] + pole[1] * d[1] + pole[2] * d[2];
+    sidev[0] = pole[0] - dot * d[0];
+    sidev[1] = pole[1] - dot * d[1];
+    sidev[2] = pole[2] - dot * d[2];
+    ll = v_len(sidev);
+    if (ll > 1.0e-4f) {
+        v_norm(sidev, sidev);
+    } else {
+        /* the pole is along the arm: keep last frame's bend, else go out to that side */
+        have = 0;
+        if (sBendHave[side]) {
+            dot = sBendWas[side][0] * d[0] + sBendWas[side][1] * d[1] + sBendWas[side][2] * d[2];
+            sidev[0] = sBendWas[side][0] - dot * d[0];
+            sidev[1] = sBendWas[side][1] - dot * d[1];
+            sidev[2] = sBendWas[side][2] - dot * d[2];
+            ll = v_len(sidev);
+            if (ll > 1.0e-4f) {
+                v_norm(sidev, sidev);
+                have = 1;
+            }
+        }
+        if (!have) {
+            dot = outward[0] * d[0] + outward[1] * d[1] + outward[2] * d[2];
+            sidev[0] = outward[0] - dot * d[0];
+            sidev[1] = outward[1] - dot * d[1];
+            sidev[2] = outward[2] - dot * d[2];
+            ll = v_len(sidev);
+            if (ll > 1.0e-4f) {
+                v_norm(sidev, sidev);
+                have = 1;
+            }
+        }
+        if (!have) {   /* and the arm along that way too: any square direction will do */
+            sidev[0] = fabsf(d[0]) < 0.9f ? 1.0f : 0.0f;
+            sidev[1] = fabsf(d[0]) < 0.9f ? 0.0f : 1.0f;
+            sidev[2] = 0.0f;
+            dot = sidev[0] * d[0] + sidev[1] * d[1] + sidev[2] * d[2];
+            sidev[0] -= dot * d[0];
+            sidev[1] -= dot * d[1];
+            sidev[2] -= dot * d[2];
+            v_norm(sidev, sidev);
+        }
+    }
+    sBendWas[side][0] = sidev[0];
+    sBendWas[side][1] = sidev[1];
+    sBendWas[side][2] = sidev[2];
+    sBendHave[side] = 1;
     ll = l1 * l1;
     a = (ll - l2 * l2 + dist * dist) / (2.0f * dist);
     h = ll - a * a;
     h = h > 0.0f ? sqrtf(h) : 0.0f;
-    mid[0] = root[0] + a * d[0] - h * side[0];
-    mid[1] = root[1] + a * d[1] - h * side[1];
-    mid[2] = root[2] + a * d[2] - h * side[2];
+    mid[0] = root[0] + a * d[0] + h * sidev[0];
+    mid[1] = root[1] + a * d[1] + h * sidev[1];
+    mid[2] = root[2] + a * d[2] + h * sidev[2];
     return dist >= l1 + l2 - 1.0e-3f;
 }
 
@@ -670,10 +728,13 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
     hs = hand_scale(a, side, wr);   /* the hand's scale, still measured on the wrist */
     grip = grip_matrix(at, fwd, up, hs, sGripCenter[side], side);
     if (l1 > 0.05f && l2 > 0.05f) {
-        /* the bend is the player's, not the animated pose's: down and out on that side,
-         * taken into room space as the controllers are, so it turns with her facing */
-        float outward = side == 0 ? -1.0f : 1.0f;
-        Vec3 bend = play_to_world(vec3(0.0f, 0.0f, 0.0f), yaw, vec3(outward, -1.0f, 0.0f));
+        /* the bend is in her body's frame (yaw 0 along +z, her left +x), not the headset's:
+         * down and out on that side, a little behind her, so the elbows point out and back */
+        float out_sign = side == 0 ? 1.0f : -1.0f;
+        float bend_s = sinf(a->yaw), bend_c = cosf(a->yaw);
+        Vec3 bend = vec3(bend_c * out_sign + bend_s * ELBOW_BACK, -1.0f,
+                         -bend_s * out_sign + bend_c * ELBOW_BACK);
+        float outward[3] = {bend_c * out_sign, 0.0f, -bend_s * out_sign};   /* her left / right */
         float reach[3] = {grip.m[12], grip.m[13], grip.m[14]};
         float ctr[3] = {at.x, at.y, at.z};
         float d[3];
@@ -698,7 +759,7 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
             grip.m[14] = reach[2];
             clamped = 1;
         }
-        place_middle(root, mid, reach, pole, l1, l2);
+        place_middle(root, mid, reach, pole, l1, l2, side, outward);
         if (side == 0) {
             aim(&room[0], root, mid, pole);
             aim(&room[1], mid, reach, pole);
@@ -723,6 +784,56 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
                 aim(&room[2], wp, reach, pole);
             } else {
                 aim_rev(&room[2], wp, reach, pole);
+            }
+            /* the controller's twist about the forearm, half of it given to the wrist: the
+             * palm keeps the controller's rotation, so the skin between them twists half as much */
+            {
+                float px = grip.m[4], py = grip.m[5], pz = grip.m[6];
+                float plen = sqrtf(px * px + py * py + pz * pz);
+                float xx = room[2].m[0], xy = room[2].m[1], xz = room[2].m[2];
+                float yx = room[2].m[4], yy = room[2].m[5], yz = room[2].m[6];
+                float zx = room[2].m[8], zy = room[2].m[9], zz = room[2].m[10];
+
+                if (plen > 1.0e-5f) {
+                    float dot, nx, ny, nz, nl;
+
+                    px /= plen; py /= plen; pz /= plen;
+                    dot = px * xx + py * xy + pz * xz;   /* the palm's Y square to the forearm */
+                    nx = px - dot * xx;
+                    ny = py - dot * xy;
+                    nz = pz - dot * xz;
+                    nl = sqrtf(nx * nx + ny * ny + nz * nz);
+                    if (nl > 1.0e-4f) {
+                        float sin_a = ((yy * nz - yz * ny) * xx + (yz * nx - yx * nz) * xy +
+                                       (yx * ny - yy * nx) * xz) / nl;
+                        float cos_a = (yx * nx + yy * ny + yz * nz) / nl;
+                        float twist = atan2f(sin_a, cos_a);
+                        float half, ca, sa;
+
+                        /* the nearest turn to last frame's: the angle does not flip at +-180 */
+                        if (sTwistHave[side]) {
+                            while (twist - sTwistWas[side] > 3.14159265f) {
+                                twist -= 6.28318531f;
+                            }
+                            while (twist - sTwistWas[side] < -3.14159265f) {
+                                twist += 6.28318531f;
+                            }
+                        } else {
+                            sTwistHave[side] = 1;
+                        }
+                        sTwistWas[side] = twist;
+                        half = twist * 0.5f;
+                        ca = cosf(half);
+                        sa = sinf(half);
+
+                        room[2].m[4] = ca * yx + sa * zx;   /* the wrist's Y and Z half-way round */
+                        room[2].m[5] = ca * yy + sa * zy;
+                        room[2].m[6] = ca * yz + sa * zz;
+                        room[2].m[8] = -sa * yx + ca * zx;
+                        room[2].m[9] = -sa * yy + ca * zy;
+                        room[2].m[10] = -sa * yz + ca * zz;
+                    }
+                }
             }
             /* the wrist keeps the hand's scale (its vertices are part of the hand's skin) */
             room[2].m[0] *= hs; room[2].m[1] *= hs; room[2].m[2] *= hs;
