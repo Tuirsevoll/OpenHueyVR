@@ -81,6 +81,11 @@ static float sArmLen[2][2];
 static int sArmLenHave[2];
 static const Model *sLenModel;
 static int sLenBones, sLenVerts;
+/* the palm, the last bone of each arm's chain, which the controller drives; where the wrist
+ * sits on elbow->palm as the bind pose has it; and the hand's centre in the palm's space */
+static int sPalmBone[2];
+static float sWristT[2];
+static Vec3 sGripCenter[2];
 static const Model *sExtentModel;
 static int sExtentVerts;
 static float sExtent[2];
@@ -88,6 +93,9 @@ static Vec3 sCenter[2];
 
 #define VR_UNITS_PER_METER 12.5f
 #define HAND_METRES 0.19f   /* wrist to fingertip before HAND_SCALE */
+/* the arm's length against Fiona's model's own, so the palm reaches a real arm's distance:
+ * a value to be replaced by a calibrated one later */
+#define ARM_LENGTH_SCALE 1.5f
 /* Both hands, every pose. 1 leaves the fitted size; 1.5 is half again as large. */
 #define HAND_SCALE 1.5f
 
@@ -111,10 +119,37 @@ static int leg_bone(const Actor *a, int b) {
     return 0;
 }
 
+/* the palm: of the wrist bone's children, the one the hand's vertices sit on most (the last
+ * bone of the arm's chain); the wrist itself when the model has none */
+static int palm_bone(const Model *m, int wrist) {
+    int i, k, v, best = wrist, bestn = 0;
+
+    for (i = 0; i < m->nbones; i++) {
+        int n = 0;
+
+        if (m->bones[i].parent != wrist) {
+            continue;
+        }
+        for (v = 0; v < m->nv; v++) {
+            for (k = 0; k < 4; k++) {
+                if (m->v[v].bones[k] == i && m->v[v].weights[k] >= 0.15f) {
+                    n++;
+                    break;
+                }
+            }
+        }
+        if (n > bestn) {
+            bestn = n;
+            best = i;
+        }
+    }
+    return best;
+}
+
 static void find_arms(Actor *a, const Mat4 *world) {
     const Model *m = &a->model;
     float best[2] = {-1.0f, -1.0f};
-    int i;
+    int i, k;
 
     if (sArmModel == m && sArmBones == m->nbones && sArmVerts == m->nv && sArmFound[0] && sArmFound[1]) {
         return;
@@ -123,6 +158,7 @@ static void find_arms(Actor *a, const Mat4 *world) {
     sArmBones = m->nbones;
     sArmVerts = m->nv;
     sArmFound[0] = sArmFound[1] = 0;
+    sPalmBone[0] = sPalmBone[1] = -1;
     for (i = 0; i < m->nbones; i++) {
         int p = m->bones[i].parent;
         int g = p >= 0 ? m->bones[p].parent : -1;
@@ -147,8 +183,13 @@ static void find_arms(Actor *a, const Mat4 *world) {
         best[side] = fabsf(world[i].m[12]);
         sShoulder[side] = g;
         sElbow[side] = p;
-        sHandBone[side] = i;
+        sHandBone[side] = i;   /* the wrist; the palm is the child the hand's skin sits on */
         sArmFound[side] = 1;
+    }
+    for (k = 0; k < 2; k++) {
+        if (sArmFound[k]) {
+            sPalmBone[k] = palm_bone(m, sHandBone[k]);
+        }
     }
 }
 
@@ -174,6 +215,8 @@ static void dump_bone(FILE *f, const Model *m, const Mat4 *world, const Mat4 *pl
         role = "elbow";
     } else if (bone == sHandBone[side]) {
         role = "hand";
+    } else if (bone == sPalmBone[side]) {
+        role = "palm";   /* (the arm solve's target now) */
     }
     fprintf(f, "side %d bone %d name no name parent %d pos %.4f %.4f %.4f verts %d role %s\n",
             side, bone, m->bones[bone].parent,
@@ -333,6 +376,28 @@ static void aim(Mat4 *m, const float *from, const float *to, const float *pole) 
     m->m[14] = from[2];
 }
 
+/* as aim, with the bone's X the other way. The right arm's bones are mirrored in place: their
+ * bind X - the length axis - runs with the model's +x, back toward the shoulder, not out along
+ * the limb as the left's does. Aiming it outward mirrored the right arm's skin (a stretch). */
+static void aim_rev(Mat4 *m, const float *from, const float *to, const float *pole) {
+    float x[3], y[3], z[3];
+
+    *m = mat4_identity();
+    v_sub(x, from, to);
+    v_norm(x, x);
+    v_norm(z, pole);
+    v_cross(y, z, x);
+    v_norm(y, y);
+    v_cross(z, x, y);
+    v_norm(z, z);
+    m->m[0] = x[0]; m->m[1] = x[1]; m->m[2] = x[2];
+    m->m[4] = y[0]; m->m[5] = y[1]; m->m[6] = y[2];
+    m->m[8] = z[0]; m->m[9] = z[1]; m->m[10] = z[2];
+    m->m[12] = from[0];
+    m->m[13] = from[1];
+    m->m[14] = from[2];
+}
+
 static Mat4 rigid_inverse(const Mat4 *m) {
     Mat4 r = mat4_identity();
 
@@ -344,6 +409,8 @@ static Mat4 rigid_inverse(const Mat4 *m) {
     r.m[14] = -(r.m[2] * m->m[12] + r.m[6] * m->m[13] + r.m[10] * m->m[14]);
     return r;
 }
+
+static void hand_measure(const Model *m, int bone, float *extent, Vec3 *center);
 
 /* the arm's two lengths from the bind pose: the inverse of each bone's inv_bind (rigid) gives
  * its bind world position, and the distances go to room units with the actor's own scale, as
@@ -360,23 +427,39 @@ static void arm_lengths(const Actor *a) {
         sArmLenHave[0] = sArmLenHave[1] = 0;
     }
     for (side = 0; side < 2; side++) {
-        Mat4 sh, el, ha;
-        float d[3];
+        int wrist = sHandBone[side], palm = sPalmBone[side] >= 0 ? sPalmBone[side] : wrist;
+        Mat4 sh, el, pa, wr;
+        float d[3], dpalm, wext;
+        Vec3 wc;
 
         if (!sArmFound[side] || sArmLenHave[side]) {
             continue;
         }
         sh = rigid_inverse(&m->bones[sShoulder[side]].inv_bind);
         el = rigid_inverse(&m->bones[sElbow[side]].inv_bind);
-        ha = rigid_inverse(&m->bones[sHandBone[side]].inv_bind);
+        pa = rigid_inverse(&m->bones[palm].inv_bind);
+        wr = rigid_inverse(&m->bones[wrist].inv_bind);
         d[0] = sh.m[12] - el.m[12];
         d[1] = sh.m[13] - el.m[13];
         d[2] = sh.m[14] - el.m[14];
-        sArmLen[side][0] = v_len(d) * scale;
-        d[0] = el.m[12] - ha.m[12];
-        d[1] = el.m[13] - ha.m[13];
-        d[2] = el.m[14] - ha.m[14];
-        sArmLen[side][1] = v_len(d) * scale;
+        sArmLen[side][0] = v_len(d) * scale * ARM_LENGTH_SCALE;
+        d[0] = el.m[12] - pa.m[12];
+        d[1] = el.m[13] - pa.m[13];
+        d[2] = el.m[14] - pa.m[14];
+        dpalm = v_len(d);
+        sArmLen[side][1] = dpalm * scale * ARM_LENGTH_SCALE;
+        d[0] = el.m[12] - wr.m[12];
+        d[1] = el.m[13] - wr.m[13];
+        d[2] = el.m[14] - wr.m[14];
+        sWristT[side] = palm != wrist && dpalm > 0.05f ? v_len(d) / dpalm : 0.0f;
+        /* hand_scale measures the hand's centre in the wrist's space; that point goes into the
+         * palm's space, so the grip still centres the hand on the controller through the palm */
+        hand_measure(m, wrist, &wext, &wc);
+        {
+            Vec3 pm = mat4_point(&wr, wc);
+
+            sGripCenter[side] = mat4_point(&m->bones[palm].inv_bind, pm);
+        }
         sArmLenHave[side] = 1;
     }
 }
@@ -565,12 +648,13 @@ static void log_arm(int side, float l1, float l2, Vec3 at, const float *root, in
 
 static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace, int side, Vec3 at, Vec3 fwd, Vec3 up) {
     const Model *m = &a->model;
-    int sh = sShoulder[side], el = sElbow[side], ha = sHandBone[side];
+    int sh = sShoulder[side], el = sElbow[side];
+    int wr = sHandBone[side], pa = sPalmBone[side] >= 0 ? sPalmBone[side] : sHandBone[side];
     Mat4 room[3], grip, old;
-    float root[3], mid[3], pole[3], l1, l2, yaw;
+    float root[3], mid[3], pole[3], l1, l2, yaw, hs;
     int i, clamped = 0;
 
-    if (!sArmFound[side] || sh < 0 || el < 0 || ha < 0 || ha >= m->nbones) {
+    if (!sArmFound[side] || sh < 0 || el < 0 || wr < 0 || wr >= m->nbones || pa < 0 || pa >= m->nbones) {
         return;
     }
     if (!vr_anchor_get(NULL, &yaw)) {
@@ -578,16 +662,13 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
     }
     room[0] = mat4_mul(*place, world[sh]);
     room[1] = mat4_mul(*place, world[el]);
-    room[2] = mat4_mul(*place, world[ha]);
+    room[2] = mat4_mul(*place, world[wr]);
     root[0] = room[0].m[12]; root[1] = room[0].m[13]; root[2] = room[0].m[14];
     mid[0] = room[1].m[12]; mid[1] = room[1].m[13]; mid[2] = room[1].m[14];
     l1 = sArmLen[side][0];   /* the bind pose's, not this animation's */
     l2 = sArmLen[side][1];
-    {
-        float scale = hand_scale(a, side, ha);
-
-        grip = grip_matrix(at, fwd, up, scale, sCenter[side], side);
-    }
+    hs = hand_scale(a, side, wr);   /* the hand's scale, still measured on the wrist */
+    grip = grip_matrix(at, fwd, up, hs, sGripCenter[side], side);
     if (l1 > 0.05f && l2 > 0.05f) {
         /* the bend is the player's, not the animated pose's: down and out on that side,
          * taken into room space as the controllers are, so it turns with her facing */
@@ -601,9 +682,9 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
         pole[0] = bend.x;
         pole[1] = bend.y;
         pole[2] = bend.z;
-        /* out of reach: the wrist target goes onto the arm's length along the way to the
-         * controller, just inside it. The hand bone sits there, not out at the controller,
-         * so the forearm ends exactly where the hand starts and nothing is stretched. */
+        /* out of reach: the palm target goes onto the arm's length along the way to the
+         * controller, just inside it. The palm bone sits there, not out at the controller,
+         * so the forearm ends exactly where the palm starts and nothing is stretched. */
         v_sub(d, ctr, root);
         dist = v_len(d);
         if (dist > l1 + l2 && dist > 1.0e-4f) {
@@ -618,18 +699,47 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
             clamped = 1;
         }
         place_middle(root, mid, reach, pole, l1, l2);
-        aim(&room[0], root, mid, pole);
-        aim(&room[1], mid, reach, pole);
+        if (side == 0) {
+            aim(&room[0], root, mid, pole);
+            aim(&room[1], mid, reach, pole);
+        } else {
+            /* the right arm's bind X runs back toward the shoulder: aiming it outward mirrored
+             * its skin (the stretch); the reversed aim keeps the bone's length axis as it was */
+            aim_rev(&room[0], root, mid, pole);
+            aim_rev(&room[1], mid, reach, pole);
+        }
+        /* the arm is longer than Fiona's model's: lengthen the upper arm and forearm along the
+         * bone (X) only; Y and Z, the thickness, stay as they are, so the joints still meet */
+        room[0].m[0] *= ARM_LENGTH_SCALE; room[0].m[1] *= ARM_LENGTH_SCALE; room[0].m[2] *= ARM_LENGTH_SCALE;
+        room[1].m[0] *= ARM_LENGTH_SCALE; room[1].m[1] *= ARM_LENGTH_SCALE; room[1].m[2] *= ARM_LENGTH_SCALE;
+        if (pa != wr) {
+            /* the wrist on the forearm's line from the elbow to the palm, the bind pose's share */
+            float wp[3];
+
+            wp[0] = mid[0] + (reach[0] - mid[0]) * sWristT[side];
+            wp[1] = mid[1] + (reach[1] - mid[1]) * sWristT[side];
+            wp[2] = mid[2] + (reach[2] - mid[2]) * sWristT[side];
+            if (side == 0) {
+                aim(&room[2], wp, reach, pole);
+            } else {
+                aim_rev(&room[2], wp, reach, pole);
+            }
+            /* the wrist keeps the hand's scale (its vertices are part of the hand's skin) */
+            room[2].m[0] *= hs; room[2].m[1] *= hs; room[2].m[2] *= hs;
+            room[2].m[4] *= hs; room[2].m[5] *= hs; room[2].m[6] *= hs;
+            room[2].m[8] *= hs; room[2].m[9] *= hs; room[2].m[10] *= hs;
+            world[wr] = mat4_mul(*unplace, room[2]);
+        }
         world[sh] = mat4_mul(*unplace, room[0]);
         world[el] = mat4_mul(*unplace, room[1]);
     }
-    old = world[ha];
-    world[ha] = mat4_mul(*unplace, grip);
+    old = world[pa];
+    world[pa] = mat4_mul(*unplace, grip);
     {
-        Mat4 delta = mat4_mul(world[ha], rigid_inverse(&old));
+        Mat4 delta = mat4_mul(world[pa], rigid_inverse(&old));
 
         for (i = 0; i < m->nbones; i++) {
-            if (descends(m, i, ha)) {
+            if (descends(m, i, pa)) {
                 world[i] = mat4_mul(delta, world[i]);
             }
         }
