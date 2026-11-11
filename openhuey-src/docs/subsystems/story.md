@@ -48,7 +48,10 @@ has one.
   first. Two doings would take her from the player badly, the telephone's fright and the clothes'
   look-over: those `skip-her!` for their length, and her moves are skipped - the event goes on, a
   story door still opens. A hiding place's exit gives her back, the room's camera and fog with it
-  (`out-and-free`).
+  (`out-and-free`). L1 starts no crouch there either: `may-crouch?` (story/common.fs) and
+  `bush-frame` (story/places/forest.fs) ask the headset as well, so no crouch animation plays,
+  `fiona-half-hidden` is not set, and L1 does not put her in a Chaos Forest bush (her examine
+  still offers it).
 - **Offers**: what she may do where she stands - `offer` (an activity, Fiona held for it),
   `offer-remark` - the first offered in a frame wins; `unhurried`, `calm-only`,
   `calm-hewie-up`, `any-time` as the original's kinds.
@@ -162,10 +165,11 @@ clear-up never kills an actor that took its id). A point on the screen: `point-s
   torture chamber, the golem race).
 - the Chaos Forest (every room a place; `story/places/forest.fs` what they share - the maze dealt
   anew, as she comes in to a room never dealt and as her panic sets in; the bushes of -4 .. -7 to
-  crouch in, the stalker's search of them by the odds, their leaves; the wisp startled by a noise or
-  someone near; the rabbit): its edge (the hopper, the Forest Map), the clearing (Hewie found, seven
-  crates, the sundial), the lake, the crossing, the way to its heart, Hewie shot (his hurt face, the
-  bandage scene), the heart (Riccardo; dressed anew, on to the water tower). Kit: `start-holding`
+  crouch in (L1, or her examine - not L1 in the headset), the stalker's search of them by the odds,
+  their leaves; the wisp startled by a noise or someone near; the rabbit): its edge (the hopper,
+  the Forest Map), the clearing (Hewie found, seven crates, the sundial), the lake, the crossing,
+  the way to its heart, Hewie shot (his hurt face, the bandage scene), the heart (Riccardo;
+  dressed anew, on to the water tower). Kit: `start-holding`
   (an activity that holds someone from the frame it starts - nothing else takes them first),
   `loud-here?` (a loud noise made here last frame), `face-off`.
 - the House of Truth (every room a place; `story/places/house-of-truth.fs` what they share - Lorenzo's
@@ -219,8 +223,9 @@ clear-up never kills an actor that took its id). A point on the screen: `point-s
 after their phases and for item uses - crouching ($81 / $82 / $87: found, and startled, when the
 stalker in her room has her in sight or reach and is within 70 of her - the story's cond 0x23 from
 her to a stalker asks his +0x1544, `noticed-near?` on `stalker-sees`; only near is not found, and
-L1 near him only turns her head to him once he has her), the camera on the stalker while she is
-half hidden, the mandragora's spell, the other game's rewards, searching the
+L1 near him only turns her head to him once he has her; in the headset L1 starts no crouch at all -
+none of its animations, and not `fiona-half-hidden`), the camera on the stalker while she is half
+hidden, the mandragora's spell, the other game's rewards, searching the
 stalker ($80, offered by the shared after-phase 2: down on his front - $1806 or its twitch
 $1805, Pursuer_InStance2Anim, the converted rooms' cond 0x4B - she close, 2 more than their
 sizes, and facing him within 50 degrees; she bends to him and finds the next of his kind's

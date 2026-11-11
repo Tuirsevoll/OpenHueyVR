@@ -47,9 +47,9 @@ $23 constant drink-sound   $2D constant crouch-recovery
     fiona-half-hidden state-off  fiona follow  fiona crouch-up-anim play ;
 : ducks ( -- )   \ ($87: too low here - down and up)
     fiona hold  fiona wait-move  fiona crouch-down-anim start-anim  5 frames  fiona crouch-up-anim 10 play-blend ;
-: may-crouch? ( -- flag )   \ (L1 pressed, she free, the screen still, the world going on)
+: may-crouch? ( -- flag )   \ (L1 pressed, she free, the screen still, the world going on - not in the headset)
     hewie-played? 0=  no-flee state? 0= and  request-now @ spirit-request <> and
-    l1 button-pressed? and  fiona-free? and
+    l1 button-pressed? and  vr? 0= and  fiona-free? and
     fading @ 0= and  world-held state? 0= and  world-frozen state? 0= and ;
 : crouching ( -- )
     may-crouch? 0= if  exit  then

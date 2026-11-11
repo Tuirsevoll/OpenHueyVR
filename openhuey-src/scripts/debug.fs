@@ -37,6 +37,9 @@ variable jumped
 : run-frames ( n -- )  0 ?do  game-tick  loop ;   \ (the game run on n frames: the tests, the console)
 : press ( button -- )   \ (pressed for a frame: its key down, then up)
     button-keys drop  dup true key-hold  game-tick  false key-hold ;
+: vr! ( flag -- )   \ (the tests: the headset on or off - main.c's vr? is a constant, its body read as the scripts run)
+    ['] vr? >body ! ;
+
 : .here ( -- )
     ." room " room-id room-name type  ."  at " fiona-id body-pos  frot f. fswap f. f.
     ." tri " fiona-id body-tri .  ." areas:"

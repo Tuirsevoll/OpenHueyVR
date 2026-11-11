@@ -86,8 +86,8 @@ variable bush-floor   \ (its floor's flag while she's in: no one stands there - 
     bush-var @ var@ 1+ bush-var @ var! ;
 : bush-searched ( -- )   \ (he came in by the bush's side as she hides)
     from-his-way? fiona-hidden state? and dup came-while-hidden ! if  bush-search  then ;
-: bush-frame ( -- )   \ (each frame: L1 by it to crouch, her examine; the leaves)
-    in-panic? 0=  fiona held? 0= and  l1 button-pressed? and  in-bush? and
+: bush-frame ( -- )   \ (each frame: L1 by it to crouch - not in the headset; her examine; the leaves)
+    in-panic? 0=  fiona held? 0= and  l1 button-pressed? and  vr? 0= and  in-bush? and
     stalker-in? 0=  from-his-way? 0= or and if  ['] in-the-bush fiona start-holding drop  then
     in-bush? if
         leaves-pushed
