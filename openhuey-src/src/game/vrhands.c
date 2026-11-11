@@ -23,6 +23,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <SDL3/SDL.h>
+
 #define HOLD_NONE 0
 #define HOLD_DOOR 1
 #define HOLD_PROP 2
@@ -65,6 +67,8 @@ static int sGrace[2], sGraceDoor[2];   /* after a throw, that hand does not shov
 static Vec3 sHandAt[2];
 static int sHandHave[2];
 static int sPoseRoom = -2;
+/* (temporary: the arm diagnostics - pose_arm calls since each side last wrote a line) */
+static unsigned sArmLog[2];
 /* one pose per door, shared by both rooms it joins */
 static float sDoorSwing[DOORS];
 static unsigned char sDoorHave[DOORS], sDoorOpen[DOORS];
@@ -72,6 +76,11 @@ static unsigned char sDoorHave[DOORS], sDoorOpen[DOORS];
 static const Model *sArmModel;
 static int sArmBones, sArmVerts;
 static int sShoulder[2], sElbow[2], sHandBone[2], sArmFound[2];
+/* the bind pose's upper arm and forearm, model units scaled to room units: once per model */
+static float sArmLen[2][2];
+static int sArmLenHave[2];
+static const Model *sLenModel;
+static int sLenBones, sLenVerts;
 static const Model *sExtentModel;
 static int sExtentVerts;
 static float sExtent[2];
@@ -141,6 +150,87 @@ static void find_arms(Actor *a, const Mat4 *world) {
         sHandBone[side] = i;
         sArmFound[side] = 1;
     }
+}
+
+/* (temporary) one bone of an arm's chain, then its children down to 6 levels: its index, its
+ * place about the eye in metres, how much skin it moves, and what find_arms made of it */
+static void dump_bone(FILE *f, const Model *m, const Mat4 *world, const Mat4 *place, Vec3 eye,
+                      int side, int bone, int depth) {
+    Mat4 room = mat4_mul(*place, world[bone]);
+    const char *role = "-";
+    int n = 0, i, k;
+
+    for (i = 0; i < m->nv; i++) {
+        for (k = 0; k < 4; k++) {
+            if (m->v[i].bones[k] == bone && m->v[i].weights[k] >= 0.15f) {
+                n++;
+                break;
+            }
+        }
+    }
+    if (bone == sShoulder[side]) {
+        role = "shoulder";
+    } else if (bone == sElbow[side]) {
+        role = "elbow";
+    } else if (bone == sHandBone[side]) {
+        role = "hand";
+    }
+    fprintf(f, "side %d bone %d name no name parent %d pos %.4f %.4f %.4f verts %d role %s\n",
+            side, bone, m->bones[bone].parent,
+            (room.m[12] - eye.x) / VR_UNITS_PER_METER,
+            (room.m[13] - eye.y) / VR_UNITS_PER_METER,
+            (room.m[14] - eye.z) / VR_UNITS_PER_METER,
+            n, role);
+    if (depth >= 6) {
+        return;
+    }
+    for (i = 0; i < m->nbones; i++) {
+        if (m->bones[i].parent == bone) {
+            dump_bone(f, m, world, place, eye, side, i, depth + 1);
+        }
+    }
+}
+
+/* (temporary) when find_arms first finds a model's arms, its two chains, then the bind pose's
+ * upper arm and forearm once: vr_arm_chain.txt beside the executable. The Model keeps no bone
+ * names, so each row says "no name". */
+static void dump_arm_chain(const Actor *a, const Mat4 *world, const Mat4 *place) {
+    static const Model *done;
+    const Model *m = &a->model;
+    const char *base;
+    char path[1024];
+    Vec3 eye;
+    FILE *f;
+    int side;
+
+    if (done == m || (!sArmFound[0] && !sArmFound[1])) {
+        return;
+    }
+    if (!vr_anchor_get(&eye, NULL)) {
+        return;
+    }
+    base = SDL_GetBasePath();
+    snprintf(path, sizeof(path), "%svr_arm_chain.txt", base != NULL ? base : "./");
+    f = fopen(path, "a");
+    if (f == NULL) {
+        return;
+    }
+    done = m;
+    for (side = 0; side < 2; side++) {
+        if (sArmFound[side] && sShoulder[side] >= 0) {
+            dump_bone(f, m, world, place, eye, side, sShoulder[side], 0);
+        }
+    }
+    for (side = 0; side < 2; side++) {
+        if (sArmLenHave[side]) {
+            fprintf(f, "bind side %d l1 %.4f l2 %.4f reach %.4f\n",
+                    side,
+                    sArmLen[side][0] / VR_UNITS_PER_METER,
+                    sArmLen[side][1] / VR_UNITS_PER_METER,
+                    (sArmLen[side][0] + sArmLen[side][1]) / VR_UNITS_PER_METER);
+        }
+    }
+    fclose(f);
 }
 
 /* play space matches the camera: +X right, +Y up, -Z forward. `p` is an offset from her eyes. */
@@ -253,6 +343,42 @@ static Mat4 rigid_inverse(const Mat4 *m) {
     r.m[13] = -(r.m[1] * m->m[12] + r.m[5] * m->m[13] + r.m[9] * m->m[14]);
     r.m[14] = -(r.m[2] * m->m[12] + r.m[6] * m->m[13] + r.m[10] * m->m[14]);
     return r;
+}
+
+/* the arm's two lengths from the bind pose: the inverse of each bone's inv_bind (rigid) gives
+ * its bind world position, and the distances go to room units with the actor's own scale, as
+ * the placed bones the solver measures are. Computed once per model, as find_arms caches. */
+static void arm_lengths(const Actor *a) {
+    const Model *m = &a->model;
+    float scale = a->scale != 0.0f ? a->scale : 1.0f;
+    int side;
+
+    if (sLenModel != m || sLenBones != m->nbones || sLenVerts != m->nv) {
+        sLenModel = m;
+        sLenBones = m->nbones;
+        sLenVerts = m->nv;
+        sArmLenHave[0] = sArmLenHave[1] = 0;
+    }
+    for (side = 0; side < 2; side++) {
+        Mat4 sh, el, ha;
+        float d[3];
+
+        if (!sArmFound[side] || sArmLenHave[side]) {
+            continue;
+        }
+        sh = rigid_inverse(&m->bones[sShoulder[side]].inv_bind);
+        el = rigid_inverse(&m->bones[sElbow[side]].inv_bind);
+        ha = rigid_inverse(&m->bones[sHandBone[side]].inv_bind);
+        d[0] = sh.m[12] - el.m[12];
+        d[1] = sh.m[13] - el.m[13];
+        d[2] = sh.m[14] - el.m[14];
+        sArmLen[side][0] = v_len(d) * scale;
+        d[0] = el.m[12] - ha.m[12];
+        d[1] = el.m[13] - ha.m[13];
+        d[2] = el.m[14] - ha.m[14];
+        sArmLen[side][1] = v_len(d) * scale;
+        sArmLenHave[side] = 1;
+    }
 }
 
 static int descends(const Model *m, int bone, int root) {
@@ -403,14 +529,51 @@ static Mat4 grip_matrix(Vec3 at, Vec3 fwd, Vec3 up, float scale, Vec3 center, in
     return m;
 }
 
+/* (temporary) one line a second per arm: the bone lengths the arm is solved with, how far the
+ * controller is, whether the reach clamp ran, and where controller and shoulder sit about the
+ * eye - lengths and offsets in metres. Appends to vr_arm_debug.txt beside the executable. */
+static void log_arm(int side, float l1, float l2, Vec3 at, const float *root, int clamped) {
+    const char *base = SDL_GetBasePath();
+    char path[1024];
+    Vec3 eye;
+    float scale = 1.0f;
+    FILE *f;
+
+    if (!vr_anchor_get(&eye, NULL)) {
+        return;
+    }
+    vr_body(NULL, &scale);
+    snprintf(path, sizeof(path), "%svr_arm_debug.txt", base != NULL ? base : "./");
+    f = fopen(path, "a");
+    if (f == NULL) {
+        return;
+    }
+    fprintf(f,
+            "side %d l1 %.4f l2 %.4f reach %.4f dist %.4f clamp %d "
+            "controller %.4f %.4f %.4f shoulder %.4f %.4f %.4f head_yaw %.2f scale %.4f\n",
+            side,
+            l1 / VR_UNITS_PER_METER, l2 / VR_UNITS_PER_METER, (l1 + l2) / VR_UNITS_PER_METER,
+            vec3_len(vec3_sub(at, vec3(root[0], root[1], root[2]))) / VR_UNITS_PER_METER,
+            clamped,
+            (at.x - eye.x) / VR_UNITS_PER_METER, (at.y - eye.y) / VR_UNITS_PER_METER,
+            (at.z - eye.z) / VR_UNITS_PER_METER,
+            (root[0] - eye.x) / VR_UNITS_PER_METER, (root[1] - eye.y) / VR_UNITS_PER_METER,
+            (root[2] - eye.z) / VR_UNITS_PER_METER,
+            vr_head_yaw() * 57.2957795f, scale);
+    fclose(f);
+}
+
 static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace, int side, Vec3 at, Vec3 fwd, Vec3 up) {
     const Model *m = &a->model;
     int sh = sShoulder[side], el = sElbow[side], ha = sHandBone[side];
     Mat4 room[3], grip, old;
-    float root[3], mid[3], end[3], pole[3], l1, l2;
-    int i;
+    float root[3], mid[3], pole[3], l1, l2, yaw;
+    int i, clamped = 0;
 
     if (!sArmFound[side] || sh < 0 || el < 0 || ha < 0 || ha >= m->nbones) {
+        return;
+    }
+    if (!vr_anchor_get(NULL, &yaw)) {
         return;
     }
     room[0] = mat4_mul(*place, world[sh]);
@@ -418,20 +581,42 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
     room[2] = mat4_mul(*place, world[ha]);
     root[0] = room[0].m[12]; root[1] = room[0].m[13]; root[2] = room[0].m[14];
     mid[0] = room[1].m[12]; mid[1] = room[1].m[13]; mid[2] = room[1].m[14];
-    v_sub(pole, mid, root);
-    l1 = v_len(pole);
-    end[0] = room[2].m[12] - mid[0];
-    end[1] = room[2].m[13] - mid[1];
-    end[2] = room[2].m[14] - mid[2];
-    l2 = v_len(end);
+    l1 = sArmLen[side][0];   /* the bind pose's, not this animation's */
+    l2 = sArmLen[side][1];
     {
         float scale = hand_scale(a, side, ha);
 
         grip = grip_matrix(at, fwd, up, scale, sCenter[side], side);
     }
     if (l1 > 0.05f && l2 > 0.05f) {
+        /* the bend is the player's, not the animated pose's: down and out on that side,
+         * taken into room space as the controllers are, so it turns with her facing */
+        float outward = side == 0 ? -1.0f : 1.0f;
+        Vec3 bend = play_to_world(vec3(0.0f, 0.0f, 0.0f), yaw, vec3(outward, -1.0f, 0.0f));
         float reach[3] = {grip.m[12], grip.m[13], grip.m[14]};
+        float ctr[3] = {at.x, at.y, at.z};
+        float d[3];
+        float dist;
 
+        pole[0] = bend.x;
+        pole[1] = bend.y;
+        pole[2] = bend.z;
+        /* out of reach: the wrist target goes onto the arm's length along the way to the
+         * controller, just inside it. The hand bone sits there, not out at the controller,
+         * so the forearm ends exactly where the hand starts and nothing is stretched. */
+        v_sub(d, ctr, root);
+        dist = v_len(d);
+        if (dist > l1 + l2 && dist > 1.0e-4f) {
+            float k = (l1 + l2) * 0.999f / dist;
+
+            reach[0] = root[0] + d[0] * k;
+            reach[1] = root[1] + d[1] * k;
+            reach[2] = root[2] + d[2] * k;
+            grip.m[12] = reach[0];
+            grip.m[13] = reach[1];
+            grip.m[14] = reach[2];
+            clamped = 1;
+        }
         place_middle(root, mid, reach, pole, l1, l2);
         aim(&room[0], root, mid, pole);
         aim(&room[1], mid, reach, pole);
@@ -449,6 +634,9 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
             }
         }
     }
+    if (sArmLog[side]++ % 60 == 0) {
+        log_arm(side, l1, l2, at, root, clamped);
+    }
 }
 
 static void log_hands(float left, float right, int posed) {
@@ -465,6 +653,8 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         return;
     }
     find_arms(a, world);
+    arm_lengths(a);
+    dump_arm_chain(a, world, place);
     for (side = 0; side < 2; side++) {
         Vec3 at, right, fwd, up;
         float grip, index, thumb;
