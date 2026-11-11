@@ -16,6 +16,7 @@
 #include "room.h"
 #include "placed.h"
 
+#include "../hactor/hactor.h"
 #include "../platform/vr.h"
 
 #include <math.h>
@@ -2308,6 +2309,7 @@ void vrhands_tick(Engine *e) {
     if (e == NULL) {
         return;
     }
+    hactor_set_blow_at(vrhands_blow_at);   /* hactor's `body-point` asks the hands for a hard swing here */
     swing_begin();
     pet_settle();
     poses_restore(e);

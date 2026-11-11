@@ -43,4 +43,9 @@ void hactor_reset(void);
 void hactor_send(int from, int to, int kind, const Cell *args, int n);
 void hactor_broadcast(int from, int kind, const Cell *args, int n);
 
+/* the hands' hard swing, for `body-point` (a point of interest while one is there): the game puts
+ * vrhands_blow_at in here. It is a hook because this is a library the forth tool links without the
+ * hands; with none set (NULL) `body-point` says there is none, as the hands do when nothing is there */
+void hactor_set_blow_at(int (*fn)(float out[3]));
+
 #endif

@@ -2,8 +2,6 @@
  * actor's body - where it is in the house, as anyone may read and only it may change - and the words for it. */
 #include "hactor.h"
 
-#include "../game/vrhands.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +15,14 @@
 #define POP() forth_pop(f)
 
 static Forth *sForth;   /* (the game's one: the engine's C asks for bodies without one at hand) */
+
+/* the hands' hard swing (a point of interest while one swings), put in by the game: this library is
+ * linked by the forth tool too, which has no hands - with none set there is no swing, as when the
+ * hands have nothing there */
+static int (*sBlowAt)(float out[3]);
+void hactor_set_blow_at(int (*fn)(float out[3])) {
+    sBlowAt = fn;
+}
 
 HBody *hactor_body(int id) { return sForth != NULL ? forth_actor_body(sForth, id) : NULL; }
 int hactor_self(void) { return sForth != NULL ? forth_actor_self(sForth) : -1; }
@@ -118,7 +124,7 @@ PRIM(p_body_point) {   /* ( id -- v true | false ) its point of interest, if it 
         return;
     }
     /* a hard controller swing, while she is not already kicking: the same point a kick would set */
-    if (strcmp(hactor_name((int)id), "fiona") == 0 && vrhands_blow_at(hand_pt)) {
+    if (strcmp(hactor_name((int)id), "fiona") == 0 && sBlowAt != NULL && sBlowAt(hand_pt)) {
         PUSH(hand_pt);
         PUSH(-1);
         return;

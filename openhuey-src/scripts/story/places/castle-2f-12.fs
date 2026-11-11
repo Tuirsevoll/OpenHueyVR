@@ -119,6 +119,40 @@ variable wardrobe-target-set
     -1 wardrobe-target-set !
     ." wardrobe: target " wardrobe-target-x f@ f. wardrobe-target-z f@ f. cr ;
 : wardrobe-target-clear ( -- )  0 wardrobe-target-set ! ;
+\ (console: the wardrobe's left leaf - the frame its animation is at now, as a hand may have left it)
+: door-frame-now ( -- )  ." door-frame " s" left_door" placed-frame@ . cr ;
+\ the wardrobe's floor, in the headset: the left leaf is the hands' own (left_door), so the floor
+\ follows its frame - below the swing's open end it is open, from there the doors are shut and it
+\ bars. `wardrobe-floor-open` is what was last set (2: not yet, so the first frame sets it)
+53 constant wardrobe-door-open-frame
+variable wardrobe-floor-open   2 wardrobe-floor-open !
+: wardrobe-floor-follows ( -- )
+    vr? 0= if  exit  then
+    s" left_door" placed-frame@  dup 0< if  drop exit  then
+    wardrobe-door-open-frame <  dup wardrobe-floor-open @ = if  drop exit  then
+    dup wardrobe-floor-open !
+    if  wardrobe-floor barred-floor floor-off  else  wardrobe-floor barred-floor floor-on  then ;
+\ the headset: noclip in the wardrobe's mouth only, while its door is open, so the stick can cross the
+\ solid floor there - moving.fs: `blocked-floor` is 0 with her-noclip, and `v-slide` slides her by that
+\ mask. `wardrobe-in-noclip` is what was last set (2: not yet, so the first frame sets it)
+variable wardrobe-in-noclip   2 wardrobe-in-noclip !
+: at-wardrobe-door? ( -- flag )   \ (her body's place: x 12..19, z 36..48 - the doorway's mouth)
+    fiona body-pos  {: F: x y z :}
+    x 12e f>=  x 19e f<= and  z 36e f>= and  z 48e f<= and ;
+: wardrobe-noclip-follows ( -- )
+    vr? 0= if  exit  then
+    \ (the first frame of a visit: the door's frame, as the test below finds it)
+    wardrobe-in-noclip @ 2 = if
+        ." door frame " s" left_door" placed-frame@ . cr
+    then
+    s" left_door" placed-frame@  wardrobe-door-open-frame <
+    at-wardrobe-door?  and
+    dup wardrobe-in-noclip @ = if  drop exit  then
+    dup wardrobe-in-noclip !
+    \ (it changed: the door's frame, and then which way it went)
+    ." door frame " s" left_door" placed-frame@ . cr
+    if  ." wardrobe: noclip on" cr  fiona true noclip  else  ." wardrobe: noclip off" cr  fiona false noclip  then ;
+
 : out-quietly ( -- )   \ (her own way out: the doors shut behind her; the wardrobe shut)
     1 hide-step +!  fiona follow  fiona-hidden state-off
     stalker-in? if  0 stalker-order  stalker let-go  then
@@ -138,12 +172,16 @@ variable wardrobe-target-set
 : goes-in ( -- )   \ (the doors open - the first time shut - in, and shut)
     s" start" show-her-at   \ (temporary: where she stands as she starts in)
     fiona true noclip  fiona -1 look-at  yield
-    open? if
-        fiona room-motion 5 start-blend8  5 frames  doors-part hide-part  left-door object-show  right-door object-show
-        0 doors-anim  40 frames  shut-sound room-bank fiona sound-by  fiona wait-anim
-    else
-        fiona room-motion 1 + 5 start-blend8  5 frames  doors-part hide-part  left-door object-show  right-door object-show
-        1 doors-anim  14 frames  open-sound room-bank fiona sound-by  60 frames  shut-sound room-bank fiona sound-by  fiona wait-anim
+    \ the headset: the doors are the hands' own (left_door, driven by `ward_*`) - the canned
+    \ open-in-shut is the flat screen's, so there it stays
+    vr? 0= if
+        open? if
+            fiona room-motion 5 start-blend8  5 frames  doors-part hide-part  left-door object-show  right-door object-show
+            0 doors-anim  40 frames  shut-sound room-bank fiona sound-by  fiona wait-anim
+        else
+            fiona room-motion 1 + 5 start-blend8  5 frames  doors-part hide-part  left-door object-show  right-door object-show
+            1 doors-anim  14 frames  open-sound room-bank fiona sound-by  60 frames  shut-sound room-bank fiona sound-by  fiona wait-anim
+        then
     then
     wardrobe-floor barred-floor floor-off
     ." wardrobe: placed " fiona body-pos fswap fdrop fswap f. f. cr   \ (temporary: where the motion in left her)
@@ -285,7 +323,7 @@ variable wardrobe-target-set
 : pick-medallion ( -- )  medallion c2f-12-medallion medallion-fx -17.5e 47e picks-up ;
 : spots ( -- )
     fiona wardrobe-area in-area?  fiona 44 60 heading? and if
-        stalker-in? if  no-time-message offer-remark-now  else  ['] hides calm-only offer  then
+        stalker-in? if  no-time-message offer-remark-now  else  vr? 0= if  ['] hides calm-only offer  then  then
     then
     fiona cage-area 60 faces-area? if  ['] caged-doll unhurried offer  then
     fiona horse-area in-area?  fiona 150 50 heading? and if  ['] horse unhurried offer  then
@@ -325,7 +363,7 @@ variable wardrobe-target-set
 create cameras  4 , 1 , -1 ,   5 , 0 , 0 ,   \ (area, set, path)
 create ahead  2 , 0 ,   3 , 1 ,   \ (area, exit)
 create entries  1 , -1 ,   1 , -1 ,   \ (by exit 0, 1: the camera)
-: each-frame ( -- )  2 exits-out  cameras 2 cameras-at  ahead 2 ways-out  hewie-sniffs  hewie-watch  spots ;
+: each-frame ( -- )  2 exits-out  cameras 2 cameras-at  ahead 2 ways-out  hewie-sniffs  hewie-watch  spots  wardrobe-floor-follows  wardrobe-noclip-follows ;
 : person-in ( i -- )
     case
         fiona-p of  entries 2 ways-in  endof

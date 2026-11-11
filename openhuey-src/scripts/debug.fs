@@ -55,7 +55,8 @@ variable jumped
     ." hidden " fiona-hidden state-flag? .  ." stay " stalkers-stay state-flag? .  ." activity " story.kit:acting @ .
     s" screen" actor-named dup 0< if  drop  ."  fade ?"  else  enter  ."  fade " screen:level @ .  leave-actor  then  cr ;
 \ the stick path's values just now (the console), one a line: free-doing and her doing, her fear bits
-\ and how still the stick has been, the stick's x and z as last read, the routine running her, faded in
+\ and how still the stick has been, the stick's x and z as last read, the routine running her, faded
+\ in - her triangle and the story's noclip, and the wardrobe floor's last state (castle-2f-12's)
 : stick-now ( -- )
     fiona-id dup 0< if  drop  exit  then  enter
     ." free-doing " free-doing . cr
@@ -65,7 +66,55 @@ variable jumped
     ." her-stick " fiona.state:her-stick vectors:v.x sf@ f. fiona.state:her-stick vectors:v.z sf@ f. cr
     ." her-act " fiona.state:her-act @ . cr
     ." settled? " fiona.model:settled? if  ." true"  else  ." false"  then  cr
+    ." her-tri " fiona.state:her-tri @ . cr
+    ." her-noclip " fiona.state:her-noclip @ . cr
+    ." wardrobe-floor-open " story.places.castle-2f-12:wardrobe-floor-open @ . cr
     leave-actor ;
+\ the triangles around her (the console): Fiona's own and its three neighbours - whether each is in the
+\ wardrobe floor's group 1, its flags in hex, and the bits in them that would stop her (fiona-floor)
+: tris-line ( tri -- )   \ (one line: its number, centre, group 1, its flags in hex, Fiona's bits in them)
+    ." tri " dup .  ."  at " dup tri-center fswap fdrop fswap f. f.
+    ."  group " dup 1 nav-in-group? .
+    ."  flags " dup tri-flags h>s type
+    ."  fiona-bits " tri-flags floor-flags:fiona-floor and . cr ;
+: door-tris-now ( -- )
+    fiona-id dup 0< if  drop  exit  then  enter
+    ." fiona at " fiona.state:her-at vectors:v.x sf@ f. fiona.state:her-at vectors:v.z sf@ f.
+    ."  yaw " fiona.state:her-yaw f@ f. cr
+    fiona.state:her-tri @  tris-line
+    fiona.state:her-tri @ tri-neighbors  {: n2 n1 n0 :}   \ (the stack holds the third edge's first)
+    n0 tris-line  n1 tris-line  n2 tris-line
+    leave-actor ;
+\ every triangle of the wardrobe floor's group (the console): each line its number, centre, flags in
+\ hex, Fiona's bits and its three neighbours - and `*` at the end where the group ends (a neighbour
+\ outside group 1, or none at all)
+: wardrobe-tris-line ( tri -- )
+    ." tri " dup .  ."  at " dup tri-center fswap fdrop fswap f. f.
+    ."  flags " dup tri-flags h>s type
+    ."  fiona-bits " dup tri-flags floor-flags:fiona-floor and .
+    ."  next " dup tri-neighbors  {: n2 n1 n0 :}
+    n0 . space n1 . space n2 .
+    n0 1 nav-in-group? n1 1 nav-in-group? and n2 1 nav-in-group? and 0= if  ."  *"  then
+    drop cr ;
+: wardrobe-tris-now ( -- )
+    nav-tris 0 ?do  i 1 nav-in-group? if  i wardrobe-tris-line  then  loop ;
+\ the walkable line into the wardrobe (the console): x 16.8, z 36 to 52 by a half, the triangle under
+\ each point - z, the triangle, its group 1, its flags in hex, its neighbours; one line a triangle
+fvariable wardrobe-line-y   fvariable wardrobe-line-z
+variable wardrobe-line-last
+: wardrobe-line-now ( -- )
+    187 tri-center frot fdrop fdrop  wardrobe-line-y f!   \ (the wardrobe tile's own height)
+    -1 wardrobe-line-last !
+    33 0 ?do
+        i s>f 2e f/ 36e f+  wardrobe-line-z f!
+        16.8e wardrobe-line-y f@ wardrobe-line-z f@  nav-tri
+        dup wardrobe-line-last @ = if  drop  else
+            dup wardrobe-line-last !
+            ." z " wardrobe-line-z f@ f.  ."  tri " dup .  ."  group " dup 1 nav-in-group? .
+            ."  flags " dup tri-flags h>s type
+            ."  next " tri-neighbors  rot . space swap . space .  cr
+        then
+    loop ;
 
 \ the game's held, locked and frozen flags as they stand - one a line, 0 off, -1 on - and last the
 \ screen's fade level (0 not fading, 0..1000), read as `fiona-flags` reads the screen
