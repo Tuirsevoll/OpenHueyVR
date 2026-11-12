@@ -34,6 +34,9 @@
 #include "../core/zip.h"
 #include "../data/artpic.h"
 #include "../data/texbank.h"
+/* The VM keeps a Forth opaque in forth.h; a few words here read its stacks (loot-sparkle peeks at the
+ * floats under the effect's id), so this file is one of the two that reach inside. */
+#include "forth_internal.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -42,6 +45,13 @@
 #include <string.h>
 
 Engine gEngine;
+
+/* forth_internal.h defines these five for the VM's own files; the engine's words call the API instead */
+#undef PRIM
+#undef PUSH
+#undef POP
+#undef FPUSH
+#undef FPOP
 
 #if defined(__GNUC__) || defined(__clang__)
 #define PRIM(name) static void name(Forth *f, Word *w __attribute__((unused)))

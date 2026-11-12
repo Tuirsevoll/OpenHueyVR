@@ -323,7 +323,7 @@ variable wardrobe-in-noclip   2 wardrobe-in-noclip !
 : pick-medallion ( -- )  medallion c2f-12-medallion medallion-fx -17.5e 47e picks-up ;
 : spots ( -- )
     fiona wardrobe-area in-area?  fiona 44 60 heading? and if
-        stalker-in? if  no-time-message offer-remark-now  else  vr? 0= if  ['\'] hides hiding-spot offer  then  then
+        stalker-in? if  no-time-message offer-remark-now  else  vr? 0= if  ['] hides hiding-spot offer  then  then
     then
     fiona cage-area 60 faces-area? if  ['] caged-doll unhurried offer  then
     fiona horse-area in-area?  fiona 150 50 heading? and if  ['] horse unhurried offer  then

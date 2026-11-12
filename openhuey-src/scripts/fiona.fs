@@ -75,12 +75,6 @@ variable past-best   variable past-dist
         then
     then
     past-x f@ past-y f@ past-z f@  past-best @ ;
-: arrive-at ( exit -- )   \ (the room scripts' char-to-exit: its outside spot, her heading kept.
-    dup 0 exit-spot dup 0< if   \ no outside stand: further into the room than the leaf, clear of the exit area)
-        drop fdrop fdrop fdrop  stand-past
-    else  nip  then
-    dup 0< if  drop fdrop fdrop fdrop  arrive-anywhere
-    else  her-yaw f@ put  dup her-tri !  her-was-tri !  then ;   \ (on the exit's own triangle: over a storey, the search finds the one below)
 : arrive-at ( exit -- )   \ (the room scripts' char-to-exit: 4 inside its door, her heading kept;
     \ no such spot, Fiona_Vt38's: 12 inside)
     dup 0 exit-spot  dup 0< if

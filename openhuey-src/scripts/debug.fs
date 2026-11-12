@@ -153,7 +153,7 @@ variable wardrobe-line-last
     ." shown " window:shown @ . cr
     ." chosen " window:chosen @ . cr
     ." picked " window:picked @ . cr
-    ." prompt-kind " window:prompt-kind @ . cr
+    \ (prompt-kind: gone in 0.2.51 - the action prompt moved to story/kit.fs prompt-out)
     ." page " window:page @ . cr
     ." typed " window:typed @ . cr
     leave-actor

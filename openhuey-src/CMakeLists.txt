@@ -36,7 +36,44 @@ endif()
 # language, prelude and tester built in; its own tests run with ours) ----
 enable_testing()
 set(CLANKFORTH_TESTS ON CACHE BOOL "the language's tests (ctest)")
+# ClankForth is written for GCC/Clang - upstream's Windows release is cross-built with MinGW - so its
+# sources use __attribute__ (three) and __int128 (once, in the */ primitive) that MSVC has no notion of.
+# cmake/clankforth-msvc.patch guards those for other compilers and gives the wide multiply-divide an
+# exact MSVC path (_mul128 + long division), and is applied here to the submodule's sources when it is
+# missing: idempotent, so a `git submodule update` is undone by the next configure rather than by hand.
+if(MSVC)
+    find_package(Git QUIET)
+    set(CLANKFORTH_MSVC_PATCH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/clankforth-msvc.patch")
+    if(GIT_FOUND)
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}/external/clankforth" apply --check "${CLANKFORTH_MSVC_PATCH}"
+            RESULT_VARIABLE CLANKFORTH_NEEDS_PATCH OUTPUT_QUIET ERROR_QUIET)
+        if(CLANKFORTH_NEEDS_PATCH EQUAL 0)
+            execute_process(
+                COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}/external/clankforth" apply "${CLANKFORTH_MSVC_PATCH}"
+                RESULT_VARIABLE CLANKFORTH_PATCHED OUTPUT_QUIET ERROR_QUIET)
+            if(NOT CLANKFORTH_PATCHED EQUAL 0)
+                message(FATAL_ERROR "ClankForth: could not apply cmake/clankforth-msvc.patch")
+            endif()
+            message(STATUS "ClankForth: applied the MSVC compatibility patch")
+        endif()
+    endif()
+endif()
 add_subdirectory(external/clankforth)
+# MSVC's C runtime is one library: there is no libm to link, and ClankForth asks for it unconditionally.
+# Dropped from both its own link line and the interface its tools inherit (a static library, so this is
+# the only place `m` could break a link).
+if(MSVC)
+    foreach(_tgt clankforth)
+        foreach(_prop LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+            get_target_property(_libs ${_tgt} ${_prop})
+            if(_libs)
+                list(REMOVE_ITEM _libs m)
+                set_target_properties(${_tgt} PROPERTIES ${_prop} "${_libs}")
+            endif()
+        endforeach()
+    endforeach()
+endif()
 
 # Hewie's voice: whisper.cpp in-process (tiny or base). Tests, examples and GPU backends stay off.
 set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -257,3 +294,20 @@ add_test(NAME mods_first_person COMMAND hga --mod "${CMAKE_CURRENT_SOURCE_DIR}/e
 add_test(NAME mods_free_play_entry COMMAND hga --mod "${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/free-play-entry"
     --test "${CMAKE_CURRENT_SOURCE_DIR}/tests/mods/free-play-entry.fs")
 
+
+# ---- runtime DLLs beside the executables -----------------------------------------------------------
+# A multi-config generator puts each target in build/<cfg>, while the DLLs it needs come from vcpkg's
+# bin (SDL3) and from whisper's own targets. Copied beside every executable that needs them, so
+# openhuey.exe, the -check tools and `ctest` start from anywhere: without this Windows fails them with
+# STATUS_DLL_NOT_FOUND (exit code 0xc0000135), which shows up as a dialog that comes back for every run.
+foreach(_tgt hga
+             texbank-check mods-check prop-check music-check messages-check sound-check spu-check
+             hands-sweep-check movie-check room-check model-check)
+    if(TARGET ${_tgt})
+        add_custom_command(TARGET ${_tgt} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_RUNTIME_DLLS:${_tgt}> "$<TARGET_FILE_DIR:${_tgt}>"
+            COMMAND_EXPAND_LISTS
+            COMMENT "Copying the runtime DLLs beside ${_tgt}")
+    endif()
+endforeach()

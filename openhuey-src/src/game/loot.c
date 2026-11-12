@@ -1,6 +1,9 @@
 /* Collectible meshes you can pick up by hand. See loot.h. */
 #include "loot.h"
 
+/* the Forth's dictionary extent (loot.c reads word bodies): the handle is opaque in forth.h */
+#include "forth_internal.h"
+
 #include "engine.h"
 #include "placed.h"
 #include "progress.h"

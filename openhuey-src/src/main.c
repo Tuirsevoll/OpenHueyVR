@@ -709,22 +709,6 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
     RoomView rv;
     int i, layer;
 
-    platform_size(&e->width, &e->height);
-    render_shadows_begin();
-    for (i = 0; i < MAX_ACTORS; i++) {
-        Actor *a = &e->actors[i];
-
-        a->lights[0] = a->lights[1] = a->lights[2] = -1;
-        if (actor_shown(a)) {
-            actor_prepare(a);
-            light_actor(e, a);
-        }
-    }
-    render_shadows_end();
-    render_begin(e->width, e->height, e->clear);
-    proj = camera_proj(&e->camera, render_aspect());
-    view = camera_view(&e->camera);
-    vp = mat4_mul(proj, view);
     render_camera(proj, view, eye, e->camera.znear, e->camera.zfar);
     render_blockers(NULL, 0);
     if (e->alone > 0) {   /* (one model on the background, nothing else: the extras' model gallery) */
@@ -819,7 +803,7 @@ static void prepare_shadows(Engine *e) {
         Actor *a = &e->actors[i];
 
         a->lights[0] = a->lights[1] = a->lights[2] = -1;
-        if (a->used && a->visible) {
+        if (actor_shown(a)) {
             actor_prepare(a);
             if (a == sFp) {   /* the headset is at her eyes: no head, face or hair in the picture */
                 actor_hide_head(a);

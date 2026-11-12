@@ -1,0 +1,113 @@
+diff --git a/src/forth.c b/src/forth.c
+index 41007f4..f456a48 100644
+--- a/src/forth.c
++++ b/src/forth.c
+@@ -12,6 +12,9 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#if defined(_MSC_VER)
++#include <intrin.h>
++#endif
+ 
+ /* ---- stacks (forth_internal.h has them, for every file of the system: these are the hosts') ---- */
+ 
+@@ -1117,10 +1120,43 @@ PRIM(p_mod) { Cell b = POP(), a = POP(), q, r; floored(f, a, b, &q, &r); PUSH(r)
+ PRIM(p_divmod) { Cell b = POP(), a = POP(), q, r; floored(f, a, b, &q, &r); PUSH(r); PUSH(q); }
+ PRIM(p_muldiv) {   /* a * b / c with a wide intermediate */
+     Cell c = POP(), b = POP(), a = POP();
++#if defined(_MSC_VER)
++    /* MSVC has no __int128: the product is made with _mul128 and divided by binary long division,
++     * its low 64 bits kept (a quotient too large for a cell wraps, as a truncated 128-bit one does). */
++    __int64 shi;
++    UCell lo = (UCell)_mul128(a, b, &shi), hi = (UCell)shi, ud, rhi = 0, rlo = 0, q = 0, bit;
++    int neg = 0, i;
++
++    divisor(f, c);
++    if (shi < 0) {
++        neg = 1;
++        hi = ~hi;
++        lo = ~lo;
++        if (++lo == 0) hi++;
++    }
++    if (c < 0) {
++        neg ^= 1;
++        ud = ~(UCell)c + 1;
++    } else {
++        ud = (UCell)c;
++    }
++    for (i = 127; i >= 0; i--) {
++        bit = i >= 64 ? ((hi >> (i - 64)) & 1) : ((lo >> i) & 1);
++        rhi = (rhi << 1) | (rlo >> 63);
++        rlo = (rlo << 1) | bit;
++        q = (q << 1) | (rhi != 0 || rlo >= ud ? 1 : 0);
++        if (rhi != 0 || rlo >= ud) {
++            rlo -= ud;
++            if (rhi) rhi--;
++        }
++    }
++    PUSH((Cell)(neg ? (UCell)(-(__int64)q) : q));
++#else
+     __int128 p = (__int128)a * b;   /* (twice a cell's bits: the product can't overflow) */
+ 
+     divisor(f, c);
+     PUSH((Cell)(UCell)(unsigned __int128)(p / c));   /* (a quotient too large for a cell wraps) */
++#endif
+ }
+ PRIM(p_negate) { Cell *s = top(f, 1); *s = (Cell)(0 - (UCell)*s); }
+ PRIM(p_abs) { Cell *s = top(f, 1); if (*s < 0) *s = (Cell)(0 - (UCell)*s); }
+diff --git a/src/forth.h b/src/forth.h
+index 9f6bd97..471054b 100644
+--- a/src/forth.h
++++ b/src/forth.h
+@@ -196,7 +196,11 @@ int forth_set_effect(Forth *f, Word *w, const char *comment);
+  * comment must agree - else a warning saying why ("its message carries 1") */
+ void forth_declare_effect(Forth *f, const char *comment, const char *why);
+ /* a warning about the source being read, with its file and line (counted: `warnings`) */
++#if defined(__GNUC__) || defined(__clang__)
+ void forth_warn(Forth *f, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
++#else
++void forth_warn(Forth *f, const char *fmt, ...);
++#endif
+ /* a definition's warning still held, said now (the next definition, the end of a source, an error say it) */
+ void forth_flush_warning(Forth *f);
+ Word *forth_constant(Forth *f, const char *name, Cell value);
+diff --git a/src/forth_internal.h b/src/forth_internal.h
+index ffe5ab3..4a6a1c8 100644
+--- a/src/forth_internal.h
++++ b/src/forth_internal.h
+@@ -9,6 +9,10 @@
+ 
+ #include <limits.h>
+ #include <setjmp.h>
++#if defined(_MSC_VER)
++#include <string.h>
++#define strncasecmp _strnicmp
++#endif
+ 
+ #define FORTH_LOCALS 32   /* a definition's locals, all its {: :} together */
+ 
+@@ -184,7 +188,11 @@ struct Forth {
+ /* nothing is mapped below this, nor at a "negative" address: a number there is a mistake */
+ #define LOWEST_ADDRESS 0x10000
+ 
++#if defined(__GNUC__) || defined(__clang__)
+ #define PRIM(name) static void name(Forth *f, Word *w __attribute__((unused)))
++#else
++#define PRIM(name) static void name(Forth *f, Word *w)
++#endif
+ #define PUSH(x) cell_push(f, (Cell)(x))
+ #define POP() cell_pop(f)
+ #define FPUSH(x) float_push(f, (Float)(x))
+@@ -289,7 +297,11 @@ enum { CODE_OTHER, CODE_COLON, CODE_VARIABLE, CODE_CONSTANT, CODE_FCONSTANT, COD
+        CODE_STRINGS };
+ int forth_code_of(const Word *w);
+ /* a definition's warning held until the next definition begins (`immediate` drops it) */
++#if defined(__GNUC__) || defined(__clang__)
+ void forth_hold_warning(Forth *f, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
++#else
++void forth_hold_warning(Forth *f, const char *fmt, ...);
++#endif
+ 
+ /* ---- objects.c's: the lists, tuples and strings the scripts make ---- */
+ 
