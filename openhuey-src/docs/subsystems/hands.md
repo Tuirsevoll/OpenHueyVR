@@ -34,23 +34,43 @@ swept through something solid.
   bloom mask, and a batch whose visibility group is hidden are left out.
 - A hand entering a wall, a leaf or a placed object buzzes its controller once
   (`vr_haptic(side, 0.15f, 0.03f)`); leaving it lets the next entry buzz again.
+- **The arm stops at the room's mesh** (`path_stop`, `hand_stop` in `src/game/vrhands.c`): a wall,
+  floor or ceiling of the room's mesh stops the hand's arm at `HAND_STOP` from the surface - the
+  buzz's own 0.40 (temporarily 2.0, a diagnostic, so the stop can be seen). The stop is the free
+  point nearest the face, found by the 0.2 sampling and eight halvings, and it is always free, so
+  asking again from it gives the same answer (the arm is posed once a tick and once a drawn frame
+  and must not creep). A hand already at a surface, and a path clear of it, are let through: the
+  hand is never trapped.
+- **The stop is kept in world space** (`sHandStop`, a point in the room, not an offset from her
+  head), so a hand pressed against a wall stays where it touched while she walks or turns. It is
+  let go when the controller is more than `HAND_RELEASE` (temporarily 5.0, about an arm's length)
+  from it; the first frame after the controller is found takes the hand as it is (no sweep, no
+  pop), and losing the hand or changing room drops the stop.
+- **The raw controller still does everything else**: the buzz's detection (`hand_path_hits_*` in
+  `vrhands_tick`), the door push (`push_step`) and every grab and swing read the controller's own
+  position, unchanged. Only the arm is stopped.
+- **Sticking is expected**: a hand stopped at a wall does not slide along it yet.
 
 ## Status
 
-Phase two of detection: walls, floors, ceilings, doors and placed objects, while holding. Buzzes
-once on entering. Does not block.
+Walls, floors and ceilings stop the arm. Doors and placed objects buzz only.
 
 Checked by `tests/hands_sweep_check.c` (`hands_sweep_check`): a path across a wall, a path clear of
 it, a fast sweep through a thin wall, a path along a floor (a flat face counts), a path coming down
 onto a table top within the skin and one staying well above it, a path across a shut door's leaf
 (and the same when that door is the one held, and well beside it), a path across a placed object's
-face (the same when that object is the one held), a path over a placed object's flat top, and a
-placed face moved and turned by placed.c's own placement - found where it now is, not where it was.
+face (the same when that object is the one held), a path over a placed object's flat top, a placed
+face moved and turned by placed.c's own placement - found where it now is, not where it was - and
+the arm's stop: a path into a wall stopping 0.40 short, the same stop asked again from there, and
+a path clear of the wall (or a hand already at it) let through.
 
 ## Left
 
-- Blocking: the hand still passes through walls, floors, ceilings, leaves and placed objects;
-  nothing stops it.
+- Doors as blockers: a hand still goes through a leaf; the stop must ride on the leaf's own frame.
+- Placed objects as blockers: a hand still goes through a crate or a table.
+- Sliding along walls: a stopped hand sticks where it met the surface.
+- Held things still follow the raw hand (a prop, a leaf or loot can clip into a wall while the arm
+  stops), because `HOLD_PROP`/`HOLD_WARD`/`HOLD_LOOT` move by the controller's position.
 - Loot items: a hand's own pickup (`HOLD_LOOT`) is not a source of hits, so an item in the hand
   says nothing.
 - The held object hitting other objects: the thing in a hand is not swept against the world.

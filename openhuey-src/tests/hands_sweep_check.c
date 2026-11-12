@@ -5,8 +5,11 @@
  * a thin wall to the other - both ends outside the skin - is a hit too, as the hand passed through.
  * A door leaf counts on any face (a shut door's face: crossed, and not when it is the door that
  * hand holds; well beside it, no), and so does a placed object, its top included: moved and turned
- * by placed.c's own placement, it is found where it now is and not where it was. Detection only:
- * nothing is blocked, so only the sweeps are asked; the rooms are built by hand here.
+ * by placed.c's own placement, it is found where it now is and not where it was. The arm's stop
+ * (path_stop) is checked too: a path into a wall stops 0.40 short of it and asking again from
+ * there gives the same stop, while a path clear of the wall - or a hand already at it - is let
+ * through. Detection only: nothing is blocked, so only the sweeps are asked; the rooms are built
+ * by hand here.
  *
  *   hands-sweep-check */
 #include <stdio.h>
@@ -316,6 +319,55 @@ int main(void) {
          hand_path_hits_placed(&moved, -1, vec3(8.0f, 2.0f, 0.0f), vec3(12.0f, 2.0f, 0.0f), 0.40f), 1);
     want("a path only where the placed face used to be",
          hand_path_hits_placed(&moved, -1, vec3(0.0f, 2.0f, -2.0f), vec3(0.0f, 2.0f, 2.0f), 0.40f), 0);
+    /* the arm's stop (path_stop) against the wall room's plane at x = 0 */
+    {
+        Vec3 to = vec3(3.0f, 1.5f, 0.0f);
+        Vec3 stop = path_stop(&wall, vec3(-3.0f, 1.5f, 0.0f), to, 0.40f);
+        Vec3 again = path_stop(&wall, stop, to, 0.40f);
+
+        want("a path into a wall stops 0.40 short", fabsf(stop.x + 0.40f) <= 0.05f && stop.x < 0.0f, 1);
+        want("asking again from the stop gives the same stop",
+             fabsf(again.x - stop.x) <= 0.001f && fabsf(again.y - stop.y) <= 0.001f &&
+                 fabsf(again.z - stop.z) <= 0.001f, 1);
+    }
+    {
+        Vec3 to = vec3(5.0f, 1.5f, 0.0f);
+        Vec3 stop = path_stop(&wall, vec3(3.0f, 1.5f, 0.0f), to, 0.40f);
+
+        want("a path that never touches the wall is let through", stop.x == to.x && stop.z == to.z, 1);
+    }
+    {
+        Vec3 to = vec3(3.0f, 1.5f, 0.0f);
+        Vec3 stop = path_stop(&wall, vec3(-0.2f, 1.5f, 0.0f), to, 0.40f);
+
+        want("a hand already at the wall is let through", stop.x == to.x && stop.z == to.z, 1);
+    }
+    /* a slow push: a short path whose end is in contact (2.0, the arm stop's own current value) */
+    {
+        Vec3 to = vec3(-1.9f, 1.5f, 0.0f);
+        Vec3 stop = path_stop(&wall, vec3(-3.0f, 1.5f, 0.0f), to, 2.0f);
+        Vec3 again = path_stop(&wall, stop, to, 2.0f);
+
+        want("a slow push into the wall stops at the keep distance",
+             fabsf(stop.x) >= 2.0f && fabsf(stop.x) <= 2.1f, 1);
+        want("asking again from the slow push's stop gives the same stop",
+             fabsf(again.x - stop.x) <= 0.001f && fabsf(again.y - stop.y) <= 0.001f &&
+                 fabsf(again.z - stop.z) <= 0.001f, 1);
+    }
+    {
+        Vec3 to = vec3(-3.0f, 1.5f, 0.0f);
+        Vec3 stop = path_stop(&wall, vec3(-3.4f, 1.5f, 0.0f), to, 2.0f);
+
+        want("a slow push that stays clear is let through", stop.x == to.x && stop.z == to.z, 1);
+    }
+    {
+        /* (a step shorter than the 0.2 sampling: only the path's start is a sample, so its end
+         * has to be tested on its own) */
+        Vec3 to = vec3(-1.95f, 1.5f, 0.0f);
+        Vec3 stop = path_stop(&wall, vec3(-2.05f, 1.5f, 0.0f), to, 2.0f);
+
+        want("a push shorter than one sample is stopped too", fabsf(stop.x) >= 2.0f && fabsf(stop.x) <= 2.1f, 1);
+    }
     printf("hands: faces counted: %d of 2 (the wall), %d of 1 (the floor), %d of 1 (the table top)\n",
            face_tris(&wall), face_tris(&floor), face_tris(&table));
     if (sFails != 0) {

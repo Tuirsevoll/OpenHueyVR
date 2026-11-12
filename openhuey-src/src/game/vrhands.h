@@ -25,6 +25,11 @@ int hand_path_hits_door(const struct Engine *e, int skip, Vec3 from, Vec3 to, fl
 /* the same path against the room's placed objects: every face of them counts (a table's top as
  * much as its side). Placed object `skip` (the one this hand holds; -1 none) is left out. */
 int hand_path_hits_placed(const struct PlacedSet *s, int skip, Vec3 from, Vec3 to, float skin);
+/* Where a hand's path may go in the room's mesh: the free point nearest the first face the path
+ * comes within `keep` of (the free point nearest the wall), or `to` when nothing is in the way or
+ * the hand is already in contact at `from` (a hand is never trapped). The point it returns is
+ * always free, so asking again from it gives the same answer. */
+Vec3 path_stop(const struct Room *r, Vec3 from, Vec3 to, float keep);
 void vrhands_forget_poses(void);
 /* 1 when that controller is on Hewie. A touch also gives that hand a mild buzz. */
 int vrhands_petting(int side);

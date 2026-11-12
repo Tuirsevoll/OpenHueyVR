@@ -68,6 +68,12 @@ static int sPushRoom = -2;
 static int sGrace[2], sGraceDoor[2];   /* after a throw, that hand does not shove this door */
 static Vec3 sHandAt[2];
 static int sHandHave[2];
+static Vec3 sHandStop[2];       /* the arm's place, in world space */
+static int sHandStopHave[2];    /* 0: no stop yet */
+/* (temporary: the stop's feel signal - the controller's own place, and whether that hand was held
+ * back last pose) */
+static Vec3 sStopRaw[2];
+static int sStopHeld[2];
 static int sPoseRoom = -2;
 /* one pose per door, shared by both rooms it joins */
 static float sDoorSwing[DOORS];
@@ -120,6 +126,13 @@ static Vec3 sCenter[2];
 #define AIM_PARALLEL 0.05f
 /* Both hands, every pose. 1 leaves the fitted size; 1.5 is half again as large. */
 #define HAND_SCALE 1.5f
+/* The arm stops at the room's mesh where the hand's buzz fires (SWING_SKIN's 0.40): the hand is
+ * stopped at the surface it has just been warned of. */
+/* (temporary: diagnosis, 2.0 so the stop is visible; restore 0.40 later) */
+#define HAND_STOP 2.0f
+/* (temporary: the arm stops letting go when the hand is this far from its stop, about an arm's
+ * length) */
+#define HAND_RELEASE 5.0f
 
 int vrhands_wants(const Actor *a) {
     return a != NULL && a->used && vr_active() && strncmp(a->name, "O_FI", 4) == 0;
@@ -222,6 +235,15 @@ static Vec3 play_to_world(Vec3 eye, float yaw, Vec3 p) {
     return vec3(eye.x + cy * p.x - sy * p.z, eye.y + p.y, eye.z + sy * p.x + cy * p.z);
 }
 
+#if 0   /* (unused now: the stop is stored in world space) */
+/* the other way: a room point as play space sees it, an offset from her eyes */
+static Vec3 play_from_world(Vec3 eye, float yaw, Vec3 p) {
+    float sy = sinf(yaw), cy = cosf(yaw), dx = p.x - eye.x, dz = p.z - eye.z;
+
+    return vec3(cy * dx + sy * dz, p.y - eye.y, -sy * dx + cy * dz);
+}
+#endif
+
 static int hand_world(int side, Vec3 *at, Vec3 *right, Vec3 *up, Vec3 *fwd, float *grip, float *index, float *thumb) {
     VrController c;
     Vec3 eye, zero = vec3(0.0f, 0.0f, 0.0f);
@@ -238,6 +260,31 @@ static int hand_world(int side, Vec3 *at, Vec3 *right, Vec3 *up, Vec3 *fwd, floa
     *index = c.index;
     *thumb = c.thumb;
     return 1;
+}
+
+/* The arm's place this frame: the controller's own, stopped at the room's mesh (walls, floors and
+ * ceilings). The stop is a point in the room, not an offset from her head, so a hand pressed
+ * against a wall stays where it touched while she walks or turns; it is let go once the controller
+ * has gone a long way from it. The stop is made from the place the arm already had, so a hand is
+ * never pulled through a wall; the first frame after the controller is found takes the hand as it
+ * is. */
+static Vec3 hand_stop(const Engine *e, int side, Vec3 raw) {
+    Vec3 stop, next;
+
+    if (!sHandStopHave[side]) {
+        sHandStop[side] = raw;
+        sHandStopHave[side] = 1;
+        return raw;   /* (no sweep on the first frame: no pop) */
+    }
+    stop = sHandStop[side];
+    if (vec3_len(vec3_sub(raw, stop)) > HAND_RELEASE) {
+        sHandStopHave[side] = 0;   /* (let go: the next look takes the hand as it is) */
+        sHandStop[side] = raw;
+        return raw;
+    }
+    next = path_stop(&e->room, stop, raw, HAND_STOP);
+    sHandStop[side] = next;
+    return next;
 }
 
 static void v_sub(float *o, const float *a, const float *b) {
@@ -812,6 +859,16 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
             continue;
         }
         (void)right;
+        sStopRaw[side] = at;                    /* (temporary: the stop is holding the hand back) */
+        at = hand_stop(&gEngine, side, at);   /* the arm's place: the controller's, stopped at the room */
+        {   /* (temporary: the stop is holding the hand back) */
+            int held = vec3_len(vec3_sub(sStopRaw[side], at)) > 0.05f;
+
+            if (held && !sStopHeld[side]) {
+                vr_haptic(side, 0.6f, 0.02f);
+            }
+            sStopHeld[side] = held;
+        }
         applied[side] = hand_scale(a, side, sHandBone[side]);
         pose_arm(a, world, place, unplace, side, at, fwd, up);
         curl_hand(a, side, grip, index, thumb);
@@ -2225,6 +2282,58 @@ static Vec3 path_point(Vec3 from, Vec3 to, int s, int pts) {
     return vec3_add(from, vec3_scale(vec3_sub(to, from), (float)s / (float)(pts - 1)));
 }
 
+/* Where a hand's path may go in the room's mesh: the free point nearest the first face the path
+ * comes within `keep` of - the last place before the surface - or `to` when nothing is in the way.
+ * A hand already in contact at `from` is let go: it can always move, and is never trapped. The
+ * point returned is free, so asking again from it gives the same answer (the arm is posed twice a
+ * frame, once a tick and once a drawn frame, and must not creep).
+ * The stop keeps a margin: it is `keep` + 0.02 from the face. A point sitting exactly on the
+ * boundary is only free by a float comparison's grace, and it is stored in world space and asked
+ * again a frame later, so the 0.02 keeps it clearly free.
+ * The path's own end is tested as a place in contact, not only the samples: a step shorter than
+ * the 0.2 sampling is a single sample - its start - so a slow push into a surface would otherwise
+ * never be seen at all (the samples and the path test both stop at `from`). */
+Vec3 path_stop(const Room *r, Vec3 from, Vec3 to, float keep) {
+    float stop_keep = keep + 0.02f;
+    int pts = path_points(from, to), i, hit = -1;
+    Vec3 lo = from, hi = to;
+
+    if (hand_path_hits_wall(r, from, from, stop_keep)) {
+        return to;   /* (already in contact: the hand may move, it is never trapped) */
+    }
+    if (!hand_path_hits_wall(r, from, to, stop_keep) && !hand_path_hits_wall(r, to, to, stop_keep)) {
+        return to;   /* (nothing along the path is in contact) */
+    }
+    for (i = 0; i < pts && hit < 0; i++) {
+        Vec3 p = path_point(from, to, i, pts);
+
+        if (hand_path_hits_wall(r, p, p, stop_keep)) {
+            hit = i;
+        }
+    }
+    if (hit < 0) {
+        if (!hand_path_hits_wall(r, to, to, stop_keep)) {
+            /* (the path test hit but no sample did: the last free point is where it stays) */
+            return hand_path_hits_wall(r, from, to, stop_keep) ? from : to;
+        }
+        hi = to;   /* (the path's own end: a step shorter than one sample never reached it) */
+        lo = from;
+    } else {
+        hi = path_point(from, to, hit, pts);
+        lo = hit > 0 ? path_point(from, to, hit - 1, pts) : from;   /* (the last free sample) */
+    }
+    for (i = 0; i < 8; i++) {
+        Vec3 mid = vec3_scale(vec3_add(lo, hi), 0.5f);
+
+        if (hand_path_hits_wall(r, mid, mid, stop_keep)) {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    return lo;   /* (free, and as near the surface as the halving gets) */
+}
+
 /* The path a hand took this frame through a door leaf. A leaf is the box its own frame holds (12
  * wide, 22 tall, 1 thick): every face counts, so a shut door's face and an open one's edge are
  * hits alike, and no steep-normal test is needed. The door this hand holds (`skip`) is left out. */
@@ -2788,6 +2897,8 @@ void vrhands_tick(Engine *e) {
     if (sPushRoom != e->room.id) {
         memset(sPushNow, 0, sizeof(sPushNow));
         memset(sPushWas, 0, sizeof(sPushWas));
+        sHandHave[0] = sHandHave[1] = 0;        /* (another room's doors and walls are not the old's) */
+        sHandStopHave[0] = sHandStopHave[1] = 0;
         sPushRoom = e->room.id;
     }
     for (side = 0; side < 2; side++) {
@@ -2804,6 +2915,7 @@ void vrhands_tick(Engine *e) {
             }
             sGripWas[side] = 0.0f;
             sHandHave[side] = 0;
+            sHandStopHave[side] = 0;   /* (no hand, no stop: the next one takes the hand as it is) */
 #if 0   /* (temporary: no hand, no leaf in reach) */
             sWardNear[side] = 0;   /* (temporary: no hand, no leaf in reach) */
 #endif
