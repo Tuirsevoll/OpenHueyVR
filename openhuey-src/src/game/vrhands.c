@@ -3267,7 +3267,8 @@ void vrhands_tick(Engine *e) {
                 }
             }
         }
-        {   /* the path the hand took this frame through a wall, a door leaf or a placed thing: one
+        if (WALL_BUZZ) {   /* (the buzz is off: no path is swept for it at all) */
+            /* the path the hand took this frame through a wall, a door leaf or a placed thing: one
              * buzz as it enters. What that hand holds is not in its own way. The room's walls are
              * asked at the fingertip too, so a hand reaching fingers first is warned. */
             int skipDoor = sHold[side] == HOLD_DOOR ? sHoldId[side] : -1;
