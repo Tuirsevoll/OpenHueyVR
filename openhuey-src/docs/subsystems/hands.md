@@ -35,12 +35,17 @@ swept through something solid.
 - A hand entering a wall, a leaf or a placed object buzzes its controller once
   (`vr_haptic(side, 0.15f, 0.03f)`); leaving it lets the next entry buzz again.
 - **The arm stops at the room's mesh** (`path_stop`, `hand_stop` in `src/game/vrhands.c`): a wall,
-  floor or ceiling of the room's mesh stops the hand's arm at `HAND_STOP` from the surface - the
-  buzz's own 0.40 (temporarily 2.0, a diagnostic, so the stop can be seen). The stop is the free
-  point nearest the face, found by the 0.2 sampling and eight halvings, and it is always free, so
-  asking again from it gives the same answer (the arm is posed once a tick and once a drawn frame
-  and must not creep). A hand already at a surface, and a path clear of it, are let through: the
-  hand is never trapped.
+  floor or ceiling of the room's mesh stops the hand's arm at `HAND_STOP`, the buzz's own 0.40 from
+  the surface. The stop is the free point nearest the face, found by the 0.2 sampling and eight
+  halvings, and it is always free, so asking again from it gives the same answer (the arm is posed
+  once a tick and once a drawn frame and must not creep). A hand already at a surface, and a path
+  clear of it, are let through: the hand is never trapped.
+- **The wrist and the fingertip both count**, for the stop and for the buzz. The hand's length is
+  `hand_length` (`HAND_METRES` of hand, `HAND_SCALE` larger, fitted like `hand_scale`); the tip is
+  that far along the controller's `fwd`. The stop is the wrist stop or the tip's stop taken back to
+  the wrist, whichever is nearer the place the hand already had, and the buzz fires when either the
+  wrist's path or the tip's path comes within 0.40 of a face - so a hand reaching fingers first is
+  stopped and warned.
 - **The stop is kept in world space** (`sHandStop`, a point in the room, not an offset from her
   head), so a hand pressed against a wall stays where it touched while she walks or turns. It is
   let go when the controller is more than `HAND_RELEASE` (temporarily 5.0, about an arm's length)
@@ -53,7 +58,8 @@ swept through something solid.
 
 ## Status
 
-Walls, floors and ceilings stop the arm. Doors and placed objects buzz only.
+Walls, floors and ceilings stop the arm at 0.40, from the wrist or the fingertip, whichever meets
+the wall first. Doors and placed objects buzz only.
 
 Checked by `tests/hands_sweep_check.c` (`hands_sweep_check`): a path across a wall, a path clear of
 it, a fast sweep through a thin wall, a path along a floor (a flat face counts), a path coming down

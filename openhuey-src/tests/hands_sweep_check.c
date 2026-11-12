@@ -368,6 +368,35 @@ int main(void) {
 
         want("a push shorter than one sample is stopped too", fabsf(stop.x) >= 2.0f && fabsf(stop.x) <= 2.1f, 1);
     }
+    /* the fingertip: the wrist's own path stays clear of the wall, the tip (wrist + off) reaches it.
+     * `off` is a hand's length (about 3.5 units) along fwd, pointing at the wall. */
+    {
+        Vec3 off = vec3(-3.5f, 0.0f, 0.0f);
+        Vec3 from = vec3(5.0f, 1.5f, 0.0f);
+        Vec3 to = vec3(3.7f, 1.5f, 0.0f);
+        Vec3 grip = path_stop(&wall, from, to, 0.40f);                          /* (the wrist: clear) */
+        Vec3 tip = path_stop(&wall, vec3_add(from, off), vec3_add(to, off), 0.40f);
+        Vec3 stop = vec3_sub(tip, off);                                        /* (taken back to the wrist) */
+        Vec3 again = vec3_sub(path_stop(&wall, vec3_add(stop, off), vec3_add(to, off), 0.40f), off);
+
+        want("the wrist's own path is clear of the wall", grip.x == to.x && grip.z == to.z, 1);
+        want("a fingertip reaching the wall stops the wrist",
+             fabsf(tip.x) >= 0.35f && fabsf(tip.x) <= 0.45f && stop.x >= to.x, 1);
+        want("asking again from the fingertip's stop gives the same stop",
+             fabsf(again.x - stop.x) <= 0.001f && fabsf(again.y - stop.y) <= 0.001f &&
+                 fabsf(again.z - stop.z) <= 0.001f, 1);
+    }
+    {
+        /* both the wrist and the fingertip stay clear */
+        Vec3 off = vec3(-3.5f, 0.0f, 0.0f);
+        Vec3 from = vec3(6.0f, 1.5f, 0.0f);
+        Vec3 to = vec3(5.5f, 1.5f, 0.0f);
+        Vec3 grip = path_stop(&wall, from, to, 0.40f);
+        Vec3 tip = vec3_sub(path_stop(&wall, vec3_add(from, off), vec3_add(to, off), 0.40f), off);
+        Vec3 stop = vec3_len(vec3_sub(from, tip)) < vec3_len(vec3_sub(from, grip)) ? tip : grip;
+
+        want("a hand clear at wrist and fingertip is let through", stop.x == to.x && stop.z == to.z, 1);
+    }
     printf("hands: faces counted: %d of 2 (the wall), %d of 1 (the floor), %d of 1 (the table top)\n",
            face_tris(&wall), face_tris(&floor), face_tris(&table));
     if (sFails != 0) {

@@ -127,9 +127,8 @@ static Vec3 sCenter[2];
 /* Both hands, every pose. 1 leaves the fitted size; 1.5 is half again as large. */
 #define HAND_SCALE 1.5f
 /* The arm stops at the room's mesh where the hand's buzz fires (SWING_SKIN's 0.40): the hand is
- * stopped at the surface it has just been warned of. */
-/* (temporary: diagnosis, 2.0 so the stop is visible; restore 0.40 later) */
-#define HAND_STOP 2.0f
+ * stopped at the surface it has just been warned of, from the wrist and from the fingertip. */
+#define HAND_STOP 0.40f
 /* (temporary: the arm stops letting go when the hand is this far from its stop, about an arm's
  * length) */
 #define HAND_RELEASE 5.0f
@@ -262,14 +261,26 @@ static int hand_world(int side, Vec3 *at, Vec3 *right, Vec3 *up, Vec3 *fwd, floa
     return 1;
 }
 
+/* The hand's length in room units, wrist to fingertip: what hand_scale fits it to (HAND_METRES of
+ * hand, HAND_SCALE larger; the measured extent only sets the scale that reaches this). */
+static float hand_length(void) {
+    float body = 1.0f;
+
+    vr_body(NULL, &body);
+    if (body < 0.2f) {
+        body = 1.0f;
+    }
+    return HAND_METRES * VR_UNITS_PER_METER / body * HAND_SCALE;
+}
+
 /* The arm's place this frame: the controller's own, stopped at the room's mesh (walls, floors and
- * ceilings). The stop is a point in the room, not an offset from her head, so a hand pressed
- * against a wall stays where it touched while she walks or turns; it is let go once the controller
- * has gone a long way from it. The stop is made from the place the arm already had, so a hand is
- * never pulled through a wall; the first frame after the controller is found takes the hand as it
- * is. */
-static Vec3 hand_stop(const Engine *e, int side, Vec3 raw) {
-    Vec3 stop, next;
+ * ceilings), from the wrist and from the fingertip - whichever meets a surface first. The stop is
+ * a point in the room, not an offset from her head, so a hand pressed against a wall stays where it
+ * touched while she walks or turns; it is let go once the controller has gone a long way from it.
+ * The stop is made from the place the arm already had, so a hand is never pulled through a wall;
+ * the first frame after the controller is found takes the hand as it is. */
+static Vec3 hand_stop(const Engine *e, int side, Vec3 raw, Vec3 fwd) {
+    Vec3 stop, next, tip, tip_stop, off;
 
     if (!sHandStopHave[side]) {
         sHandStop[side] = raw;
@@ -282,7 +293,15 @@ static Vec3 hand_stop(const Engine *e, int side, Vec3 raw) {
         sHandStop[side] = raw;
         return raw;
     }
-    next = path_stop(&e->room, stop, raw, HAND_STOP);
+    off = vec3_scale(fwd, hand_length());
+    next = path_stop(&e->room, stop, raw, HAND_STOP);   /* (the wrist's own stop) */
+    tip = path_stop(&e->room, vec3_add(stop, off), vec3_add(raw, off), HAND_STOP);
+    tip_stop = vec3_sub(tip, off);   /* (the fingertip's stop, taken back to the wrist) */
+    /* whichever stop is nearer the place the hand already had: the one that gives way first, so
+     * neither the wrist nor the fingertip can be pushed into a surface */
+    if (vec3_len(vec3_sub(stop, tip_stop)) < vec3_len(vec3_sub(stop, next))) {
+        next = tip_stop;
+    }
     sHandStop[side] = next;
     return next;
 }
@@ -860,7 +879,7 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         }
         (void)right;
         sStopRaw[side] = at;                    /* (temporary: the stop is holding the hand back) */
-        at = hand_stop(&gEngine, side, at);   /* the arm's place: the controller's, stopped at the room */
+        at = hand_stop(&gEngine, side, at, fwd);   /* the arm's place: the controller's, stopped at the room */
         {   /* (temporary: the stop is holding the hand back) */
             int held = vec3_len(vec3_sub(sStopRaw[side], at)) > 0.05f;
 
@@ -2902,7 +2921,7 @@ void vrhands_tick(Engine *e) {
         sPushRoom = e->room.id;
     }
     for (side = 0; side < 2; side++) {
-        Vec3 at, right, fwd, up;
+        Vec3 at, right, fwd, up, off;
         float grip, index, thumb, doorD, propD, wardD;
         int rising, door, axis = 0, prop, ward;
 
@@ -2928,6 +2947,7 @@ void vrhands_tick(Engine *e) {
         (void)right;
         (void)index;
         (void)thumb;
+        off = vec3_scale(fwd, hand_length());   /* (the fingertip: the wrist's place, plus this) */
         rising = grip > 0.65f && sGripWas[side] <= 0.4f;
         if (rising) {
             int rattled = -1, rattAxis = 0;
@@ -3102,11 +3122,13 @@ void vrhands_tick(Engine *e) {
             }
         }
         {   /* the path the hand took this frame through a wall, a door leaf or a placed thing: one
-             * buzz as it enters. What that hand holds is not in its own way. */
+             * buzz as it enters. What that hand holds is not in its own way. The room's walls are
+             * asked at the fingertip too, so a hand reaching fingers first is warned. */
             int skipDoor = sHold[side] == HOLD_DOOR ? sHoldId[side] : -1;
             int skipProp = sHold[side] == HOLD_PROP || sHold[side] == HOLD_WARD ? sHoldId[side] : -1;
             int wall = sHandHave[side] &&
                        (hand_path_hits_wall(&e->room, sHandAt[side], at, 0.40f) ||
+                        hand_path_hits_wall(&e->room, vec3_add(sHandAt[side], off), vec3_add(at, off), 0.40f) ||
                         hand_path_hits_door(e, skipDoor, sHandAt[side], at, 0.40f) ||
                         hand_path_hits_placed(&e->room.placed, skipProp, sHandAt[side], at, 0.40f));
 
