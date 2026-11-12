@@ -7,6 +7,9 @@
  * moves; gripping its knob rattles once. A placed leaf - the nursery wardrobe's doors - is held
  * by its animation's frame instead: the hand's angle about its hinge is the frame its track gives,
  * and a leaf let go while it was turning keeps that speed to the stop it was heading for. */
+/* temporary, for the headset smoothing test; remove later */
+#define VR_STEP_LOG 1
+
 #include "vrhands.h"
 #include "loot.h"
 #include "things.h"
@@ -22,6 +25,33 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+
+#if VR_STEP_LOG
+/* (temporary, for the headset smoothing test; remove later) what the pose costs, in microseconds:
+ * the whole of vrhands_pose, and the hand_stop() calls in it (one a side, so both add up). Added to
+ * as she is posed, taken and cleared by vrhands_take_times (main.c, once a DRAW line). */
+static unsigned pose_us;
+static unsigned stop_us;
+
+/* a performance-counter span in microseconds (0 when the counter has no frequency) */
+static unsigned perf_us(Uint64 from, Uint64 to) {
+    Uint64 f = SDL_GetPerformanceFrequency();
+
+    return f > 0 ? (unsigned)((to - from) * 1000000ull / f) : 0;
+}
+
+/* the times added up since the last call (either pointer may be NULL), both cleared */
+void vrhands_take_times(unsigned *pose, unsigned *stop) {
+    if (pose != NULL) {
+        *pose = pose_us;
+    }
+    if (stop != NULL) {
+        *stop = stop_us;
+    }
+    pose_us = 0;
+    stop_us = 0;
+}
+#endif
 
 #define HOLD_NONE 0
 #define HOLD_DOOR 1
@@ -869,8 +899,14 @@ static void log_hands(float left, float right, int posed) {
 void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace) {
     float applied[2] = {0.0f, 0.0f};
     int side, posed = 0;
+#if VR_STEP_LOG
+    Uint64 t_pose = SDL_GetPerformanceCounter();   /* (temporary: the pose's own time) */
+#endif
 
     if (!vrhands_wants(a) || !a->visible || world == NULL) {
+#if VR_STEP_LOG
+        pose_us += perf_us(t_pose, SDL_GetPerformanceCounter());
+#endif
         return;
     }
     find_arms(a, world);
@@ -884,7 +920,16 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         }
         (void)right;
         sStopRaw[side] = at;                    /* (temporary: the stop is holding the hand back) */
+#if VR_STEP_LOG
+        {   /* (temporary: how long the stop takes, both hands adding up) */
+            Uint64 t_stop = SDL_GetPerformanceCounter();
+
+            at = hand_stop(&gEngine, side, at, fwd);   /* the arm's place: the controller's, stopped at the room */
+            stop_us += perf_us(t_stop, SDL_GetPerformanceCounter());
+        }
+#else
         at = hand_stop(&gEngine, side, at, fwd);   /* the arm's place: the controller's, stopped at the room */
+#endif
         {   /* (temporary: the stop is holding the hand back) */
             int held = vec3_len(vec3_sub(sStopRaw[side], at)) > 0.05f;
 
@@ -901,6 +946,9 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         posed++;
     }
     log_hands(applied[0], applied[1], posed);
+#if VR_STEP_LOG
+    pose_us += perf_us(t_pose, SDL_GetPerformanceCounter());
+#endif
 }
 
 static float wrap_deg(float d) {
@@ -2247,17 +2295,25 @@ static int room_touch(const Room *r, Vec3 p) {
  * cross product nothing) is no face of anything. A check only: nothing is blocked. */
 #define WALL_SAMPLE 0.2f   /* the most a sample point is from the one before */
 #define WALL_SAMPLES 32    /* points along the path at most */
+#define WALL_BOX_SLOP 0.01f   /* (a hair of slack on the path's box, so rounding cannot skip a hit) */
 
 int hand_path_hits_wall(const Room *r, Vec3 from, Vec3 to, float skin) {
     const RoomMesh *m = &r->mesh;
     float lim2 = skin * skin;
     Vec3 path = vec3_sub(to, from);
     int pts = (int)(vec3_len(path) / WALL_SAMPLE) + 1;
+    Vec3 lo, hi;   /* (the box the samples sit in, the skin wider) */
     int i;
 
     if (pts > WALL_SAMPLES) {
         pts = WALL_SAMPLES;
     }
+    /* every sample lies on from..to, so their box is those two places, the skin wider: a triangle
+     * whose own box is clear of it cannot be within the skin of any sample */
+    lo = vec3(fminf(from.x, to.x) - skin - WALL_BOX_SLOP, fminf(from.y, to.y) - skin - WALL_BOX_SLOP,
+              fminf(from.z, to.z) - skin - WALL_BOX_SLOP);
+    hi = vec3(fmaxf(from.x, to.x) + skin + WALL_BOX_SLOP, fmaxf(from.y, to.y) + skin + WALL_BOX_SLOP,
+              fmaxf(from.z, to.z) + skin + WALL_BOX_SLOP);
     for (i = 0; i < m->nd; i++) {
         const MeshDraw *d = &m->d[i];
         int n, end;
@@ -2273,10 +2329,17 @@ int hand_path_hits_wall(const Room *r, Vec3 from, Vec3 to, float skin) {
             Vec3 a = vec3(m->v[n].x, m->v[n].y, m->v[n].z);
             Vec3 b = vec3(m->v[n + 1].x, m->v[n + 1].y, m->v[n + 1].z);
             Vec3 c = vec3(m->v[n + 2].x, m->v[n + 2].y, m->v[n + 2].z);
-            Vec3 nrm = vec3_cross(vec3_sub(b, a), vec3_sub(c, a));
-            float nl = vec3_len(nrm);
+            Vec3 nrm;
+            float nl;
             int s;
 
+            if (fmaxf(a.x, fmaxf(b.x, c.x)) < lo.x || fminf(a.x, fminf(b.x, c.x)) > hi.x ||
+                fmaxf(a.y, fmaxf(b.y, c.y)) < lo.y || fminf(a.y, fminf(b.y, c.y)) > hi.y ||
+                fmaxf(a.z, fmaxf(b.z, c.z)) < lo.z || fminf(a.z, fminf(b.z, c.z)) > hi.z) {
+                continue;   /* (its box is clear of the path's: no sample can be within the skin) */
+            }
+            nrm = vec3_cross(vec3_sub(b, a), vec3_sub(c, a));
+            nl = vec3_len(nrm);
             if (nl <= 0.0f) {
                 continue;   /* (a sliver with no facing: no face of anything) */
             }

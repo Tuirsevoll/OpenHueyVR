@@ -12,6 +12,9 @@ struct PlacedSet;
 
 int vrhands_wants(const struct Actor *a);
 void vrhands_pose(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace);
+/* (temporary, for the headset smoothing test) the microseconds vrhands_pose and its hand_stop()
+ * calls have added up since the last call, then cleared. Either pointer may be NULL. */
+void vrhands_take_times(unsigned *pose, unsigned *stop);
 /* a pet pushes the bone under the hand. Called from the pose, after the skeleton is built. */
 void vrhands_pet_pose(struct Actor *a, Mat4 *world, int nbones, const Mat4 *unplace);
 void vrhands_tick(struct Engine *e);

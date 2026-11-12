@@ -13,7 +13,9 @@ swept through something solid.
 
 - **The wall test** (`hand_path_hits_wall` in `src/game/vrhands.c`): the straight path a hand took
   this frame - from where it was last tick to where it is now - is sampled, and a sample point
-  within the skin of one of the room's mesh triangles makes it a hit.
+  within the skin of one of the room's mesh triangles makes it a hit. Each triangle is skipped when
+  its bounding box is clear of the path's bounding box, expanded by the skin: the same answer,
+  cheaper.
 - **Every face of the room's mesh counts**, on whichever side it faces: a wall, the floor, the
   ceiling, a table's top. There is no look at the triangles' normals; only a sliver with no facing
   at all (its edges' cross product nothing) is left out.

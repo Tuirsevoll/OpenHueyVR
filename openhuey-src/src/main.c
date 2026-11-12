@@ -964,6 +964,19 @@ static void hear_from_her(Engine *e) {
 }
 
 #if VR_STEP_LOG
+/* (temporary, for the headset smoothing test; remove later) how long the picture's parts take, in
+ * microseconds: prepare_shadows, and a whole blended draw_frame as its wrapper times it. Both are
+ * the last draw's - the DRAW line runs before this draw's own are known. */
+static unsigned long pre_us;
+static unsigned long total_us;
+
+/* a performance-counter span in microseconds (0 when the counter has no frequency) */
+static unsigned long perf_us(Uint64 from, Uint64 to) {
+    Uint64 f = SDL_GetPerformanceFrequency();
+
+    return f > 0 ? (unsigned long)((to - from) * 1000000ull / f) : 0;
+}
+
 /* (temporary, for the headset smoothing test; remove later) where she is and where the anchor is,
  * once a draw, as the headset sees them: pos and yaw are the Fiona in the room, the anchor and its
  * yaw are what vr_anchor_get gives at that moment. Only the draws that find her print, 400 of them. */
@@ -972,6 +985,9 @@ static void vr_step_log_draw(Engine *e) {
     Actor *pick = NULL;
     Vec3 eye = vec3(0.0f, 0.0f, 0.0f);
     float yaw = 0.0f;
+    float stick_x = 0.0f, stick_y = 0.0f;
+    unsigned pose_us = 0, stop_us = 0;
+    char hy[32];
     int i;
 
     if (n >= 400) {
@@ -993,9 +1009,17 @@ static void vr_step_log_draw(Engine *e) {
         eye = vec3(0.0f, 0.0f, 0.0f);
         yaw = 0.0f;
     }
-    fprintf(stderr, "DRAW %d ticks=%ld pos=%.3f %.3f %.3f yaw=%.4f align=%.4f anchor=%.3f %.3f %.3f anchor_yaw=%.4f\n",
+    if (pick->head.head > 0) {
+        snprintf(hy, sizeof(hy), "%.3f", actor_bone(pick, pick->head.head).y);   /* (her head bone's height) */
+    } else {
+        snprintf(hy, sizeof(hy), "none");   /* (no head bone to read) */
+    }
+    vrhands_take_times(&pose_us, &stop_us);   /* (the hands' time since the last line, then cleared) */
+    vr_stick(&stick_x, &stick_y);
+    fprintf(stderr, "DRAW %d ticks=%ld pos=%.3f %.3f %.3f yaw=%.4f align=%.4f anchor=%.3f %.3f %.3f anchor_yaw=%.4f hy=%s fr=%.2f mo=%d pre_us=%lu tot_us=%lu pose_us=%u stop_us=%u stick=%.2f %.2f\n",
             n, e->ticks, pick->pos.x, pick->pos.y, pick->pos.z, pick->yaw, sAlign,
-            eye.x, eye.y, eye.z, yaw);
+            eye.x, eye.y, eye.z, yaw, hy, pick->frame, (int)pick->motion, pre_us, total_us,
+            pose_us, stop_us, stick_x, stick_y);
 }
 #endif
 
@@ -1004,8 +1028,15 @@ static void draw_frame(Engine *e) {
     if (vr_active()) {
         vr_step_log_draw(e);
     }
-#endif
+    {   /* (temporary: how long the shadows take, for the DRAW line) */
+        Uint64 t0 = SDL_GetPerformanceCounter();
+
+        prepare_shadows(e);
+        pre_us = perf_us(t0, SDL_GetPerformanceCounter());
+    }
+#else
     prepare_shadows(e);
+#endif
     if (vr_active()) {
         int32_t aspect = gRender.aspect;
         int i, n = vr_eye_count();
@@ -1152,6 +1183,9 @@ static void draw(Engine *e) {
         Vec3 saved_pos = p->pos;
         float saved_yaw = p->yaw;
         float saved_align;
+#if VR_STEP_LOG
+        Uint64 t0;   /* (temporary: the blended frame's own time) */
+#endif
         Camera blended;
 
         p->pos = vec3(sPose.prev.x + (sPose.cur.x - sPose.prev.x) * sPose.alpha,
@@ -1165,7 +1199,13 @@ static void draw(Engine *e) {
         saved_align = sAlign;   /* (taken here: the turn it just took stays taken - the frame only blends) */
         sAlign = angle_wrap(sPose.prev_align + angle_delta(sPose.cur_align, sPose.prev_align) * sPose.alpha);
         fiona_view(e, &blended);   /* (again, so the eyes and the camera use the blended yaw) */
+#if VR_STEP_LOG
+        t0 = SDL_GetPerformanceCounter();   /* (temporary: the whole blended frame, timed) */
+#endif
         draw_frame(e);
+#if VR_STEP_LOG
+        total_us = perf_us(t0, SDL_GetPerformanceCounter());
+#endif
         p->pos = saved_pos;   /* (the game's own place and turn: no frame leaves them moved) */
         p->yaw = saved_yaw;
         sAlign = saved_align;
