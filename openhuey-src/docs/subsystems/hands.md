@@ -40,6 +40,13 @@ swept through something solid.
   halvings, and it is always free, so asking again from it gives the same answer (the arm is posed
   once a tick and once a drawn frame and must not creep). A hand already at a surface, and a path
   clear of it, are let through: the hand is never trapped.
+- **The stop slides along the surface** (`path_slide`): the stop is asked for, and where it met a
+  face the rest of the motion has the part going into that face removed (`wall_normal_at` gives
+  the face's normal, turned toward the side the hand came from) and the sideways part kept, so a
+  hand pushing at an angle slides along the wall instead of sticking. That is asked again from the
+  new place, up to three rounds, so a gentle corner can be turned. A hand pushing straight in has
+  nothing sideways left and stops dead. Each round's answer is free of the surface, and the whole
+  path is still swept, so a fast hand cannot pass through a thin wall.
 - **The wrist and the fingertip both count**, for the stop and for the buzz. The hand's length is
   `hand_length` (`HAND_METRES` of hand, `HAND_SCALE` larger, fitted like `hand_scale`); the tip is
   that far along the controller's `fwd`. The stop is the wrist stop or the tip's stop taken back to
@@ -54,12 +61,11 @@ swept through something solid.
 - **The raw controller still does everything else**: the buzz's detection (`hand_path_hits_*` in
   `vrhands_tick`), the door push (`push_step`) and every grab and swing read the controller's own
   position, unchanged. Only the arm is stopped.
-- **Sticking is expected**: a hand stopped at a wall does not slide along it yet.
 
 ## Status
 
-Walls, floors and ceilings stop the arm at 0.40, from the wrist or the fingertip, whichever meets
-the wall first. Doors and placed objects buzz only.
+Walls, floors and ceilings stop the arm at 0.40 and let it slide along them. Doors and placed
+objects buzz only.
 
 Checked by `tests/hands_sweep_check.c` (`hands_sweep_check`): a path across a wall, a path clear of
 it, a fast sweep through a thin wall, a path along a floor (a flat face counts), a path coming down
@@ -68,13 +74,18 @@ onto a table top within the skin and one staying well above it, a path across a 
 face (the same when that object is the one held), a path over a placed object's flat top, a placed
 face moved and turned by placed.c's own placement - found where it now is, not where it was - and
 the arm's stop: a path into a wall stopping 0.40 short, the same stop asked again from there, and
-a path clear of the wall (or a hand already at it) let through.
+a path clear of the wall (or a hand already at it) let through; the wrist and the fingertip; and
+the slide: a hand pushing at an angle stopping 0.40 out and keeping its sideways motion, a hand
+pushing straight in stopping dead with no sideways move, the slide asked again from its own point,
+a hand moving parallel to the wall let through, and a fast hand crossing the wall in one move
+stopped in front of it.
 
 ## Left
 
+- Sharp corners: the slide tries three rounds, so at a very sharp inside corner the hand may stop
+  rather than turn.
 - Doors as blockers: a hand still goes through a leaf; the stop must ride on the leaf's own frame.
 - Placed objects as blockers: a hand still goes through a crate or a table.
-- Sliding along walls: a stopped hand sticks where it met the surface.
 - Held things still follow the raw hand (a prop, a leaf or loot can clip into a wall while the arm
   stops), because `HOLD_PROP`/`HOLD_WARD`/`HOLD_LOOT` move by the controller's position.
 - Loot items: a hand's own pickup (`HOLD_LOOT`) is not a source of hits, so an item in the hand

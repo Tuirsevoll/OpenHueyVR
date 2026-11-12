@@ -274,11 +274,12 @@ static float hand_length(void) {
 }
 
 /* The arm's place this frame: the controller's own, stopped at the room's mesh (walls, floors and
- * ceilings), from the wrist and from the fingertip - whichever meets a surface first. The stop is
- * a point in the room, not an offset from her head, so a hand pressed against a wall stays where it
- * touched while she walks or turns; it is let go once the controller has gone a long way from it.
- * The stop is made from the place the arm already had, so a hand is never pulled through a wall;
- * the first frame after the controller is found takes the hand as it is. */
+ * ceilings), from the wrist and from the fingertip - whichever meets a surface first - and slid
+ * along that surface where the hand pushes at an angle. The stop is a point in the room, not an
+ * offset from her head, so a hand pressed against a wall stays where it touched while she walks or
+ * turns; it is let go once the controller has gone a long way from it. The stop is made from the
+ * place the arm already had, so a hand is never pulled through a wall; the first frame after the
+ * controller is found takes the hand as it is. */
 static Vec3 hand_stop(const Engine *e, int side, Vec3 raw, Vec3 fwd) {
     Vec3 stop, next, tip, tip_stop, off;
 
@@ -294,8 +295,8 @@ static Vec3 hand_stop(const Engine *e, int side, Vec3 raw, Vec3 fwd) {
         return raw;
     }
     off = vec3_scale(fwd, hand_length());
-    next = path_stop(&e->room, stop, raw, HAND_STOP);   /* (the wrist's own stop) */
-    tip = path_stop(&e->room, vec3_add(stop, off), vec3_add(raw, off), HAND_STOP);
+    next = path_slide(&e->room, stop, raw, HAND_STOP);   /* (the wrist's own slide) */
+    tip = path_slide(&e->room, vec3_add(stop, off), vec3_add(raw, off), HAND_STOP);
     tip_stop = vec3_sub(tip, off);   /* (the fingertip's stop, taken back to the wrist) */
     /* whichever stop is nearer the place the hand already had: the one that gives way first, so
      * neither the wrist nor the fingertip can be pushed into a surface */
@@ -2351,6 +2352,82 @@ Vec3 path_stop(const Room *r, Vec3 from, Vec3 to, float keep) {
         }
     }
     return lo;   /* (free, and as near the surface as the halving gets) */
+}
+
+/* The face nearest a point, within a little of `keep`, and the way it faces - turned toward the
+ * side the hand came from (`toward`), so the caller can slide along the free side of it. 0 when no
+ * face of the room's mesh is that near. */
+static int wall_normal_at(const Room *r, Vec3 p, float keep, Vec3 toward, Vec3 *n) {
+    const RoomMesh *m = &r->mesh;
+    float lim = keep + 0.05f, best = lim * lim;
+    Vec3 face = vec3(0.0f, 0.0f, 0.0f);
+    int i, found = 0;
+
+    for (i = 0; i < m->nd; i++) {
+        const MeshDraw *d = &m->d[i];
+        int t, end;
+
+        if (d->count < 3 || d->mask || !group_shown(r, d->group)) {
+            continue;
+        }
+        end = d->first + d->count;
+        if (end > m->nv) {
+            end = m->nv;
+        }
+        for (t = d->first; t + 2 < end; t += 3) {
+            Vec3 a = vec3(m->v[t].x, m->v[t].y, m->v[t].z);
+            Vec3 b = vec3(m->v[t + 1].x, m->v[t + 1].y, m->v[t + 1].z);
+            Vec3 c = vec3(m->v[t + 2].x, m->v[t + 2].y, m->v[t + 2].z);
+            Vec3 nrm = vec3_cross(vec3_sub(b, a), vec3_sub(c, a));
+            float nl = vec3_len(nrm), dist;
+
+            if (nl <= 0.0f) {
+                continue;   /* (a sliver with no facing: no face of anything) */
+            }
+            dist = tri_dist2(p, a, b, c);
+            if (dist > best) {
+                continue;
+            }
+            best = dist;
+            face = vec3_scale(nrm, 1.0f / nl);
+            found = 1;
+        }
+    }
+    if (!found) {
+        return 0;
+    }
+    if (vec3_dot(face, vec3_sub(toward, p)) < 0.0f) {
+        face = vec3_scale(face, -1.0f);   /* (the free side is the side the hand came from) */
+    }
+    *n = face;
+    return 1;
+}
+
+/* Where a hand may go, sliding: the stop is asked for, and where it met a surface the rest of the
+ * motion is taken into that surface only sideways - the part pressing into the face is dropped -
+ * and the stop is asked again from there, up to three rounds, so a hand pushing at an angle slides
+ * along the wall instead of sticking. Pushing straight in leaves nothing sideways: it stops dead.
+ * Each round's answer is free of the surface, and the whole path is swept, so a fast hand cannot
+ * pass through a thin wall. */
+Vec3 path_slide(const Room *r, Vec3 from, Vec3 to, float keep) {
+    Vec3 pos = from, target = to;
+    int round;
+
+    for (round = 0; round < 3; round++) {
+        Vec3 s = path_stop(r, pos, target, keep), n, rest;
+
+        if (vec3_len(vec3_sub(s, target)) < 0.001f) {
+            return target;   /* (the whole step got through) */
+        }
+        if (!wall_normal_at(r, s, keep, pos, &n)) {
+            return s;        /* (no face near the stop: it is the answer) */
+        }
+        rest = vec3_sub(target, s);
+        rest = vec3_sub(rest, vec3_scale(n, vec3_dot(rest, n)));   /* (the sideways part only) */
+        pos = s;
+        target = vec3_add(s, rest);
+    }
+    return pos;
 }
 
 /* The path a hand took this frame through a door leaf. A leaf is the box its own frame holds (12

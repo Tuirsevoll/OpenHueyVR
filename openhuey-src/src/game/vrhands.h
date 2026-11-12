@@ -30,6 +30,11 @@ int hand_path_hits_placed(const struct PlacedSet *s, int skip, Vec3 from, Vec3 t
  * the hand is already in contact at `from` (a hand is never trapped). The point it returns is
  * always free, so asking again from it gives the same answer. */
 Vec3 path_stop(const struct Room *r, Vec3 from, Vec3 to, float keep);
+/* The same, but sliding: where the stop meets a wall, floor or ceiling, the part of the remaining
+ * motion that goes into the surface is removed and the hand keeps the sideways part, so it slides
+ * along the surface (up to three rounds, so gentle corners can be turned). A hand pushing straight
+ * in still stops dead. The result is always free of the surface, like path_stop's. */
+Vec3 path_slide(const struct Room *r, Vec3 from, Vec3 to, float keep);
 void vrhands_forget_poses(void);
 /* 1 when that controller is on Hewie. A touch also gives that hand a mild buzz. */
 int vrhands_petting(int side);

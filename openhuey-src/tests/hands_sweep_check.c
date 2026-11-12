@@ -397,6 +397,43 @@ int main(void) {
 
         want("a hand clear at wrist and fingertip is let through", stop.x == to.x && stop.z == to.z, 1);
     }
+    /* the slide (path_slide): a hand pushing at an angle keeps the sideways part of its motion */
+    {
+        Vec3 from = vec3(2.0f, 1.5f, 0.0f);
+        Vec3 to = vec3(-0.5f, 1.5f, 1.0f);            /* (forward 2.5, sideways 1.0) */
+        Vec3 first = path_stop(&wall, from, to, 0.40f);
+        Vec3 slide = path_slide(&wall, from, to, 0.40f);
+        Vec3 again = path_slide(&wall, slide, to, 0.40f);
+
+        want("a hand pushing at an angle still stops 0.40 from the wall",
+             fabsf(slide.x - 0.40f) <= 0.05f, 1);
+        want("and its sideways motion is kept, not left at the first stop",
+             slide.z >= 0.95f && slide.z > first.z + 0.1f, 1);
+        want("asking again from the slide's point gives the same point",
+             fabsf(again.x - slide.x) <= 0.001f && fabsf(again.y - slide.y) <= 0.001f &&
+                 fabsf(again.z - slide.z) <= 0.001f, 1);
+    }
+    {
+        /* straight in: nothing sideways, so it stops dead */
+        Vec3 slide = path_slide(&wall, vec3(2.0f, 1.5f, 0.0f), vec3(0.0f, 1.5f, 0.0f), 0.40f);
+
+        want("a hand pushing straight in stops dead, with no sideways move",
+             fabsf(slide.x - 0.40f) <= 0.05f && fabsf(slide.z) <= 0.001f, 1);
+    }
+    {
+        /* parallel to the wall, a metre out: let through */
+        Vec3 to = vec3(1.0f, 1.5f, 1.0f);
+        Vec3 slide = path_slide(&wall, vec3(1.0f, 1.5f, -1.0f), to, 0.40f);
+
+        want("a hand moving parallel to the wall is let through", slide.x == to.x && slide.z == to.z, 1);
+    }
+    {
+        /* a fast hand crossing the wall in one move: still stopped in front of it */
+        Vec3 slide = path_slide(&wall, vec3(-3.0f, 1.5f, 0.0f), vec3(3.0f, 1.5f, 0.0f), 0.40f);
+
+        want("a fast hand crossing the wall in one move stays in front of it",
+             slide.x <= -0.35f && fabsf(slide.x + 0.40f) <= 0.05f, 1);
+    }
     printf("hands: faces counted: %d of 2 (the wall), %d of 1 (the floor), %d of 1 (the table top)\n",
            face_tris(&wall), face_tris(&floor), face_tris(&table));
     if (sFails != 0) {
