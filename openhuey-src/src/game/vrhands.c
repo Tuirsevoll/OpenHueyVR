@@ -69,6 +69,17 @@ static int sHandHave[2];
 static int sPoseRoom = -2;
 /* (temporary: the arm diagnostics - pose_arm calls since each side last wrote a line) */
 static unsigned sArmLog[2];
+/* (temporary: the palm-gap diagnostic's write limiter, a side at a time) */
+static unsigned sPalmLog[2];
+/* (temporary: the jump diagnostic - last frame's palm and elbow positions, Fiona's and the
+ * eye's position and yaw, the controller's position, its write limiter, and the aim fallback's
+ * running count for each side) */
+static float sPalmWas[2][3], sElbowWas[2][3];
+static float sBodyWas[2][3], sEyeWas[2][3], sAtWas[2][3];
+static float sBodyYawWas[2], sEyeYawWas[2];
+static int sPointHave[2];
+static unsigned sJumpLog[2];
+static unsigned sAimFallback[2];
 /* one pose per door, shared by both rooms it joins */
 static float sDoorSwing[DOORS];
 static unsigned char sDoorHave[DOORS], sDoorOpen[DOORS];
@@ -92,6 +103,9 @@ static float sBendWas[2][3];
 static int sBendHave[2];
 static float sTwistWas[2];
 static int sTwistHave[2];
+/* the last good up vector aim() built for each side, kept for a reference along the bone */
+static float sUpWas[2][3];
+static int sUpHave[2];
 static const Model *sExtentModel;
 static int sExtentVerts;
 static float sExtent[2];
@@ -104,6 +118,17 @@ static Vec3 sCenter[2];
 #define ARM_LENGTH_SCALE 1.5f
 /* the elbows' bend in her body's frame: down and out, a little behind her (her forward is +z) */
 #define ELBOW_BACK -0.3f
+/* the elbow's bend turns at most this a frame (5 degrees), and a pole nearer than this to the
+ * arm's line (sin of the angle, about 11.5 degrees) is blended toward straight down first */
+#define ELBOW_STEP 0.087266f
+#define ELBOW_ALONG 0.2f
+/* how the controller's twist about the forearm is shared: the forearm's aim takes the first
+ * share, the wrist the next, and the palm keeps the rest (1 - TWIST_FOREARM - TWIST_WRIST) */
+#define TWIST_FOREARM 0.5f
+#define TWIST_WRIST 0.25f
+/* aim()'s reference nearer than this to the bone's length (sin of the angle, about 2.9°) is
+ * taken as degenerate: the last good up for that side is used instead */
+#define AIM_PARALLEL 0.05f
 /* Both hands, every pose. 1 leaves the fitted size; 1.5 is half again as large. */
 #define HAND_SCALE 1.5f
 
@@ -339,13 +364,12 @@ static void v_cross(float *o, const float *a, const float *b) {
     o[2] = a[0] * b[1] - a[1] * b[0];
 }
 
-/* the middle joint, bent toward `pole` in the plane square to the arm. `outward` is the
- * fallback bend (her left / right in room space) for a pole lying along the arm.
+/* the middle joint, bent toward `pole` in the plane square to the arm, its direction turned at
+ * most ELBOW_STEP a frame so it cannot snap between straight and bent.
  * 1 when the target is out of reach. */
 static int place_middle(const float *root, float *mid, const float *end, const float *pole,
-                        float l1, float l2, int side, const float *outward) {
-    float d[3], sidev[3], dist, a, h, ll, dot;
-    int have;
+                        float l1, float l2, int side) {
+    float d[3], target[3], dist, a, h, ll, dot, plen, sin_a;
 
     v_sub(d, end, root);
     dist = v_len(d);
@@ -356,104 +380,149 @@ static int place_middle(const float *root, float *mid, const float *end, const f
     if (dist > l1 + l2) {
         dist = l1 + l2;
     }
-    /* the pole is where the elbow goes: its part square to the shoulder-to-hand line */
+    /* the pole is where the elbow goes. Near along the arm it is blended toward straight down
+     * first, so its part square to the arm is never left undefined (no jump case) */
+    plen = v_len(pole);
     dot = pole[0] * d[0] + pole[1] * d[1] + pole[2] * d[2];
-    sidev[0] = pole[0] - dot * d[0];
-    sidev[1] = pole[1] - dot * d[1];
-    sidev[2] = pole[2] - dot * d[2];
-    ll = v_len(sidev);
-    if (ll > 1.0e-4f) {
-        v_norm(sidev, sidev);
-    } else {
-        /* the pole is along the arm: keep last frame's bend, else go out to that side */
-        have = 0;
-        if (sBendHave[side]) {
-            dot = sBendWas[side][0] * d[0] + sBendWas[side][1] * d[1] + sBendWas[side][2] * d[2];
-            sidev[0] = sBendWas[side][0] - dot * d[0];
-            sidev[1] = sBendWas[side][1] - dot * d[1];
-            sidev[2] = sBendWas[side][2] - dot * d[2];
-            ll = v_len(sidev);
-            if (ll > 1.0e-4f) {
-                v_norm(sidev, sidev);
-                have = 1;
-            }
+    target[0] = pole[0] - dot * d[0];
+    target[1] = pole[1] - dot * d[1];
+    target[2] = pole[2] - dot * d[2];
+    ll = v_len(target);
+    sin_a = plen > 1.0e-5f ? ll / plen : 0.0f;
+    if (sin_a < ELBOW_ALONG) {
+        float k = 1.0f - sin_a / ELBOW_ALONG;
+        float p[3];
+
+        p[0] = pole[0] * (1.0f - k);
+        p[1] = pole[1] * (1.0f - k) - k;   /* toward straight down */
+        p[2] = pole[2] * (1.0f - k);
+        dot = p[0] * d[0] + p[1] * d[1] + p[2] * d[2];
+        target[0] = p[0] - dot * d[0];
+        target[1] = p[1] - dot * d[1];
+        target[2] = p[2] - dot * d[2];
+    }
+    v_norm(target, target);
+    /* at most ELBOW_STEP a frame toward it, from last frame's bend for this side */
+    if (sBendHave[side]) {
+        float cp = sBendWas[side][0] * target[0] + sBendWas[side][1] * target[1] +
+                   sBendWas[side][2] * target[2];
+        float ang;
+
+        if (cp > 1.0f) {
+            cp = 1.0f;
+        } else if (cp < -1.0f) {
+            cp = -1.0f;
         }
-        if (!have) {
-            dot = outward[0] * d[0] + outward[1] * d[1] + outward[2] * d[2];
-            sidev[0] = outward[0] - dot * d[0];
-            sidev[1] = outward[1] - dot * d[1];
-            sidev[2] = outward[2] - dot * d[2];
-            ll = v_len(sidev);
+        ang = acosf(cp);
+        if (ang > ELBOW_STEP) {
+            float t = ELBOW_STEP / ang;
+            float s0 = sinf((1.0f - t) * ang) / sinf(ang);
+            float s1 = sinf(t * ang) / sinf(ang);
+            float v[3];
+
+            v[0] = sBendWas[side][0] * s0 + target[0] * s1;
+            v[1] = sBendWas[side][1] * s0 + target[1] * s1;
+            v[2] = sBendWas[side][2] * s0 + target[2] * s1;
+            /* last frame's bend was square to last frame's arm: square it to this one */
+            dot = v[0] * d[0] + v[1] * d[1] + v[2] * d[2];
+            v[0] -= dot * d[0];
+            v[1] -= dot * d[1];
+            v[2] -= dot * d[2];
+            ll = v_len(v);
             if (ll > 1.0e-4f) {
-                v_norm(sidev, sidev);
-                have = 1;
+                v_norm(target, v);
             }
-        }
-        if (!have) {   /* and the arm along that way too: any square direction will do */
-            sidev[0] = fabsf(d[0]) < 0.9f ? 1.0f : 0.0f;
-            sidev[1] = fabsf(d[0]) < 0.9f ? 0.0f : 1.0f;
-            sidev[2] = 0.0f;
-            dot = sidev[0] * d[0] + sidev[1] * d[1] + sidev[2] * d[2];
-            sidev[0] -= dot * d[0];
-            sidev[1] -= dot * d[1];
-            sidev[2] -= dot * d[2];
-            v_norm(sidev, sidev);
         }
     }
-    sBendWas[side][0] = sidev[0];
-    sBendWas[side][1] = sidev[1];
-    sBendWas[side][2] = sidev[2];
+    sBendWas[side][0] = target[0];
+    sBendWas[side][1] = target[1];
+    sBendWas[side][2] = target[2];
     sBendHave[side] = 1;
     ll = l1 * l1;
     a = (ll - l2 * l2 + dist * dist) / (2.0f * dist);
     h = ll - a * a;
     h = h > 0.0f ? sqrtf(h) : 0.0f;
-    mid[0] = root[0] + a * d[0] + h * sidev[0];
-    mid[1] = root[1] + a * d[1] + h * sidev[1];
-    mid[2] = root[2] + a * d[2] + h * sidev[2];
+    mid[0] = root[0] + a * d[0] + h * target[0];
+    mid[1] = root[1] + a * d[1] + h * target[1];
+    mid[2] = root[2] + a * d[2] + h * target[2];
     return dist >= l1 + l2 - 1.0e-3f;
 }
 
-/* X along from->to, Z from `pole` made square to it */
-static void aim(Mat4 *m, const float *from, const float *to, const float *pole) {
-    float x[3], y[3], z[3];
+/* X along the given unit `length` axis, Z from `ref` made square to it. A `ref` nearly along the
+ * bone leaves the up undefined, so the last good up for that side is used instead (and a fixed
+ * one only when that too lies along the bone). */
+static void aim_x(Mat4 *m, const float *from, const float *length, const float *ref, int side) {
+    float y[3], z[3], ll, rl;
 
     *m = mat4_identity();
-    v_sub(x, to, from);
-    v_norm(x, x);
-    v_norm(z, pole);
-    v_cross(y, z, x);
-    v_norm(y, y);
-    v_cross(z, x, y);
+    rl = v_len(ref);
+    v_cross(y, ref, length);
+    ll = v_len(y);
+    if (rl < 1.0e-5f || ll < AIM_PARALLEL * rl) {
+        if (sUpHave[side]) {
+            y[0] = sUpWas[side][0];
+            y[1] = sUpWas[side][1];
+            y[2] = sUpWas[side][2];
+        } else {
+            y[0] = 0.0f;
+            y[1] = 1.0f;
+            y[2] = 0.0f;
+        }
+    }
+    v_cross(z, length, y);
+    if (v_len(z) < 1.0e-4f) {   /* that up lies along the bone too: any square one will do */
+        y[0] = fabsf(length[1]) < 0.9f ? 0.0f : 1.0f;
+        y[1] = fabsf(length[1]) < 0.9f ? 1.0f : 0.0f;
+        y[2] = 0.0f;
+        v_cross(z, length, y);
+    }
     v_norm(z, z);
-    m->m[0] = x[0]; m->m[1] = x[1]; m->m[2] = x[2];
+    v_cross(y, z, length);
+    v_norm(y, y);
+    sUpWas[side][0] = y[0];
+    sUpWas[side][1] = y[1];
+    sUpWas[side][2] = y[2];
+    sUpHave[side] = 1;
+    m->m[0] = length[0]; m->m[1] = length[1]; m->m[2] = length[2];
     m->m[4] = y[0]; m->m[5] = y[1]; m->m[6] = y[2];
     m->m[8] = z[0]; m->m[9] = z[1]; m->m[10] = z[2];
     m->m[12] = from[0];
     m->m[13] = from[1];
     m->m[14] = from[2];
+}
+
+/* X along from->to, Z from `ref` made square to it */
+static void aim(Mat4 *m, const float *from, const float *to, const float *ref, int side) {
+    float x[3];
+
+    v_sub(x, to, from);
+    v_norm(x, x);
+    aim_x(m, from, x, ref, side);
 }
 
 /* as aim, with the bone's X the other way. The right arm's bones are mirrored in place: their
  * bind X - the length axis - runs with the model's +x, back toward the shoulder, not out along
  * the limb as the left's does. Aiming it outward mirrored the right arm's skin (a stretch). */
-static void aim_rev(Mat4 *m, const float *from, const float *to, const float *pole) {
-    float x[3], y[3], z[3];
+static void aim_rev(Mat4 *m, const float *from, const float *to, const float *ref, int side) {
+    float x[3];
 
-    *m = mat4_identity();
     v_sub(x, from, to);
     v_norm(x, x);
-    v_norm(z, pole);
-    v_cross(y, z, x);
-    v_norm(y, y);
-    v_cross(z, x, y);
-    v_norm(z, z);
-    m->m[0] = x[0]; m->m[1] = x[1]; m->m[2] = x[2];
-    m->m[4] = y[0]; m->m[5] = y[1]; m->m[6] = y[2];
-    m->m[8] = z[0]; m->m[9] = z[1]; m->m[10] = z[2];
-    m->m[12] = from[0];
-    m->m[13] = from[1];
-    m->m[14] = from[2];
+    aim_x(m, from, x, ref, side);
+}
+
+/* turn a bone about its own X - its length - by `angle` (right-handed about +X) */
+static void twist_bone(Mat4 *m, float angle) {
+    float ca = cosf(angle), sa = sinf(angle);
+    float yx = m->m[4], yy = m->m[5], yz = m->m[6];
+    float zx = m->m[8], zy = m->m[9], zz = m->m[10];
+
+    m->m[4] = ca * yx + sa * zx;
+    m->m[5] = ca * yy + sa * zy;
+    m->m[6] = ca * yz + sa * zz;
+    m->m[8] = -sa * yx + ca * zx;
+    m->m[9] = -sa * yy + ca * zy;
+    m->m[10] = -sa * yz + ca * zz;
 }
 
 static Mat4 rigid_inverse(const Mat4 *m) {
@@ -704,6 +773,95 @@ static void log_arm(int side, float l1, float l2, Vec3 at, const float *root, in
     fclose(f);
 }
 
+/* (temporary) one line for a palm further than 3 cm from its controller: the gap and the arm's
+ * state at that moment - lengths and distances in metres, as log_arm. Appends to the same
+ * vr_arm_debug.txt beside the executable. */
+static void log_palm_gap(int side, float err, float dist, float reach, float l1, float l2,
+                         int clamped, float shoulder_wrist, float elbow_wrist) {
+    const char *base = SDL_GetBasePath();
+    char path[1024];
+    FILE *f;
+
+    snprintf(path, sizeof(path), "%svr_arm_debug.txt", base != NULL ? base : "./");
+    f = fopen(path, "a");
+    if (f == NULL) {
+        return;
+    }
+    fprintf(f,
+            "palm side %d error %.4f dist %.4f reach %.4f l1 %.4f l2 %.4f clamp %d "
+            "shoulder_wrist %.4f elbow_wrist %.4f\n",
+            side,
+            err / VR_UNITS_PER_METER, dist / VR_UNITS_PER_METER, reach / VR_UNITS_PER_METER,
+            l1 / VR_UNITS_PER_METER, l2 / VR_UNITS_PER_METER, clamped,
+            shoulder_wrist / VR_UNITS_PER_METER, elbow_wrist / VR_UNITS_PER_METER);
+    fclose(f);
+}
+
+/* (temporary) whether aim would take its fallback: the same test aim_x makes - the reference
+ * within AIM_PARALLEL of the bone's length (or no reference at all). Counted from outside so
+ * aim itself is untouched. */
+static int aim_would_fallback(const float *ref, const float *from, const float *to) {
+    float x[3], c[3];
+    float rl = v_len(ref);
+
+    v_sub(x, to, from);
+    v_norm(x, x);
+    v_cross(c, ref, x);
+    return rl < 1.0e-5f || v_len(c) < AIM_PARALLEL * rl;
+}
+
+/* (temporary) one line for a palm or elbow that jumped in a frame: how far each moved, the
+ * palm's signed offset from the controller, both points before and after about the eye, the
+ * shoulder-to-controller distance, what the solve used, and how Fiona, the eye and the
+ * controller moved that frame - metres (yaw in degrees), in vr_arm_debug.txt. */
+static void log_jump(int side, const char *which, float palm_move, float elbow_move,
+                     const float *palm_now, const float *palm_was,
+                     const float *elbow_now, const float *elbow_was, Vec3 at, const float *root,
+                     int bend, int aimfb, int clamp, unsigned aimfb_total,
+                     float body_move, float body_yaw, float eye_move, float eye_yaw,
+                     float ctrl_move) {
+    const char *base = SDL_GetBasePath();
+    char path[1024];
+    Vec3 eye;
+    FILE *f;
+
+    if (!vr_anchor_get(&eye, NULL)) {
+        return;
+    }
+    snprintf(path, sizeof(path), "%svr_arm_debug.txt", base != NULL ? base : "./");
+    f = fopen(path, "a");
+    if (f == NULL) {
+        return;
+    }
+    fprintf(f,
+            "jump side %d %s palm_move %.4f elbow_move %.4f "
+            "palm_off %.4f %.4f %.4f dist %.4f "
+            "palm_was %.4f %.4f %.4f palm_now %.4f %.4f %.4f "
+            "elbow_was %.4f %.4f %.4f elbow_now %.4f %.4f %.4f "
+            "bend %d aimfb %d clamp %d aimfb_total %u "
+            "body_move %.4f body_yaw %.2f eye_move %.4f eye_yaw %.2f ctrl_move %.4f\n",
+            side, which, palm_move, elbow_move,
+            (palm_now[0] - at.x) / VR_UNITS_PER_METER,
+            (palm_now[1] - at.y) / VR_UNITS_PER_METER,
+            (palm_now[2] - at.z) / VR_UNITS_PER_METER,
+            vec3_len(vec3_sub(at, vec3(root[0], root[1], root[2]))) / VR_UNITS_PER_METER,
+            (palm_was[0] - eye.x) / VR_UNITS_PER_METER,
+            (palm_was[1] - eye.y) / VR_UNITS_PER_METER,
+            (palm_was[2] - eye.z) / VR_UNITS_PER_METER,
+            (palm_now[0] - eye.x) / VR_UNITS_PER_METER,
+            (palm_now[1] - eye.y) / VR_UNITS_PER_METER,
+            (palm_now[2] - eye.z) / VR_UNITS_PER_METER,
+            (elbow_was[0] - eye.x) / VR_UNITS_PER_METER,
+            (elbow_was[1] - eye.y) / VR_UNITS_PER_METER,
+            (elbow_was[2] - eye.z) / VR_UNITS_PER_METER,
+            (elbow_now[0] - eye.x) / VR_UNITS_PER_METER,
+            (elbow_now[1] - eye.y) / VR_UNITS_PER_METER,
+            (elbow_now[2] - eye.z) / VR_UNITS_PER_METER,
+            bend, aimfb, clamp, aimfb_total,
+            body_move, body_yaw, eye_move, eye_yaw, ctrl_move);
+    fclose(f);
+}
+
 static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace, int side, Vec3 at, Vec3 fwd, Vec3 up) {
     const Model *m = &a->model;
     int sh = sShoulder[side], el = sElbow[side];
@@ -734,19 +892,18 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
         float bend_s = sinf(a->yaw), bend_c = cosf(a->yaw);
         Vec3 bend = vec3(bend_c * out_sign + bend_s * ELBOW_BACK, -1.0f,
                          -bend_s * out_sign + bend_c * ELBOW_BACK);
-        float outward[3] = {bend_c * out_sign, 0.0f, -bend_s * out_sign};   /* her left / right */
         float reach[3] = {grip.m[12], grip.m[13], grip.m[14]};
-        float ctr[3] = {at.x, at.y, at.z};
         float d[3];
         float dist;
 
         pole[0] = bend.x;
         pole[1] = bend.y;
         pole[2] = bend.z;
-        /* out of reach: the palm target goes onto the arm's length along the way to the
-         * controller, just inside it. The palm bone sits there, not out at the controller,
-         * so the forearm ends exactly where the palm starts and nothing is stretched. */
-        v_sub(d, ctr, root);
+        /* out of reach: the palm target is pulled onto the arm's length along its own way from
+         * the shoulder - the grip's seat-adjusted point, which carries the hand's built-in
+         * offset - so the clamp begins exactly where the palm is and nothing jumps. Only the
+         * grip's translation moves; its rotation and scale stay as they are. */
+        v_sub(d, reach, root);
         dist = v_len(d);
         if (dist > l1 + l2 && dist > 1.0e-4f) {
             float k = (l1 + l2) * 0.999f / dist;
@@ -759,15 +916,15 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
             grip.m[14] = reach[2];
             clamped = 1;
         }
-        place_middle(root, mid, reach, pole, l1, l2, side, outward);
+        place_middle(root, mid, reach, pole, l1, l2, side);
         if (side == 0) {
-            aim(&room[0], root, mid, pole);
-            aim(&room[1], mid, reach, pole);
+            aim(&room[0], root, mid, sBendWas[side], side);
+            aim(&room[1], mid, reach, sBendWas[side], side);
         } else {
             /* the right arm's bind X runs back toward the shoulder: aiming it outward mirrored
              * its skin (the stretch); the reversed aim keeps the bone's length axis as it was */
-            aim_rev(&room[0], root, mid, pole);
-            aim_rev(&room[1], mid, reach, pole);
+            aim_rev(&room[0], root, mid, sBendWas[side], side);
+            aim_rev(&room[1], mid, reach, sBendWas[side], side);
         }
         /* the arm is longer than Fiona's model's: lengthen the upper arm and forearm along the
          * bone (X) only; Y and Z, the thickness, stay as they are, so the joints still meet */
@@ -781,18 +938,17 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
             wp[1] = mid[1] + (reach[1] - mid[1]) * sWristT[side];
             wp[2] = mid[2] + (reach[2] - mid[2]) * sWristT[side];
             if (side == 0) {
-                aim(&room[2], wp, reach, pole);
+                aim(&room[2], wp, reach, pole, side);
             } else {
-                aim_rev(&room[2], wp, reach, pole);
+                aim_rev(&room[2], wp, reach, pole, side);
             }
-            /* the controller's twist about the forearm, half of it given to the wrist: the
-             * palm keeps the controller's rotation, so the skin between them twists half as much */
+            /* the controller's twist about the forearm, shared along the arm below: the palm
+             * keeps the controller's own rotation and the forearm and wrist take their shares */
             {
                 float px = grip.m[4], py = grip.m[5], pz = grip.m[6];
                 float plen = sqrtf(px * px + py * py + pz * pz);
                 float xx = room[2].m[0], xy = room[2].m[1], xz = room[2].m[2];
                 float yx = room[2].m[4], yy = room[2].m[5], yz = room[2].m[6];
-                float zx = room[2].m[8], zy = room[2].m[9], zz = room[2].m[10];
 
                 if (plen > 1.0e-5f) {
                     float dot, nx, ny, nz, nl;
@@ -808,7 +964,6 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
                                        (yx * ny - yy * nx) * xz) / nl;
                         float cos_a = (yx * nx + yy * ny + yz * nz) / nl;
                         float twist = atan2f(sin_a, cos_a);
-                        float half, ca, sa;
 
                         /* the nearest turn to last frame's: the angle does not flip at +-180 */
                         if (sTwistHave[side]) {
@@ -822,16 +977,11 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
                             sTwistHave[side] = 1;
                         }
                         sTwistWas[side] = twist;
-                        half = twist * 0.5f;
-                        ca = cosf(half);
-                        sa = sinf(half);
-
-                        room[2].m[4] = ca * yx + sa * zx;   /* the wrist's Y and Z half-way round */
-                        room[2].m[5] = ca * yy + sa * zy;
-                        room[2].m[6] = ca * yz + sa * zz;
-                        room[2].m[8] = -sa * yx + ca * zx;
-                        room[2].m[9] = -sa * yy + ca * zy;
-                        room[2].m[10] = -sa * yz + ca * zz;
+                        /* spread it: the forearm turns by its share through its own aim, the
+                         * wrist by its own share next, and the palm keeps the rest (its own
+                         * controller rotation) */
+                        twist_bone(&room[1], TWIST_FOREARM * twist);
+                        twist_bone(&room[2], (TWIST_FOREARM + TWIST_WRIST) * twist);
                     }
                 }
             }
@@ -857,6 +1007,133 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
     }
     if (sArmLog[side]++ % 60 == 0) {
         log_arm(side, l1, l2, at, root, clamped);
+    }
+    {
+        /* (temporary) the gap between the placed palm and its controller, and the arm's state
+         * then; a line only over 3 cm, at most 10 a second a side */
+        Mat4 palm = mat4_mul(*place, world[pa]);
+        Mat4 wrist = mat4_mul(*place, world[wr]);
+        float ctr[3] = {at.x, at.y, at.z};
+        float d3[3];
+        float err, dist, shoulder_wrist, elbow_wrist;
+
+        d3[0] = palm.m[12] - at.x;
+        d3[1] = palm.m[13] - at.y;
+        d3[2] = palm.m[14] - at.z;
+        err = v_len(d3);
+        v_sub(d3, ctr, root);
+        dist = v_len(d3);
+        d3[0] = wrist.m[12] - root[0];
+        d3[1] = wrist.m[13] - root[1];
+        d3[2] = wrist.m[14] - root[2];
+        shoulder_wrist = v_len(d3);
+        d3[0] = wrist.m[12] - mid[0];
+        d3[1] = wrist.m[13] - mid[1];
+        d3[2] = wrist.m[14] - mid[2];
+        elbow_wrist = v_len(d3);
+        if (err > 0.03f * VR_UNITS_PER_METER && sPalmLog[side]++ % 6 == 0) {
+            log_palm_gap(side, err, dist, l1 + l2, l1, l2, clamped,
+                         shoulder_wrist, elbow_wrist);
+        }
+    }
+    {
+        /* (temporary) a palm or elbow moving over 2 cm in a frame: where it was and is, what the
+         * solve used then, and how often aim has fallen back - at most 20 lines a second a side */
+        Mat4 palm = mat4_mul(*place, world[pa]);
+        Mat4 elbow = mat4_mul(*place, world[el]);
+        float palm_now[3] = {palm.m[12], palm.m[13], palm.m[14]};
+        float elbow_now[3] = {elbow.m[12], elbow.m[13], elbow.m[14]};
+        float reachp[3] = {grip.m[12], grip.m[13], grip.m[14]};
+        float d3[3];
+        float palm_move = 0.0f, elbow_move = 0.0f;
+        float body_move = 0.0f, body_yaw = 0.0f, eye_move = 0.0f, eye_yaw = 0.0f;
+        float ctrl_move = 0.0f;
+        Vec3 eye_now = vec3(0.0f, 0.0f, 0.0f);
+        float eye_yaw_now = 0.0f;
+        int bend = l1 > 0.05f && l2 > 0.05f ? 1 : 0;
+        int aimfb = 0;
+        unsigned count = 0;
+
+        (void)vr_anchor_get(&eye_now, &eye_yaw_now);
+        if (bend) {
+            float wp[3];
+            int fb;
+
+            fb = aim_would_fallback(sBendWas[side], root, mid);
+            aimfb |= fb;
+            count += (unsigned)fb;
+            fb = aim_would_fallback(sBendWas[side], mid, reachp);
+            aimfb |= fb;
+            count += (unsigned)fb;
+            if (pa != wr) {
+                wp[0] = mid[0] + (reachp[0] - mid[0]) * sWristT[side];
+                wp[1] = mid[1] + (reachp[1] - mid[1]) * sWristT[side];
+                wp[2] = mid[2] + (reachp[2] - mid[2]) * sWristT[side];
+                fb = aim_would_fallback(pole, wp, reachp);
+                aimfb |= fb;
+                count += (unsigned)fb;
+            }
+            sAimFallback[side] += count;
+        }
+        if (sPointHave[side]) {
+            float dy;
+
+            d3[0] = palm_now[0] - sPalmWas[side][0];
+            d3[1] = palm_now[1] - sPalmWas[side][1];
+            d3[2] = palm_now[2] - sPalmWas[side][2];
+            palm_move = v_len(d3) / VR_UNITS_PER_METER;
+            d3[0] = elbow_now[0] - sElbowWas[side][0];
+            d3[1] = elbow_now[1] - sElbowWas[side][1];
+            d3[2] = elbow_now[2] - sElbowWas[side][2];
+            elbow_move = v_len(d3) / VR_UNITS_PER_METER;
+            /* how Fiona, the eye anchor and the controller moved since last frame */
+            d3[0] = a->pos.x - sBodyWas[side][0];
+            d3[1] = a->pos.y - sBodyWas[side][1];
+            d3[2] = a->pos.z - sBodyWas[side][2];
+            body_move = v_len(d3) / VR_UNITS_PER_METER;
+            dy = a->yaw - sBodyYawWas[side];
+            dy = atan2f(sinf(dy), cosf(dy));
+            body_yaw = fabsf(dy) * 57.2957795f;
+            d3[0] = eye_now.x - sEyeWas[side][0];
+            d3[1] = eye_now.y - sEyeWas[side][1];
+            d3[2] = eye_now.z - sEyeWas[side][2];
+            eye_move = v_len(d3) / VR_UNITS_PER_METER;
+            dy = eye_yaw_now - sEyeYawWas[side];
+            dy = atan2f(sinf(dy), cosf(dy));
+            eye_yaw = fabsf(dy) * 57.2957795f;
+            d3[0] = at.x - sAtWas[side][0];
+            d3[1] = at.y - sAtWas[side][1];
+            d3[2] = at.z - sAtWas[side][2];
+            ctrl_move = v_len(d3) / VR_UNITS_PER_METER;
+            if ((palm_move > 0.02f || elbow_move > 0.02f) && sJumpLog[side]++ % 3 == 0) {
+                const char *which = palm_move > 0.02f
+                                        ? (elbow_move > 0.02f ? "palm+elbow" : "palm")
+                                        : "elbow";
+
+                log_jump(side, which, palm_move, elbow_move, palm_now, sPalmWas[side],
+                         elbow_now, sElbowWas[side], at, root, bend, aimfb, clamped,
+                         sAimFallback[side], body_move, body_yaw, eye_move, eye_yaw,
+                         ctrl_move);
+            }
+        }
+        sPalmWas[side][0] = palm_now[0];
+        sPalmWas[side][1] = palm_now[1];
+        sPalmWas[side][2] = palm_now[2];
+        sElbowWas[side][0] = elbow_now[0];
+        sElbowWas[side][1] = elbow_now[1];
+        sElbowWas[side][2] = elbow_now[2];
+        sBodyWas[side][0] = a->pos.x;
+        sBodyWas[side][1] = a->pos.y;
+        sBodyWas[side][2] = a->pos.z;
+        sBodyYawWas[side] = a->yaw;
+        sEyeWas[side][0] = eye_now.x;
+        sEyeWas[side][1] = eye_now.y;
+        sEyeWas[side][2] = eye_now.z;
+        sEyeYawWas[side] = eye_yaw_now;
+        sAtWas[side][0] = at.x;
+        sAtWas[side][1] = at.y;
+        sAtWas[side][2] = at.z;
+        sPointHave[side] = 1;
     }
 }
 
