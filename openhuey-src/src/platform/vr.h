@@ -57,6 +57,7 @@ int vr_talk_held(void);    /* right stick click held, and not the left (both cli
 float vr_right_stick(void);
 void vr_add_turn(float yaw);
 float vr_take_turn(void);
+float vr_peek_turn(void);   /* the turn waiting, taken or not (the picture blends towards it) */
 void vr_request_recenter(void);
 int vr_take_recenter(void);
 /* her eyes in the world, and the yaw the headset's neutral look uses. Hands and grabs sit on this. */

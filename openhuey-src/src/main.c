@@ -51,6 +51,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* temporary, for the headset smoothing test; remove later */
+#define VR_STEP_LOG 1
+
 #define MAX_EVALS 16
 
 static int sTestStatus;
@@ -836,6 +839,109 @@ static int fiona_view(Engine *e, Camera *out) {
     return 1;
 }
 
+/* an angle's way to another, wrapped into -pi..pi: a turn past the seam is the short one */
+static float angle_delta(float to, float from) {
+    float d = to - from;
+
+    while (d > 3.14159265f) {
+        d -= 6.28318531f;
+    }
+    while (d < -3.14159265f) {
+        d += 6.28318531f;
+    }
+    return d;
+}
+
+/* an angle wrapped into -pi..pi */
+static float angle_wrap(float a) {
+    while (a > 3.14159265f) {
+        a -= 6.28318531f;
+    }
+    while (a < -3.14159265f) {
+        a += 6.28318531f;
+    }
+    return a;
+}
+
+/* Her place and her turn as the last two ticks left them, so the headset's picture can draw her
+ * between them (draw, below). The game still moves and turns her at its 30 ticks a second and its
+ * own values are never left changed: only the picture is eased. Her motion's frame and the height
+ * of her head are not blended, and no other actor. */
+#define POSE_SNAP 3.0f     /* room units: further than this in one tick is a cut, not a walk */
+#define TURN_SNAP 1.05f    /* radians (60 degrees): a bigger turn in one tick is a cut, not a turn */
+
+static struct {
+    int have;        /* prev and cur are hers: a tick has run with her in this room */
+    int room;        /* the room they were taken in (e->room.id) */
+    Actor *who;      /* the actor they are of (her) */
+    Vec3 prev, cur;  /* where she was at the tick before, and where the last tick left her */
+    float prev_yaw, cur_yaw;       /* her body's yaw at the same two ticks */
+    float prev_align, cur_align;   /* the camera's yaw (sAlign) as each tick left it */
+    float alpha;     /* how far from prev towards cur the picture draws (0 prev .. 1 cur) */
+} sPose;
+
+/* the Fiona in the room: the first actor used, shown and named O_FI..., as fiona_view finds her */
+static Actor *fiona_pick(Engine *e) {
+    int i;
+
+    for (i = 0; i < MAX_ACTORS; i++) {
+        Actor *a = &e->actors[i];
+
+        if (a->used && a->visible && strncmp(a->name, "O_FI", 4) == 0) {
+            return a;
+        }
+    }
+    return NULL;
+}
+
+/* before a tick: where the last one left her becomes the one before this */
+static void fiona_pose_before(Engine *e) {
+    (void)e;
+    if (sPose.have) {
+        sPose.prev = sPose.cur;
+        sPose.prev_yaw = sPose.cur_yaw;
+        sPose.prev_align = sPose.cur_align;
+    }
+}
+
+/* after a tick: where she is now, and which way. A new room, another her, a jump further than a
+ * step (POSE_SNAP) or a turn further than TURN_SNAP (hers or the camera's) starts again from here:
+ * no blend that tick. */
+static void fiona_pose_after(Engine *e) {
+    Actor *p = fiona_pick(e);
+    float dx, dy, dz;
+    float yaw, align, dyaw, dalign;
+    int cut;
+
+    if (p == NULL) {
+        sPose.have = 0;   /* (no her: nothing to blend) */
+        return;
+    }
+    yaw = p->yaw;
+    /* the camera's yaw at the tick's end: the turn waiting has not been taken off sAlign yet
+     * (fiona_view does that), so take it off here */
+    align = sAlign - vr_peek_turn();
+    dx = p->pos.x - sPose.cur.x;
+    dy = p->pos.y - sPose.cur.y;
+    dz = p->pos.z - sPose.cur.z;
+    dyaw = angle_delta(yaw, sPose.cur_yaw);
+    dalign = angle_delta(align, sPose.cur_align);
+    cut = !sPose.have || sPose.room != e->room.id || sPose.who != p ||
+          dx * dx + dy * dy + dz * dz > POSE_SNAP * POSE_SNAP ||
+          dyaw > TURN_SNAP || dyaw < -TURN_SNAP || dalign > TURN_SNAP || dalign < -TURN_SNAP;
+    if (cut) {
+        sPose.prev = p->pos;   /* (a cut: from here, not between the two) */
+        sPose.prev_yaw = yaw;
+        sPose.prev_align = align;
+    }
+    sPose.cur = p->pos;
+    sPose.cur_yaw = yaw;
+    sPose.cur_align = align;
+    sPose.room = e->room.id;
+    sPose.who = p;
+    sPose.have = 1;
+}
+
 static void hear_from_her(Engine *e) {
     Camera cam;
     Mat4 body;
@@ -857,7 +963,48 @@ static void hear_from_her(Engine *e) {
     engine_set_ear(NULL);
 }
 
-static void draw(Engine *e) {
+#if VR_STEP_LOG
+/* (temporary, for the headset smoothing test; remove later) where she is and where the anchor is,
+ * once a draw, as the headset sees them: pos and yaw are the Fiona in the room, the anchor and its
+ * yaw are what vr_anchor_get gives at that moment. Only the draws that find her print, 400 of them. */
+static void vr_step_log_draw(Engine *e) {
+    static int n;
+    Actor *pick = NULL;
+    Vec3 eye = vec3(0.0f, 0.0f, 0.0f);
+    float yaw = 0.0f;
+    int i;
+
+    if (n >= 400) {
+        return;   /* (enough: the test has what it needs) */
+    }
+    for (i = 0; i < MAX_ACTORS; i++) {
+        Actor *a = &e->actors[i];
+
+        if (a->used && a->visible && strncmp(a->name, "O_FI", 4) == 0) {   /* (the same search fiona_view does) */
+            pick = a;
+            break;
+        }
+    }
+    if (pick == NULL) {
+        return;   /* (nothing to report while she is not there) */
+    }
+    n++;   /* (the lines printed, not the draws) */
+    if (!vr_anchor_get(&eye, &yaw)) {   /* (no anchor this frame: no eyes yet, so nothing to report) */
+        eye = vec3(0.0f, 0.0f, 0.0f);
+        yaw = 0.0f;
+    }
+    fprintf(stderr, "DRAW %d ticks=%ld pos=%.3f %.3f %.3f yaw=%.4f align=%.4f anchor=%.3f %.3f %.3f anchor_yaw=%.4f\n",
+            n, e->ticks, pick->pos.x, pick->pos.y, pick->pos.z, pick->yaw, sAlign,
+            eye.x, eye.y, eye.z, yaw);
+}
+#endif
+
+static void draw_frame(Engine *e) {
+#if VR_STEP_LOG
+    if (vr_active()) {
+        vr_step_log_draw(e);
+    }
+#endif
     prepare_shadows(e);
     if (vr_active()) {
         int32_t aspect = gRender.aspect;
@@ -991,6 +1138,40 @@ static void draw(Engine *e) {
         draw_eye(e, &proj, &view);
         platform_swap();
     }
+}
+
+/* the picture. On a headset, mid-step or mid-turn, she is drawn where the last two ticks left her
+ * - as far from the tick before as this frame's lag is past the last one - her body's yaw and the
+ * camera's eased the same way, and at once put back where the game has her: only the picture moves,
+ * never the game's own values (pos and yaw and sAlign are restored on every path). */
+static void draw(Engine *e) {
+    Actor *p = fiona_pick(e);
+
+    if (vr_active() && sPose.have && p != NULL && p == sPose.who && p->drive == NULL &&
+        !cutscene_on_screen() && !freecam_active() && !gCamDir.scene) {
+        Vec3 saved_pos = p->pos;
+        float saved_yaw = p->yaw;
+        float saved_align;
+        Camera blended;
+
+        p->pos = vec3(sPose.prev.x + (sPose.cur.x - sPose.prev.x) * sPose.alpha,
+                      sPose.prev.y + (sPose.cur.y - sPose.prev.y) * sPose.alpha,
+                      sPose.prev.z + (sPose.cur.z - sPose.prev.z) * sPose.alpha);
+        p->yaw = sPose.prev_yaw + angle_delta(sPose.cur_yaw, sPose.prev_yaw) * sPose.alpha;
+        /* the first look, on her blended place and turn: it takes the waiting turn off sAlign (and
+         * a recenter), so sAlign is the tick's end from here - the value the game is kept at (her
+         * eyes on it, before the hands are posed) */
+        fiona_view(e, &blended);
+        saved_align = sAlign;   /* (taken here: the turn it just took stays taken - the frame only blends) */
+        sAlign = angle_wrap(sPose.prev_align + angle_delta(sPose.cur_align, sPose.prev_align) * sPose.alpha);
+        fiona_view(e, &blended);   /* (again, so the eyes and the camera use the blended yaw) */
+        draw_frame(e);
+        p->pos = saved_pos;   /* (the game's own place and turn: no frame leaves them moved) */
+        p->yaw = saved_yaw;
+        sAlign = saved_align;
+        return;
+    }
+    draw_frame(e);
 }
 
 /* the game's Forth and its scripts (game.fs spawns the actors: the title first) */
@@ -1213,7 +1394,12 @@ int main(int argc, char **argv) {
             lag = tick_ns;
         }
         while (lag >= tick_ns && ticks < 4) {
+#if VR_STEP_LOG
+            fprintf(stderr, "TICK %ld\n", e->ticks);   /* (temporary: before the tick, so the number of the tick about to run) */
+#endif
+            fiona_pose_before(e);   /* (her place, for the headset to draw her between the two ticks) */
             engine_tick(e);
+            fiona_pose_after(e);
             memset(e->input.pressed, 0, sizeof(e->input.pressed));   /* presses count once */
             vr_pad_clear();
             e->input.mouse_dx = e->input.mouse_dy = 0;
@@ -1222,6 +1408,12 @@ int main(int argc, char **argv) {
         }
         if (ticks == 4) {
             lag = 0;   /* far behind (a stall): don't try to catch up */
+        }
+        {   /* how far past the last tick this frame's picture falls: 0 on it, 1 at the next
+             * (read only: lag and tick_ns go on as they were) */
+            float a = tick_ns > 0 ? (float)lag / (float)tick_ns : 0.0f;
+
+            sPose.alpha = a < 0.0f ? 0.0f : (a > 1.0f ? 1.0f : a);
         }
         if (bind_engine_reset_wanted()) {   /* (between frames: no handler running) */
             if (vr_frame) {

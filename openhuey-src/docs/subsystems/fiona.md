@@ -549,3 +549,41 @@ or flees, easing while she waits; into the room played by its door - in its door
 or opening it. The pad isn't hers: her calls to him (now and then: go, come back, stay) come from
 her mind and don't command him, she doesn't struggle (Fiona_Shakes 0); dragged off she breaks free
 after as many drags as her panic's stage, and cries for him now and then.
+
+## Headset position and turn smoothing (render-side only, `src/main.c`)
+
+The game moves and turns her at its 30 ticks a second; a headset redraws at 60, 72, 90 or 120.
+Without a blend her body (and the eyes the headset hangs on her) step at 30 while the head turns
+smoothly. So the main loop keeps her place and her turning as the last two ticks left them
+(`fiona_pose_before` / `fiona_pose_after`, around each `engine_tick`) and `draw` puts her between
+them for the one frame that is drawn, with `alpha = lag / tick_ns` clamped to 0..1 - how far past
+the last tick this frame falls: `pos = prev + (cur - prev) * alpha`, and the same for her body's
+yaw and for the camera's yaw `sAlign`. `lag` and `tick_ns` are only read; the ticks, the movement,
+the turning, the scripts and the collision are untouched.
+
+The camera's yaw at a tick's end is `sAlign - vr_peek_turn()`: the turn a script asked for is still
+waiting to be taken off `sAlign` (only `fiona_view` takes it), so it is taken off here for the
+snapshot. In the frame, `draw` blends the yaw (differences wrapped, so crossing ±pi is the short
+way), and calls `fiona_view` between the blends: the first call takes the waiting turn and leaves
+`sAlign` at the tick's end, then `sAlign` is set to its blended value and `fiona_view` is called
+again so the eye (`vr_anchor`) and the camera use the blended yaw. The hands and the IK follow,
+as they sit on that anchor.
+
+- **No blend (a cut):** the first tick with her, a change of room, another actor becoming her, a
+  movement of more than `POSE_SNAP` (3 room units in one tick - a door, an exit, a save loaded), a
+  turn of hers or of the camera of more than `TURN_SNAP` (1.05 radians, 60 degrees, in one tick),
+  and every frame where the headset is not drawing her story straight: not in VR, a cutscene on
+  screen or `gCamDir.scene`, the free camera, or a cutscene's `drive` motion (which writes her
+  `pos` itself).
+- **The game's values are never left moved:** `draw` saves her `pos` and `yaw`, draws the frame,
+  and restores them on the same path; `sAlign` is restored too, but to the value the first
+  `fiona_view` left - after it took the waiting turn off - so the turn stands and only the blend is
+  undone (saving `sAlign` before that call would drop the turn of every frame: nothing takes it
+  twice). Nothing else writes `sAlign`. Her eyes are taken again from the blended place and yaw
+  before the frame, so the hands and the IK sit on the same place the picture shows.
+- **What is not blended yet:** her motion's frame and the height of her head - so her feet animate
+  at 30 while she slides and turns smoothly between the ticks - and no other actor (Hewie, the
+  stalkers). The diagnostic `VR_STEP_LOG` DRAW line prints the blended `pos`, only for the draws
+  that find her, its cap 400 lines, and goes with this test.
+
+

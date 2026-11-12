@@ -58,6 +58,7 @@ int vr_talk_held(void) { return 0; }
 float vr_right_stick(void) { return 0.0f; }
 void vr_add_turn(float yaw) { (void)yaw; }
 float vr_take_turn(void) { return 0.0f; }
+float vr_peek_turn(void) { return 0.0f; }
 void vr_request_recenter(void) {}
 int vr_take_recenter(void) { return 0; }
 void vr_anchor_set(int on, Vec3 eye, float yaw) { (void)on; (void)eye; (void)yaw; }
@@ -753,6 +754,11 @@ float vr_take_turn(void) {
 
     sTurn = 0.0f;
     return t;
+}
+
+/* the turn waiting, still waiting: the picture blends towards it (main.c), taking it or not */
+float vr_peek_turn(void) {
+    return sTurn;
 }
 
 void vr_request_recenter(void) { sRecenterReq = 1; }
