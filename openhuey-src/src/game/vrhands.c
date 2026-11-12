@@ -50,11 +50,15 @@ typedef struct WardMove {
 } WardMove;
 static WardMove sWardMove[PLACED_MAX];
 static int sWardRoom = -2;   /* (the room the moves were made in: another room's indices are not these) */
-/* (temporary: the wardrobe grab's diagnostics - the hands that have buzzed for a leaf, and the log's
+#if 0   /* (temporary: the wardrobe grab's diagnostics - the hands that have buzzed for a leaf, and the log's
  * count) */
 static int sWardNear[2], sWardLogs;
-/* (temporary: the hiding spot's probe - the last line it gave, and the room it was read in) */
+#endif
+/* (the wall sweep's: the hands that have buzzed for a wall - in again buzzes again) */
+static int sWallNear[2];
+#if 0   /* (temporary: the hiding spot's probe - the last line it gave, and the room it was read in) */
 static int sHideSeen, sHideInside, sHideFrame, sHideRoom = -2;
+#endif
 static int sSettle[ROOM_DOORS];
 static int sCoast[ROOM_DOORS];
 static float sVel[ROOM_DOORS];
@@ -1197,7 +1201,7 @@ static int nearest_ward(PlacedSet *s, Vec3 hand, int other, float *best) {
     return found;
 }
 
-/* (temporary: the leaf nearest a hand, out to `reach_max` world units: -1, and `best` left at that,
+#if 0   /* (temporary: the leaf nearest a hand, out to `reach_max` world units: -1, and `best` left at that,
  * when none is) */
 static int ward_near(PlacedSet *s, Vec3 hand, float reach_max, float *best) {
     int i, found = -1;
@@ -1222,6 +1226,7 @@ static int ward_near(PlacedSet *s, Vec3 hand, float reach_max, float *best) {
     }
     return found;
 }
+#endif
 
 /* a track no hand can scrub: as the room left it, its own to play */
 static void ward_unload(Placed *p, int loaded) {
@@ -1390,7 +1395,7 @@ static void ward_tick(Engine *e) {
     }
 }
 
-/* (temporary: the hiding spot's own line - nothing here moves her or the leaf)
+#if 0   /* (temporary: the hiding spot's own line - nothing here moves her or the leaf)
  * Where she is, her eyes (vr_anchor_get: the anchor the hands and the grabs sit on), against the
  * bounds the wardrobe's leaf has in the world: the same ward_bounds a hand reaches for it by, its
  * vertices through placed_world, which is the pose its frame gives. A line to stderr the first time
@@ -1428,6 +1433,7 @@ static void hide_probe(Engine *e) {
     sHideFrame = p->frame;
     fprintf(stderr, "hide: inside %d frame %d\n", inside, p->frame);
 }
+#endif
 
 static int nearest_prop(PlacedSet *s, Vec3 hand, int other, float *best) {
     int i, found = -1;
@@ -2151,6 +2157,131 @@ static int room_touch(const Room *r, Vec3 p) {
     return 0;
 }
 
+/* The path a hand took this frame, against the room's mesh. Every face of it counts - a wall, the
+ * floor, the ceiling, a table's top: there is no look at which way a triangle faces. The path is
+ * sampled every 20 cm - at most 32 points, the first the hand's last place and the last where it
+ * is now - so a fast sweep cannot step over a thin wall. A sliver with no facing at all (its edges'
+ * cross product nothing) is no face of anything. A check only: nothing is blocked. */
+#define WALL_SAMPLE 0.2f   /* the most a sample point is from the one before */
+#define WALL_SAMPLES 32    /* points along the path at most */
+
+int hand_path_hits_wall(const Room *r, Vec3 from, Vec3 to, float skin) {
+    const RoomMesh *m = &r->mesh;
+    float lim2 = skin * skin;
+    Vec3 path = vec3_sub(to, from);
+    int pts = (int)(vec3_len(path) / WALL_SAMPLE) + 1;
+    int i;
+
+    if (pts > WALL_SAMPLES) {
+        pts = WALL_SAMPLES;
+    }
+    for (i = 0; i < m->nd; i++) {
+        const MeshDraw *d = &m->d[i];
+        int n, end;
+
+        if (d->count < 3 || d->mask || !group_shown(r, d->group)) {
+            continue;
+        }
+        end = d->first + d->count;
+        if (end > m->nv) {
+            end = m->nv;
+        }
+        for (n = d->first; n + 2 < end; n += 3) {
+            Vec3 a = vec3(m->v[n].x, m->v[n].y, m->v[n].z);
+            Vec3 b = vec3(m->v[n + 1].x, m->v[n + 1].y, m->v[n + 1].z);
+            Vec3 c = vec3(m->v[n + 2].x, m->v[n + 2].y, m->v[n + 2].z);
+            Vec3 nrm = vec3_cross(vec3_sub(b, a), vec3_sub(c, a));
+            float nl = vec3_len(nrm);
+            int s;
+
+            if (nl <= 0.0f) {
+                continue;   /* (a sliver with no facing: no face of anything) */
+            }
+            for (s = 0; s < pts; s++) {
+                Vec3 p = pts > 1 ? vec3_add(from, vec3_scale(path, (float)s / (float)(pts - 1))) : from;
+
+                if (tri_dist2(p, a, b, c) <= lim2) {
+                    return 1;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+/* How many points a hand's path this frame is swept at: every 20 cm, 32 at most (the wall's own
+ * rule, shared by the doors and the placed objects) */
+static int path_points(Vec3 from, Vec3 to) {
+    int pts = (int)(vec3_len(vec3_sub(to, from)) / WALL_SAMPLE) + 1;
+
+    return pts > WALL_SAMPLES ? WALL_SAMPLES : pts;
+}
+
+/* the s'th of `pts` points, from `from` (the first) to `to` (the last) */
+static Vec3 path_point(Vec3 from, Vec3 to, int s, int pts) {
+    if (pts <= 1) {
+        return from;
+    }
+    return vec3_add(from, vec3_scale(vec3_sub(to, from), (float)s / (float)(pts - 1)));
+}
+
+/* The path a hand took this frame through a door leaf. A leaf is the box its own frame holds (12
+ * wide, 22 tall, 1 thick): every face counts, so a shut door's face and an open one's edge are
+ * hits alike, and no steep-normal test is needed. The door this hand holds (`skip`) is left out. */
+int hand_path_hits_door(const Engine *e, int skip, Vec3 from, Vec3 to, float skin) {
+    int pts = path_points(from, to);
+    int i, s;
+
+    for (i = 0; i < ROOM_DOORS; i++) {
+        const RoomDoor *d = &e->room.doors[i];
+
+        if (i == skip || !d->present) {
+            continue;
+        }
+        for (s = 0; s < pts; s++) {
+            Vec3 q = door_local(d, path_point(from, to, s, pts));
+
+            if (in_box(q, vec3(0.0f, 0.0f, -1.0f), vec3(12.0f, 22.0f, 0.0f), skin)) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+/* The path a hand took this frame through a placed object. Its mesh is read as placed_touch reads
+ * it (shown, with a mesh, in the object's world); every face counts - a table's top as much as its
+ * side - so there is no steep-normal test. The object this hand holds (`skip`) is left out. */
+int hand_path_hits_placed(const PlacedSet *s, int skip, Vec3 from, Vec3 to, float skin) {
+    float lim2 = skin * skin;
+    int pts = path_points(from, to);
+    int i;
+
+    for (i = 0; i < s->n; i++) {
+        const Placed *o = &s->p[i];
+        Mat4 w;
+        int n;
+
+        if (i == skip || !o->shown || o->mesh.v == NULL || o->mesh.nv < 3) {
+            continue;
+        }
+        w = placed_world(o);
+        for (n = 0; n + 2 < o->mesh.nv; n += 3) {
+            Vec3 a = mat4_point(&w, vec3(o->mesh.v[n].x, o->mesh.v[n].y, o->mesh.v[n].z));
+            Vec3 b = mat4_point(&w, vec3(o->mesh.v[n + 1].x, o->mesh.v[n + 1].y, o->mesh.v[n + 1].z));
+            Vec3 c = mat4_point(&w, vec3(o->mesh.v[n + 2].x, o->mesh.v[n + 2].y, o->mesh.v[n + 2].z));
+            int k;
+
+            for (k = 0; k < pts; k++) {
+                if (tri_dist2(path_point(from, to, k, pts), a, b, c) <= lim2) {
+                    return 1;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
 static int placed_touch(const PlacedSet *s, Vec3 p) {
     float lim2 = SWING_SKIN * SWING_SKIN;
     int i;
@@ -2673,7 +2804,10 @@ void vrhands_tick(Engine *e) {
             }
             sGripWas[side] = 0.0f;
             sHandHave[side] = 0;
+#if 0   /* (temporary: no hand, no leaf in reach) */
             sWardNear[side] = 0;   /* (temporary: no hand, no leaf in reach) */
+#endif
+            sWallNear[side] = 0;   /* (no hand, no path: a wall is entered anew) */
             if (sGrace[side] > 0) {
                 sGrace[side]--;
             }
@@ -2705,6 +2839,7 @@ void vrhands_tick(Engine *e) {
             if (rattled >= 0) {
                 engine_sound_at(RATTLE_SOUND, RATTLE_BANK, handle_at(&e->room.doors[rattled], rattAxis));
             }
+#if 0   /* (temporary: what a rising grip sees of the wardrobe's leaves) */
             if (sWardLogs < 20) {   /* (temporary: what a rising grip sees of the wardrobe's leaves) */
                 float d = 0.0f;
 
@@ -2713,7 +2848,9 @@ void vrhands_tick(Engine *e) {
                     fprintf(stderr, "ward: hand %d dist %.1f grip %.2f\n", side, d, grip);
                 }
             }
+#endif
         }
+#if 0   /* (temporary: a buzz the first frame a hand is within reach of a leaf) */
         {   /* (temporary: a buzz the first frame a hand is within reach of a leaf) */
             float d = 0.0f;
 
@@ -2726,6 +2863,7 @@ void vrhands_tick(Engine *e) {
                 sWardNear[side] = 0;   /* (out of range: in again buzzes again) */
             }
         }
+#endif
         if (grip <= 0.4f) {
             if (sHold[side] == HOLD_LOOT) {
                 loot_let_go(sHoldId[side], side);
@@ -2851,6 +2989,23 @@ void vrhands_tick(Engine *e) {
                 }
             }
         }
+        {   /* the path the hand took this frame through a wall, a door leaf or a placed thing: one
+             * buzz as it enters. What that hand holds is not in its own way. */
+            int skipDoor = sHold[side] == HOLD_DOOR ? sHoldId[side] : -1;
+            int skipProp = sHold[side] == HOLD_PROP || sHold[side] == HOLD_WARD ? sHoldId[side] : -1;
+            int wall = sHandHave[side] &&
+                       (hand_path_hits_wall(&e->room, sHandAt[side], at, 0.40f) ||
+                        hand_path_hits_door(e, skipDoor, sHandAt[side], at, 0.40f) ||
+                        hand_path_hits_placed(&e->room.placed, skipProp, sHandAt[side], at, 0.40f));
+
+            if (wall && !sWallNear[side]) {
+                vr_haptic(side, 0.15f, 0.03f);
+                sWallNear[side] = 1;
+            }
+            if (!wall) {
+                sWallNear[side] = 0;   /* (out of the wall: in again buzzes again) */
+            }
+        }
         swing_hand(side, at);
         sHandAt[side] = at;
         sHandHave[side] = 1;
@@ -2908,7 +3063,9 @@ void vrhands_tick(Engine *e) {
         }
     }
     ward_tick(e);
+#if 0   /* (temporary: where she is against the leaf's bounds, and the leaf's frame) */
     hide_probe(e);   /* (temporary: where she is against the leaf's bounds, and the leaf's frame) */
+#endif
     poses_save(e);
     leaf_scan(e);
     loot_maintain();

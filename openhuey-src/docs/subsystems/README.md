@@ -11,3 +11,5 @@ notes, and is updated whenever the subsystem changes. Every page has these secti
   function names). Quirks of the original we keep are marked *quirk*.
 - **Design notes**: decisions, alternatives, open questions.
 - **Status**: spec / built / checked, and what is left.
+
+The pages: [hands.md](hands.md) records the VR hands.

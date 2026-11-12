@@ -187,6 +187,11 @@ add_executable(spu-check tests/spu_check.c src/platform/spu.c)
 target_link_libraries(spu-check PRIVATE hgadata)
 add_test(NAME spu_check COMMAND spu-check)
 
+# the hands' wall sweep: a hand's path across a room's wall is found, a floor's isn't (detection only)
+add_executable(hands-sweep-check tests/hands_sweep_check.c src/game/vrhands.c)
+target_link_libraries(hands-sweep-check PRIVATE hgadata forth)
+add_test(NAME hands_sweep_check COMMAND hands-sweep-check)
+
 # the movies' conversion: every SFD split as the import splits it - the same video packets, the same sound
 add_executable(movie-check tests/movie_check.c)
 target_link_libraries(movie-check PRIVATE hgadata)

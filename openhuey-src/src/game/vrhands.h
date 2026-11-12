@@ -7,12 +7,24 @@
 
 struct Actor;
 struct Engine;
+struct Room;
+struct PlacedSet;
 
 int vrhands_wants(const struct Actor *a);
 void vrhands_pose(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace);
 /* a pet pushes the bone under the hand. Called from the pose, after the skeleton is built. */
 void vrhands_pet_pose(struct Actor *a, Mat4 *world, int nbones, const Mat4 *unplace);
 void vrhands_tick(struct Engine *e);
+/* 1 when the straight path a hand took this frame (`from` to `to`) came within `skin` of one of
+ * the room's walls: a mesh triangle steep enough to be a wall (|normal.y| below 0.5), sampled
+ * along the path. Detection only: nothing is blocked. */
+int hand_path_hits_wall(const struct Room *r, Vec3 from, Vec3 to, float skin);
+/* the same path against the room's door leaves: every face of a leaf counts (a shut one's face,
+ * an open one's edge). Door `skip` (the one this hand holds; -1 none) is left out. Detection only. */
+int hand_path_hits_door(const struct Engine *e, int skip, Vec3 from, Vec3 to, float skin);
+/* the same path against the room's placed objects: every face of them counts (a table's top as
+ * much as its side). Placed object `skip` (the one this hand holds; -1 none) is left out. */
+int hand_path_hits_placed(const struct PlacedSet *s, int skip, Vec3 from, Vec3 to, float skin);
 void vrhands_forget_poses(void);
 /* 1 when that controller is on Hewie. A touch also gives that hand a mild buzz. */
 int vrhands_petting(int side);
