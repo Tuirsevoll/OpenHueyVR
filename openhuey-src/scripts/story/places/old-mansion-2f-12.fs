@@ -142,7 +142,7 @@ create looks  -103.36e 30e -72.17e  25e 18e 18e look,   288.99e 0e -98.66e  25e 
     fiona $C in-area?  fiona 44 60 heading? and if  ['] the-books unhurried offer  then
     1 locked-request?  fiona 0 before-door? and if  ['] the-door any-time offer  then
     fiona $D in-area?  fiona 100 50 heading? and if  ['] save-clock calm-hewie-up offer  then
-    om2f-12-antimony-powder-found fact?  om2f-12-antimony-powder fact? 0= and  fiona 82.73e 30e -85.2e 5e 5e touches? and if
+    om2f-12-antimony-powder-found fact?  om2f-12-antimony-powder fact? 0= and  fiona 82.73e 31e -85.2e 5e 5e touches? and if
         ['] take-powder calm-only offer
     then
     251.4e 20e -115e  251.4e 20e -90e  251.4e 0e -115e  251.4e 0e -90e  light-doorway ;
@@ -151,3 +151,4 @@ create looks  -103.36e 30e -72.17e  25e 18e 18e look,   288.99e 0e -98.66e  25e 
 
 ' came-in ' person-in ' each-frame ' went old-mansion-2f-12 place!
 ' items-used old-mansion-2f-12 items-here
+here  antimony-powder , ' take-powder , powder-fx ,  -1 ,  old-mansion-2f-12 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

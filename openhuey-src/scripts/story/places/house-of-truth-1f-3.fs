@@ -74,8 +74,9 @@ create ahead  4 , 0 ,  5 , 1 ,  6 , 2 ,   \ (area, exit loaded ahead)
     spots ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     entries 4 ways-in ;
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went house-of-truth-1f-3 place!
+here  rubrum-medallion , ' pick-rubrum , rubrum-fx ,  viola-medallion , ' pick-viola , viola-fx ,  -1 ,  house-of-truth-1f-3 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

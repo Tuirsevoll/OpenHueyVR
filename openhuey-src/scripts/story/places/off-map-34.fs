@@ -27,12 +27,12 @@ create looks   \ (the parts after each cue: 0 .. 5)
     9 0 do  begin  i cells cues + @ scene-at? 0= while  yield  repeat  i look  loop
     begin  scene-near-end? 0= while  yield  repeat ;
 : the-scene ( -- )
-    the-movie scenes:unseen-movie the-cutscene load-scene  ['] by-cues start drop
+    the-movie scenes:unseen-movie the-cutscene load-scene  ['] by-cues along-scene
     panic-eased  if  lorenzo-msg run-scene  then ;
 : meets-him ( -- )
     seen-flag resident-flag? 0= if  no-pause state!  then
-    stalker let-go  hewie let-go  fiona hold  fiona wait-move
-    the-scene  world-held state!  stalker let-go
+    stalker let-go  0 summon-take  hewie let-go  fiona hold  fiona wait-move
+    the-scene  world-held state!  stalker let-go  0 summon-take   \ ($17's char-done: slot 2, taken off)
     next-figure next-slot figure-in  off-map-33 preload  forced-exit take-exit ;
 : replayed ( -- )
     fiona hold  fiona wait-move  tintstalker-kind her-double figure-in  yield
@@ -43,7 +43,7 @@ create looks   \ (the parts after each cue: 0 .. 5)
 : each-frame ( -- ) ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     cf-13-flag1 fact?  came-by @ forced-exit = and if
         fiona 0 0 place-on-tri  world-held state!  panic-eased  ['] meets-him fiona start-holding drop
     then ;

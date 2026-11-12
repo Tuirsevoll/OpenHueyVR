@@ -98,26 +98,26 @@ create holes  $77 , $48 , $75 , $46 , $52 , $81 , 2 , $61 , $70 , $3E , $39 , 0 
 
 create cameras  1 , 0 , 0 ,   2 , 1 , 1 ,   3 , 0 , 0 ,   4 , 2 , 2 ,   \ (area, set, path)
 create looks  45.1e 0e 31.88e  28e 18e 18e look,   54.4e 0e -20.46e  25e 16e 16e look,
-: facing? ( area deg -- flag )  {: a d :}  fiona a in-area?  fiona d 60 heading? and ;
 : incubators ( -- )
-    7 180 facing? if  ['] by-the-door unhurried offer  then
-    8 180 facing? if  ['] second unhurried offer  then
-    9 180 facing? if  ['] third unhurried offer  then
-    $A 0 facing?  $C 180 facing? or if  ['] fourth unhurried offer  then
-    $B 0 facing?  $D 180 facing? or if  ['] burst-one unhurried offer  then
-    $E 0 facing? if  ['] sixth unhurried offer  then
-    $F 0 facing? if  ['] far-one unhurried offer  then
-    $10 0 facing? if  ['] last-one unhurried offer  then ;
+    7 180 60 fiona-faces? if  ['] by-the-door unhurried offer  then
+    8 180 60 fiona-faces? if  ['] second unhurried offer  then
+    9 180 60 fiona-faces? if  ['] third unhurried offer  then
+    $A 0 60 fiona-faces?  $C 180 60 fiona-faces? or if  ['] fourth unhurried offer  then
+    $B 0 60 fiona-faces?  $D 180 60 fiona-faces? or if  ['] burst-one unhurried offer  then
+    $E 0 60 fiona-faces? if  ['] sixth unhurried offer  then
+    $F 0 60 fiona-faces? if  ['] far-one unhurried offer  then
+    $10 0 60 fiona-faces? if  ['] last-one unhurried offer  then ;
 : each-frame ( -- )
     0 exit-out  cameras 4 cameras-at
     the-figure hopper-still dup 21 =  swap 66 = or if  call-sound hopper-sound  then
     figure-noticed 80 54.4e 0e -20.46e 25e 16e notices? if  ['] wary-of-it start drop  then
     looks 2 danger-now @ followed = hewie-looks-if
     fiona 5 in-area?  fiona 40 50 heading? and if  ['] the-transmuter unhurried offer  then
-    om1f-4-chicken-jerky fact? 0=  fiona -51.07e 0e 19.59e 5e 5e touches? and if  ['] take-jerky calm-only offer  then
+    om1f-4-chicken-jerky fact? 0=  fiona -51.07e 1e 19.59e 5e 5e touches? and if  ['] take-jerky calm-only offer  then
     incubators ;
 : person-in ( i -- )  fiona-p = if  0 0 0 way-in  then ;
 : went ( -- )  hopper-gone ;
 
 ' came-in ' person-in ' each-frame ' went old-mansion-1f-4 place!
 ' items-used old-mansion-1f-4 items-here
+here  chicken-jerky , ' take-jerky , jerky-fx ,  -1 ,  old-mansion-1f-4 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

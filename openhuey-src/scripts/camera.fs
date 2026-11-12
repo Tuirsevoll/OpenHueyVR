@@ -43,7 +43,7 @@ $1C constant depth-range   \ (the room's look slot: its fog, held off during the
 : shot-over ( -- )   \ (the setup taken anew)
     false cam-event!  shot @ no-shot <> if  no-shot shot !  cam-retake  then ;
 
-: fiona ( -- id )  s" fiona" actor-named ;
+: fiona ( -- id )  fiona-id ;
 : fresh-start ( -- )   \ (the characters made anew: their setups none - hers as the save had it)
     fiona cam-setup-of  cam-forget-setups  fiona -rot cam-char-setup
     cam-new-room  0e cam-shake!  no-shot shot !  0 fog-held !  fiona cam-on ;
@@ -73,7 +73,7 @@ behaviour filming
       held @ 0= if  cam-take-followed  then
       cam-track
       cam-target 0< if  shot-over  then   \ (following nobody: no shot)
-      cam-update
+      flag-names:panic-starting facts:state-flag? 0= if  cam-update  then   \ (her panic's start: CamDirector_Update skipped)
       shot @ shot-wanted = if  take-shot  then
       shot @ no-shot <> if  shoot  then
       cam-cut? if  broadcast camera-cut  then ;

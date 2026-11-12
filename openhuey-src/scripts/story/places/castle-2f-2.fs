@@ -47,7 +47,7 @@ $209 constant fled-file   $224 constant his-file   $2302 constant look-round-ani
 : warned? ( -- flag )  c1f-8-flag1 fact?  found-file-209 fact? 0= and ;   \ (the telephone's warning heeded not yet)
 : first-time? ( -- flag )  c2f-2-flag1 fact? 0= ;
 : box-home? ( -- flag )  c2f-2-flag2 fact? ;
-: tinted ( -- )  c2f-3-flag1 fact? 0= if  $84 $60 $3C $50 $24 $2A $2A $46 room-tint  then ;
+: tinted ( -- )  c2f-3-flag1 fact? 0= if  daylight-tint  then ;
 : the-figures ( -- )  daniella-kind 3 figure-in  riccardo-kind 4 figure-in ;   \ (for the room beyond: its scene)
 : no-figures ( -- )  3 figure-out  4 figure-out ;
 : box-placed ( -- )   \ (in its place, or pushed home and fixed there)
@@ -222,7 +222,7 @@ create doll-pt /vec allot
     stalker hold  -1 his-shove !  stalker wait-move  stalker his-shove-motions motions-for
     stalker $1A2 0 -1 walk-path-move 77.27e -192.48e go-to
     stalker use-motions  stalker true noclip  stalker room-motion 5 start-blend8
-    begin  stalker fiona 0 close-to? if  stalker throws-her  then  stalker went-round? 0= while  yield  repeat
+    begin  stalker fiona self-touching? if  stalker throws-her  then  stalker went-round? 0= while  yield  repeat
     stalker false noclip  0 his-shove !  stalker let-go  0 summon-take ;
 : shove-due ( -- )
     stalker far-area in-area?  4 stalker-alert? and  st-cond-now @ down-cond <> and  debilitas? and  stalker held? 0= and if
@@ -244,9 +244,8 @@ create looks
     -84.16e 0e 90.89e  18e 28e 28e look,
 : wary-by-door ( -- )  -144e 0e 109e hewie-stands-by ;
 : sits-by-box ( -- )  33.656e 0e 111.061e hewie-sits-by ;
-: at-his-command? ( -- flag )  hewie-in?  hewie-cond-now @ well-cond = and  chased? 0= and  hewie-cmdable-now @ and ;
 : hewie-notices ( -- )
-    at-his-command? 0= if  exit  then
+    hewie-at-hand? 0= if  exit  then
     warned?  hewie 2 in-area? 0= and  wary-noticed @ 0= and  hewie -144e 0e 109e 30e 20e centred-in? and if
         -1 wary-noticed !  ['] wary-by-door start drop
     then
@@ -291,7 +290,7 @@ create entries  2 , 2 ,   1 , 1 ,   0 , 0 ,   2 , 2 ,   3 , 3 ,   \ (by exit 0..
     sounds  spots  walls-shade ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     entries 5 ways-in
     came-by @ forced-exit = if  fiona $142 0 place-on-tri  ['] pulled-free start drop  then ;
 : went ( -- )
@@ -299,3 +298,4 @@ create entries  2 , 2 ,   1 , 1 ,   0 , 0 ,   2 , 2 ,   3 , 3 ,   \ (by exit 0..
     found-file-209 fact?  door-beyond doors:door-locked? and if  door-beyond unlock  then ;
 
 ' came-in ' person-in ' each-frame ' went castle-2f-2 place!
+here  album-medallion , ' pick-album , album-fx ,  -1 ,  castle-2f-2 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

@@ -28,6 +28,7 @@ $10 constant killed-msg       \ "I-I could have been killed... I guess fate was 
 $11 constant not-moving-msg   \ "He's not moving... I-I think he's dead..."
 
 \ ---- its own state (a visit) ----
+own: hit-1-his  own: hit-2-his   \ (the stand's blow being taken: his, else hers)
 own: pulley-remarked   own: chandelier-remarked
 own: met               \ his coming made, this visit
 own: strength-1  own: strength-2   \ the stands' strength (25: broken at 0)
@@ -100,14 +101,16 @@ $28 constant chapel-door   $11 constant far-door   0 constant fallen-floor
         stand-2 object-hide  stand-2-part show-part  cb1-6-flag5 fact!  break-sound 10e 10e 40e room-sound
     else  hit-sound 10e 10e 40e room-sound  then
     ['] swinging-2 stop-doing  ['] swinging-2 start drop ;
-: stands-struck ( -- )   \ (a blow in its place - his, else hers)
-    cb1-6-flag4 fact? 0= if
-        stalker 10e 0e -37e 7e 20e blow-in? if  true stand-1-struck
-        else  fiona 10e 0e -37e 7e 20e blow-in? if  false stand-1-struck  then  then
+: hit-1 ( -- )  hit-1-his @ stand-1-struck  20 frames ;   \ (acts 8, 9 on their tracks: 20 frames - a blow counts once)
+: hit-2 ( -- )  hit-2-his @ stand-2-struck  20 frames ;
+: stands-struck ( -- )   \ (a blow in its place - his, else hers - not while the last one's hit runs)
+    cb1-6-flag4 fact? 0=  ['] hit-1 running? 0= and if
+        stalker 10e 0e -37e 7e 20e blow-in? if  -1 hit-1-his !  ['] hit-1 start drop
+        else  fiona 10e 0e -37e 7e 20e blow-in? if  0 hit-1-his !  ['] hit-1 start drop  then  then
     then
-    cb1-6-flag5 fact? 0= if
-        stalker 10e 0e 37e 7e 20e blow-in? if  true stand-2-struck
-        else  fiona 10e 0e 37e 7e 20e blow-in? if  false stand-2-struck  then  then
+    cb1-6-flag5 fact? 0=  ['] hit-2 running? 0= and if
+        stalker 10e 0e 37e 7e 20e blow-in? if  -1 hit-2-his !  ['] hit-2 start drop
+        else  fiona 10e 0e 37e 7e 20e blow-in? if  0 hit-2-his !  ['] hit-2 start drop  then  then
     then ;
 
 \ ---- the scenes ----
@@ -148,13 +151,13 @@ $28 constant chapel-door   $11 constant far-door   0 constant fallen-floor
     begin  cutscene-frame cutscene-shot-at  dup 5 = if  shard-part show-part  then  6 = if  shard-part hide-part  then
         cutscene-near? 0= while  yield  repeat ;
 : ropes-down ( -- )  chandelier object-hide  left-lever object-show  right-lever object-show  rope-1 object-show  rope-2 object-show ;
-: falls-scene ( -- )  falls-movie scenes:unseen-movie falls-cutscene load-scene  ['] falls-shots start drop  panic-eased  if  -1 run-scene  then ;
-: calm-scene ( -- )  calm-movie scenes:unseen-movie calm-cutscene load-scene  ['] calm-shots start drop  panic-eased  if  calm-down-msg run-scene  then ;
+: falls-scene ( -- )  falls-movie scenes:unseen-movie falls-cutscene load-scene  ['] falls-shots along-scene  panic-eased  if  -1 run-scene  then ;
+: calm-scene ( -- )  calm-movie scenes:unseen-movie calm-cutscene load-scene  ['] calm-shots along-scene  panic-eased  if  calm-down-msg run-scene  then ;
 : chandelier-falls ( -- )   \ (both stands broken: on him - two scenes)
     no-track 1e background  stalkers-stay state!  fiona hold  fiona wait-move
     hewie-no-attack state!  stalkers-blind state!
     15 screen:to-black-2 fade  falls-movie scenes:unseen-movie falls-cutscene load-scene  wait-fade
-    hewie let-go  ['] falls-shots start drop  panic-eased  if  -1 run-scene  then  wait-fade
+    hewie let-go  ['] falls-shots along-scene  panic-eased  if  -1 run-scene  then  wait-fade
     $26 resident-flag-set  world-held state!  ropes-down  hewie let-go  stalker let-go  16 frames
     calm-scene  shard-part hide-part
     scene-5-pending state-off  hewie-no-attack state-off  stalkers-blind state-off  50 trust+  stalker-unloaded
@@ -246,7 +249,7 @@ $28 constant chapel-door   $11 constant far-door   0 constant fallen-floor
     replay-act case
         $C of  ['] replay-statue  endof   $D of  ['] replay-comes  endof   $E of  ['] replay-falls  endof
         $F of  ['] replay-calm  endof    $10 of  ['] replay-down  endof   >r 0 r>
-    endcase  ?dup if  start drop  then ;
+    endcase  ?dup if  fiona start-holding drop  then ;
 
 \ ---- every frame ----
 create cameras  1 , 0 , -1 ,   2 , 1 , 0 ,   3 , 1 , 0 ,   4 , 2 , 1 ,   8 , 0 , -1 ,   9 , 1 , 0 ,   $A , 0 , -1 ,   $B , 1 , 0 ,   \ (area, set, path)

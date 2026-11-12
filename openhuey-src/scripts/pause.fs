@@ -9,7 +9,7 @@
 IN: pause
 USING: engine game-state actors messages keys facts flag-names ps2-screen ;
 
-5 constant pause-layer   \ (the UI layers: 0 the movie, 1 the fade, 2 the window, 3 the prompt, 4 subtitles, 5 this)
+5 constant pause-layer   \ (the UI layers: 0 the movie, 1 the fade, 2 the window, 3 unused, 4 subtitles, 5 this)
 
 \ its stages: closed; the movie pause's; the play pause's
 enum: pause-stage  closed
@@ -48,7 +48,7 @@ end-state
 
 \ ---- the sound turned down as far as it is open (duck: the effects' master, the stream, the
 \ stage music and the movie) ----
-: music-duck! ( F: v -- )  f>cell s" music" actor-named send music-duck ;
+: music-duck! ( F: v -- )  f>cell music-id send music-duck ;
 : duck-by ( F: down -- )   \ (pause.c duck)
     1e fswap f- 0e fmax 1e fmin  {: F: v :}
     1e v sound-volume!  v music-duck!  v stage-music-volume!  v movie-volume! ;
@@ -151,10 +151,14 @@ $D8D0C400 constant plain-colour   \ (the font's own, palette 0: its white tinted
     in-movie? if  unpause-msg $140 $190 line-at  skip-msg $140 $1A4 line-at  else  play-lines  then
     vr? in-movie? 0= and if  pause-layer s" Page Up: set height"  48  36  $D8D0C8FF 2 ui-text  then ;
 
+: quit-asked? ( -- flag )   \ (cleared as taken)
+    world-held state-flag?  quit-wanted state-flag? and  dup if  quit-wanted state-flag-clear  soft-reset  then ;
 behaviour pausing
   on spawned ( -- )  closed stage !  self subscribe tick  self subscribe held-tick  self subscribe frame-end ;
-  on tick ( -- )  step ;
-  on held-tick ( -- )  stage @ closed <> if  step  draw  then ;   \ (the world held: its own frames)
+  \ the story asking to quit to the title (state flag $1C with the world held - the extras room's way out:
+  \ SceneGame's play frame, the next scene the title); before 0.2.42 nothing read it - a black screen for ever
+  on tick ( -- )  quit-asked? if  exit  then  step ;
+  on held-tick ( -- )  quit-asked? if  exit  then  stage @ closed <> if  step  draw  then ;   \ (the world held: its own frames)
   on frame-end ( -- )   \ (flag 6, back to play: the scene's script sets it to close the skip; cleared each frame)
       pause-wanted state-flag? stage @ skipping = and if  shut  then  pause-wanted state-flag-clear  draw ;
 end-behaviour

@@ -170,9 +170,9 @@ create entries  1 , -1 ,   1 , -1 ,   3 , 1 ,     \ (by exit 0, 1, 2: the camera
     ways  vase-1 breaks? drop  hewie-sniffs  album-way  frightened  sounds  hewie-album  spots  walls-shade ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     entries 3 ways-in
-    saturnus-hint-on fact?  c1f-14-flag2 fact? 0= and if  c1f-14-flag2 fact!  stalker let-go  then
+    saturnus-hint-on fact?  c1f-14-flag2 fact? 0= and if  c1f-14-flag2 fact!  stalker let-go  0 summon-take  then
     came-by @ 2 = if  3 map-page  then ;
 : went ( -- )   \ (through either door once the garden door is done: her fright here no more)
     garden-door-done fact?  c1f-9-flag1 fact? 0= and if
@@ -181,3 +181,4 @@ create entries  1 , -1 ,   1 , -1 ,   3 , 1 ,     \ (by exit 0, 1, 2: the camera
 
 ' came-in ' person-in ' each-frame ' went castle-1f-9 place!
 ' items-used castle-1f-9 items-here
+here  album-medallion , 0 , album-fx ,  rubrum-medallion , ' pick-rubrum , rubrum-fx ,  magnesia , ' pick-magnesia , magnesia-fx ,  -1 ,  castle-1f-9 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

@@ -46,8 +46,7 @@ create flames  -0.5e f, 18.5e f, -35.5e f,   9.5e f, 18.5e f, -35e f,   4.8e f, 
 
 \ ---- the plates: who stands on them; pressed in, or up ----
 create plate-tris  $89 , $B1 ,  $90 , $B2 ,  $97 , $B3 ,  $83 , $B0 ,
-: on-tri? ( id tri -- flag )  over here? 0= if  2drop false exit  then  swap body-tri = ;
-: on-plate? ( id p -- flag )  {: id p | a :}  p 2* cells plate-tris + to a  id a @ on-tri?  id a cell+ @ on-tri? or ;
+: on-plate? ( id p -- flag )  {: id p | a :}  p 2* cells plate-tris + to a  id a @ stands-on?  id a cell+ @ stands-on? or ;
 : plate-held? ( p -- flag )  {: p :}  fiona p on-plate?  hewie p on-plate? or  stalker p on-plate? or ;
 : plate ( p -- addr len )  this-room @ story.strings:room-string ;
 : plate-moves ( p -- )   \ (down 0.2 a frame to -0.7 while held - a sound as it starts - else up to 0)
@@ -99,7 +98,7 @@ create plate-tris  $89 , $B1 ,  $90 , $B2 ,  $97 , $B3 ,  $83 , $B0 ,
     begin  cutscene-frame cutscene-shot-at 2 <> while  yield  repeat  corpse false no-shadow ;
 : all-out ( -- )
     0 dog-step !  stalkers-stay state!  fiona hold  15 screen:to-black-2 with-music or fade
-    7 scenes:keyed-movie 6 load-scene  wait-fade  ['] statue-scene start drop  fiona false shown
+    7 scenes:keyed-movie 6 load-scene  wait-fade  ['] statue-scene along-scene  fiona false shown
     hewie-in? if  ['] hewie-hidden-by start drop  begin  dog-step @ 1 < while  yield  repeat  then
     $10 $FF movie-key  panic-eased  if  -1 run-scene  then  wait-fade
     50 trust+  fiona 0 idle  camera-restart  fiona true shown  2 dog-step !
@@ -201,7 +200,7 @@ create plate-tris  $89 , $B1 ,  $90 , $B2 ,  $97 , $B3 ,  $83 , $B0 ,
     $10 $50 movie-key  fiona false shown  panic-eased  if  -1 run-through  then
     $2E resident-flag-set  gameover:movie-death game-over ;
 : shuts-it ( -- )
-    stalker hold  things-clear  0 dog-step !  panic-eased  ['] impaled start drop
+    stalker hold  things-id send clear-things  0 dog-step !  panic-eased  ['] impaled start drop
     stalker wait-move  0 door-for-him  stalker $3C 90 32e 20.63e walk-to  1 dog-step !  begin  yield  again ;
 : sees-her ( -- )
     stalker hold  stalker wait-move  0 door-for-him  stalker 7 118 26.16e 27.36e walk-to  stalker stalker.anims:there-anim play
@@ -264,7 +263,7 @@ create corpse-look  11.81e 0e -0.03e  20e 6e 6e look,
     fiona hold  true spikes  $E object-hide  corpse-in  5 scenes:unseen-movie 4 load-scene
     panic-eased  if  -1 run-scene  then  3 figure-out  replay-over ;
 : replay-statue ( -- )
-    fiona hold  true spikes  $E object-hide  corpse-in  7 scenes:keyed-movie 6 load-scene  ['] statue-scene start drop
+    fiona hold  true spikes  $E object-hide  corpse-in  7 scenes:keyed-movie 6 load-scene  ['] statue-scene along-scene
     fiona false shown  $10 $FF movie-key  panic-eased  if  -1 run-scene  then  fiona true shown  3 figure-out  replay-over ;
 
 \ ---- its hum ----
@@ -273,7 +272,6 @@ create corpse-look  11.81e 0e -0.03e  20e 6e 6e look,
     else  room-sounds-in? if  hum-sound 40e 5e -26e room-sound  -1 hum-on !  then  then ;
 
 create cameras  1 , 0 , -1 ,   2 , 1 , -1 ,   \ (area, set, path)
-: facing? ( area deg -- flag )  {: a d :}  fiona a in-area?  fiona d 50 heading? and ;
 : each-frame ( -- )
     hums  0 exit-out  cameras 2 cameras-at  plates
     omb1-3-flag2 fact? 0= if
@@ -281,22 +279,22 @@ create cameras  1 , 0 , -1 ,   2 , 1 , -1 ,   \ (area, set, path)
         flames-out @ $F =  fiona held? 0= and if  omb1-3-flag2 fact!  panic-eased  ['] all-out start drop  then
     then
     hewie-about
-    3 180 facing? if  ['] the-tool unhurried offer  then
+    3 180 50 fiona-faces? if  ['] the-tool unhurried offer  then
     fiona 4 in-area?  fiona 50 10e 0e faces-point? and if
         omb1-3-flag2 fact? 0= if  ['] the-corpse unhurried
         else  got-venus-key fact? 0= if  ['] take-key calm-only  else  ['] drained unhurried  then  then  offer
     then
-    maiden-area 90 facing? if
+    maiden-area 90 50 fiona-faces? if
         omb1-3-flag3 fact? 0= if  ['] the-maiden unhurried offer
-        else  stalker-in? if  no-time-message offer-remark-now  else  ['] the-maiden calm-only offer  then  then
+        else  stalker-in? if  no-time-message offer-remark-now  else  ['] the-maiden hiding-spot offer  then  then
     then
-    6 0 facing? if  ['] the-lever unhurried offer  then
-    7 110 facing? if  ['] the-oven unhurried offer  then
-    8 90 facing? if  ['] the-birdcage unhurried offer  then
-    9 0 facing? if  ['] the-stretcher unhurried offer  then
-    $A -44 facing? if  ['] the-sabers unhurried offer  then
-    $B -90 facing? if  ['] the-breaker unhurried offer  then
-    $C -90 facing? if  ['] the-tools unhurried offer  then
+    6 0 50 fiona-faces? if  ['] the-lever unhurried offer  then
+    7 110 50 fiona-faces? if  ['] the-oven unhurried offer  then
+    8 90 50 fiona-faces? if  ['] the-birdcage unhurried offer  then
+    9 0 50 fiona-faces? if  ['] the-stretcher unhurried offer  then
+    $A -44 50 fiona-faces? if  ['] the-sabers unhurried offer  then
+    $B -90 50 fiona-faces? if  ['] the-breaker unhurried offer  then
+    $C -90 50 fiona-faces? if  ['] the-tools unhurried offer  then
     omb1-3-camomile fact? 0=  fiona -20.96e 8.5e 5.57e 5e 5e touches? and if  ['] take-camomile calm-only offer  then ;
 : person-in ( i -- )
     case
@@ -304,7 +302,7 @@ create cameras  1 , 0 , -1 ,   2 , 1 , -1 ,   \ (area, set, path)
             events-held state? if
                 hewie send part-from-fiona
                 replay-act case  $14 of  ['] replay-maiden  endof  $15 of  ['] replay-corpse  endof  >r ['] replay-statue r>  endcase
-                start drop  exit
+                fiona start-holding drop  exit
             then
             0 0 -1 way-in
         endof
@@ -313,3 +311,4 @@ create cameras  1 , 0 , -1 ,   2 , 1 , -1 ,   \ (area, set, path)
 : went ( -- )  false fiona send count-shakes ;
 
 ' came-in ' person-in ' each-frame ' went old-mansion-b1-3 place!
+here  camomile , ' take-camomile , camomile-fx ,  -1 ,  old-mansion-b1-3 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

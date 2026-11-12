@@ -28,6 +28,24 @@ T{ [: first state@ 1 = ;] 200 soon  first thing-room  room-id = -> -1 -1 }T
 testing her ball gone (its 3 minutes): hers again
 first 5399 swap thing-age!  3 run-frames
 T{ things-count  $90 count-of -> 0 1 }T
+: lay ( kind -- i )  room-id game:fiona body-tri game:fiona body-pos 0e 0e 0e thing-new ;
+testing the story's clear ($D2, PlacedThings_Clear): each gone as it ends - a ball lying, hers back if she has none (Ball_dtor)
+$90 game:items send take-item  deliver
+0 lay drop  0 lay drop   \ (two lying: one back, not two)
+T{ things-count  $90 count-of -> 2 0 }T
+T{ game:things send clear-things  deliver  things-count  $90 count-of -> 0 1 }T
+testing ten of a kind at most: the oldest set off, not freed - a magnesia goes off where it lies (PlacedThings_AnotherCame)
+: kind-count ( k -- n )  0  128 0 do  i thing-used? if  i thing-kind 2 pick = if  1+  then  then  loop  nip ;
+traps-off state-flag-set   \ (no blows: only their going off)
+: ten-magnesias ( -- )  10 0 do  2 lay drop  loop ;
+ten-magnesias  [: 2 0 0 0 0 0 0 0 game:things send thing-made ;] execute  deliver
+T{ 2 kind-count -> 11 }T
+T{ 2 run-frames  2 kind-count -> 10 }T
+game:things send clear-things  deliver  traps-off state-flag-clear  1 run-frames
+testing a stone in another room: armed, it goes off there all the same (Thing08_Frame - no room gate)
+8 front-garden-3 0 0e 0e 0e 0e 0e 0e thing-new constant stone
+449 stone thing-age!  3 run-frames
+T{ stone thing-used? -> 0 }T
 
 testing a powder (antimony, aimed): it bursts on what it hits, and is gone
 -1 equip  $91 2 have  $91 equip  20 run-frames
@@ -39,8 +57,12 @@ stalkers-blind state-flag-set  game:fiona body-tri debug:debilitas-tri  10 run-f
 : at-him ( -- tri ) ( F: -- x y z )  game:debilitas body-tri  game:debilitas body-pos  fswap 5e f+ fswap ;   \ (5 above his feet)
 1 room-id  at-him  0e 0e 0e  thing-new drop  5 run-frames
 T{ [: stalker.state:anim @ ;] his  things-count -> $1006 0 }T
+testing ... his cloud (Effect79FF0) of the antimony's purple strands, lasting while he is powdered
+T{ [: stalker.state:cloud-left @  stalker.state:cloud-kind @  stalker.state:cloud-left cell+ @ ;] his -> -1 0 0 }T
 full-suite   \ (on: waits, scenes, walks - the full run's)
+T{ [: particles-strands 0> ;] 30 soon -> -1 }T   \ (its timers 0..15: a strand drips from him)
 T{ [: [: stalker.state:anim @ ;] his $1006 <> ;] 600 soon -> -1 }T   \ (four loops, then on)
+T{ [: particles-strands 0= ;] 120 soon -> -1 }T   \ (no longer powdered: no more, the last faded)
 debug:debilitas-out  stalkers-blind state-flag-clear  5 run-frames
 testing a magnesia (set down): there till armed (30 s), then it goes off
 -1 equip  $92 1 have  $92 equip  20 run-frames
@@ -56,7 +78,7 @@ T{ let-go  ' things-count 60 soon  first kind@ -> -1 3 }T
 : lies ( -- x z )  first thing-at dup sf@ f>s swap 8 + sf@ f>s ;
 variable lay-x  variable lay-z  lies lay-z ! lay-x !
 game:saves enter  saves:quick-save  leave-actor  deliver  3 run-frames
-things-clear  T{ things-count -> 0 }T
+things-clear  T{ things-count -> 0 }T   \ (the engine's: a save read back, nothing gone through)
 game:saves enter  saves:quick-load  leave-actor  60 run-frames
 T{ things-count  first kind@  lies lay-z @ = swap lay-x @ = -> 1 3 -1 -1 }T
 

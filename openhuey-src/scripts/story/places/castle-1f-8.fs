@@ -104,7 +104,7 @@ create flames  34.2e 18.3e 14.2e f, f, f,   34.2e 18.3e -14.2e f, f, f,
 : spots ( -- )
     c1f-8-magnesia fact? 0=  fiona 0e 8.5e 25e 5e 5e touches? and if  ['] reach-magnesia calm-only offer  then
     fiona hiding-area in-area?  fiona 180 60 heading? and if
-        stalker-in? if  no-time-message offer-remark-now  else  ['] hides calm-only offer  then
+        stalker-in? if  no-time-message offer-remark-now  else  ['] hides hiding-spot offer  then
     then
     called?  fiona phone-area in-area? and  fiona 150 45 heading? and if  ['] telephone unhurried offer  then
     fiona chair-area in-area?  fiona 90 45 heading? and if  ['] chair unhurried offer  then
@@ -146,10 +146,11 @@ create entries  0 , -1 ,   1 , 0 ,             \ (by exit 0, 1: the camera)
 : person-in ( i -- )
     case
         fiona-p of
-            events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+            events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
             entries 2 ways-in  endof
         stalker-p of  stalker-came  endof
     endcase ;
 : went ( -- )  his-entrance @ if  0 stalker-order  then ;
 
 ' came-in ' person-in ' each-frame ' went castle-1f-8 place!
+here  album-medallion , ' pick-album , album-fx ,  magnesia , ' reach-magnesia , magnesia-fx ,  -1 ,  castle-1f-8 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

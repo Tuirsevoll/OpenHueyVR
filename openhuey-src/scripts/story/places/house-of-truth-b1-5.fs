@@ -14,9 +14,10 @@ own-reset  truth-owns owns !
 : pick-up ( -- )  camomile htb1-5-camomile pickup-fx -117.05e 101.81e picks-up ;
 : came-in ( exit -- )  drop  htb1-5-flag1 124 colour-in  htb1-5-camomile fact? 0= if  pickup-fx -117.05e 1e 101.81e flicker-at  then ;
 : each-frame ( -- )
-    inscription-msg colour-frame  2 htb1-7-flag1 house-of-truth-b1-7 not-yet  3 way-on
+    inscription-msg colour-frame  2 htb1-7-flag1 house-of-truth-b1-7 not-yet  3 1 way-on
     htb1-5-camomile fact? 0=  fiona -117.05e 1e 101.81e 5e 5e touches? and if  ['] pick-up calm-only offer  then ;
 : person-in ( i -- )  fiona-p = if  came-by @ forced-exit = if  arrived  then  then ;
 : went ( -- )  colour-went ;
 
 ' came-in ' person-in ' each-frame ' went house-of-truth-b1-5 place!
+here  camomile , ' pick-up , pickup-fx ,  -1 ,  house-of-truth-b1-5 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

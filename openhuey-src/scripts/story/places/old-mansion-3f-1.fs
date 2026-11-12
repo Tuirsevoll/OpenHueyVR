@@ -64,13 +64,12 @@ create box-ends  $20A , $4D8 ,  $153 , $415 ,  $15C , $41E ,  $213 , $4DE ,
 
 \ ---- the first time in: the scene - Daniella after her, the door shut behind ----
 : blends ( from to -- )  {: a b :}  begin  cutscene-frame a < while  yield  repeat  begin  cutscene-frame b < while  $2D frame-blend  yield  repeat ;
-: till-shot ( n -- )  begin  cutscene-frame cutscene-shot-at over <> while  yield  repeat  drop ;
 : intro-looks ( -- )   \ (along the scene: the picture blended at its cues, her face at the end)
     $468 $477 blends  $484 $499 blends  $49D $4B3 blends  $4B4 $4D2 blends  $4D7 $4F2 blends
-    $19 till-shot  partner-kind 0 s" O_DNL\DNL_203.TEX" face-on ;
+    $19 wait-shot  partner-kind 0 s" O_DNL\DNL_203.TEX" face-on ;
 : intro-scene ( -- )
     intro-movie scenes:unseen-movie intro-cutscene load-scene  wait-fade
-    scene-figure 3 figure-in  4 cutscene-keep-model  ['] intro-looks start drop  2 show-part
+    scene-figure 3 figure-in  4 cutscene-keep-model  ['] intro-looks along-scene  2 show-part
     panic-eased  if  0 run-scene  then  2 hide-part  3 figure-out ;
 : stepped-in-as ( daniella? -- )
     {: dan :}  stalker-unloaded  stalkers-stay state!  fiona hold  hewie-no-attack state!  stalkers-blind state!  force-calm state!
@@ -92,10 +91,10 @@ create box-ends  $20A , $4D8 ,  $153 , $415 ,  $15C , $41E ,  $213 , $4DE ,
     stalker $1AB -90 0.25e 0.25e place-at  stalker room-motion start-anim  150 frames  his-sound room-bank stalker sound-by
     247 frames  stalker wait-anim  3 stage !  begin  yield  again ;
 : death-looks ( -- )   \ (along the scene: shards gone, the floor's light out, the hum stopped)
-    2 till-shot  $1E object-hide  4 till-shot  $1E object-hide
-    5 till-shot  glow-off  0 set-boxes !  floor-light
+    2 wait-shot  $1E object-hide  4 wait-shot  $1E object-hide
+    5 wait-shot  glow-off  0 set-boxes !  floor-light
     begin  cutscene-frame $369 < while  yield  repeat  hum-sound room-bank stop-sound  0 hum-on !
-    $A till-shot  $1E object-hide ;
+    $A wait-shot  $1E object-hide ;
 : after-death ( -- )   \ (back in the hall, her body pinned; Hewie well again)
     fiona true shown  scene-5-pending state-off  hewie-no-attack state-off  stalkers-blind state-off  force-calm state-off
     stalker-unloaded  7 show-part  0 set-boxes !  floor-light  all-hidden  0 panic-to
@@ -109,7 +108,7 @@ create box-ends  $20A , $4D8 ,  $153 , $415 ,  $15C , $41E ,  $213 , $4DE ,
     fiona false shown  hewie let-go  no-track 1e background  fiona 3 -1 camera-set  0 panic-to
     2 stage !  15 screen:from-black fade  begin  stage @ 3 < while  yield  repeat  wait-fade
     15 screen:to-black-2 fade  death-movie scenes:keyed-movie death-cutscene load-scene  wait-fade
-    0 hide-part  1 show-part  ['] death-looks start drop  $1E object-hide  om3f-1-flag3 fact? if  $A  else  9  then  show-part
+    0 hide-part  1 show-part  ['] death-looks along-scene  $1E object-hide  om3f-1-flag3 fact? if  $A  else  9  then  show-part
     $1E $C8 movie-key  panic-eased  if  -1 run-scene  then  wait-fade
     ['] her-fall stop-doing  hum-sound room-bank stop-sound  $1E object-hide
     after-death  15 fade-in
@@ -138,7 +137,7 @@ create box-ends  $20A , $4D8 ,  $153 , $415 ,  $15C , $41E ,  $213 , $4DE ,
     fiona hold  9 hide-part  $A hide-part  0 hide-part  1 show-part  box-ends boxes-at  4 0 do  i obstacle-fixed  loop
     7 hide-part  2 hide-part  all-hidden  4 set-boxes !  floor-light  shine
     35 stalker-ready  yield  fiona false shown  fiona 3 -1 camera-set
-    death-movie scenes:keyed-movie death-cutscene load-scene  0 hide-part  1 show-part  ['] death-looks start drop
+    death-movie scenes:keyed-movie death-cutscene load-scene  0 hide-part  1 show-part  ['] death-looks along-scene
     $1E object-hide  9 show-part  $1E $C8 movie-key  panic-eased  if  -1 run-scene  then
     stalker-unloaded  replay-over ;
 
@@ -155,15 +154,16 @@ create cameras  1 , 0 , 0 ,   2 , 1 , 1 ,   3 , 1 , 1 ,   4 , 2 , 2 ,   \ (area,
     then
     scene-5-pending state?  1 locked-request? and if  ['] the-door any-time offer  then
     om3f-1-flag2 fact?  fiona 5 45 faces-area? and if  ['] the-body unhurried offer  then
-    got-mars-key fact? 0=  om3f-1-flag2 fact? and  fiona 1.29e 0e -17.02e 5e 5e touches? and if  ['] take-key calm-only offer  then
+    got-mars-key fact? 0=  om3f-1-flag2 fact? and  fiona 1.29e 1e -17.02e 5e 5e touches? and if  ['] take-key calm-only offer  then
     50e -29e -143e  -8.8e 9.3e -143e  50e -50e -143e  -8.8e -10e -143e  light-doorway
     66e -39e -143e  50e -29e -143e  69e -55e -143e  50e -50e -143e  light-doorway ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
     events-held state? if
-        hewie send part-from-fiona  replay-act $A = if  ['] replay-intro  else  ['] replay-death  then  start drop  exit
+        hewie send part-from-fiona  replay-act $A = if  ['] replay-intro  else  ['] replay-death  then  fiona start-holding drop  exit
     then
     0 0 0 way-in ;
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went old-mansion-3f-1 place!
+here  mars-key , ' take-key , key-fx ,  -1 ,  old-mansion-3f-1 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

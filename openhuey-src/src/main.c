@@ -28,6 +28,7 @@
 #include "game/progress.h"
 #include "game/things.h"
 #include "game/vrhands.h"
+#include "game/props.h"
 #include "game/sprites.h"
 #include "game/mods.h"
 #include "data/exetables.h"
@@ -64,7 +65,7 @@ static void p_exit_status(Forth *f, Word *w) {   /* ( n -- ) a test's exit statu
 }
 static void p_error_count(Forth *f, Word *w) {   /* ( -- n ) errors raised (not in `catch`) so far */
     (void)w;
-    forth_push(f, f->errors);
+    forth_push(f, forth_errors(f));
 }
 
 typedef struct Options {
@@ -357,14 +358,16 @@ static Vec3 light_root(const Actor *a) {
     return b < a->model.nbones ? actor_bone(a, b) : actor_center(a);
 }
 
-static void use_lights(Engine *e, const Actor *a) {
+/* the lights for the next lit draws: the room's (or a stage's) three of `idx`, the camera's
+ * scripted ones, its ambient; `root` where the PS2's lighting takes their directions from */
+static void lights_for(Engine *e, const int idx[3], Vec3 root) {
     DrawLight lights[3];
     Vec3 ambient = e->nstage > 0 ? e->stage_ambient : e->room.ambient;
     int n = 0, k;
 
     for (k = 0; k < 3; k++) {
-        if (a->lights[k] >= 0) {
-            const RoomLight *l = e->nstage > 0 ? &e->stage[a->lights[k]] : &e->room.lights[a->lights[k]];
+        if (idx[k] >= 0) {
+            const RoomLight *l = e->nstage > 0 ? &e->stage[idx[k]] : &e->room.lights[idx[k]];
 
             lights[n].pos = l->pos;
             lights[n].color = vec3_scale(l->color, l->intensity);
@@ -404,10 +407,14 @@ static void use_lights(Engine *e, const Actor *a) {
         }
     }
     if (e->nstage > 0) {
-        render_draw_lights(ambient, lights, n, light_root(a));
+        render_draw_lights(ambient, lights, n, root);
     } else {
-        render_draw_lights(ambient, lights, e->room.nlights > 0 || e->extra.on ? n : -1, light_root(a));
+        render_draw_lights(ambient, lights, e->room.nlights > 0 || e->extra.on ? n : -1, root);
     }
+}
+
+static void use_lights(Engine *e, const Actor *a) {
+    lights_for(e, a->lights, light_root(a));
 }
 
 /* the characters again, mirrored in each reflecting quad's plane (Reflection_Draw: those on the
@@ -438,7 +445,7 @@ static void reflect_into(Engine *e, const Mat4 *proj, const Mat4 *view, const Ma
         float alpha = a->alpha;
         int off = a->shadow_off;
 
-        if (!a->used || !a->visible || (vec3_dot(n, a->pos) - d) * side <= 0.0f || (only >= 0 && i != only)) {
+        if (!actor_shown(a) || (vec3_dot(n, a->pos) - d) * side <= 0.0f || (only >= 0 && i != only)) {
             continue;
         }
         a->alpha = alpha * fminf(k, 1.0f);
@@ -564,6 +571,34 @@ float doorway_faded(const Engine *e, const Actor *a) {
 }
 
 static Actor *sFp;   /* her model, hidden while the headset is inside it */
+/* a mod's props in the room being played (or held in none): each lit by the room's lights about
+ * its middle, as a character is */
+static void draw_props(Engine *e, const Mat4 *vp) {
+    static const uint32_t kAll[8] = {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u};
+    int i;
+
+    for (i = 0; i < MAX_PROPS; i++) {
+        Prop *p = props_get(i);
+        int idx[3] = {-1, -1, -1};
+        Vec3 c;
+        Mat4 mvp;
+
+        if (p == NULL || !p->shown || (p->room >= 0 && p->room != e->room.id)) {
+            continue;
+        }
+        c = props_center(p);
+        if (e->nstage > 0) {
+            idx[0] = 0;
+            idx[1] = e->nstage > 1 ? 1 : -1;
+            idx[2] = e->nstage > 2 ? 2 : -1;
+        } else {
+            room_lights_at(&e->room, c, idx);
+        }
+        lights_for(e, idx, c);
+        mvp = mat4_mul(*vp, props_matrix(p));
+        render_mesh(&p->gpu, &mvp, p->d, p->nd, p->tex, p->ntex, kAll);
+    }
+}
 
 static void draw_actor(Engine *e, Actor *a, const Mat4 *vp) {
     float alpha = a->alpha, faded = doorway_faded(e, a);
@@ -638,8 +673,10 @@ static void draw_door_shades(Engine *e, const RoomView *v) {
     render_shade_end();
 }
 
-/* layer `layer`: the room's draws in it, then the characters' ($1C, drawn softened, apart) */
-static void draw_layer(Engine *e, const Mat4 *vp, int layer) {
+/* layer `layer`: the room's draws in it, then the characters' ($1C, drawn softened, apart), then
+ * the effects' (their drawers' layer: most $19 - so before the fog's pass at $21 and under what
+ * the later layers draw, as the original's packets go out layer by layer) */
+static void draw_layer(Engine *e, const Mat4 *vp, const Mat4 *view, int layer) {
     int i;
 
     render_fog_after(fog_after(layer));
@@ -649,6 +686,7 @@ static void draw_layer(Engine *e, const Mat4 *vp, int layer) {
             draw_actor(e, &e->actors[i], vp);
         }
     }
+    sprites_draw_layer(vp, view, layer, LAST_LAYER - 1);
 }
 
 /* the eye, from a view matrix (its translation is -R * eye) */
@@ -671,6 +709,22 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
     RoomView rv;
     int i, layer;
 
+    platform_size(&e->width, &e->height);
+    render_shadows_begin();
+    for (i = 0; i < MAX_ACTORS; i++) {
+        Actor *a = &e->actors[i];
+
+        a->lights[0] = a->lights[1] = a->lights[2] = -1;
+        if (actor_shown(a)) {
+            actor_prepare(a);
+            light_actor(e, a);
+        }
+    }
+    render_shadows_end();
+    render_begin(e->width, e->height, e->clear);
+    proj = camera_proj(&e->camera, render_aspect());
+    view = camera_view(&e->camera);
+    vp = mat4_mul(proj, view);
     render_camera(proj, view, eye, e->camera.znear, e->camera.zfar);
     render_blockers(NULL, 0);
     if (e->alone > 0) {   /* (one model on the background, nothing else: the extras' model gallery) */
@@ -687,7 +741,7 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
         if (layer == 6) {
             draw_door_shades(e, &rv);
         }
-        draw_layer(e, &vp, layer);
+        draw_layer(e, &vp, &view, layer);
     }
     for (i = 0; i < MAX_ACTORS && !(e->actors[i].used && e->actors[i].layer == 0x1C); i++) {
     }
@@ -705,10 +759,11 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
     }
     draw_reflections(e, proj, view, &vp);
     for (layer = 0x1E; layer < LAST_LAYER; layer++) {   /* (the later layers: in front of a reflection over everything) */
-        draw_layer(e, &vp, layer);
+        draw_layer(e, &vp, &view, layer);
     }
     render_fog_after(0);
     things_draw(e->room.id, &vp);   /* the things lying about (their sprites written for the next) */
+    draw_props(e, &vp);   /* a mod's own models (props.h) */
     vrhands_defense_draw(&vp);      /* an equipped magnesia or antimony, still in the hand */
     sprites_draw(&vp, view);   /* the effects (after the opaque scene: they don't write depth) */
     if (sprites_glowing() && post_glow_begin()) {   /* the glow pass: the glowing ones again */
@@ -1274,7 +1329,9 @@ static void soft_reset(Engine *e, int hidden) {
     sprites_free_all();
     bind_engine_reset();
     progress_clear();   /* (the unlocks kept) */
+    world_rebuild_exits(&e->world);   /* (Rooms_SetState with no save: no door closed off, the exits anew) */
     things_clear();
+    props_clear();   /* (a mod's props: its scripts load them again) */
     e->nhooks = e->ndraw_hooks = 0;
     e->nstage = 0;
     memset(&e->extra, 0, sizeof(e->extra));
@@ -1388,7 +1445,7 @@ int main(int argc, char **argv) {
     }
 
     last = SDL_GetTicksNS();
-    while (!e->forth->bye) {
+    while (!forth_bye(e->forth)) {
         Uint64 now = SDL_GetTicksNS();
         int ticks = 0;
         int vr_frame = 0;
@@ -1509,3 +1566,4 @@ int main(int argc, char **argv) {
     platform_close();
     return 0;
 }
+

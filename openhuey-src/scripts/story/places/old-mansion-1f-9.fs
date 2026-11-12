@@ -57,22 +57,20 @@ create holes  $78 , $41 , $79 , $42 ,
 \ ---- the cage's window: the first time, Daniella's scene ----
 : hazy ( on -- )   \ (the scene's haze between its cues)
     dup haze-on !  if  effects:haze haze-fx effect!  else  haze-fx effect-off  then ;
-: till-shot ( n -- )  begin  cutscene-frame cutscene-shot-at over <> while  yield  repeat  drop ;
-: till-cue ( frame -- )  begin  cutscene-frame over < while  yield  repeat  drop ;
 : opening ( -- )   \ (its depth range opening from frame 1156: the far two on by 1 a frame up to 80 / 140)
     cutscene-frame 1156 - s>f {: F: d :}  1e 1e  d 40e f+ 80e fmin  d 100e f+ 140e fmin  depth-range ;
 : scene-looks ( -- )   \ (along the scene's shots and cues: her layer, the haze, the fog, the depth)
-    depth-range-off  1 till-shot  0 before-reflections-layer layer  3 till-shot  0 usual-layer layer
-    true hazy  5 till-shot  false hazy  6 till-shot
+    depth-range-off  1 wait-shot  0 before-reflections-layer layer  3 wait-shot  0 usual-layer layer
+    true hazy  5 wait-shot  false hazy  6 wait-shot
     begin  cutscene-frame $446 < while  $80808000 $404A6038 14e 420.732e fog  yield  repeat
-    $44E till-cue
+    $44E wait-scene-frame
     begin  cutscene-frame $484 < while  1e 1e 40e 100e depth-range  yield  repeat
     begin  cutscene-frame $4B0 < while  opening  yield  repeat
     depth-range-off  begin  cutscene-frame 0< 0= while  yield  repeat  wait-fade ;
 : cage-scene ( -- )   \ (the figure loaded; her scene - its looks along it)
     cage-figure figure-slot figure-in  yield
     cage-movie scenes:unseen-movie cage-cutscene load-scene  wait-fade
-    ['] scene-looks start drop  0 haze-on !
+    ['] scene-looks along-scene  0 haze-on !
     4 cutscene-keep-model  figure-slot figure-on
     panic-eased  if  -1 run-scene  then ;
 : after-scene ( -- )   \ (back in the cage, its windows opened)
@@ -123,15 +121,16 @@ create looks  21.03e 0e -17.8e  20e 12e 12e look,   -41.22e 4.5e -4.36e  28e 12e
     fiona 4 in-area?  fiona 50 -6e -22e faces-point? and if  ['] the-tub unhurried offer  then
     fiona 5 in-area?  fiona 0 50 heading? and if  ['] the-title unhurried offer  then
     om1f-9-refined-antimony fact? 0=  fiona -7.97e 12.42e 21.3e 5e 5e touches? and if  ['] take-antimony calm-only offer  then
-    om1f-9-refined-magnesia-found fact?  om1f-9-refined-magnesia fact? 0= and  fiona 7.72e 0e 15.08e 5e 5e touches? and if
+    om1f-9-refined-magnesia-found fact?  om1f-9-refined-magnesia fact? 0= and  fiona 7.72e 1e 15.08e 5e 5e touches? and if
         ['] take-magnesia calm-only offer
     then ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop  exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop  exit  then
     0 0 -1 way-in
     om1f-13-flag1 fact? if  windows-open  then ;
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went old-mansion-1f-9 place!
 ' items-used old-mansion-1f-9 items-here
+here  refined-antimony , ' take-antimony , antimony-fx ,  refined-magnesia , ' take-magnesia , magnesia-fx ,  -1 ,  old-mansion-1f-9 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

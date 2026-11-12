@@ -111,12 +111,12 @@ create pod-look  -1.06e 0e -0.54e  38e 17e 17e look,
     fiona 9 in-area?  fiona 50 0e 0e faces-point? and if  ['] left-window unhurried offer  then
     fiona $A in-area?  fiona 50 0e 0e faces-point? and if  ['] right-window unhurried offer  then
     fiona $B in-area?  fiona -50 60 heading? and  fiona $C in-area?  fiona 90 60 heading? and or if  ['] the-device unhurried offer  then
-    om1f-7-album-medallion-found fact?  om1f-7-album-medallion fact? 0= and  fiona -30.81e 0e -21.85e 5e 5e touches? and if
+    om1f-7-album-medallion-found fact?  om1f-7-album-medallion fact? 0= and  fiona -30.81e 1e -21.85e 5e 5e touches? and if
         ['] take-medallion calm-only offer
     then ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop  exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop  exit  then
     entries 2 ways-in
     came-by @ forced-exit =  over-music-c fact? 0= and if
         world-held state!  0e sounds-scaled  over-music-c fact!  ['] come-with-me start drop
@@ -125,3 +125,4 @@ create pod-look  -1.06e 0e -0.54e  38e 17e 17e look,
 
 ' came-in ' person-in ' each-frame ' went old-mansion-1f-7 place!
 ' items-used old-mansion-1f-7 items-here
+here  album-medallion , ' take-medallion , medallion-fx ,  -1 ,  old-mansion-1f-7 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

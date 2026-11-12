@@ -44,6 +44,8 @@ far-tri 4 0 place-spirit
 d-her constant d0
 20 run-frames
 T{ [: come @ ;] of0  d-her d0 < -> -1 -1 }T
+testing left be by her +0x2D, a script's hold, held (CreatureA_Think / _Seen: her reach's bits 4, 8, 16)
+T{ [: 4 her-reach !  kept-away?  8 her-reach !  scripted?  16 her-reach !  held?  1 her-reach !  kept-away? held? or scripted? or ;] of0 -> -1 -1 -1 0 }T
 full-suite   \ (on: waits, scenes, walks - the full run's)
 : gone-in? ( n -- flag )  0 ?do  game-tick  spirit0 alive? 0= if  true unloop exit  then  loop  false ;
 : touched? ( n -- flag )  0 ?do  game-tick  [: vanishing @ ;] of0 if  true unloop exit  then  loop  false ;
@@ -84,6 +86,32 @@ T{ [: my-room @ in-play? ;] of0  start-room swap -> start-room start-room 0 }T
 T{ 3000 arrives? -> -1 }T
 T{ spirit0 body?  spirit0 body-room room-id = -> -1 -1 }T
 
+testing she leaves by a door: on its side of the room with a path to the exit's far spot, it walks that off
+testing ... screen at half its speed, its body moving in the room it was left in, the door its own (CreatureA_FionaLeft, _Travel)
+1 game:creatures send creatures-clear  deliver  1 run-frames
+front-garden-2 -1 game:rooms send go-to-room  5 run-frames
+1 constant way-out   \ (front garden 2's exit 1: an open door, on her level)
+room-id constant left-room
+create far-at 12 allot  create in-at 12 allot  create was-at 12 allot
+way-out 2 exit-spot drop far-at vec!  way-out 1 exit-spot drop in-at vec!
+: inward ( F: -- x y z )   \ (12 further in from the exit's near spot: off its area)
+    in-at sf@ fdup far-at sf@ f- 0.5e f* f+  in-at 4 + sf@  in-at 8 + sf@ fdup far-at 8 + sf@ f- 0.5e f* f+ ;
+inward 0e debug:tp-facing  2 run-frames
+: behind-her ( d -- tri )   \ (about d from her, further from the door than she is: not nearer her exit - Actor_NearerRoom)
+    nav-tris 0 do
+        i tri-center centre vec!  centre game:fiona body-at vec-dist-xz  dup s>f f- fabs 3e f<
+        centre in-at vec-dist-xz 40e f> and  if  drop i unloop exit  then
+    loop  drop -1 ;
+30 behind-her 4 0 place-spirit  5 run-frames   \ (reach 0: come at once)
+: walking? ( -- flag )  [: trip t.walking @ ;] of0 ;
+way-out game:rooms send go-through  deliver  3 run-frames
+T{ [: my-room @ ;] of0 left-room =  spirit0 body-room left-room =  walking?  [: trip t.last @ ;] of0  left-room way-out room-exit-door = -> -1 -1 -1 -1 }T
+was-at spirit0 body-at vec-copy  30 run-frames
+T{ spirit0 body-at was-at vec-dist-xz fround f>s 3 5 within -> -1 }T   \ (0.125 a frame)
+testing ... a spirit isn't kept out by a door locked against creatures; held, it waits (CreatureA_Travel)
+: d1 ( -- door )  left-room way-out room-exit-door ;
+T{ d1 $40 doors:set-bits  [: trip d1 door-ahead ;] of0  d1 $40 doors:clear-bits -> pass-on }T
+T{ d1 doors:held-bit doors:set-bits  [: trip d1 door-ahead ;] of0  d1 doors:held-bit doors:clear-bits -> pass-wait }T
 testing put at random: off the doors' spots (CreatureA_PlaceRandom)
 T{ [: true  50 0 do  anywhere dup 0< if  drop  else  off-the-doors? and  then  loop ;] of0 -> -1 }T
 testing kept: saved, cleared, and back from a loaded game

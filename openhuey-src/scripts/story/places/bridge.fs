@@ -73,16 +73,15 @@ variable bridge-remarked  variable statue-remarked  variable medallion-noticed
 : the-statue ( -- )   \ (its remarks turn and turn about)
     fiona wait-move  fiona 90 turn
     statue-remarked @ if  0 statue-remarked !  gargoyles-msg  else  -1 statue-remarked !  statue-msg  then  say ;
-: bridge-spots ( -- )
-    fiona bridge-area in-area?  fiona 180 50 heading? and if  ['] the-bridge unhurried offer  then
+: bridge-spots ( within -- )   \ (the bridge faced within so many degrees: the room's own)
+    {: within :}  fiona bridge-area in-area?  fiona 180 within heading? and if  ['] the-bridge unhurried offer  then
     fiona statue-area in-area?  fiona 90 50 heading? and if  ['] the-statue unhurried offer  then ;
 
 \ ---- Hewie's bark at the Medallion across the gap (once a visit), his look up there ----
 create medallion-look  -149.92e 60e -50.71e  54e 36e 36e look,
 : barks-across ( -- )  -149.92e 60e -50.71e hewie-barks-at ;
-: at-his-command? ( -- flag )  hewie-in?  hewie-cond-now @ well-cond = and  chased? 0= and  hewie-cmdable-now @ and ;
 : medallion-notice ( -- )
-    c2f-13-medallion fact?  hewie hewie-gap-area in-area? 0= or  medallion-noticed @ or  at-his-command? 0= or if  exit  then
+    c2f-13-medallion fact?  hewie hewie-gap-area in-area? 0= or  medallion-noticed @ or  hewie-at-hand? 0= or if  exit  then
     hewie -149.92e 60e -50.71e 54e 36e centred-in? 0= if  exit  then
     -1 medallion-noticed !  ['] barks-across start drop ;
 

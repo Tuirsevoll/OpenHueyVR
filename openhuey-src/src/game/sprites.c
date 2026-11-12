@@ -321,6 +321,21 @@ static GpuTexture batch_texture(const Batch *x) {
 
 static void draw_made(Batch *x, const Mat4 *view_proj, GpuTexture tex);
 
+static int all_in_view(const Mat4 *m, const MeshVertex *v, int n) {   /* every vertex inside the clip volume */
+    const float *a = m->m;
+    int i;
+
+    for (i = 0; i < n; i++) {
+        float x = a[0] * v[i].x + a[4] * v[i].y + a[8] * v[i].z + a[12], y = a[1] * v[i].x + a[5] * v[i].y + a[9] * v[i].z + a[13],
+              z = a[2] * v[i].x + a[6] * v[i].y + a[10] * v[i].z + a[14], w = a[3] * v[i].x + a[7] * v[i].y + a[11] * v[i].z + a[15];
+
+        if (x > w || x < -w || y > w || y < -w || z > w || z < -w) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int draw_batch(Batch *x, const Mat4 *view_proj, const Mat4 *view) {
     Vec3 right, down, fwd;
     GpuTexture tex = batch_texture(x);
@@ -399,6 +414,9 @@ static int draw_batch(Batch *x, const Mat4 *view_proj, const Mat4 *view) {
             memcpy(v->rgba, s->shaded ? s->crgba[j] : s->rgba, 4);
         }
     }
+    if ((x->flags & SPRITE_WHOLE) && !all_in_view(view_proj, sVerts, nv)) {
+        return 0;
+    }
     render_mesh_update(&x->gpu, sVerts, nv);   /* (replaceable storage: rebuilt each frame) */
     x->nv = nv;
     draw_made(x, view_proj, tex);
@@ -446,6 +464,26 @@ void sprites_draw(const Mat4 *view_proj, const Mat4 *view) {
     qsort(order, (size_t)n, sizeof(order[0]), by_layer);
     for (b = 0; b < n; b++) {
         draw_batch(order[b], view_proj, view);
+    }
+}
+
+/* the batches of one of the renderer's layers (the effects' drawers' +0x20: most $19), in the
+ * frame's order of layers - after the room's parts and the characters of that layer, before
+ * whatever the later layers draw over them (the room's reflecting part $1F, a softened figure $1C) */
+void sprites_draw_layer(const Mat4 *view_proj, const Mat4 *view, int layer, int last) {
+    int b;
+
+    for (b = 0; b < SPRITE_BATCHES; b++) {
+        Batch *x = batch(b);
+        int l;
+
+        if (x == NULL || x->n <= 0) {
+            continue;
+        }
+        l = x->layer < 0 ? 0 : x->layer > last ? last : x->layer;
+        if (l == layer) {
+            draw_batch(x, view_proj, view);
+        }
     }
 }
 

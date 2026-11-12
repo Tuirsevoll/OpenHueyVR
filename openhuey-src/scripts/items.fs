@@ -9,7 +9,7 @@
 \ bait feeds Hewie (`fed`); a sketch marks its map as held. Each frame the counters count (the
 \ Fresh Flowers wither after 9000 frames) and the timed effects run down.
 IN: items
-USING: engine game-state actors messages common facts flag-names story-names room-names items.tables items.names ;
+USING: engine game-state actors messages common facts flag-names story-names room-names hewie-names items.tables items.names ;
 
 \ ==== the inventory (facts: anyone may read these) ====
 \ a place: the item's id (-1 empty), how many (a stack: 1..99; a counter: its frames), 8 letters
@@ -90,6 +90,7 @@ $10 constant done-quietly   \ (a mod's: something happened, nothing spent - back
 state: items-state
   cell field dog-commandable   \ (told by Hewie each frame) she may command him
   cell field dog-cond          \ his condition (dog-down: down)
+  cell field dog-ready         \ he may take a command now (Hewie_CanTakeCommand: the baits' +0x40)
   cell field her-busy          \ (told by Fiona each frame) what she does (0: free)
 end-state
 
@@ -117,7 +118,7 @@ end-state
     dup id@ stacks?  over n@ 2 >= and if  dup n@ 1- swap n!  else  remove  then ;
 \ given n (Items_Give): onto its stack if it stacks (up to 99; a full one won't take them), else
 \ into its list's first free held-at - a stack of n, a counter at 0, else one
-: onto-stack ( id n -- addr | 0 | -1 )   \ more of a stacking item she has (-1: she has none)
+: onto-stack ( id n -- addr )   \ more of a stacking item she has (0: it won't take them; -1: she has none)
     {: id n :}
     id find-item ?dup 0= if  -1 exit  then
     dup n@ 99 < if  dup n@ n + 99 min over n!  else  drop 0  then ;
@@ -169,7 +170,7 @@ end-state
 : drink ( -- r )  0 $8D event  acted ;   \ (she drinks: her event $8D)
 \ a bait for Hewie: only with him at hand - hers to command, within 20, reachable in a step
 : at-hand? ( -- flag )
-    dog-commandable @ 0= if  false exit  then
+    dog-ready @ 0= if  false exit  then
     fiona-id body-at hewie-id body-at vec-dist 20e f< 0= if  false exit  then
     fiona-id body-tri fiona-id body-at hewie-id body-at $20008 v-walk  hewie-id body-tri = ;
 : feed ( how his-event -- r )
@@ -429,14 +430,19 @@ behaviour keeping-items
       4 0 do  -1 i equip-slot l!  loop
       progress pr.boosts 8 /boost * 0 fill
       self subscribe tick  self subscribe hewie-doing  self subscribe fiona-doing  self subscribe leaving-room ;
-  on tick ( -- )  count-up  cam-scene? 0= if  timed-effects run-down  then ;
+  on tick ( -- )   \ (the counters not while the world is frozen: Items_Update under flag $17)
+      world-frozen state-flag? panic-starting state-flag? or 0= if  count-up  then  cam-scene? 0= if  timed-effects run-down  then ;
   \ (SceneGame's room change: everything heard full again - Weltigo's fade, if silent, only back
   \ as it fades in; and at the game's end)
   on leaving-room ( room exit -- )  2drop  1e world-volume! ;
   on killed ( -- )  1e world-volume! ;
   on hewie-doing ( here action mode sub cond mood group commandable near reachable breakable way trust -- )
       {: here action mode sub cond mood group commandable near reachable breakable way trust :}
-      commandable dog-commandable !  cond dog-cond ! ;
+      commandable dog-commandable !  cond dog-cond !
+      \ (Hewie_CanTakeCommand: with her, idle - not running - and not angry; a command waiting, or he
+      \ is down - a bait gets him up)
+      here dog-with-her =  mode free-mode = and  sub running-sub <> and  mood angry-mood <> and
+      commandable  cond dog-down = or  and  dog-ready ! ;
   on fiona-doing ( mode sub cond cmd doing -- )  her-busy !  2drop 2drop ;
   on give-item ( id n -- )  give drop ;
   on take-item ( id -- )  find-item ?dup if  spend  then ;

@@ -17,12 +17,14 @@ create idle-tricks  sit-trick-act , sit-trick-2-act , lie-down-trick-act , stand
 \ Hewie_RandomIdle: lying by her (half the time), lying low a while or settling
 : random-idle ( -- )
     100 roll dup 50 < if  drop lie-by-her-act  else  65 < if  hold-low-act  else  settle-act  then  then  start ;
-\ go_for (after a call or coming out): whom - none (0), the stalker (2, left to the caller); she
-\ held, by chance at whoever holds her (1)
+\ go_for (after a call or coming out): whom - none (0), the stalker (2, left to the caller); else
+\ (1) a creature (slots 7..9) his target, rushed - run at and bitten; anyone else harried (before
+\ 0.2.42 a creature was harried too)
 : go-for ( -- n )
     pick-target dup his-target2 !  dup with? 0= if  drop 0 exit  then
-    his-held @ 0= swap pursuer = and if  2 exit  then
-    harry-stalker-act 0 want  1 ;
+    his-held @ 0=  over pursuer = and if  drop 2 exit  then
+    dup creature-slot first-homunculus #creatures within if  his-target !  rush-act 0 want  1 exit  then
+    drop  harry-stalker-act 0 want  1 ;
 : after-call ( -- )   \ (answer-call-act / -2: at the stalker - after the first at a flank)
     go-for case
         0 of  sniff-act 0 want  endof
@@ -61,6 +63,11 @@ create idle-tricks  sit-trick-act , sit-trick-2-act , lie-down-trick-act , stand
     free-mode mode!  behave  his-cmd !  true ;
 : come-to-her ( cmd -- )  ['] st-slide-to-fiona by-her if  2 his-t1 !  then ;
 : whine ( -- )  on-obeying on-danger or on-command or on-footing or on-100 or on-alert or  ['] st-whine by-her if  0 his-t1 !  then ;
+: coming-to-her ( -- )  breaks-any on-footing on-100 or but come-to-her ;
+\ a trick on plain floor (else his default), held till it breaks
+: do-trick ( -- )  plain-floor? 0= if  to-default exit  then  ahead-look breaks-any on-waiting on-wait-over or on-100 or but ['] st-tricks holding ;
+\ showing himself to her in a pose (sitting or lying not on a step or in a doorway: else his default)
+: showing ( xt low? -- )  low-floor? and if  drop to-default exit  then  >r  ahead-look breaks-any r> holding ;
 : low-by-her ( wait cmd -- )   \ (lying low by her - a while: wait -1 his own; not with her: holding low)
     her-with? 0= if  2drop hold-low-act 0 want exit  then
     free-mode mode!  target-her  his-cmd !  dup 0< if  drop  else  his-wait !  then  ['] st-near-her behave ;
@@ -95,9 +102,7 @@ create idle-tricks  sit-trick-act , sit-trick-2-act , lie-down-trick-act , stand
     bark-at-her-act of
         her-with? if  free-mode mode!  3 roll 3 + his-t1 !  target-her  on-danger on-wait-over or on-100 or on-alert or his-cmd !  ['] st-bark-at-fiona behave
         else  sniff-act 0 want  then  endof
-    come-to-her-act of  breaks-any on-footing on-100 or but come-to-her  endof
-    come-back-act of  breaks-any on-footing on-100 or but come-to-her  endof
-    hurry-to-her-act of  breaks-any on-footing on-100 or but come-to-her  endof
+    come-to-her-act of  coming-to-her  endof   come-back-act of  coming-to-her  endof   hurry-to-her-act of  coming-to-her  endof
     sulk-to-her-act of  breaks-any on-footing on-alert or but come-to-her  endof
     keep-off-her-act of
         her-with? if
@@ -120,11 +125,9 @@ create idle-tricks  sit-trick-act , sit-trick-2-act , lie-down-trick-act , stand
         turn-speed  3 roll 30 * 30 + his-wait !  breaks-any on-waiting on-footing or but his-cmd !  ['] st-roam behave  endof
     come-to-place-act of  on-waiting on-danger or on-command or on-wait-over or on-alert or on-praise-due or  ['] st-come-to-command by-her drop  endof
     trick-act of  idle-action  endof
-    sit-trick-act of  plain-floor? if  2 roll his-t1 !  ahead-look breaks-any on-waiting on-wait-over or on-100 or but ['] st-tricks holding  else  to-default  then  endof
-    sit-trick-2-act of  plain-floor? if  ahead-look breaks-any on-waiting on-wait-over or on-100 or but ['] st-tricks holding  else  to-default  then  endof
-    stand-trick-act of  plain-floor? if  ahead-look breaks-any on-waiting on-wait-over or on-100 or but ['] st-tricks holding  else  to-default  then  endof
-    stand-trick-2-act of  plain-floor? if  ahead-look breaks-any on-waiting on-wait-over or on-100 or but ['] st-tricks holding  else  to-default  then  endof
-    lie-down-trick-act of  plain-floor? if  900 his-wait !  ahead-look breaks-any on-waiting on-wait-over or on-100 or but ['] st-tricks holding  else  to-default  then  endof
+    sit-trick-act of  plain-floor? if  2 roll his-t1 !  then  do-trick  endof
+    sit-trick-2-act of  do-trick  endof   stand-trick-act of  do-trick  endof   stand-trick-2-act of  do-trick  endof
+    lie-down-trick-act of  plain-floor? if  900 his-wait !  then  do-trick  endof
     heard-her-act of  free-mode mode!  target-her  0 his-cmd !  ['] st-heard-her behave  endof
     wont-act of  free-mode mode!  target-her  0 his-cmd !  ['] st-wont behave  endof
     \ her commands and meetings
@@ -148,12 +151,9 @@ create idle-tricks  sit-trick-act , sit-trick-2-act , lie-down-trick-act , stand
     \ out of the room away from her (Hewie_FleeExit - open doors he may pass)
     away-from-her-act of  away-from-her  endof
     away-act of  away  endof
-    stand-for-her-act of  ahead-look breaks-any ['] st-showing-standing holding  endof
-    stand-then-stay-act of  ahead-look breaks-any ['] st-showing-standing holding  endof
-    sit-for-her-act of  low-floor? if  to-default  else  ahead-look breaks-any ['] st-showing-sitting holding  then  endof
-    sit-then-stay-act of  low-floor? if  to-default  else  ahead-look breaks-any ['] st-showing-sitting holding  then  endof
-    lie-for-her-act of  low-floor? if  to-default  else  ahead-look breaks-any ['] st-showing-lying holding  then  endof
-    lie-then-stay-act of  low-floor? if  to-default  else  ahead-look breaks-any ['] st-showing-lying holding  then  endof
+    stand-for-her-act of  ['] st-showing-standing false showing  endof   stand-then-stay-act of  ['] st-showing-standing false showing  endof
+    sit-for-her-act of  ['] st-showing-sitting true showing  endof   sit-then-stay-act of  ['] st-showing-sitting true showing  endof
+    lie-for-her-act of  ['] st-showing-lying true showing  endof   lie-then-stay-act of  ['] st-showing-lying true showing  endof
     \ off screen (out of the room being played): toward her, waiting, out at random, to a noise
     to-her-room-act of  route-played  endof
     back-to-her-act of  route-played  endof
@@ -239,7 +239,7 @@ create idle-tricks  sit-trick-act , sit-trick-2-act , lie-down-trick-act , stand
     sit-then-act of  his-next @ sit-then  endof
     keep-behind-act of  keep-behind  endof
     go-limp-act of  go-limp  endof
-    scene-pose-act of  scene-pose  endof
+    dodge-act of  dodge  endof
     back-on-floor-act of  back-on-mesh  endof
     after-attack-act of  after-attack  endof
     step-off-target-act of  step-away-target  endof
@@ -273,7 +273,7 @@ create idle-tricks  sit-trick-act , sit-trick-2-act , lie-down-trick-act , stand
     hewie-played? if  exit  then   \ (the run: as asked)
     his-busy @ 0=  over choose-act = and  his-hp @ 0= and  his-cond @ down-cond = and if  drop knocked-down-act  then
     dup knocked-down-act = if
-        here?  his-tri nav-flags self body-mask and 0<> and if   \ (down where he can't lie: up again)
+        here?  floor-free? 0= and if   \ (down where he can't lie - Actor_TriFreeFor: a floor not to stand on, at a door, by a ladder: up again)
             drop choose-act  1 hp!  hurt-cond cond!
         else
             his-action @ dup knocked-down-act <> swap go-limp-act <> and  anim-group in-down <> and if  10 mistreated+  then

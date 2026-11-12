@@ -57,7 +57,7 @@ i -- addr )` and `id@ n@`, `item-at`, `listed`, `items-of ( id -- n )`, `find-it
    (most also set `stalkers-stay`); away from its place one on the altar (the water tower's spot
    $1B: script variable 1 the item, event $14); some file a hint instead (with its sound). The
    remedies change her fear and recovery, calm the panic, or start a timed effect. A bait feeds
-   Hewie only at hand (hers to command, within 20, reachable in a step): her event $8E, his
+   Hewie only at hand (with her, free, not running away or angry, free for a command or down - Hewie_CanTakeCommand; within 20, reachable in a step): her event $8E, his
    $8F / $90 / $91. Results 1 and 2 spend one.
 5. **Timed effects** (the progress' +0x9E0..; they run, and run down, only while no cutscene has
    the camera - StatusTimers_Frame): Lavender calms the panic 0.27 a frame for 300 frames (into
@@ -78,7 +78,7 @@ i -- addr )` and `id@ n@`, `item-at`, `listed`, `items-of ( id -- n )`, `find-it
 
 | Message | Stack | Direction | Meaning |
 |---|---|---|---|
-| `menu-mode` | `( mode -- )` | in (the story's 0x6D) | The mode the scripts open it in (with `subscreen-wanted`): 0 the menu, 1 a save point's save slots, 5 the options alone (the title's), 2 the word plate, 3 the slot machine, 7 the wardrobe; 9 the clear-data save shuts at once (hg writes only the system data then - OpenHuey keeps it written as it changes); the extras' (8 the movies, $B..$F the galleries, $C a challenge's results) not yet; 4 (the pot) no script asks for. |
+| `menu-mode` | `( mode -- )` | in (the story's 0x6D) | The mode the scripts open it in (with `subscreen-wanted`): 0 the menu, 1 a save point's save slots, 5 the options alone (the title's), 2 the word plate, 3 the slot machine, 7 the wardrobe; 9 the clear-data save (the system data alone, kept or not: ending.md - the ending asks it directly, `save-clear`); the extras' (8 the movies, $B..$F the galleries, $C a challenge's results) not yet; 4 (the pot) no script asks for. |
 | `game-saved` | `( -- )` | in, from saves | The save point's save is written (`save-to-slot ( n place )` asked it). |
 | `tab-op` | `( op item -- )` | in (the story's 0xBE) | The tab: 0 the item handed her (its picture loaded), 1 loaded, 2 slide in, 3 shown, 4 slide out. |
 | `tab-done` | `( -- )` | out, to who asked | That step is done (2 / 4 once the tab is in / out; the others at once). |
@@ -116,7 +116,13 @@ right of, the page's widest line), as the message window does.
    note (the note of one not yet used, for those whose note changes: message $13D); its actions
    are those its class allows - use, wear / take off, throw away - and back. Throwing away asks
    first; wearing where another is worn asks first, naming it; a document is read (its message)
-   before it is used.
+   before it is used. The menu's messages and questions are laid out as the original's task
+   does (Task_Layout, Task_DrawPage; `subscreen/box.fs`): a page's lines 25 apart, as a block
+   centred on its place - (256, 370), or the one its 0x0A code names - in a soft-edged shade fitted
+   to it (Task_BoxSize, Task_DrawBox: the dark fading out over 32 pixels); a document has the
+   large shade (416 x 352 about the middle, SubScreen_StateItemQuestion) behind it, and the page
+   beneath lies under the shade. (Before 0.2.39 the box was 160 high with the words from its top:
+   a document's nine lines ran out of it over the list.)
 4. **Using** (item_use): a key thing (kinds 0, 1) can't be used in a chase or with the stalker in
    her room ($54). What came of it: nothing ($52, the buzzer - or no buzzer for a hint); an event
    - marked used, the menu closes quietly onto it; used up (a remedy, or a mark set) - marked,
@@ -155,6 +161,11 @@ message box), `lists.fs` (the item lists, an item's actions, the files), `map.fs
    reel, which stops itself at full speed); the 22 cells score where two rows match (5 wild); the
    symbols' counts give a result, the result an item (the boots, earrings and chokers only once;
    nothing left: the Magist Medallion) in an amount by how many matched.
+   Drawn as SlotMachine_DrawRow / DrawCell / ItemFound_StateShow: the symbols one shape in six palettes
+   (6 3 4 5 0 7); a turning reel's next symbol slides in over its frames 1..4 (the texture's column
+   $60 + 64 a); its sound (1, bank 6) stopped as the rows are scored; what came out centred on the
+   screen by its words' widths - "Forged", the name (palette 7), " xN" - over a 256 x 5 box. Before
+   0.2.42 the reel only jumped, the sound ran on and the line sat at set places (a long name over its count).
 
 ## Status
 
@@ -164,8 +175,8 @@ message box), `lists.fs` (the item lists, an item's actions, the files), `map.fs
 a quarter off each fright and the recovery's reset three times in four; $8B a quarter off, her
 calming half again, the reset half the time; $8C half off, her calming doubled, never the reset,
 nor running's fright; **I2, I3 built**
-(`scripts/subscreen.fs`, `tests/items/test_subscreen.fs` (62)). Not yet: the words' fades by the task's alpha (the gallery bars' and
-page counts' `0x80 - fade`: drawn at the menu's). **The galleries** (`subscreen/galleries.fs`, the extras
+(`scripts/subscreen.fs`, `tests/items/test_subscreen.fs` (62)). The gallery bars' words and the model gallery's motion count (its caption $1C6 and "n/m" at the
+top right: SubScreen_DrawPageCount) fade in as the overlay goes, at `0x80 - fade` (`word-alpha`). **The galleries** (`subscreen/galleries.fs`, the extras
 room's modes; their tables generated from the executable by `tools/gallerytables.py` into
 `subscreen/gallery-tables.fs`; `tests/items/test_galleries.fs` (35)): eight a page, "???" until the
 system data unlocks each (the resident flags: the original's +0x24 bits on), the extras room's
@@ -202,7 +213,7 @@ made with is cleared). **The save points** (mode 1, `subscreen/saving.fs`; the
 story's shared actions $84 / $85 ask first): eight slots, each a save file of its own
 (`hga-save-<n>.fs`, as the quick save's) and an index of their places and times
 (`hga-saves.fs`); the place is the original's (D_00412800: her room and map, a menu message
-$300..); a used slot asked before it is written over; "Saved", then the menu closes. The title
+$300..); a used slot asked before it is written over; "Saved" (menu sound $D, BootCard_StateSave's 18 - $84 before 0.2.50), then the menu closes. The title
 has LOAD GAME: the same slots, one in use loaded (`load-from-slot`). The timed effects: Torva's (her fear doubled, Panic_Update), Fortis's (her strikes and her kick
 on Hewie and the stalker x3 - the creatures' kick stays 5, as the original's), Sylvesta Esca's
 (Hewie's bites half again), Lavender's (calming), Fortis's hold on her fear and Weltigo's

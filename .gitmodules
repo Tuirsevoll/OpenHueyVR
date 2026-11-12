@@ -1,3 +1,6 @@
 [submodule "openhuey-src/external/clankforth"]
 	path = openhuey-src/external/clankforth
 	url = https://github.com/ArnautDaniel/ClankForth.git
+[submodule "vcpkg"]
+	path = vcpkg
+	url = https://github.com/microsoft/vcpkg.git

@@ -31,6 +31,7 @@ create holes  $51 , $21C , $2F , $54 , $23B , $43 , $22C , $44 , $22D , $45 , $2
 : wall ( blown? -- )   \ (whole: its floor solid; blown: the rubble's)
     if  0 hide-part  1 show-part  0 solid-floor floor-off  1 solid-floor floor-on
     else  0 show-part  1 hide-part  1 solid-floor floor-off  0 solid-floor floor-on  then ;
+: rubble-shown ( -- )  0 hide-part  1 show-part ;   \ (the blown wall's parts: its floor as each blast has it)
 : flame ( -- )  flame-fx 1 -24.6e 22.1e -26.4e flame-at ;
 : came-in ( exit -- )
     drop  room-sounds  ht1f-1-flag1 fact? dup wall  flame-lit !  flame
@@ -42,9 +43,9 @@ create holes  $51 , $21C , $2F , $54 , $23B , $43 , $22C , $44 , $22D , $45 , $2
 
 \ ---- the wall blown: the scene ----
 : blast-cues ( -- )   \ (at its shot 6 the wall blown)
-    begin  cutscene-frame cutscene-shot-at 6 <> while  yield  repeat  true wall ;
+    begin  cutscene-frame cutscene-shot-at 6 <> while  yield  repeat  rubble-shown ;
 : blast-scene ( -- )
-    blast-movie scenes:keyed-movie blast-cutscene load-scene drop  ['] blast-cues start drop
+    blast-movie scenes:keyed-movie blast-cutscene load-scene drop  ['] blast-cues along-scene
     $10 $FF movie-key  panic-eased  -1 run-scene  ['] blast-cues stop-doing ;
 : lorenzo-lies ( -- )   \ (an activity: in the rubble, shown, for good)
     stalker hold  stalker false hush  stalker true shown  stalker his-lying room-motion + start-anim
@@ -61,7 +62,8 @@ create holes  $51 , $21C , $2F , $54 , $23B , $43 , $22C , $44 , $22D , $45 , $2
     0 solid-floor floor-off  1 keeps-fiona-off keeps-hewie-off or floor-on
     partner activate  this-room @ 457 stalker-to  stalker $1C9 -82 -53.111e 33.905e place-at  stalker activate
     stalker true hush  ['] lorenzo-lies start drop
-    no-stalker-camera state!  stalker-no-fear state!  0 0 player-camera  true wall
+    no-stalker-camera state!  stalker-no-fear state!  0 0 player-camera
+    rubble-shown   \ (its floor as set above: not solid while he lies there)
     blasted-door unlock  golden-candlestick spend  -1 blasted !  summoner-on state-off  force-calm state!
     flame  -1 flame-lit !  15 fade-in
     blast-seen resident-flag-set  stalkers-stay state-off  scene-locked state-off ;
@@ -118,7 +120,7 @@ create cameras  7 , 0 , 0 ,  8 , 2 , 2 ,  9 , 1 , 1 ,  $A , 2 , 2 ,  $D , 2 , 2 
     shade  spots ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     entries 5 ways-in
     came-by @ dup 0 3 within  swap 4 = or if  2 map-page  then ;
 : went ( -- )   \ (leaving after the blast: Lorenzo let go, her calm and the camera as they were)
@@ -127,3 +129,4 @@ create cameras  7 , 0 , 0 ,  8 , 2 , 2 ,  9 , 1 , 1 ,  $A , 2 , 2 ,  $D , 2 , 2 
     no-stalker-camera state-off  stalker-no-fear state-off ;
 
 ' came-in ' person-in ' each-frame ' went house-of-truth-1f-1 place!
+here  album-medallion , ' pick-album , album-fx ,  -1 ,  house-of-truth-1f-1 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

@@ -30,7 +30,7 @@ own: crawl         \ her crawl's frames: the curtain goes by them
 1 constant locked-exit   $A constant smudged-door   $608 constant key-turn-anim
 $A constant toilets-area   $B constant water-area   $C constant shower-area
 $F constant search-var
-: daylight ( -- )  c2f-3-flag1 fact? 0= if  $84 $60 $3C $50 $24 $2A $2A $46 room-tint  then ;   \ (the day's light)
+: daylight ( -- )  c2f-3-flag1 fact? 0= if  daylight-tint  then ;   \ (the day's light)
 
 \ ---- the curtain: drawn by her crawl's frames as she goes in or out ----
 : curtain ( a b F: t -- )  s" Cartain" morph ;
@@ -123,7 +123,7 @@ $F constant search-var
     fiona water-area in-area?  fiona 180 45 heading? and if  ['] the-water unhurried offer  then
     2 locked-request? if  ['] tries-door any-time offer  then
     fiona shower-area in-area?  fiona 180 60 heading? and if
-        stalker-in? if  no-time-message offer-remark-now  else  ['] behind-curtain calm-only offer  then
+        stalker-in? if  no-time-message offer-remark-now  else  ['] behind-curtain hiding-spot offer  then
     then
     cb1-2-camomile fact? 0=  fiona 78e 6.5e 20e 5e 5e touches? and if  ['] take-camomile calm-only offer  then
     cb1-2-medallion-found fact?  cb1-2-medallion fact? 0= and  fiona -44.9e -7e -12.9e 5e 5e touches? and if
@@ -149,3 +149,4 @@ create entries  0 , 0 ,   2 , -1 ,   \ (by exit 0, 1: the camera)
 
 ' came-in ' person-in ' each-frame ' went castle-b1-2 place!
 ' items-used castle-b1-2 items-here
+here  camomile , ' take-camomile , camomile-fx ,  medallion , ' found-medallion , found-fx ,  -1 ,  castle-b1-2 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

@@ -43,21 +43,19 @@ $1C constant door-track   $81 constant mystic-way
 \ ---- the scene: Lorenzo's end - the marker shining between its cues ----
 : marker-to ( v -- )  marker-fx tell-effect ;   \ (-2 a pause, else its size x 1000)
 : marker-done ( -- )  marker-fx dies-down ;   \ (-1: left to go out on its own)
-: marker-in ( -- )   \ (made: the figure and she shining in its colour, it lit on the figure)
-    end-figure $14 layer  0 $14 layer
-    end-figure cast-model  0 cast-model  1 1e effects:marker  marker-fx effect! ;
-: till-shot ( n -- )  begin  cutscene-frame cutscene-shot-at over <> while  yield  repeat  drop ;
-: till-cue ( frame -- )  begin  cutscene-frame over < while  yield  repeat  drop ;
+: marker-in ( -- )   \ (made: both figures shining in its colour - slots 3 and 4, Room8D_Cmd01 - it lit on the first, now and then a spark on the second)
+    end-figure $14 layer  end-figure-2 $14 layer
+    end-figure cast-model  end-figure-2 cast-model  1 1e effects:marker  marker-fx effect! ;
 : marker-cues ( -- )   \ (an activity, along the scene)
-    0 till-shot  marker-in  2 till-shot  marker-done  3 till-shot  marker-in  4 till-shot  -2 marker-to
-    $1E0 till-cue  1000 marker-to  7 till-shot  marker-done  8 till-shot  marker-in  9 till-shot  marker-done
-    $A till-shot  marker-in  $B till-shot  marker-done  $C till-shot  marker-in  500 marker-to
-    $58C till-cue  1000 marker-to  $D till-shot  marker-done  $E till-shot  marker-in
-    $65E till-cue  334 shrink !
+    0 wait-shot  marker-in  2 wait-shot  marker-done  3 wait-shot  marker-in  4 wait-shot  -2 marker-to
+    $1E0 wait-scene-frame  1000 marker-to  7 wait-shot  marker-done  8 wait-shot  marker-in  9 wait-shot  marker-done
+    $A wait-shot  marker-in  $B wait-shot  marker-done  $C wait-shot  marker-in  500 marker-to
+    $58C wait-scene-frame  1000 marker-to  $D wait-shot  marker-done  $E wait-shot  marker-in
+    $65E wait-scene-frame  334 shrink !
     begin  cutscene-frame 0< 0=  while  shrink @ 1- 0 max dup shrink !  1000 334 */ marker-to  yield  repeat ;
 : end-scene ( -- )
     end-movie scenes:unseen-movie end-cutscene load-scene drop  3 figure-on  4 figure-on
-    0 show-part  ['] marker-cues start drop  panic-eased  -1 run-scene  ['] marker-cues stop-doing  marker-done ;
+    0 show-part  ['] marker-cues along-scene  panic-eased  -1 run-scene  ['] marker-cues stop-doing  marker-done ;
 : lorenzo-ends ( -- )
     fiona hold  tremor-warned fact-off  no-track 1e background
     ['] slight-tremors stop-doing  ['] violent-tremors stop-doing
@@ -134,7 +132,7 @@ create ahead  5 , 0 ,  6 , 1 ,  7 , 2 ,   \ (area, exit loaded ahead)
 create entries  0 , 0 ,  0 , 0 ,  0 , 0 ,   \ (by exit 0 .. 2: the camera)
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     entries 3 ways-in ;
 : went ( -- )  held-back @ if  stalkers-stay state-off  then ;
 

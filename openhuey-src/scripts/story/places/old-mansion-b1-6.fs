@@ -94,7 +94,8 @@ create camera-areas  $D , 3 , 1 ,   $11 , 5 , 3 ,   $13 , 6 , 4 ,   $F , 4 , 2 ,
     f fact!  k barred-floor floor-off  -1 race-done ! ;
 
 \ ---- the legs of its way (each its next, 0 the end) ----
-defer leg-01  defer leg-02  defer leg-03  defer leg-04  defer leg-05  defer leg-06  defer leg-07
+defer leg-01 ( -- next )  defer leg-02 ( -- next )  defer leg-03 ( -- next )  defer leg-04 ( -- next )
+defer leg-05 ( -- next )  defer leg-06 ( -- next )  defer leg-07 ( -- next )
 : leg-00 ( -- next )
     0 read-at !  1 80e until>=  true letter? if  ['] leg-01 exit  then
     passes  1 100e until>=  0 blaze-up  1 110e until>=  blaze-out  0 ;
@@ -123,18 +124,17 @@ defer leg-01  defer leg-02  defer leg-03  defer leg-04  defer leg-05  defer leg-
     fig hold  ['] leg-00  begin  ?dup while  execute  repeat ;
 
 \ ---- the race: the golem set going (the first time its scene); the button to run ----
-: hewie-tucked ( -- )  hewie hold  hewie false shown  begin  yield  again ;
 : race ( -- )
     stalkers-stay state!  fiona hold  0 golem-runs !  0 turned !  0 race-done !  -1 lfoot !  -1 rfoot !
     15 screen:to-black-2 with-music or fade  golem golem-slot figure-in  yield
     omb1-6-flag1 fact? 0= if
         1 scenes:keyed-movie 0 load-scene  wait-fade  0 hide-part  4 barred-floor floor-off
-        hewie-in? if  ['] hewie-tucked start drop  then
+        hewie-in? if  ['] hewie-kept-hidden start drop  then
         $28 $78 movie-key  panic-eased  if  -1 run-scene  then  wait-fade
         panic-held state!  fiona 0 idle  fiona $56 -28 83.405e -17.137e place-at
         golem-slot 74.6e 0e 13.8e 0e figure-at  fig 3 1 camera-set  omb1-6-flag1 fact!
     else
-        wait-fade  panic-eased  panic-held state!  hewie-in? if  ['] hewie-tucked start drop  then
+        wait-fade  panic-eased  panic-held state!  hewie-in? if  ['] hewie-kept-hidden start drop  then
         0 hide-part  4 barred-floor floor-off
         fiona $5E -62 92.522e -37.951e place-at  golem-slot 75e 0e -40e 0e figure-at  fig 1 -1 camera-set
     then
@@ -144,18 +144,18 @@ defer leg-01  defer leg-02  defer leg-03  defer leg-04  defer leg-05  defer leg-
         circle button-pressed?  golem-runs @ 0= and if  text-gone  -1 golem-runs !  -1 turned !  then  yield
     repeat
     15 screen:to-black-2 fade wait-fade  panic-held state-off  text-gone
-    ['] hewie-tucked running? if  ['] hewie-tucked stop-doing  hewie true shown  hewie let-go  then
+    ['] hewie-kept-hidden running? if  ['] hewie-kept-hidden stop-doing  hewie true shown  hewie let-go  then
     ['] its-way stop-doing  golem-slot figure-out  0 show-part  4 barred-floor floor-on
     fiona follow  camera-restart  15 fade-in  stalkers-stay state-off ;
 
 \ ---- SALTATIO: it dances ----
 : dance ( -- )
     stalkers-stay state!  fiona hold  15 screen:to-black-2 with-music or fade  golem golem-slot figure-in
-    $37 1e background  wait-fade  no-pause state!  panic-eased  panic-held state!
+    $37 1 1e f>cell music send bgm-want  wait-fade  no-pause state!  panic-eased  panic-held state!   \ (its track made ready, held)
     fiona $5D 180 75e -30e place-at  1 30e -10e 0e 4e shot  fiona false shown  0 hide-part
     golem-slot figure-on  4 barred-floor floor-off  golem-slot 75e 0e -40e 0e figure-at  4 barred-floor floor-on
     15 screen:from-black fade  golem-slot $1300 0 0 figure-play  0 pulse !
-    pulse @ $5A $44 $46 $52 $4B pulse-tint  1 pulse +!  10 frames  no-track 1e background
+    pulse @ $5A $44 $46 $52 $4B pulse-tint  1 pulse +!  10 frames  music send bgm-resume
     begin  golem-slot figure-came-round? 0= while
         pulse @ $5A $44 $46 $52 $4B pulse-tint  pulse @ 1+ dup $60 > if  drop 0  then  pulse !  yield
     repeat
@@ -286,15 +286,16 @@ create calm-looks  144.66e 0e -5.88e  18e 12e 12e look,   73.86e 0e -40.16e  25e
     fiona $1F in-area? if  [: -19e -6e meth ;] unhurried offer  then
     fiona $21 in-area? if  [: -60e -110e meth ;] unhurried offer  then
     omb1-6-medallion fact? 0=  fiona 2.06e 6.5e -99.68e 5e 5e touches? and if  ['] take-medallion calm-only offer  then
-    omb1-6-viola-medallion-found fact?  omb1-6-viola-medallion fact? 0= and  fiona -138.94e 0e -114.31e 5e 5e touches? and if
+    omb1-6-viola-medallion-found fact?  omb1-6-viola-medallion fact? 0= and  fiona -138.94e 1e -114.31e 5e 5e touches? and if
         ['] take-viola calm-only offer
     then
-    omb1-6-magist-medallion fact? 0=  fiona 39.98e 0e -40.67e 5e 5e touches? and if  ['] take-magist calm-only offer  then ;
+    omb1-6-magist-medallion fact? 0=  fiona 39.98e 1e -40.67e 5e 5e touches? and if  ['] take-magist calm-only offer  then ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop  exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop  exit  then
     entries 4 ways-in ;
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went old-mansion-b1-6 place!
 ' items-used old-mansion-b1-6 items-here
+here  medallion , ' take-medallion , medallion-fx ,  viola-medallion , ' take-viola , viola-fx ,  magist-medallion , ' take-magist , magist-fx ,  -1 ,  old-mansion-b1-6 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

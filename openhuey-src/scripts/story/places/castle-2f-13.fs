@@ -28,9 +28,8 @@ own: was-idle              \ she stood idle as it gave
     c2f-13-flag1 fact? 0= if  sparkle-fx -231e 61e 24e flicker-at  then  medallion-sparkle ;
 
 \ ---- the balcony gives: to black, the doors set anew, down to the great hall by the forced way ----
-: stalker-kept ( -- )  stalker hold  begin  yield  again ;
 : it-gives ( -- )
-    30 frames  music send bgm-resume  15 screen:to-black-2 with-music or fade  wait-fade  world-held state!
+    30 frames  no-track 1e background  15 screen:to-black-2 with-music or fade  wait-fade  world-held state!
     stalker-in? if  ['] stalker-kept start drop  then
     $35 $36 door-as  $36 closed-off  exits-redone ;
 : down-with-it ( way hewie-room rest? -- )   \ (her on it - idle, she rests a moment - or the stalker)
@@ -56,7 +55,7 @@ own: was-idle              \ she stood idle as it gave
 create corner-look  -228.31e 60e 25.69e  35e 10e 0e look,
 : wary-on-balcony ( -- )  -231.29e 60e 30.58e hewie-stands-by ;
 : hewie-wary ( -- )
-    at-his-command? 0=  wary-noticed @ or if  exit  then
+    hewie-at-hand? 0=  wary-noticed @ or if  exit  then
     hewie -231.29e 60e 30.58e 50e 20e centred-in? if  -1 wary-noticed !  ['] wary-on-balcony start drop  then ;
 
 \ ---- every frame ----
@@ -65,7 +64,7 @@ create cameras  2 , 2 , 2 ,   3 , 1 , 1 ,   $B , 0 , 0 ,   $C , 2 , 2 ,   \ (are
     0 exit-out  cameras 4 cameras-at
     fiona 2 entered? if  3 map-page  then   fiona 3 entered? if  4 map-page  then
     on-the-balcony  hewie-by-the-gap  hewie-wary  medallion-notice
-    medallion-look 1 hewie-looks-at  corner-look 1 hewie-looks-at  bridge-spots ;
+    medallion-look 1 hewie-looks-at  corner-look 1 hewie-looks-at  50 bridge-spots ;
 : person-in ( i -- )
     case
         fiona-p of  0 0 0 way-in  endof
@@ -74,3 +73,5 @@ create cameras  2 , 2 , 2 ,   3 , 1 , 1 ,   $B , 0 , 0 ,   $C , 2 , 2 ,   \ (are
 : went ( -- )  hewie-as-she-goes ;
 
 ' came-in ' person-in ' each-frame ' went castle-2f-13 place!
+here  medallion , 0 , medallion-fx ,  -1 ,  castle-2f-13 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)
+   \ (the Medallion across the gap: Hewie's to fetch - bridge.fs)

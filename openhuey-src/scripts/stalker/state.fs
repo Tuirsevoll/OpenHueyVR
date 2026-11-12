@@ -40,7 +40,7 @@ state: stalker-state
   \ +0x16CA how alarming it was - 7 seeing her, 6 hearing her, 5 a noise, 2 seeing Hewie, 1 hearing
   \ him); his start at a more alarming one (Pursuer_ReactToEvent): its frames, where, then what
   cell field lead  cell field lead-alarm
-  cell field start-t  /vec field start-at  cell field start-then
+  cell field start-t  /vec field start-at  cell field start-then  holds: ( -- )
   cell field sense-turn
   1 floats field view-range  1 floats field view-half  1 floats field view-heading
   cell field hear-threshold     \ (+0x14B8: noises louder than this)
@@ -53,10 +53,11 @@ state: stalker-state
   \ what it is doing (the original's state function and its counters)
   /path field my-path
   cell field anim               \ +0x1788: the animation he plays (-1 none)
-  cell field step               \ his step (an xt, run each frame: the original's Actor_SetState)
+  cell field step  holds: ( -- )   \ his step (an xt, run each frame: the original's Actor_SetState)
   cell field step-t             \ +0x1624: a count the step keeps
   cell field step-done          \ +0x16EE: the step is over
   cell field goal-tri  /vec field goal-at      \ +0x15A4 / +0x15B0: where he heads in the room
+  /vec field to-at              \ the point of his way he turns to as he sets off (kept across his turn's frames: his own)
   \ his mode's clock and his search (stalker/search.fs): the route's stops (+0x15E0: 8 of a
   \ triangle and whether it was picked at random), the next (+0x1620) and the end (+0x1621)
   cell field mode-t             \ +0x1660: frames left in his mode
@@ -64,6 +65,7 @@ state: stalker-state
   cell field spot-next          \ +0x1738: the room's next search spot
   cell field stop-wait          \ +0x1798: frames to look about at a stop picked at random
   cell field route-done         \ +0x16F4: the route is over (his mode moves on)
+  cell field search-cap         \ +0x1794: frames his search of her room has left (1800 as it starts); out, his route ends at the stop he is making for
   cell field search-phase       \ 0 none, 1 walking to a stop, 2 searching it
   \ his travel out of sight (stalker/travel.fs): the room he heads for (+0x1594), his route's
   \ doors (+0x138C, the next +0x1388, their number +0x1384), the way left to the next
@@ -83,11 +85,12 @@ state: stalker-state
   \ whom it struck (+0x1760: 1 Fiona), his cry for it (+0x1764), how long before he attacks
   \ again (+0x178C), frames held still by a blow landing (+0x14D0); her plight and panic as told;
   \ the way round her (+0x104, +0x1634)
-  cell field chase-act  cell field act-xt
+  cell field chase-act  cell field act-xt  holds: ( -- )
   cell field hold-t  cell field watch-t  cell field chase-t
   cell field combo  cell field combo-step  cell field swung  cell field sent  cell field took
   cell field cry  cell field hold-off  cell field freeze-t
   cell field her-plight  cell field her-stage
+  cell field her-reach           \ (fiona-plight's: bit 1 not to be gone for - Pursuer_MayGo; bit 2 thrown, her mode 4)
   cell field her-unseen          \ she can't be seen: item $89 worn, still (Fiona +0x1AD630; fiona-unseen)
   /vec field strike-pt  \ where a blow from no one came from (blow-from: striker -2)
   cell field noclipped           \ through blocked floor (the story's 0x20: +0x2B) - no reach test by distance
@@ -103,6 +106,9 @@ state: stalker-state
   \ taking her (stalker/grab.fs): leading her (his mode 8 while she's his; 1 asked, -1 holding), how (6 by the hand,
   \ 8 walking), her answer (0 none yet, 1 taken, 2 refused, 3 broke free), his taunts so far
   cell field leading  cell field lead-type  cell field answer  cell field taunts
+  \ the frights of his hold on her - as it begins (vtable +0x300: the Pursuer's 10), each taunt after
+  \ (+0x304: 5) - and of his look round (+0x308, Pursuer_ThreatAmount: 20)
+  1 floats field hold-fright  1 floats field taunt-fright  1 floats field look-threat
   \ struck (stalker/struck.fs): his condition (+0x14CC: well-cond, hurt-cond - stumbled, down-cond), how
   \ long he's hurt (+0x1790) and down (+0x1664), the damage he's taken since he last gave up
   \ (+0x16C4), reeling from a blow (his reactions run; his mode waits), struck while down, her
@@ -147,6 +153,8 @@ state: stalker-state
   \ from +0x16D8 `dog-limit`), and closing in, attacking or taunting
   cell field temper  cell field tolerance  1 floats field throw-k
   cell field bitten  cell field bite-anim  cell field bite-how  1 floats field holds
+  cell field left-bite   \ the bite he was held by as she left (its animation: Pursuer_ShowUp's letting go as she comes back; 0 none)
+  cell field left-bitten   \ Hewie on him as she left, till she comes back (his behaviour $23 kept out of her sight)
   1 floats field bite-yaw  1 floats field bite-turn
   cell field dog-t  cell field dog-limit  cell field dog-phase
   cell field dog-sent            \ his blow this move has struck Hewie (stalker/attack.fs)
@@ -168,8 +176,9 @@ state: stalker-state
   cell field hushed              \ +0x2C: his own sounds don't play (the story's 0x3D)
   \ (P4c) a stalker's own: his chase (its start and its step: Riccardo's; 0 the family's), his
   \ own actions ($1000.. in his tables: a table of xts; 0 Debilitas's), how near he attacks
-  cell field own-chase  cell field own-run  cell field own-acts  1 floats field attack-range
-  cell field own-frame          \ his own each frame (Riccardo's rage, snort, impact)
+  cell field own-chase  holds: ( -- )  cell field own-run  cell field own-acts  1 floats field attack-range
+  cell field own-frame  holds: ( -- )   \ his own each frame (Riccardo's rage, snort, impact)
+  cell field own-points  holds: ( -- )   \ his own points a move strikes at (vtable +0x138 BonePositions; 0 the Pursuer's: the move's two bones)
   cell field alt-tables         \ his tables' second set (kind 37 alerted; else his rage)
   cell field tint-t  cell field tint-was  cell field unseen   \ (the TintStalker: shown a while,
   1 floats field tint-alpha  cell field tint-fade  cell field tint-shown   \ how faded: its tint;
@@ -206,7 +215,14 @@ state: stalker-state
   \ the lead he started at (stalker/leads.fs); the spot 12 inside the door he comes in by and its
   \ triangle (stalker/travel.fs: walked to once the door stands open)
   cell field powder-loops  cell field powder-how  cell field go-pull
+  cell field exit-marked   \ came into her room onto an exit's door spot - till she next changes room (Character_MarkObjects: the groups' +1)
   cell field in-tri  /vec field in-at
   cell field dog-trust          \ Hewie's trust as he tells it (+0xF35CC: how long he keeps a stalker busy)
   cell field in-attack          \ in what he picked from his tables (Pursuer_BehaviourAttack: its own rules till it is over)
+  \ the powder's clouds (Effect79FF0: one each time he is powdered, gone once he is not): frames
+  \ each lasts (-1 while he is powdered; 0 none), its strands' kind, its ten timers
+  4 cells field cloud-left  4 cells field cloud-kind  40 cells field cloud-timers
 end-state
+
+\ a lead's pull (`lead`): Fiona's noise 5, any other 4, Hewie's 1
+5 constant pull-fiona   4 constant pull-noise   1 constant pull-hewie

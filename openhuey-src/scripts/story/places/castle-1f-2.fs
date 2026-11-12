@@ -148,7 +148,7 @@ create holes  $38B , $1B9 , $38C , $38D , $386 , $38E ,   \ (things lying about 
 : crawls-back ( -- )
     hewie hold  hewie $353 90 -1 walk-path-move 37e 69e go-to  gap-floor solid-floor floor-off
     hewie $267 90 crawl-anim walk-move 52e 69e go-to  gate-floor solid-floor floor-on
-    hewie -1 idle  hewie let-go  room-flag-2d state-off  0 bark-scene ! ;
+    hewie -1 idle  hewie let-go  room-flag-2d state-off  stalkers-stay state-off  0 bark-scene ! ;
 : her-flowers ( -- )   \ (once she is free: he gives them over)
     begin  fiona-free? 0= while  yield  repeat
     1 fetch-step !  panic-eased
@@ -240,8 +240,8 @@ create holes  $38B , $1B9 , $38C , $38D , $386 , $38E ,   \ (things lying about 
     again ;
 
 \ ---- the stalker while she hides: his search (seeing her, he finds her) ----
-: his-camera? ( -- flag )   \ (him about, on the move his way - the camera on someone: hers, else his)
-    stalker-told?  st-mode-now @ dup 0= over 1 = or swap 5 = or 0= and  cam-followed 0< 0= and ;
+: his-camera? ( -- flag )   \ (him about, on the move his way: Room02_Cond01 - its camera test, +0x1130 $FE, is never so)
+    stalker-told?  st-mode-now @ dup 0= over 1 = or swap 5 = or 0= and ;
 : door-on-his-way ( exit -- )   \ (come by it, its door shut: opened - in his search, only from its area)
     {: ex :}  ex stalker-came-by?  ex exit-open? 0= and  search-on @ 0=  stalker ex exit-area in-area? or and if
         stalker ex open-door
@@ -267,7 +267,7 @@ create holes  $38B , $1B9 , $38C , $38D , $386 , $38E ,   \ (things lying about 
 : shoves ( motion frame F: x0 y0 z0 x1 y1 z1 -- )   \ (the dust thrown up at its frame at the two points)
     {: m at F: x0 y0 z0 x1 y1 z1 :}  stalker use-motions  stalker true noclip  stalker room-motion m + 5 start-blend8
     0  begin
-        stalker fiona 0 close-to? if  stalker throws-her  then
+        stalker fiona self-touching? if  stalker throws-her  then
         dup at = if  x0 y0 z0 dust  x1 y1 z1 dust  thud-sound room-bank stalker sound-by  then
         1+  stalker went-round? 0= while  yield
     repeat  drop ;
@@ -317,7 +317,7 @@ create holes  $38B , $1B9 , $38C , $38D , $386 , $38E ,   \ (things lying about 
 : pick-onion ( -- )  onion got-onion onion-fx 290.5e -99.5e picks-up ;
 : spots ( -- )
     fiona hiding-area in-area?  fiona 0 60 heading? and if
-        stalker-in? 0=  stalker unseen? or if  ['] hides calm-only offer  else  no-time-message offer-remark-now  then
+        stalker-in? 0=  stalker unseen? or if  ['] hides hiding-spot offer  else  no-time-message offer-remark-now  then
     then
     fiona lever-area in-area?  fiona 0 50 heading? and if  ['] lever unhurried offer  then
     fiona hole-area in-area?  fiona 0 50 heading? and if  ['] the-hole unhurried offer  then
@@ -364,9 +364,8 @@ create looks  274.93e -1e -145.73e  20e 11e 11e look,
 : wary-by-wall ( -- )  -142.16e 0e 179e hewie-stands-by ;
 : barks-at-pond ( -- )  5.346e -9.5e 80.917e hewie-barks-at ;
 : barks-at-gate ( -- )  50e -10e 164.549e hewie-barks-at ;
-: at-his-command? ( -- flag )  hewie-in?  hewie-cond-now @ well-cond = and  chased? 0= and  hewie-cmdable-now @ and ;
 : hewie-notices ( -- )
-    at-his-command? 0= if  exit  then
+    hewie-at-hand? 0= if  exit  then
     voices-due?  wary-noticed @ 0= and  hewie -142.16e 0e 179e 75e 20e centred-in? and if
         -1 wary-noticed !  ['] wary-by-wall start drop
     then
@@ -426,7 +425,7 @@ create entries  0 , 0 ,   5 , 4 ,   0 , 0 ,   3 , 3 ,   \ (by exit 0..3: the cam
 : person-in ( i -- )
     case
         fiona-p of
-            events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+            events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
             entries 4 ways-in
             $81 forced-way? if
                 -1 through-gate !  fiona $324 180 place-on-tri  fiona 0 at-exit  0 0 player-camera  camera-restart
@@ -450,3 +449,4 @@ create entries  0 , 0 ,   5 , 4 ,   0 , 0 ,   3 , 3 ,   \ (by exit 0..3: the cam
     then ;
 
 ' came-in ' person-in ' each-frame ' went castle-1f-2 place!
+here  rubrum-medallion , ' pick-rubrum , rubrum-fx ,  viola-medallion , ' pick-viola , viola-fx ,  onion , ' pick-onion , onion-fx ,  -1 ,  castle-1f-2 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

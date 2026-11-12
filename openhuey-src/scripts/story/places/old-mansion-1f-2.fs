@@ -47,11 +47,10 @@ create flames  -19.7e f, 22.5e f,  -19.7e f, 25e f,  -17.2e f, 22.4e f,  -17.2e 
     candles-lit  1 $2300 reverb  scene-figure 3 figure-in ;
 
 \ ---- Hewie through a scene: down, hidden away till it's over; else let go ----
-: hewie-held ( -- )  hewie hold  hewie false shown  begin  yield  again ;
 : hewie-for-scene ( -- )   \ (here: down, held hidden; else let go - not here, away)
     hewie-in? 0= dup hewie-away !  if  exit  then
-    hewie-cond-now @ down-cond = if  ['] hewie-held start drop  else  hewie let-go  then ;
-: hewie-back ( -- )  ['] hewie-held stop-doing  hewie true shown  hewie let-go ;
+    hewie-cond-now @ down-cond = if  ['] hewie-kept-hidden start drop  else  hewie let-go  then ;
+: hewie-back ( -- )  ['] hewie-kept-hidden stop-doing  hewie true shown  hewie let-go ;
 
 \ ---- a Godstone laid on the scales: level, the great door unlocked ----
 : godstone-shown ( -- )   \ (through its scene: the stone on the pan)
@@ -60,7 +59,7 @@ create flames  -19.7e f, 22.5e f,  -19.7e f, 25e f,  -17.2e f, 22.4e f,  -17.2e 
     godstone-movie scenes:unseen-movie godstone-cutscene load-scene  ['] godstone-shown start drop
     panic-eased  if  -1 run-scene  then ;
 : lays-godstone ( -- )
-    stalkers-stay state!  fiona hold  stalker let-go  summoner-on state-off
+    stalkers-stay state!  fiona hold  stalker let-go  0 summon-take  summoner-on state-off
     15 screen:to-black-2 with-music or fade  wait-fade  hewie-for-scene
     godstone-scene  wait-fade
     fiona 0 idle  fiona $158 83 3e 24e place-at  camera-restart
@@ -77,11 +76,11 @@ create flames  -19.7e f, 22.5e f,  -19.7e f, 25e f,  -17.2e f, 22.4e f,  -17.2e 
 : ore-shown ( -- )   \ (through its scene, to its cue: the ore on the pan)
     begin  cutscene-frame $1CC < while  stones-hidden  laid @ stone-object object-show  yield  repeat  stones-hidden ;
 : ore-scene ( -- )
-    ore-movie scenes:keyed-movie ore-cutscene load-scene  ['] ore-shown start drop  $10 $FF movie-key
+    ore-movie scenes:keyed-movie ore-cutscene load-scene  ['] ore-shown along-scene  $10 $FF movie-key
     panic-eased  if  -1 run-scene  then ;
 : lays-ore ( -- )
     stalkers-stay state!  fiona hold  15 screen:to-black-2 with-music or fade  wait-fade
-    hewie-in?  hewie-cond-now @ down-cond = and if  ['] hewie-held start drop  then
+    hewie-in?  hewie-cond-now @ down-cond = and if  ['] hewie-kept-hidden start drop  then
     ore-scene  wait-fade  ['] ore-shown stop-doing
     laid @ spend  stones-hidden  chains-shown  true scales
     fiona 0 idle  fiona $158 180 5.733e 23.039e place-at  camera-restart  hewie-back
@@ -148,7 +147,7 @@ create looks  0.56e 0e 14.62e  35e 22e 22e look,
 : person-in ( i -- )
     fiona-p <> if  exit  then
     events-held state? if
-        hewie send part-from-fiona  replay-act 7 = if  ['] replay-godstone  else  ['] replay-ore  then  start drop  exit
+        hewie send part-from-fiona  replay-act 7 = if  ['] replay-godstone  else  ['] replay-ore  then  fiona start-holding drop  exit
     then
     0 1 1 way-in  1 1 1 way-in  2 0 0 way-in  4 3 3 way-in  5 2 2 way-in
     came-by @ dup 2 =  swap 4 = or if  2 map-page  then ;
@@ -156,3 +155,4 @@ create looks  0.56e 0e 14.62e  35e 22e 22e look,
 
 ' came-in ' person-in ' each-frame ' went old-mansion-1f-2 place!
 ' items-used old-mansion-1f-2 items-here
+here  camomile , ' take-camomile , camomile-fx ,  -1 ,  old-mansion-1f-2 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

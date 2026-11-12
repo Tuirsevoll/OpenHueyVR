@@ -19,13 +19,20 @@ her-x constant saved-x
 game:hewie enter  5 his-trust !  27 his-skill !  3 5 cells his-skill + !  leave-actor   \ (his skills at fetching)
 game:hewie enter  2 his-mood !  400 his-mood-time !  -4 his-feel !  6 3 cells his-feel + !  leave-actor   \ (upset; his feelings)
 game:hewie enter  12 his-met !  77 3 cells his-met + !  leave-actor   \ (how often he leapt at Debilitas, Riccardo)
+game:hewie enter  20 his-hp !  hurt-cond his-cond !  2 his-door !  leave-actor   \ (hurt - he limps -; in by exit 2: Hewie_SaveState's +0xC4, +0x838)
 ' saves:quick-save in-saves  deliver  2 run-frames
 T{ saves:save-path file-exists? -> -1 }T
+testing a save point's save clears flag $18, the stalkers kept where they are (SceneGame_Save); a quick save leaves it
+stalkers-stay state-flag-set  ' saves:quick-save in-saves  deliver  2 run-frames
+T{ stalkers-stay state-flag? -> -1 }T
+[: 2 0 saves:save-slot ;] in-saves  deliver  2 run-frames
+T{ stalkers-stay state-flag? -> 0 }T
+' saves:quick-save in-saves  deliver  2 run-frames
 
 testing things changed, then loaded back
 plate-made story-flag-clear
 game:hewie send part-from-fiona  deliver
-game:hewie enter  his-met 4 cells 0 fill  leave-actor
+game:hewie enter  his-met 4 cells 0 fill  well-cond his-cond !  -1 his-door !  leave-actor
 : skills-reset ( -- )  game:hewie enter  6 0 do  16 i cells his-skill + !  loop  leave-actor ;  skills-reset
 front-garden-3 -1 game:rooms send go-to-room  10 run-frames
 T{ plate-made story-flag?  along?  room-id front-garden-2 = -> 0 0 0 }T
@@ -37,6 +44,7 @@ T{ along?  trust -> -1 5 }T
 T{ 0 skill  5 skill  1 skill -> 27 3 16 }T
 T{ game:hewie enter  his-mood @  his-mood-time @ 300 >  his-feel @  3 cells his-feel + @  leave-actor -> 2 -1 -4 6 }T
 T{ game:hewie enter  his-met @  3 cells his-met + @  leave-actor -> 12 77 }T
+T{ game:hewie enter  his-cond @  his-door @  leave-actor -> hurt-cond 2 }T
 testing the stalker kept: Debilitas in the game here, saved, let go, back where he was
 : his ( xt -- x )  game:debilitas enter  execute  leave-actor ;
 [: 2 partner-load ;] game:story enter execute leave-actor  deliver  2 run-frames
@@ -82,6 +90,17 @@ door5 l@ 1 or door5 l!
 ' saves:quick-load in-saves  deliver  20 run-frames
 T{ door5 l@ 1 and -> 0 }T
 
+testing the exits made anew on loading (Rooms_SetState): a door the save has closed off for good isn't an exit's - the mansion's front door
+: front-exit-door ( -- door )  front-garden-2 0 room-exit-door ;
+1 progress pr.closed-off bit-set  world-exits-rebuild
+T{ front-exit-door 1 = -> 0 }T
+' saves:quick-save in-saves  deliver  2 run-frames
+1 progress pr.closed-off bit-clear  world-exits-rebuild   \ (as a session begun afresh has them: none closed off)
+T{ front-exit-door -> 1 }T
+' saves:quick-load in-saves  deliver  20 run-frames
+T{ front-exit-door 1 =  1 progress pr.closed-off bit? -> 0 -1 }T
+1 progress pr.closed-off bit-clear  world-exits-rebuild
+
 testing the stage music the story has come to, made again on loading (SceneGame_LoadedStart)
 : stage ( -- s )  game:music enter  music:sm-stage @  leave-actor ;
 opening-done story-flag-set  over-music-b story-flag-set
@@ -104,6 +123,15 @@ T{ saves:options 2 cells + @  saves:options? @ -> 64 -1 }T
 [: 128 subscreen.state:volume !  1 subscreen.state:vibration ! ;] sub
 saves:options-out  deliver
 T{ [: subscreen.state:volume @  subscreen.state:vibration @ ;] sub -> 64 0 }T
+testing the system data held (the ending's, `hold-system`): an unlock not written meanwhile; let go
+testing ... unkept (`keep-system` false): not written now - its next writing takes it - and held no more
+: saves@ ( xt -- x )  game:saves enter  execute  leave-actor ;
+: changed? ( -- flag )  [: saves:unlocks-changed? ;] saves@ ;
+saves-id send hold-system  deliver  30 resident-flag-set  2 run-frames
+T{ changed?  [: saves:system-held @ ;] saves@ -> -1 -1 }T
+false saves-id send keep-system  deliver  1 run-frames
+T{ changed?  [: saves:system-held @ ;] saves@ -> 0 0 }T
+30 progress pr.resident bit-clear  2 run-frames
 full-suite   \ (on: waits, scenes, walks - the full run's)
 [: subscreen.options:defaults ;] sub
 test-summary

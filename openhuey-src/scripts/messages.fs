@@ -53,6 +53,7 @@ message entered-room ( room exit -- )        \ the room is in play
 message camera-cut ( -- )                    \ it cut to a new set
 message hewie-told ( what arg -- )            \ (Hewie to Fiona, barking low: Hewie_StateLookLow) 0 a shut door at his exit `arg` - to open; 1 where he is
 message open-from-afar ( room exit kind source -- )   \ (to the doors) taken hold of and let go open, out of sight (DoorHold_Take / DoorHold_Open)
+message shut-from-afar ( room exit kind source -- )   \ (to the doors) taken hold of and let go shut, out of sight (DoorHold_Take / DoorHold_Shut)
 message stalker-as ( kind -- )               \ (to a stalker, as the story loads him: partner-load) the kind he is
 message hewie-gesture ( g -- )               \ (Hewie, played: each frame) his gesture this frame (stick-gesture; the scripts' 0x21)
 message hewie-restart ( -- )                 \ (the run's clock starting: Hewie_Restart) him afresh - played, in the run
@@ -194,6 +195,10 @@ message fiona-shaking ( n -- )              \ broadcast each frame: her shakes t
 message fiona-struck-by ( who -- )           \ broadcast each frame after fiona-doing: who struck or caught her (+0x100; -1 nobody)
 message fiona-doing ( mode sub cond cmd doing -- ) \ broadcast each frame: her move mode, what she does, her
 message fiona-straining ( on -- )            \ broadcast each frame: she strains at something that won't move (Fiona +0x1AD5D2: the rooms' request $80000004)
+message fiona-could ( what -- )               \ broadcast each frame: her own request here (Progress_CharRequests, hers - the
+                                             \ story's action prompt): an exit (0..7) whose door area she is in, a ladder
+                                             \ (ladder-could + its link) she faces - not panicking - straining (strain-could), or -1
+$100 constant ladder-could   $200 constant strain-could
 message fiona-started ( code -- )           \ broadcast as she starts an action for Hewie (Fiona_MarkActionStart's +0x1AD6BC: the rooms' cond 0x26 - that frame only)
                                              \ condition, her command this frame (-1 none; 3 the praise held), her
                                              \ action (+0x1AD580: her-doing)
@@ -202,7 +207,7 @@ message thing-blow ( damage yaw -- )   \ to a homunculus: a magnesia going off w
 message throw-down ( who recover -- )        \ (Fiona) thrown down by who (an actor, -1 none); recover: her recovery reset (the story's 0xB2)
 message look-hold ( who frames -- )          \ (Fiona) her head on who for so many frames (the story's 0x96)
 message fiona-unseen ( on -- )               \ broadcast when it changes: she can't be seen (item $89 worn, still)
-message fiona-plight ( state ladder -- )     \ broadcast each frame: how she stands for a stalker's attack (plight); the ladder she is on (-1 none)
+message fiona-plight ( state ladder reach -- )   \ broadcast each frame: how she stands for a stalker's attack (plight); her reach (bit 1 not to be gone for - Pursuer_MayGo; bit 2 thrown, her mode 4; 4 her +0x2D, 8 a script has her, 16 held - the creatures'); the ladder she is on (-1 none)
 \ how she stands for a stalker's attack (Pursuer_FionaState; his tables by it): free; fleeing; frightened
 \ (her fear past 90, her panic attack); out of reach (struck, seized, the stalkers blind); panicking; calming down
 enum: plight  free-plight fleeing-plight frightened-plight unreachable-plight panicking-plight calming-plight ;
@@ -241,6 +246,7 @@ message write-save ( -- )                    \ broadcast: print your line of the
 message hewie-health ( hp -- )              \ broadcast each frame with hewie-doing: his health, 0..100
 message set-hp ( n -- )                    \ (Hewie) his health set (a room's command)
 message hewie-restore ( trust points hp -- )   \ (Hewie) as a save had him
+message hewie-came-by ( exit -- )            \ (Hewie) the exit he came in by, as a save had it (Hewie_LoadState's +0x838)
 message hewie-mood-restore ( mood time hide f0 f1 f2 f3 -- )   \ (Hewie) his mood and its time, staying put, his feelings about the stalkers, as a save had them
 message hewie-skills ( s0 s1 s2 s3 s4 s5 -- )  \ (Hewie) his skills at fetching, as a save had them
 message hewie-met ( m0 m1 m2 m3 -- )           \ (Hewie) how often he leapt at each stalker (Debilitas, Daniella, Lorenzo, Riccardo: 0..100), as a save had it
@@ -252,6 +258,7 @@ message effect-sound ( id bank -- )         \ (butterflies, moths) a sound playe
 message reflect-in ( slot -- )            \ (a reflection, effects.fs) its engine slot
 message keri-drop ( k tri x y z -- )         \ (things) the story's debris: a kind-9 thing carrying room object "keri<k>", falling from there (f>cell)
 message trap-place ( tri x y z -- )          \ (things) the story's trap: a kind-10 thing set down there (f>cell)
+message clear-things ( -- )                 \ (things) the story's $D2: every thing gone, each as it ends (the ball back to her: Ball_dtor)
 message story-things-off ( -- )             \ (things) the story's kinds 9 and 10 all gone
 message keri-fell ( k -- )                   \ broadcast by the things: a kind-9 thing fell through, its "keri<k>" free again
 message thing-taken ( thing -- )               \ (things) Hewie picked it up: gone
@@ -289,6 +296,7 @@ message meet-now ( type -- )
 message meet-on ( -- )
 message meet-refused ( -- )
 message meet-off ( -- )                      \ either gives it up
+message partner-interrupted ( -- )           \ (Hewie) a script took her in a meeting or command with him (Fiona_Interrupted): his default, unless a script has him
 
 \ ---- the story (docs/subsystems/story.md) ----
 message to-exit ( exit -- )                  \ (a character) put yourself on the exit's outside spot, facing in
@@ -302,6 +310,8 @@ message room-leave ( -- )                    \ its exit is taken: phase 4
 message room-left ( -- )                     \ the next room is in: phase 5, then it reports
 message room-done ( -- )                     \ (to the story) finished: it may go
 message story-stop ( -- )                    \ (to the story) no more room scripts (tests of the others, the console)
+message event-frames ( n -- )                \ (from the story, to a place as it comes in) the frames since the game began here (+0x704), counted on by the place
+message event-frames! ( n -- )               \ (to the story) that count set (the scripts' 0xD4)
 
 \ ---- messages on screen (docs/subsystems/window.md) ----
 message show-text ( msg -- )                 \ (the window) show message msg; its closing answered to the sender
@@ -311,7 +321,6 @@ message text-shown ( on -- )                 \ broadcast: the window opened / cl
 message characters-still ( on -- )           \ broadcast: the stalkers, Hewie and the summoner held still or let go (OpenHuey's: a reading on the dimmed screen)
 message thing-made ( kind tri x y z vx vy vz -- )   \ (Fiona's let go) a thing at her hand, on its way (floats f>cell; things.fs)
 message fiona-message ( msg -- )             \ broadcast (Fiona: a locked door's built-in script) the room shows system message msg
-message prompt ( kind -- )                   \ (the window) an action is offered here this frame (the action prompt)
 
 \ ---- examining (the scripts' prepared action, Progress_PlayerButtons) ----
 message offer ( scene arg -- )               \ (room -> Fiona) an action here this frame, taken with the action button
@@ -376,8 +385,8 @@ message stalker-reach ( d -- )                 \ broadcast each frame by a stalk
                                              \ what (9 Hewie on him, $A down, $18 leading her), condition, health, his kind,
                                              \ his alert (his mode: Progress_StalkerAlert), the exit he came in by (-1 none)
 \ ---- the story's orders to Hewie, Fiona and the panic (the scripts' commands; H4 / F5) ----
-message drawn-to ( tri -- )                  \ (the things: the doll) a stalker searching the room being played drawn to
-                                             \ it, if he sees it and can get there - his search's one stop
+message drawn-to ( tri i away? -- )         \ (the things: the doll, thing i) the stalker by it - away from her (come upon, once a
+                                             \ visit) or in her room (each frame): he decides (Thing03_StalkerCheck) and takes it - thing-taken
 message stalker-ties ( scripted apart linked -- )   \ broadcast each frame by a stalker in the game, after stalker-doing:
                                              \ a script or a scene of the room has him (+0xE0); out of contact - through a door, on a
                                              \ ladder, off screen (+0x2A: Fiona_KeepApart leaves him be); a joint action with him under
@@ -406,6 +415,7 @@ message calm-in ( v -- )                     \ 0x93: calming (bit $80: 128 at on
 message panic-reach ( level -- )             \ 0xC9: the level set to it if not above it (Panic_SetLevel)
 \ ---- the story's orders to a character (the scripts' commands; P4) ----
 message stalker-order ( mode -- )            \ 0x2F: 0 after her, 2 to her room / searching here, 3 searching
+message exit-chosen ( exit -- )              \ her exit set by a room (Character_ChooseExit: room $C2's command 1, $D9 / $E0 in the run): the half of a split room she's in
 message stalker-clock ( frames -- )          \ 0x2A: his mode's clock (+0x1660)
 message stalker-knock-out ( -- )             \ 0x30: knocked down, out of health
 message stalker-down-over ( -- )             \ 0xB6 searched him, no gift due: his time down over (+0x1664 0) - he gets up
@@ -469,6 +479,11 @@ message figure-shown ( on -- )                \ broadcast by a figure as the sto
 \ ---- the items (docs/subsystems/items.md): the inventory, kept in the progress ----
 message give-item ( id n -- )                 \ (the items) n of item id into the inventory (Items_Give)
 message take-item ( id -- )                   \ (the items) one of item id spent, wherever it is (Items_UseId; the scripts' 0x0C)
+\ ---- items lying in the room (mod API 1.5): each shown by a sparkle, the place's effect k ----
+message item-placed ( room k item x y z -- )   \ broadcast by the place: its effect k sparkles where item lies (x y z floats, f>cell)
+message item-cleared ( room k -- )             \ broadcast by the place: ... no more (taken, put away, the room left)
+message take-item-at ( k -- )                  \ (to the place) the item at effect k taken by her as her action button would; answered take-answer
+message take-answer ( k started? -- )          \ (the place) whether her taking it started - item-cleared tells it went (a panic may still stop it)
 message add-file ( id sound? -- )             \ (the items) a file found (a key thing, a document: message ids); its sound if new
 message use-item ( list place -- )            \ (the items) the item there used (the menu); answered with item-used
 message item-used ( id result -- )            \ (from the items) 0 nothing happened, 1 used up, 2 a mark set, 4 an event
@@ -489,6 +504,7 @@ message fed ( how -- )                        \ (items -> Hewie) given a bait (b
 enum: bait  small-treat big-treat onion-bait fury-bait rouse-bait ;
 message tab-op ( op item -- )                \ (the sub screen) the tab: 0 an item handed her (its picture), 1 loaded, 2 in, 3 shown, 4 out
 message tab-done ( -- )                       \ (from the sub screen) the tab's step is done (it waits on 2 / 4)
+message menu-frame ( -- )                   \ broadcast by the sub screen each frame it is up (the world held): play time counts on (SceneGame_SubSubScreen's PlayTime_Tick)
 message menu-mode ( mode -- )                 \ (the sub screen) the mode the scripts open it in (0x6D: 0 the menu, 1 saving ...)
 message map-turn-to ( page -- )              \ (the sub screen) her room shown on that page of her map (the scripts' 0xD1)
 message options-changed ( vib out vol x y layout -- )   \ (the sub screen -> saves) the options as now set: kept in the system data
@@ -503,7 +519,11 @@ message load-from-slot ( n -- )       \ (saves) the game in save slot n back
 message game-saved ( -- )             \ (saves) to who asked: the save is written
 message save-to-file ( addr len -- )  \ (saves) the game saved into that file (a bug report's: debug.fs); `game-saved` back
 message load-from-file ( addr len -- )   \ (saves) the game in that file back
+message hold-system ( -- )            \ (saves) the system data (the unlocks) not written as it changes - the ending's, till asked to keep it
+message keep-system ( keep? -- )      \ (saves) the hold over: kept - written, `game-saved` back; else not written now (its next writing takes it)
+message save-clear ( -- )             \ (the sub screen) the clear-data save, the ending's last (the scripts' mode 9); `clear-saved` back once shut
+message clear-saved ( -- )            \ (the sub screen -> who asked) the clear-data save is over
 message item-var ( var value -- )          \ (items -> the room) its script variable var set to value (an item used: the word plate)
 message item-event-bit ( n on -- )         \ (items -> the room) its event bit n set or cleared (the word plate: the word was right)
 message meters? ( -- )                       \ (debug: to Fiona) her meters, please
-message her-meters ( fear breathless run -- )  \ (debug: Fiona's reply) her fear, out of breath, the running left
+message her-meters ( tired scared run -- )  \ (debug: Fiona's reply) how tired running has made her, scared by the panic, the running left

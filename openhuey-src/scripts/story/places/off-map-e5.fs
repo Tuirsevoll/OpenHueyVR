@@ -25,7 +25,7 @@ $2E constant run-kind-var   0 constant her-motions   0 constant curtain-sound   
 : drawing ( n xt -- )   \ (n frames of her crawl, the curtain drawn by xt each)
     {: n xt :}  0 crawl !  begin  xt execute  yield  crawl @ n < while  1 crawl +!  repeat ;
 : came-in ( exit -- )
-    drop  room-sounds  run-kind-var var@ 1 = if  $84 $60 $3C $50 $24 $2A $2A $46 room-tint  then
+    drop  room-sounds  run-kind-var var@ 1 = if  daylight-tint  then
     curtain-back  1 $3FFF reverb ;
 
 \ ---- behind the curtain ----
@@ -41,7 +41,7 @@ $2E constant run-kind-var   0 constant her-motions   0 constant curtain-sound   
     fiona wait-anim  fiona false noclip ;
 : behind-curtain ( -- )
     stalkers-stay state!  0 came-while-hidden !  fiona her-motions motions-for  fiona wait-move
-    fiona $15 180 60.918e -14.76e walk-to  fiona true noclip  fiona use-motions  fiona -1 look-at
+    fiona $15 180 -1 walk-path-move 60.918e -14.76e go-to  fiona true noclip  fiona use-motions  fiona -1 look-at
     fiona room-motion 5 start-blend8  5 frames  54 [: $2B $36 0 11e drawn ;] drawing
     fiona wait-anim  curtain-drawn  fiona false noclip
     stalkers-stay state-off  fiona-hidden state!  0 found-her !  0 avoid-prompt

@@ -125,7 +125,7 @@ $31 constant ambush-seen   $32 constant fed-seen
 : hewie-out ( -- )  hewie-in? dup hewie-gone !  if  hewie let-go  hewie false shown  then ;   \ (out of the scene)
 : hewie-back ( -- )
     hewie-gone @ 0= if  exit  then  0 hewie-gone !
-    hewie true shown  hewie activate  old-mansion-1f-8 after-scene-tri 140 hewie-to ;
+    hewie true shown  hewie activate  hewie after-scene-tri 140 place-on-tri ;   \ (0x3B: onto the triangle, facing)
 : seized ( -- )   \ (the first time: grabbed at - her fright)
     fiona use-motions  hand-slot figure-on  hand-slot 127.567e 0e -123.393e -90e figure-at  hand false doorway-fades
     fiona look-close-anim play  ['] hand-lunges start drop  15 frames
@@ -227,7 +227,7 @@ $31 constant ambush-seen   $32 constant fed-seen
     prima-materia item-named  prima-materia 1 give-item  prima-materia show-item-tab  fanfare  obtained-2-msg say
     -1 fetched !  hewie 0 turn
     hewie $130 60 -1 walk-path-move -83e -83e go-to
-    items-40-as-70 fact? if  creatures-on state!  5 0 s" creatures" actor-named send creature-count  then
+    items-40-as-70 fact? if  creatures-on state!  5 0 creatures-id send creature-count  then
     hewie false noclip  stalkers-stay state-off  0 errand ! ;
 : gesture ( -- )   \ (her "go for it" at him)
     fiona go-for-it-gesture-anim start-anim  fiona 1 wait-mark  go-for-it-call common-bank fiona sound-by
@@ -359,9 +359,9 @@ variable noticed   \ (notices?'s cell: one of hewie-noticed's bits)
 : replayed ( -- )
     hewie send part-from-fiona
     replay-act case
-        $20 of  ['] replay-ambush start drop  endof
-        $21 of  ['] replay-rest start drop  endof
-        $22 of  ['] replay-fed start drop  endof
+        $20 of  ['] replay-ambush fiona start-holding drop  endof
+        $21 of  ['] replay-rest fiona start-holding drop  endof
+        $22 of  ['] replay-fed fiona start-holding drop  endof
     endcase ;
 
 \ ---- every frame ----
@@ -396,3 +396,4 @@ create ahead  $C , 0 ,   $D , 2 ,   $E , 5 ,   \ (area, exit loaded ahead)
 
 ' came-in ' person-in ' each-frame ' went old-mansion-1f-8 place!
 ' items-used old-mansion-1f-8 items-here
+here  beef-jerky , ' pick-jerky , jerky-fx ,  album-medallion , ' pick-medallion , medallion-fx ,  -1 ,  old-mansion-1f-8 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

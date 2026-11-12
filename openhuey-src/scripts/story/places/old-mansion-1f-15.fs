@@ -88,13 +88,12 @@ create shelf-stops  0e f, 0e f,  39e f, 21e f,  0e f, -52.5e f,   \ (x, z by gro
     om1f-15-rubrum-medallion-found fact?  om1f-15-rubrum-medallion fact? 0= and if  medallion-fx -23.61e 51e -61.37e flicker-at  then ;
 
 \ ---- Hewie through the shelves' moving: down, hidden away; else let go, then back by her ----
-: hewie-held ( -- )  hewie hold  hewie false shown  begin  yield  again ;
 : hewie-for-scene ( -- )
     hewie-in?  hewie-way-now @ 0= and 0= dup hewie-away !  if  exit  then
-    hewie-cond-now @ down-cond = if  ['] hewie-held start drop  else  hewie let-go  then ;
+    hewie-cond-now @ down-cond = if  ['] hewie-kept-hidden start drop  else  hewie let-go  then ;
 : hewie-after ( tri deg F: x z -- )
     {: tri deg F: x z :}  hewie-away @ if  exit  then
-    hewie-cond-now @ down-cond = if  ['] hewie-held stop-doing  hewie true shown  hewie let-go  exit  then
+    hewie-cond-now @ down-cond = if  ['] hewie-kept-hidden stop-doing  hewie true shown  hewie let-go  exit  then
     hewie activate  old-mansion-1f-15 tri 0 hewie-to  hewie tri deg x z place-at ;
 
 \ ---- a book laid on a lectern (book b on lectern p: the items' event p * 3 + b) ----
@@ -113,7 +112,7 @@ create lectern-spots   $36 , -90 , 35e f, -52e f, 25e f, 20e f, -50e f, 2e f,
 : its-own ( p -- )   \ (the lectern's own author: its shelves slide back - the way through)
     {: p :}  hewie-for-scene
     fiona reach-up-anim play  book-sound room-bank fiona sound-by
-    p case  0 of  8  endof  1 of  4  endof  >r 0 r>  endcase  object-hide
+    p case  0 of  8  endof  1 of  4  endof  >r 0 r>  endcase  object-show
     p p 3 * + books-placed + fact!  p book-item spend  fiona reach-down-anim play ;
 : lays-0 ( b -- )
     {: b :}  0 at-lectern
@@ -200,7 +199,6 @@ own: laid-book
 create cameras  $24 , 0 , -1 ,   $25 , 1 , -1 ,   $27 , 2 , 0 ,   \ (area, set, path)
 create entries  0 , -1 ,   1 , -1 ,   0 , -1 ,   0 , -1 ,   \ (by exit 0..3: the camera)
 create ahead  4 , 1 ,   5 , 0 ,   6 , 2 ,   7 , 3 ,   \ (area, exit loaded ahead)
-: facing? ( area deg -- flag )  {: a d :}  fiona a in-area?  fiona d 50 heading? and ;
 : hewie-about ( -- )
     got-occult-philosophy fact? if  exit  then
     noticed-3 100 -31.67e 0e -62.5e 11e 10e notices? if  ['] sits-3 start drop  then
@@ -212,42 +210,42 @@ create ahead  4 , 1 ,   5 , 0 ,   6 , 2 ,   7 , 3 ,   \ (area, exit loaded ahead
     om1f-15-rubrum-medallion-found fact? 0=  hewie -23.61e 50e -61.37e 10e 5e touches? and if  ['] medallion-sniffed start-only  then ;
 : shelves-by-author ( -- )
     books-placed fact? 0= if
-        $C 90 facing? if  [: 90 author-1-msg author ;] unhurried offer  then
+        $C 90 50 fiona-faces? if  [: 90 author-1-msg author ;] unhurried offer  then
     else
-        $10 -90 facing? if  [: -90 author-1-msg author ;] unhurried offer  then
-        $F 90 facing? if  [: 90 author-1-msg author ;] unhurried offer  then
+        $10 -90 50 fiona-faces? if  [: -90 author-1-msg author ;] unhurried offer  then
+        $F 90 50 fiona-faces? if  [: 90 author-1-msg author ;] unhurried offer  then
     then
-    lectern-1-book-1 fact? if  $13 90 facing? if  [: 90 author-2-msg author ;] unhurried offer  then  then
+    lectern-1-book-1 fact? if  $13 90 50 fiona-faces? if  [: 90 author-2-msg author ;] unhurried offer  then  then
     lectern-2-book-2 fact? if
-        $17 180 facing? if  [: 180 author-3-msg author ;] unhurried offer  then
-        $18 0 facing? if  [: 0 author-3-msg author ;] unhurried offer  then
-    else  $15 0 facing? if  [: 0 author-3-msg author ;] unhurried offer  then  then
-    $19 180 facing? if  [: 180 author-3-msg author ;] unhurried offer  then
-    $1B 0 facing? if  [: 0 author-3-msg author ;] unhurried offer  then
-    $1C 180 facing? if  [: 180 author-4-msg author ;] unhurried offer  then
-    $1D 0 facing? if  [: 0 author-4-msg author ;] unhurried offer  then
-    $20 -90 facing? if  [: -90 author-5-msg author ;] unhurried offer  then
+        $17 180 50 fiona-faces? if  [: 180 author-3-msg author ;] unhurried offer  then
+        $18 0 50 fiona-faces? if  [: 0 author-3-msg author ;] unhurried offer  then
+    else  $15 0 50 fiona-faces? if  [: 0 author-3-msg author ;] unhurried offer  then  then
+    $19 180 50 fiona-faces? if  [: 180 author-3-msg author ;] unhurried offer  then
+    $1B 0 50 fiona-faces? if  [: 0 author-3-msg author ;] unhurried offer  then
+    $1C 180 50 fiona-faces? if  [: 180 author-4-msg author ;] unhurried offer  then
+    $1D 0 50 fiona-faces? if  [: 0 author-4-msg author ;] unhurried offer  then
+    $20 -90 50 fiona-faces? if  [: -90 author-5-msg author ;] unhurried offer  then
     fiona $21 in-area?  fiona $22 in-area? or  fiona 90 50 heading? and if  [: 90 author-5-msg author ;] unhurried offer  then
-    $1E 180 facing? if  [: 180 author-5-msg author ;] unhurried offer  then
-    $1F 0 facing? if  [: 0 author-5-msg author ;] unhurried offer  then
-    books-placed fact? 0=  $1A 180 facing? and if  ['] door-atop unhurried offer  then ;
+    $1E 180 50 fiona-faces? if  [: 180 author-5-msg author ;] unhurried offer  then
+    $1F 0 50 fiona-faces? if  [: 0 author-5-msg author ;] unhurried offer  then
+    books-placed fact? 0=  $1A 180 50 fiona-faces? and if  ['] door-atop unhurried offer  then ;
 : each-frame ( -- )
     4 exits-out  cameras 3 cameras-at  $26 1 -1 camera-out  ahead 4 ways-out  ambient
     0 $148 obstacle-on-tri? if  om1f-15-flag1 fact!  else  om1f-15-flag1 fact-off  then
     sniffed  hewie-about
     got-cathedral-secrets fact? 0=  fiona 9 50 faces-area? and if  ['] on-the-table calm-only offer  then
     got-occult-philosophy fact? 0=  fiona $B in-area? and  om1f-15-flag1 fact? and if  ['] under-the-stand calm-only offer  then
-    got-wisemans-crafts fact? 0=  $A 180 facing? and if  ['] on-a-shelf calm-only offer  then
-    books-placed fact? 0=  $D -90 facing? and if  0 ['] lectern-0 lectern-offer  then
-    lectern-1-book-1 fact? 0=  $11 90 facing? and if  1 ['] lectern-1 lectern-offer  then
-    lectern-2-book-2 fact? 0=  $14 180 facing? and if  2 ['] lectern-2 lectern-offer  then
+    got-wisemans-crafts fact? 0=  $A 180 50 fiona-faces? and if  ['] on-a-shelf calm-only offer  then
+    books-placed fact? 0=  $D -90 50 fiona-faces? and if  0 ['] lectern-0 lectern-offer  then
+    lectern-1-book-1 fact? 0=  $11 90 50 fiona-faces? and if  1 ['] lectern-1 lectern-offer  then
+    lectern-2-book-2 fact? 0=  $14 180 50 fiona-faces? and if  2 ['] lectern-2 lectern-offer  then
     shelves-by-author
-    8 44 facing?  fiona $23 50 faces-area? or if  ['] save-clock calm-hewie-up offer  then
-    om1f-15-refined-antimony fact? 0=  fiona 36.86e 50e -27.91e 5e 5e touches? and if  ['] take-antimony calm-only offer  then
-    om1f-15-antimony-tube-found fact?  om1f-15-antimony-tube fact? 0= and  fiona 39.16e 0e -38.76e 5e 5e touches? and if
+    8 44 50 fiona-faces?  fiona $23 50 faces-area? or if  ['] save-clock calm-hewie-up offer  then
+    om1f-15-refined-antimony fact? 0=  fiona 36.86e 51e -27.91e 5e 5e touches? and if  ['] take-antimony calm-only offer  then
+    om1f-15-antimony-tube-found fact?  om1f-15-antimony-tube fact? 0= and  fiona 39.16e 1e -38.76e 5e 5e touches? and if
         ['] take-tube calm-only offer
     then
-    om1f-15-rubrum-medallion-found fact?  om1f-15-rubrum-medallion fact? 0= and  fiona -23.61e 50e -61.37e 5e 5e touches? and if
+    om1f-15-rubrum-medallion-found fact?  om1f-15-rubrum-medallion fact? 0= and  fiona -23.61e 51e -61.37e 5e 5e touches? and if
         ['] take-medallion calm-only offer
     then ;
 : person-in ( i -- )
@@ -257,3 +255,4 @@ create ahead  4 , 1 ,   5 , 0 ,   6 , 2 ,   7 , 3 ,   \ (area, exit loaded ahead
 
 ' came-in ' person-in ' each-frame ' went old-mansion-1f-15 place!
 ' items-used old-mansion-1f-15 items-here
+here  refined-antimony , ' take-antimony , antimony-fx ,  antimony-tube , ' take-tube , tube-fx ,  rubrum-medallion , ' take-medallion , medallion-fx ,  -1 ,  old-mansion-1f-15 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

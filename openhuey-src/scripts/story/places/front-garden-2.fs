@@ -122,8 +122,9 @@ $3C constant bedroom-door
     events-held state? if  window-light exit  then
     bedroom-open  ways  grate-near  toward-the-cage  spots  window-light ;
 : person-in ( i -- )
-    fiona-p = if  events-held state? if  hewie send part-from-fiona  ['] replay-grate start drop exit  then
+    fiona-p = if  events-held state? if  hewie send part-from-fiona  ['] replay-grate fiona start-holding drop exit  then
         entries 3 ways-in  then ;
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went front-garden-2 place!
+here  medallion , ' pick-medallion , medallion-fx ,  -1 ,  front-garden-2 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

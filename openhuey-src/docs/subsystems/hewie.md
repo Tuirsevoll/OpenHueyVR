@@ -113,8 +113,29 @@ behaviours, `Hewie_WhatNext` / `WhenIdle` (the weighted lists, from the executab
   tried again until he follows her afresh) and starts from the half of his room he is on,
   `his-way` (the original's +0xF3668: set by the exit he comes through or arrives by, 2 -
   either - when he comes into the game; -1 looks it up from the exit he came in by, and then
-  the doors' one-way flags count for his kind, `hewie-kind`). Not modelled: Progress_DoorPassable's side (the planner treats doors as
-  passable from any side) and Progress_CurRoomFlag (waiting at a door the story holds).
+  the doors' one-way flags count for his kind, `hewie-kind`). The planner still treats doors as
+  passable from any side (its `kind` is the one-way flag's, not the walker's slot), but at the
+  door itself (Hewie_StateToDoor) one locked against him is no way, and one someone holds he waits
+  at, trying again each frame (Progress_CurRoomFlag) - since 0.2.42; before, a held door let him
+  down and he went another way or none. His way to the first door planned as she left (+0xF3590)
+  he walks off screen too, point to point as planned (Character_FollowWaypoints; `walk-off`), and
+  coming back she finds him along it (since 0.2.45). Hewie_Arrive's fallbacks since 0.2.45: his place off his
+  triangle - its middle (Hewie_PlaceAt with no point); no door spot - anywhere on his half
+  (Actor_TeleportRandom), not her place. His door is in
+  the save since 0.2.45 (Hewie_SaveState's +0x838: the exit he came in by - `hewie-cond`), with his
+  condition (+0xC4; ours follows his health each frame, so a hurt one comes back hurt either way).
+- Fixed in 0.2.42 against the original: "go there" measured from where she stood (Actor_FreeDistance
+  from her start, by his floor - it was from him, so the spot often fell at her feet); "come back"
+  while the story hides him picks anew (+0xF3559); placed by the story in another room he takes his
+  default (Hewie_PlaceInRoom); she leaving while a script has him lets the script go first
+  (Hewie_Vt34: Hewie_FullStop) - he no longer stays behind; "come back" with the stalker about puts
+  him 15 from her toward the stalker (hurrying) or away (sulking), turned 15 degrees if blocked, and
+  in a divided room at the nearest door point on his half (Hewie_CommandPlace); "go for it" rushes a
+  creature (slots 7..9, 0x6D) instead of harrying it (go_for); across a room out of sight 1.6 a frame,
+  0.38 hurt (Hewie_State1920 - her cry's 10 was used there too); exits on his half only
+  (exit_reachable); a fetch next isn't cut short by the ball's sight; down where he may not lie by
+  Actor_TriFreeFor (floor, doors, ladders); the pad's gestures reset those after the one that fires
+  and R3 needs the stick centred, the keyboard's L is one praise a press (Gesture_Update).
 - The original's relations table (slot commands, request blocks 12 / 13, "hold" 7) is replaced
   by the meeting messages and `command`: what Hewie_JointAction checked each frame he checks
   when asked. A refusal answers at once (where the original cancelled and held her the next
@@ -144,7 +165,7 @@ overlays, neck, feet, sounds, the frame). Checked by `tests/hewie/test_hewie.fs`
 - parted, gone.
 
 Actions of the later phases fall back to the default (or to sniffing about). His steps in water ripple and
-splash (`wet-feet`, `hewie/fight.fs`). Left for H1: the story's use of `his-near` / `his-sub`.
+splash (`wet-feet`, `hewie/fight.fs`). The story reads `his-near` / `his-sub` through his report (`story/kit.fs` hewie-near-now / hewie-act-now).
 
 **H2 built** (`scripts/hewie/commands.fs`; Fiona's side `scripts/fiona/commands.fs`): her
 commands taken (Hewie_FionaCommand / CommandAction / ActOnCommand: stay, come, come back, go
@@ -305,7 +326,7 @@ stands on his side ($65, Hewie_StateSqueeze: 90 frames at most, done once off th
 from the door). `tests/hewie/test_exits.fs` (9).
 
 **H4: Hewie played** (`scripts/hewie/steered.fs`; `tests/hewie/test_played.fs` (9),
-`test_run.fs` (8)). The mini-game's run - the extras room's door 0, or the title's MINI-GAME:
+`test_run.fs` (10)). The mini-game's run - the extras room's door 0, or the title's MINI-GAME:
 Hewie guiding Fiona through the rooms $D0..$E9 against the clock - is the one section where he is
 the one played (the original's progress +0x1FBEC1, `facts.fs` `hewie-played`: set by the run's
 clock as it starts - `story/clock.fs` `clock-start`, which restarts him: `hewie-restart` - and
@@ -346,3 +367,35 @@ over kind 3) - unless a scene has them or the story keeps the game from ending (
 then he is left at 1 health). Each time he is knocked down (Hewie_AfterYelp) it is counted for
 the dog's level at the end (`pr.hewie-downs`, progress +0xFBA, to 9999) - not in a hard game.
 Checked in `tests/hewie/test_fight.fs` (27).
+
+**Second sweep, 2026-11 (0.2.45).** His mood's behaviour (`mode-behaviour`, hewie/mind.fs) with a danger
+none of calm / followed / chased - before the first is told - dropped a cell of its caller's.
+
+**Forth sweep, 2026-11 (0.2.50).** Read against the original:
+- **His dodge** (Hewie_CanInteract, at the top of `take-blow`): a light or hard blow from someone
+  who has a body, him free, not down, not dodging already and not marked "no dodge", and the
+  striker not on his right between 3π/8 and π (`Angle_Wrap(heading - yaw) < 3π/8`, signed):
+  if he dares (`dares-of?`, Hewie_Dares by the striker's kind), he dodges ($79, `dodge-act`,
+  animation $1301) and the blow misses. A yelp playing, or a squeeze out by a door when the blow
+  isn't the door's, also takes no blow.
+- **His point of interest** (Hewie_PointOfInterest, `tell-point` first in his frame): while
+  harrying (`close-on-act`) with his pounce ($1E01) playing, his head (bone $1F) is the point the
+  rooms' char-in-zone reads; else none.
+- **The meeting's link** (`his-meet`, Progress_IsLinked) is cleared when the meeting's second
+  part is called (`meet-second?`), when he goes back to his default and when he joins. Before,
+  it stayed set after any meeting, and her commands were refused from then on.
+- **Interrupted** (the story's `scripted` on, Character_Interrupt): while fighting he lets the
+  stalker go (`shaken-off`), stops his way and chooses again. Fiona, held or in the middle of
+  rousing, patting, tending or scolding him close, tells him `partner-interrupted`, and he goes
+  back to his default when he is with her and not scripted.
+- **The bait's gate** (Hewie_CanTakeCommand, ItemClass6B00_PartnerCheck, the items' `dog-ready`
+  from `hewie-doing`): with her, free, not running away, not angry, and either free for a command
+  or down. She must also be within 20 of him and he must be able to reach her.
+- **His coat** (Hewie_LoadFiles): the set by the story's $B7 (O_HEW / O_HEG / O_HED), its n-th
+  by the latest of the story's flags $41 / $82 / $94 / $95. A loaded game dresses him from
+  O_HEW again (`game-loaded`). Checked by `tests/hewie/test_coat.fs` (5).
+- **The run's buttons** (Progress_CommandButtons, while he is free for a command and the buttons
+  aren't locked): R1 a dodge ($79), circle readying ($7A), L1 lying flat ($84), square his "go"
+  (after coming out). Checked in `test_run.fs`.
+- **The leap's rise** (`scripted.fs`): scaled only when the motion's event bit 2 asks for it.
+- **The pounce's bite** (`st-leap-bite`): from his mouth's place forward, as the original.

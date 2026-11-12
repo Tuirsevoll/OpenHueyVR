@@ -27,12 +27,11 @@ create holes  $9D , $8D , $2B , $90 , $8A , $C3 , $87 , $7C , $BA , $9E , $8F , 
 
 \ ---- the hiding place (the kit's); the stalker's search ----
 : hides ( -- )  shriek-sound hide-shriek !  her-motions $20 -90 3 105.64e -103.65e hides-in ;
-: her-looker? ( -- flag )  st-kind-now @ dup daniella-kind = swap kind34-kind = or ;
 : looks-in ( -- )
     stalker hold  stalker wait-move  0 door-for-him
-    her-looker? if  stalker daniella-motions motions-for  then
+    daniella-here? if  stalker daniella-motions motions-for  then
     stalker $20 -90 113e -103.65e walk-to
-    her-looker? if  stalker use-motions  1 her-back  stalker room-motion play  0 her-back
+    daniella-here? if  stalker use-motions  1 her-back  stalker room-motion play  0 her-back
     else  stalker stalker.anims:there-anim play  then
     -1 found-her !  stalker 10 idle  begin  fiona held? while  yield  repeat  0 stalker-order ;
 : stalker-came ( -- )
@@ -61,13 +60,13 @@ create ahead  3 , 0 ,   5 , 0 ,   4 , 1 ,   6 , 2 ,   \ (area, exit loaded ahead
     room-sounds-in? if  first-ambient 79.45e 0e -93.49e ambient-sounds  then
     fiona $B in-area?  fiona 0 50 heading? and if  ['] save-clock calm-hewie-up offer  then
     fiona hide-area in-area?  fiona -90 60 heading? and if
-        stalker-in? if  no-time-message offer-remark-now  else  ['] hides calm-only offer  then
+        stalker-in? if  no-time-message offer-remark-now  else  ['] hides hiding-spot offer  then
     then
     got-mansion-sketch fact? 0=  fiona $D in-area? and  fiona 90 50 heading? and if  ['] take-sketch calm-only offer  then
-    om1f-23-viride-medallion-found fact?  om1f-23-viride-medallion fact? 0= and  fiona 0.03e 0e -85.54e 5e 5e touches? and if
+    om1f-23-viride-medallion-found fact?  om1f-23-viride-medallion fact? 0= and  fiona 0.03e 1e -85.54e 5e 5e touches? and if
         ['] take-viride calm-only offer
     then
-    om1f-23-medallion-found fact?  om1f-23-medallion fact? 0= and  fiona 109.8e -10e -94.58e 5e 5e touches? and if
+    om1f-23-medallion-found fact?  om1f-23-medallion fact? 0= and  fiona 109.8e -9e -94.58e 5e 5e touches? and if
         ['] take-medallion calm-only offer
     then ;
 : person-in ( i -- )
@@ -78,3 +77,4 @@ create ahead  3 , 0 ,   5 , 0 ,   4 , 1 ,   6 , 2 ,   \ (area, exit loaded ahead
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went old-mansion-1f-23 place!
+here  viride-medallion , ' take-viride , viride-fx ,  medallion , ' take-medallion , medallion-fx ,  -1 ,  old-mansion-1f-23 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

@@ -179,7 +179,7 @@ create looks
 : pick-ball ( -- )  ball got-ball ball-fx -180e 176e picks-up ;
 : spots ( -- )
     found-file-202 fact?  fiona hiding-area in-area? and if
-        stalker-in? if  no-time-message offer-remark-now  else  ['] hides calm-only offer  then
+        stalker-in? if  no-time-message offer-remark-now  else  ['] hides hiding-spot offer  then
     then
     fg-5-flag1 fact?  fg-5-viola-medallion fact? 0= and  fiona -265e -9e 160e 5e 5e touches? and if  ['] pick-viola calm-only offer  then
     fg-5-medallion-found fact?  fg-5-medallion fact? 0= and  fiona -228.4e -9e 103.2e 5e 5e touches? and if  ['] pick-medallion calm-only offer  then
@@ -201,3 +201,4 @@ create cameras  1 , 0 , 0 ,   2 , 1 , 1 ,   $A , 0 , 0 ,   $B , 0 , 0 ,   $C , 1
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went front-garden-5 place!
+here  viola-medallion , ' pick-viola , viola-fx ,  medallion , ' pick-medallion , medallion-fx ,  beef-jerky , ' pick-jerky , jerky-fx ,  ball , ' pick-ball , ball-fx ,  -1 ,  front-garden-5 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

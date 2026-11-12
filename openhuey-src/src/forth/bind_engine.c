@@ -18,6 +18,7 @@
 #include "../game/swimpath.h"
 #include "../game/obstacles.h"
 #include "../game/things.h"
+#include "../game/props.h"
 #include "../render/post.h"
 #include "../platform/snddrv.h"
 #include "../platform/sound.h"
@@ -58,7 +59,10 @@ static void dofield(Forth *f, Word *w) {
 }
 
 static void field(Forth *f, const char *name, size_t offset) {
-    forth_constant(f, name, (Cell)offset)->code = dofield;
+    Word *w = forth_constant(f, name, (Cell)offset);
+
+    w->code = dofield;
+    forth_set_effect(f, w, "( addr -- addr' )");   /* (its callers' code checked through it) */
 }
 
 /* ---- rooms ---- */
@@ -66,6 +70,7 @@ static void field(Forth *f, const char *name, size_t offset) {
 PRIM(p_room) {   /* ( id -- ) load a room */
     Cell id = POP();
 
+    camdir_room_gone(&gCamDir);   /* (its sets and paths lie in the room's data) */
     if (!room_load(&gEngine.room, (int)id)) {
         forth_error(f, "room: no room %lX", (long)id);
     }
@@ -208,7 +213,7 @@ PRIM(p_sprites_uv) {   /* ( b -- ) ( F: u0 v0 u1 v1 -- ) its cell in texture coo
 
     sprites_uv((int)POP(), u0, v0, u1, v1);
 }
-PRIM(p_sprite_quad) {   /* ( b i rgba -- ) ( F: x0 y0 z0 .. x3 y3 z3 -- ) record i: a quad with its own corners
+PRIM(p_sprite_quad) {   /* ( b i rgba -- ) ( F: x0 y0 z0 x1 y1 z1 x2 y2 z2 x3 y3 z3 -- ) record i: a quad with its own corners
                          * (0 1 2 3: two triangles 0 1 2 and 2 1 3; the cell's corners in that order) */
     float c[4][3];
     int k;
@@ -327,7 +332,7 @@ PRIM(p_vec_ahead) {   /* ( dst src -- ) ( F: yaw d -- ) dst = src moved d along 
     dst[2] = src[2] + cosf(yaw) * d;
 }
 PRIM(p_angle_wrap) {   /* ( F: a -- a' ) into -pi .. pi (Angle_Wrap) */
-    float a = (float)FPOP();
+    float a = angle_near((float)FPOP());
 
     while (a > 3.14159265f) {
         a -= 6.28318531f;
@@ -897,6 +902,17 @@ PRIM(p_tri_center) {   /* ( tri -- ) ( F: -- x y z ) */
     c = navmesh_center(&gEngine.room.nav, (int)i);
     FPUSH(c.x); FPUSH(c.y); FPUSH(c.z);
 }
+PRIM(p_tri_floor) {   /* ( tri -- ) ( F: x z -- y ) (x, z)'s height on its plane (NavMesh_OntoPlane) */
+    float z = (float)FPOP(), x = (float)FPOP();
+    Cell i = POP();
+
+    if (i < 0 || i >= gEngine.room.nav.ntris) {
+        forth_error(f, "tri-floor: no nav triangle %ld", (long)i);
+        FPUSH(0.0f);
+        return;
+    }
+    FPUSH(navmesh_height_on(&gEngine.room.nav, (int)i, x, z));
+}
 
 /* ---- the house: exits and where they lead ---- */
 
@@ -1039,9 +1055,11 @@ PRIM(p_cam_char_setup) {   /* ( who set path -- ) a character's camera setup */
 }
 PRIM(p_cam_setup_of) {   /* ( who -- set path ) a character's camera setup (-1 -1: none) */
     Cell who = POP();
+    int set, path;
 
-    PUSH(who >= 0 && who < HACTOR_MAX ? gCamDir.setups[who][0] : -1);
-    PUSH(who >= 0 && who < HACTOR_MAX ? gCamDir.setups[who][1] : -1);
+    camdir_setup_of(&gCamDir, (int)who, &set, &path);
+    PUSH(set);
+    PUSH(path);
 }
 PRIM(p_cam_forget_setups) { camdir_forget_setups(&gCamDir); }   /* ( -- ) every character's setup gone */
 PRIM(p_cam_take_followed) { camdir_take_followed(&gCamDir); }   /* ( -- ) whom it follows checked, their setup taken */
@@ -1205,13 +1223,33 @@ PRIM(p_debris_cloud) {   /* ( r g b F: x y z -- ) droplets flung where a shot st
 
     particles_drop_flash(at, (int)r, (int)g, (int)b);
 }
-PRIM(p_gun_smoke) {   /* ( F: x y z -- ) smoke rising from a gun as it fires (BoneSmoke; the engine's) */
-    particles_bone_smoke(fpop3(f));
-}
-PRIM(p_strike_mark) {   /* ( F: x y z bx by bz -- ) a shot's flash from (bx by bz) out to (x y z), then smoke (StrikeMark; the engine's) */
-    Vec3 back = fpop3(f), at = fpop3(f);
+PRIM(p_drop_splash) {   /* ( r g b F: x y z size -- ) a powder's burst of droplets (StrandSplash, DropSplash:
+                         * colour 0..127; the engine's: it goes by itself) */
+    float size = (float)FPOP();
+    Cell b = POP(), g = POP(), r = POP();
+    Vec3 at = fpop3(f);
 
-    particles_strike_mark(at, back);
+    particles_drop_splash(at, (int)r, (int)g, (int)b, size);
+}
+PRIM(p_strand_new) {   /* ( model kind strand -- ) a strand of powder dripping from a stalker's bones
+                        * (Effect726E0; kind his +0x153C, strand 0 purple 1 orange 2 white; the engine's) */
+    Cell strand = POP(), kind = POP(), model = POP();
+
+    particles_strand((int)model, (int)kind, (int)strand);
+}
+PRIM(p_gun_smoke) {   /* ( F: x y z -- ) smoke rising from a gun as it fires (BoneSmoke; the engine's) */
+    particles_bone_smoke(fpop3(f), -1, 0, vec3(0, 0, 0));
+}
+PRIM(p_strike_mark) {   /* ( model bone F: ox oy oz bx by bz -- ) a shot's flash from (bx by bz) out to the bone's point
+                         * (ox oy oz), then smoke from it as it moves (StrikeMark; the engine's) */
+    Vec3 back = fpop3(f), off = fpop3(f);
+    Cell bone = POP(), model = POP();
+
+    if (model < 0 || model >= MAX_ACTORS || !gEngine.actors[model].used) {
+        forth_error(f, "strike-mark: no actor %ld", (long)model);
+        return;
+    }
+    particles_strike_mark((int)model, (int)bone, off, back);
 }
 PRIM(p_spark) {   /* ( life F: x y z rise size growth -- ) a spark that grows and fades (LorenzoSpark; the engine's) */
     float growth = (float)FPOP(), size = (float)FPOP(), rise = (float)FPOP();
@@ -1263,7 +1301,7 @@ PRIM(p_stones_new) {   /* ( gs tex F: height u v du dv -- p ) falling stones (Ef
     PUSH(particles_stones(height, (uint32_t)gs, (int)tex, u, v, du, dv));
 }
 PRIM(p_debris_new) { PUSH(particles_debris((int)POP())); }   /* ( kind -- p ) debris falling down the water tower */
-PRIM(p_reflect_set) {   /* ( slot screen strength F: x0 y0 z0 .. x3 y3 z3 -- ) a reflecting quad (Reflection);
+PRIM(p_reflect_set) {   /* ( slot screen strength F: x0 y0 z0 x1 y1 z1 x2 y2 z2 x3 y3 z3 -- ) a reflecting quad (Reflection);
                          * the strength's top bits its side panels ($10000000 a window's, $20000000 a door's) */
     Vec3 q[4];
     Cell strength = POP(), screen = POP(), slot = POP();
@@ -1300,6 +1338,7 @@ PRIM(p_dust_shaft_new) { PUSH(particles_dust_shaft()); }   /* ( -- p ) dust down
 PRIM(p_spiral_smoke_new) { PUSH(particles_spiral_smoke()); }   /* ( -- p ) smoke spiralling up the old mansion's fire */
 PRIM(p_drips_new) { PUSH(particles_drips()); }   /* ( -- p ) water dripping in the old mansion's flooded room */
 PRIM(p_one_drip_new) { PUSH(particles_one_drip()); }   /* ( -- p ) a drop now and then in the Chaos Forest */
+PRIM(p_ceiling_drips_new) { PUSH(particles_ceiling_drips()); }   /* ( -- p ) the Water Tower B1's ceiling dripping */
 PRIM(p_rising_motes_new) { PUSH(particles_rising_motes()); }   /* ( -- p ) motes rising in castle 1F's hall */
 PRIM(p_embers_new) { PUSH(particles_embers((int)POP())); }   /* ( ending -- p ) embers up castle 1F's fireplace (-1 just lit) */
 PRIM(p_flecks_new) {   /* ( F: x y z half-w depth tx ty tz -- ) ( -- p ) flecks drifting across an area */
@@ -1320,7 +1359,7 @@ PRIM(p_particles_rest) { Cell n = POP(); particles_rest((int)POP(), (int)n); }  
 PRIM(p_big_fire_new) { PUSH(particles_big_fire()); }   /* ( -- p ) the old mansion 1F's fire */
 PRIM(p_light_shaft_new) { PUSH(particles_light_shaft()); }   /* ( -- p ) the old mansion B1's beam of light */
 PRIM(p_glint_new) { PUSH(particles_glint((int)POP())); }   /* ( model -- p ) a glint on its bone 6 */
-/* ( F: nx ny nz tx ty tz x y z -- x0 y0 z0 .. x3 y3 z3 ) a mirror fragment's reflecting square
+/* ( F: nx ny nz tx ty tz x y z -- x0 y0 z0 x1 y1 z1 x2 y2 z2 x3 y3 z3 ) a mirror fragment's reflecting square
  * (MirrorFragment_Draw's mask): 8 across in the plane of normal n - turned as its object is (x,
  * then y, then z) - through the object's place (x y z) */
 static Vec3 turned_xyz(Vec3 p, Vec3 t) {   /* (turned about x, then y, then z) */
@@ -1454,7 +1493,20 @@ PRIM(p_particles_info) {   /* ( p -- kind frame rest ) (tests) its kind, its fra
     PUSH(frame);
     PUSH(rest);
 }
+PRIM(p_particles_last) { PUSH(particles_last()); }   /* ( -- p ) (tests) the system made last */
+PRIM(p_particles_strands) { PUSH(particles_strands()); }   /* ( -- n ) (tests) the powder strands there are */
+PRIM(p_particles_part) {   /* ( p i -- r g b a ) ( F: -- x y z ) (tests) part i: its colour and place (none: zeros) */
+    Cell i = POP(), p = POP();
+    Vec3 at = vec3(0, 0, 0);
+    int c[4] = {0, 0, 0, 0};
+
+    particles_part((int)p, (int)i, &at, c);
+    PUSH(c[0]); PUSH(c[1]); PUSH(c[2]); PUSH(c[3]);
+    FPUSH(at.x); FPUSH(at.y); FPUSH(at.z);
+}
 PRIM(p_particles_free) { particles_free((int)POP()); }                              /* ( p -- ) */
+PRIM(p_room_effect0) { particles_room_effect0(POP() != 0); }   /* ( flag -- ) the room's effect slot 0 holds one */
+PRIM(p_pursuer_kind) { particles_pursuer_kind((int)POP()); }   /* ( kind -- ) the stalker in the game's kind (-1 none) */
 PRIM(p_frame_blend) { post_trail((float)POP() / 128.0f); }   /* ( a -- ) each frame over the last at a / 128 from now on (0x80 all of it; 0 the last held) */
 PRIM(p_frame_blend_off) { post_trail_off(); }   /* ( -- ) no more */
 PRIM(p_panic_negative) { post_negative(); }      /* ( -- ) this frame the screen's negative (post.h) */
@@ -1878,7 +1930,7 @@ PRIM(p_game_tick) {   /* ( -- ) one whole frame of the game (tests: the actors, 
 
     engine_tick(&gEngine);
     for (i = 0; i < MAX_ACTORS; i++) {
-        if (gEngine.actors[i].used && gEngine.actors[i].visible) {
+        if (actor_shown(&gEngine.actors[i])) {
             actor_prepare(&gEngine.actors[i]);
         }
     }
@@ -1912,6 +1964,11 @@ PRIM(p_door_events) {   /* ( exit -- sound how settled ) what its swing did this
     PUSH(d->sound);
     PUSH(d->sound_how);
     PUSH(d->settled);
+}
+PRIM(p_door_closing) {   /* ( exit -- flag ) the played room's door is being shut, or was last (door +0x78) */
+    Cell e = POP();
+
+    PUSH(e >= 0 && e < ROOM_DOORS && gEngine.room.doors[e].present && gEngine.room.doors[e].closing ? -1 : 0);
 }
 PRIM(p_door_turn) {   /* ( exit -- ) ( F: -- a ) the played room's door's turn at rest (Doors_GetRestTurn;
                       * 0 no door) */
@@ -2242,7 +2299,13 @@ static void sound_ready(void) {   /* the executable's tables, once */
     l = exetable("sound-pan-left", NULL);
     pos = exetable("sound-positioned", NULL);
     if (c != NULL && r != NULL && l != NULL && pos != NULL) {
+        const uint8_t *sl = exetable("sound-surround-left", NULL), *sr = exetable("sound-surround-right", NULL),
+                      *si = exetable("sound-surround-index", NULL);
+
         snddrv_tables(c, r, l, pos);
+        if (sl != NULL && sr != NULL && si != NULL) {
+            snddrv_surround(sl, sr, si);
+        }
         done = 1;
     }
 }
@@ -2278,7 +2341,10 @@ static void bank_want(int bank) {
         snddrv_bank(5, "C_0000");
         bank_named(5, "C_0000");
         break;
-    case 6:
+    case 6:   /* (under state flag $27 the room before's kept: SceneGame_EnterRoom loads none) */
+        if ((gProgress.state[0x27 >> 5] & (1u << (0x27 & 31))) && snddrv_bank_loaded(6)) {
+            break;
+        }
         if (gEngine.room.id >= 0) {
             snprintf(name, sizeof(name), "ST_%03X/ST1_%03X", gEngine.room.id & ~7, gEngine.room.id);
             snddrv_bank(6, name);
@@ -2429,7 +2495,7 @@ PRIM(p_stage_ambient) {   /* ( F: r g b -- ) */
 
     gEngine.stage_ambient = vec3(r, g, b);
 }
-PRIM(p_room_clear) { room_free(&gEngine.room); }   /* ( -- ) no room: nothing drawn round the actors */
+PRIM(p_room_clear) { camdir_room_gone(&gCamDir); room_free(&gEngine.room); }   /* ( -- ) no room: nothing drawn round the actors */
 
 /* ---- movies (platform/movie.c) ---- */
 
@@ -2545,6 +2611,15 @@ PRIM(p_seq_midi) {   /* ( k status d1 d2 -- ) */
 }
 PRIM(p_seq_reset) { seq_reset(); }
 PRIM(p_pause) { gEngine.paused = POP() != 0; }   /* ( flag -- ) actors and the room stand still */
+PRIM(p_voice_lr) {   /* ( v -- l r on? ) an effects voice's volumes (24..47), and whether it sounds */
+    Cell v = POP();
+    int bank, entry, pri, l = 0, r = 0, on = snddrv_voice((int)v, &bank, &entry, &pri, &l, &r);
+
+    PUSH(on ? l : 0);
+    PUSH(on ? r : 0);
+    PUSH(on ? -1 : 0);
+}
+PRIM(p_sound_out) { snddrv_output((int)POP()); }   /* ( mode -- ) the options' sound out: 0 mono, 1 stereo, 2 Pro Logic II */
 PRIM(p_still) { gEngine.still = POP() != 0; }    /* ( flag -- ) the models and the room stand still (the actors run) */
 PRIM(p_cs_active) { PUSH(cutscene_active() ? -1 : 0); }
 PRIM(p_cs_total) { PUSH(cutscene_signal_total((int)POP())); }   /* ( bit -- n ) its count so far less one */
@@ -2748,6 +2823,64 @@ PRIM(p_root_delta) {   /* ( id -- ) ( F: -- turn dx dy dz ) its motion's root mo
     FPUSH(step.y * a->scale);
     FPUSH(step.z * a->scale);
 }
+/* ---- props (mod API 1.5, game/props.h): a mod's own glTF models ---- */
+static Prop *prop_arg(Forth *f, Cell i) {
+    Prop *p = props_get((int)i);
+
+    if (p == NULL) {
+        forth_error(f, "not a prop: %ld", (long)i);
+    }
+    return p;
+}
+PRIM(p_prop_load) {   /* ( addr len -- id | -1 ) the glTF / .glb at that path (a mod's library/data/...) */
+    Cell n = POP(), a = POP();
+    char path[128];
+
+    snprintf(path, sizeof(path), "%.*s", (int)n, (const char *)a);
+    PUSH(props_load(path));
+}
+PRIM(p_data_file) {   /* ( addr len -- flag ) a file of the game's data as the files layer has it (a mod's over the library) */
+    Cell n = POP(), a = POP();
+    char path[256];
+
+    snprintf(path, sizeof(path), "%.*s", (int)n, (const char *)a);
+    PUSH(files_exist(path) ? -1 : 0);
+}
+PRIM(p_prop_free) { props_free((int)POP()); }   /* ( id -- ) */
+PRIM(p_prop_place) {   /* ( id room -- ) ( F: x y z -- ) there, in that room (-1: any played), shown */
+    Vec3 at = fpop3(f);
+    Cell room = POP();
+    Prop *p = prop_arg(f, POP());
+
+    p->room = (int)room;
+    p->pos = at;
+    p->shown = 1;
+}
+PRIM(p_prop_turn) {   /* ( id -- ) ( F: rx ry rz -- ) turned about X, then Y, then Z (radians: as the room's objects) */
+    Vec3 r = fpop3(f);
+
+    prop_arg(f, POP())->rot = r;
+}
+PRIM(p_prop_scale) {   /* ( id -- ) ( F: s -- ) */
+    float s = (float)FPOP();
+
+    prop_arg(f, POP())->scale = s;
+}
+PRIM(p_prop_show) {   /* ( id on -- ) */
+    Cell on = POP();
+
+    prop_arg(f, POP())->shown = on != 0;
+}
+PRIM(p_prop_at) {   /* ( id -- ) ( F: -- x y z ) where it is placed */
+    Prop *p = prop_arg(f, POP());
+
+    FPUSH(p->pos.x); FPUSH(p->pos.y); FPUSH(p->pos.z);
+}
+PRIM(p_prop_bounds) {   /* ( id -- ) ( F: -- x0 y0 z0 x1 y1 z1 ) its bounds as authored (not turned or scaled) */
+    Prop *p = prop_arg(f, POP());
+
+    FPUSH(p->lo.x); FPUSH(p->lo.y); FPUSH(p->lo.z); FPUSH(p->hi.x); FPUSH(p->hi.y); FPUSH(p->hi.z);
+}
 PRIM(p_bone_pos) {   /* ( id bone -- ) ( F: -- x y z ) where the bone is in the room (as last drawn) */
     Cell b = POP();
     Vec3 p = actor_bone(actor_arg(f, POP()), (int)b);
@@ -2783,6 +2916,66 @@ PRIM(p_turn_add) {   /* ( id bone -- ) ( F: pitch yaw -- ) a bone turned as it i
         a->nturns++;
     }
 }
+/* a mod's hold on bones (docs/modding.md "A model's bones"): their own turns set over the
+ * motions' (ModelSet), the bones found by name - the game's "bone <i>", or ones its model added */
+PRIM(p_bone_count) {   /* ( id -- n ) its model's bones (the game's and any its model added) */
+    PUSH(actor_arg(f, POP())->model.nbones);
+}
+PRIM(p_bone_named) {   /* ( id addr len -- bone | -1 ) the bone of that name ("bone 12", or a mod's own) */
+    Cell n = POP(), a = POP();
+    Actor *ac = actor_arg(f, POP());
+    char name[sizeof(((ModelBone *)0)->name)];
+
+    snprintf(name, sizeof(name), "%.*s", (int)n, (const char *)a);
+    PUSH(model_bone_named(&ac->model, name));
+}
+PRIM(p_bone_parent) {   /* ( id bone -- parent | -1 ) the bone it hangs from (-1: a root, or no such bone) */
+    Cell b = POP();
+    Actor *a = actor_arg(f, POP());
+
+    PUSH(b >= 0 && b < a->model.nbones ? a->model.bones[b].parent : -1);
+}
+PRIM(p_bone_rest) {   /* ( id bone -- ) ( F: -- rx ry rz ) its own turn at rest (radians: about x, y, z
+                       * in turn, as the motions turn it; 0 0 0 no such bone) */
+    Cell b = POP();
+    Actor *a = actor_arg(f, POP());
+    const float *r = b >= 0 && b < a->model.nbones ? a->model.bones[b].rest_rot : NULL;
+
+    FPUSH(r != NULL ? r[0] : 0.0f); FPUSH(r != NULL ? r[1] : 0.0f); FPUSH(r != NULL ? r[2] : 0.0f);
+}
+PRIM(p_bone_set) {   /* ( id bone -- ) ( F: rx ry rz -- ) its own turn from now on, in place of the motions'
+                      * (as bone-rest's; its children with it) - till bone-free; up to 64 bones */
+    float rz = (float)FPOP(), ry = (float)FPOP(), rx = (float)FPOP();
+    Cell b = POP();
+    Actor *a = actor_arg(f, POP());
+    int k;
+
+    if (b < 0 || b >= a->model.nbones) {
+        return;
+    }
+    for (k = 0; k < a->nsets && a->sets[k].bone != (int)b; k++) {
+    }
+    if (k == MODEL_MAX_SETS) {
+        return;
+    }
+    a->sets[k] = (ModelSet){(int)b, {rx, ry, rz}};
+    if (k == a->nsets) {
+        a->nsets++;
+    }
+}
+PRIM(p_bone_free) {   /* ( id bone -- ) back to the motions' turn */
+    Cell b = POP();
+    Actor *a = actor_arg(f, POP());
+    int k;
+
+    for (k = 0; k < a->nsets; k++) {
+        if (a->sets[k].bone == (int)b) {
+            a->sets[k] = a->sets[--a->nsets];
+            return;
+        }
+    }
+}
+PRIM(p_bones_free) { actor_arg(f, POP())->nsets = 0; }   /* ( id -- ) every bone back to the motions' */
 PRIM(p_foot_down) {   /* ( id foot -- flag ) foot 0..3 (front right, front left, hind right, hind left)
                        * on the ground now (DogModel_FootDown: the contact tracks -5 / -6; while a
                        * motion fades in, down in both, or in the new one if only it says) */
@@ -2825,6 +3018,7 @@ static float frame_by(const Actor *a, int motion, float frame, float dt) {
     if (len <= 0) {
         return 0.0f;
     }
+    t = time_near(t, (float)len);
     while (t < 0.0f) {
         t += (float)len;
     }
@@ -3088,7 +3282,7 @@ PRIM(p_key_colon) {   /* key: name ( -- scancode ), immediate: `key: W`, `key: L
     if (k == SDL_SCANCODE_UNKNOWN) {
         forth_error(f, "key: no key called %s", name);
     }
-    if (f->compiling) {
+    if (forth_compiling(f)) {
         forth_compile_literal(f, k);
     } else {
         PUSH(k);
@@ -3296,8 +3490,7 @@ static void output_to(Forth *f, const char *mode, const char *what) {
     if (sOutFile == NULL) {
         forth_error(f, "%s: can't write %s", what, path);
     }
-    sSavedOut = f->out;
-    sSavedCtx = f->out_ctx;
+    forth_get_output(f, &sSavedOut, &sSavedCtx);
     forth_set_output(f, file_output, sOutFile);
 }
 PRIM(p_to_file) { output_to(f, "w", "to-file"); }   /* ( addr len -- ) what Forth prints goes into this file until end-file */
@@ -4275,6 +4468,7 @@ void bind_engine_reset(void) {
 }
 static int sResetWanted;
 PRIM(p_soft_reset) { sResetWanted = 1; }   /* ( -- ) a fresh game at this frame's end (the title) */
+PRIM(p_soft_reset_q) { PUSH(sResetWanted ? -1 : 0); }   /* ( -- flag ) one asked for, not yet made (the tests: their frames don't reach it) */
 int bind_engine_reset_wanted(void) {
     int r = sResetWanted;
 
@@ -4283,30 +4477,30 @@ int bind_engine_reset_wanted(void) {
 }
 
 void bind_engine(Forth *f) {
-    Vocab *saved = f->m.current, *engine = forth_vocab(f, "engine");
+    Vocab *saved = forth_current(f), *engine = forth_vocab(f, "engine");
     static const struct {
         const char *name;
         Code code;
         const char *effect;   /* its stack effect: the scripts' code is checked with it (NULL: none fixed) */
     } prims[] = {
         {"room", p_room, "( id -- )"}, {"route", p_route, "( from to kind max -- n )"}, {"route-avoiding", p_route_avoiding, "( from to kind max avoid -- n )"}, {"route-sides", p_route_sides, "( from from-way to want kind max avoid -- n )"}, {"exit-way", p_exit_way, "( room exit checked -- way )"}, {"route-door", p_route_door, "( i -- door )"}, {"door-open?", p_door_open, "( door -- flag )"}, {"world-exits-rebuild", p_exits_rebuild, "( -- )"}, {"door-exit-in", p_door_exit_in, "( door room -- exit | -1 )"}, {"door-leads", p_door_leads, "( door room -- room' | -1 )"}, {"exit-stand", p_exit_stand, "( exit -- flag ) ( F: -- F: x y z )"}, {"room-id", p_room_id, "( -- room )"}, {"room-exists?", p_room_exists, "( room -- flag )"},
-        {"room-bounds", p_room_bounds, "( F: -- lx ly lz hx hy hz )"}, {"room-cameras", p_room_cameras, "( -- n )"}, {"room-camera", p_room_camera, "( i -- ) ( F: -- F: ex ey ez fov-radians tx ty tz )"}, {"light-own", p_light_own, "( i -- )"}, {"light-scale", p_light_scale, "( i which -- ) ( F: k -- )"}, {"door-group?", p_door_group_q, "( exit group -- flag )"}, {"room-group?", p_room_group_q, "( group -- flag )"}, {"light@", p_light_fetch, "( i -- ) ( F: -- F: intensity shadow )"}, {"room-ambient", p_room_ambient, "( -- ) ( F: -- F: r g b )"}, {"lights-at", p_lights_at, "( -- l0 l1 l2 ) ( F: x y z -- )"}, {"look-on?", p_look_on, "( slot -- flag )"}, {"sprites", p_sprites_new, "( -- b )"}, {"sprites-free", p_sprites_free, "( b -- )"}, {"sprites-free-all", p_sprites_free_all, "( -- )"}, {"sprites-texture", p_sprites_texture, "( b group id palette -- )"}, {"sprites-cells", p_sprites_cells, "( b x y cw ch tw th frames -- )"}, {"sprites-flags", p_sprites_flags, "( b flags layer -- )"}, {"sprites-offset", p_sprites_offset, "( b -- ) ( F: cx cy -- )"}, {"sprites-corner", p_sprites_corner, "( b k -- ) ( F: x y z -- )"}, {"sprites-count", p_sprites_count, "( b n -- )"}, {"sprite!", p_sprite_store, "( b i rgba frame -- ) ( F: x y z w h rot -- )"}, {"sprites-uv", p_sprites_uv, "( b -- ) ( F: u0 v0 u1 v1 -- )"}, {"sprite-quad!", p_sprite_quad, "( b i rgba -- ) ( F: x0 y0 z0 .. x3 y3 z3 -- )"}, {"door-group!", p_door_group, "( group flag -- )"}, {"room-group!", p_room_group, "( group flag -- )"}, {"floor-below", p_floor_below, NULL},
-        {"nav-tris", p_nav_tris, "( -- n )"}, {"nav-tri", p_nav_tri, "( F: x y z -- ) ( -- tri | -1 )"}, {"tri-center", p_tri_center, "( tri -- ) ( F: -- F: x y z )"}, {"tri-normal", p_tri_normal, "( tri -- ) ( F: -- F: x y z )"},
+        {"room-bounds", p_room_bounds, "( F: -- lx ly lz hx hy hz )"}, {"room-cameras", p_room_cameras, "( -- n )"}, {"room-camera", p_room_camera, "( i -- ) ( F: -- F: ex ey ez fov-radians tx ty tz )"}, {"light-own", p_light_own, "( i -- )"}, {"light-scale", p_light_scale, "( i which -- ) ( F: k -- )"}, {"door-group?", p_door_group_q, "( exit group -- flag )"}, {"room-group?", p_room_group_q, "( group -- flag )"}, {"light@", p_light_fetch, "( i -- ) ( F: -- F: intensity shadow )"}, {"room-ambient", p_room_ambient, "( -- ) ( F: -- F: r g b )"}, {"lights-at", p_lights_at, "( -- l0 l1 l2 ) ( F: x y z -- )"}, {"look-on?", p_look_on, "( slot -- flag )"}, {"sprites", p_sprites_new, "( -- b )"}, {"sprites-free", p_sprites_free, "( b -- )"}, {"sprites-free-all", p_sprites_free_all, "( -- )"}, {"sprites-texture", p_sprites_texture, "( b group id palette -- )"}, {"sprites-cells", p_sprites_cells, "( b x y cw ch tw th frames -- )"}, {"sprites-flags", p_sprites_flags, "( b flags layer -- )"}, {"sprites-offset", p_sprites_offset, "( b -- ) ( F: cx cy -- )"}, {"sprites-corner", p_sprites_corner, "( b k -- ) ( F: x y z -- )"}, {"sprites-count", p_sprites_count, "( b n -- )"}, {"sprite!", p_sprite_store, "( b i rgba frame -- ) ( F: x y z w h rot -- )"}, {"sprites-uv", p_sprites_uv, "( b -- ) ( F: u0 v0 u1 v1 -- )"}, {"sprite-quad!", p_sprite_quad, "( b i rgba -- ) ( F: x0 y0 z0 x1 y1 z1 x2 y2 z2 x3 y3 z3 -- )"}, {"door-group!", p_door_group, "( group flag -- )"}, {"room-group!", p_room_group, "( group flag -- )"}, {"floor-below", p_floor_below, NULL},
+        {"nav-tris", p_nav_tris, "( -- n )"}, {"nav-tri", p_nav_tri, "( -- ) ( -- tri | -1 ) ( F: x y z -- )"}, {"tri-center", p_tri_center, "( tri -- ) ( F: -- F: x y z )"}, {"tri-floor", p_tri_floor, "( tri -- ) ( F: x z -- F: y )"}, {"tri-normal", p_tri_normal, "( tri -- ) ( F: -- F: x y z )"},
         {"exit-tri", p_exit_tri, "( exit which -- tri | -1 )"}, {"exit-leads", p_exit_leads, "( exit -- room exit' | -1 -1 )"}, {"room-exit-door", p_room_exit_door, "( room exit -- door | -1 )"}, {"room-exit-leads", p_room_exit_leads, "( room exit -- room' exit' | -1 -1 )"}, {"door-sides", p_door_sides, "( door -- room0 exit0 tri0 room1 exit1 tri1 )"}, {"room-exit-tri", p_room_exit_tri, "( room exit which -- tri )"}, {"hud", p_hud, "( addr len -- )"}, {"ui-clear", p_ui_clear, "( layer -- )"}, {"ui-image", p_ui_image, "( layer x y w h group id csa u v uw vh rgba -- )"}, {"tex-bank", p_tex_bank, "( addr len group -- flag )"}, {"tex-info", p_tex_info, "( group id -- w h tex )"}, {"ui-rect", p_ui_rect, "( layer x y w h rgba -- )"}, {"ui-text", p_ui_text, "( layer addr len x y rgba scale -- )"}, {"text-width", p_text_width, "( addr len scale -- px )"}, {"ui-movie", p_ui_movie, "( layer x y w h -- )"}, {"ui-held", p_ui_held, "( layer x y w h -- )"}, {"movie-hold", p_movie_hold, "( -- flag )"}, {"movie-unhold", p_movie_unhold, "( -- )"}, {"cast-as", p_cast_as, "( id model -- )"}, {"chars-hide", p_chars_hide, "( -- )"}, {"cast-model", p_cast_model, "( id -- model | -1 )"}, {"scene-has?", p_scene_has, "( model -- flag )"}, {"model-file", p_model_file, "( model -- addr len )"}, {"nav-move", p_nav_move, "( F: x y z dx dz climb radius -- F: x' y' z' )"}, {"nav-nearest", p_nav_nearest, "( F: x y z -- F: x' y' z' )"}, {"nav-at", p_nav_at, NULL}, {".room", p_room_info, "( -- )"},
         {"camera", p_camera, "( -- addr )"},
         {"cam-new-room", p_cam_new_room, "( -- )"}, {"cam-room-start", p_cam_room_start, "( -- )"}, {"cam-setup", p_cam_setup, "( set path -- )"},
         {"body-move", p_body_move, "( F: dx dz -- )"}, {"body-move-any", p_body_move_any, "( F: dx dz -- )"}, {"body-move-local", p_body_move_local, "( F: x z -- )"}, {"body-climb", p_body_climb, "( F: x y z -- )"}, {"body-turn-toward", p_body_turn_toward, "( F: target step -- F: left )"}, {"body-heading-to", p_body_heading_to, "( id v -- ) ( F: -- F: yaw )"}, {"body-place-at", p_body_place_at, "( F: x y z -- )"}, {"body-tri-to", p_body_tri_to, "( v mask -- tri )"}, {"body-free", p_body_free, "( mask -- ) ( F: yaw d -- F: free )"}, {"bodies-touching?", p_bodies_touching, "( a b -- flag ) ( F: margin vmargin -- )"}, {"cam-on", p_cam_on, "( id -- )"}, {"cam-followed", p_cam_followed, "( -- id )"}, {"cam-followed!", p_cam_followed_set, "( id -- )"}, {"cam-target", p_cam_target_id, "( -- id )"}, {"cam-player!", p_cam_player, "( id -- )"}, {"cam-char-setup", p_cam_char_setup, "( who set path -- )"}, {"cam-forget-setups", p_cam_forget_setups, "( -- )"}, {"cam-setup-of", p_cam_setup_of, "( who -- set path )"}, {"cam-take-followed", p_cam_take_followed, "( -- )"}, {"cam-scene!", p_cam_scene, "( flag -- )"}, {"cam-scene?", p_cam_scene_q, "( -- flag )"}, {"cam-next-set", p_cam_next_set, "( -- )"}, {"cam-rate!", p_cam_rate, "( F: r -- )"}, {"cam-shake!", p_cam_shake, "( F: a -- )"}, {"cam-cut?", p_cam_cut, "( -- flag )"}, {"cam-remember", p_cam_remember, "( -- )"}, {"cam-started?", p_cam_started, "( -- flag )"}, {"cam-stop", p_cam_stop, "( -- )"}, {"cam-angle", p_cam_angle, "( F: -- deg )"}, {"cam-ease", p_cam_ease, "( -- )"}, {"cam-event?", p_cam_event, "( -- flag )"}, {"cam-event!", p_cam_event_set, "( flag -- )"}, {"cam-track", p_cam_track, "( -- )"}, {"push-out", p_push_out, "( v tri other mask -- tri' )"},
-        {"cam-update", p_cam_update, "( -- )"}, {"cam-restart", p_cam_restart, "( -- )"}, {"cam-changed?", p_cam_changed, "( -- flag )"}, {"cam-set@", p_cam_set, "( -- set )"}, {"actor-load-textured", p_actor_load_textured, "( addr len tex-addr tex-len -- id )"}, {"motions-load", p_motions_load, "( addr len model -- flag )"}, {"motions-use", p_motions_use, "( on model -- )"}, {"cam-place", p_cam_place, "( F: ex ey ez lx ly lz -- )"}, {"cam-retake", p_cam_retake, "( -- )"}, {"frame-blend", p_frame_blend, "( a -- )"}, {"frame-blend-off", p_frame_blend_off, "( -- )"}, {"panic-negative", p_panic_negative, "( -- )"}, {"zoom-blur", p_zoom_blur, "( -- )"}, {"panic-tint", p_panic_tint, "( limit amount -- )"}, {"flicker-new", p_flicker_new, "( slow F: x y z -- p )"}, {"flame-new", p_flame_new, "( kind F: x y z -- p )"}, {"swarm-new", p_swarm_new, "( count spread rgba F: x y z -- p )"}, {"splash-new", p_splash_new, "( count spread rgba F: x y z from-x from-y from-z -- p )"}, {"burst-new", p_burst_new, "( kind r g b top F: x y z -- p )"}, {"spray", p_spray, "( tri heavy F: x y z -- )"}, {"thing-new", p_thing_new, "( kind room tri F: x y z vx vy vz -- i | -1 )"}, {"thing-free", p_thing_free, "( i -- )"}, {"things-clear", p_things_clear, "( -- )"}, {"thing-used?", p_thing_used, "( i -- flag )"}, {"thing-kind", p_thing_kind, "( i -- kind )"}, {"thing-room", p_thing_room, "( i -- room )"}, {"thing-tri", p_thing_tri, "( i -- tri )"}, {"thing-age", p_thing_age, "( i -- frames )"}, {"thing-state", p_thing_state, "( i -- state )"}, {"thing-at", p_thing_at, "( i -- v )"}, {"thing-speed", p_thing_speed, "( i -- ) ( F: -- F: s )"}, {"thing-age!", p_thing_age_store, "( age i -- )"}, {"thing-place", p_thing_place, "( i room tri F: x y z -- )"}, {"thing-kick", p_thing_kick, "( i F: dx dy dz -- )"}, {"thing-fade", p_thing_fade, "( i -- )"}, {"thing-events", p_thing_events, "( i -- bits )"}, {"thing-turn", p_thing_turn, "( i -- 0..255 )"}, {"things-step", p_things_step, "( room running -- )"}, {"thing-reaches?", p_thing_reaches, "( body i F: across high -- flag )"}, {"puffs", p_puffs, "( F: x y z -- )"}, {"debris-cloud", p_debris_cloud, "( r g b F: x y z -- )"}, {"gun-smoke", p_gun_smoke, "( F: x y z -- )"}, {"strike-mark", p_strike_mark, "( F: x y z bx by bz -- )"}, {"spark", p_spark, "( life F: x y z rise size growth -- )"}, {"particles-engines", p_particles_engines, "( p -- )"}, {"sink-ring", p_sink_ring, "( rising F: x y z -- )"}, {"water-step", p_water_step, "( big v -- )"}, {"welling", p_welling, "( tri F: x y z -- )"}, {"shards-new", p_shards_new, "( gs kind tex F: x y z u v du dv floor -- p )"}, {"butterflies-new", p_butterflies_new, "( count F: x y z -- p )"}, {"butterflies-to", p_butterflies_to, "( p count F: x y z -- )"}, {"butterflies-at", p_butterflies_at, "( p -- ok ) ( F: -- F: x y z | )"}, {"wander-new", p_wander_new, "( F: x y z rx rz tx ty tz -- ) ( -- p )"}, {"spirit-new", p_spirit_new, "( red F: x y z bob -- p )"}, {"spirit-at", p_spirit_at, "( p shown F: x y z -- )"}, {"spirit-vanish", p_spirit_vanish, "( p seen -- )"}, {"vanish-new", p_vanish_new, "( r g b a -- p ) ( F: x y z -- )"}, {"stones-new", p_stones_new, "( gs tex F: height u v du dv -- p )"}, {"reflect!", p_reflect_set, "( slot screen strength F: x0 y0 z0 .. x3 y3 z3 -- )"}, {"reflect-off", p_reflect_off, "( slot -- )"}, {"reflect-only", p_reflect_only, "( slot model -- )"}, {"debris-new", p_debris_new, "( kind -- p )"}, {"rising-smoke-new", p_rising_smoke_new, "( -- p )"}, {"dust-shaft-new", p_dust_shaft_new, "( -- p )"}, {"spiral-smoke-new", p_spiral_smoke_new, "( -- p )"}, {"drips-new", p_drips_new, "( -- p )"}, {"one-drip-new", p_one_drip_new, "( -- p )"}, {"rising-motes-new", p_rising_motes_new, "( -- p )"}, {"embers-new", p_embers_new, "( ending -- p )"}, {"flecks-new", p_flecks_new, "( F: x y z half-w depth tx ty tz -- ) ( -- p )"}, {"smoke-puffs-new", p_smoke_puffs_new, "( -- p )"}, {"wall-shadow-new", p_wall_shadow_new, "( -- p )"}, {"fire-new", p_fire_new, "( spot big -- p )"}, {"steam-new", p_steam_new, "( spot -- p )"}, {"floor-glow-new", p_floor_glow_new, "( -- p )"}, {"tv-new", p_tv_new, "( which -- p )"}, {"big-fire-new", p_big_fire_new, "( -- p )"}, {"light-shaft-new", p_light_shaft_new, "( -- p )"}, {"glint-new", p_glint_new, "( model -- p )"}, {"marker-new", p_marker_new, "( model other second? F: size -- p )"}, {"window-flash-new", p_window_flash_new, "( F: x y z turn -- ) ( -- p )"}, {"smoke-trail-new", p_smoke_trail_new, "( thing -- p )"}, {"mag-burst-new", p_mag_burst_new, "( prima? F: x y z nx ny nz -- p )"}, {"mirror-square", p_mirror_square, "( F: nx ny nz tx ty tz x y z -- F: x0 y0 z0 x1 y1 z1 x2 y2 z2 x3 y3 z3 )"}, {"haze-new", p_haze_new, "( -- p )"}, {"caustic-new", p_caustic_new, "( tex rgba F: x y z size step turn -- p )"}, {"glow-new", p_glow_new, "( rgba F: x y z size -- p )"}, {"wisp-column-new", p_wisp_column_new, "( -- p )"}, {"spark-spray-new", p_spark_spray_new, "( side -- p )"}, {"heat-haze-new", p_heat_haze_new, "( -- p )"}, {"leaves-new", p_leaves_new, "( -- p )"}, {"loop-sprite-new", p_loop_sprite_new, "( F: x y z -- ) ( -- p )"}, {"object-glow-new", p_object_glow_new, "( idx F: x y z -- p )"}, {"rain-new", p_rain_new, "( -- p )"}, {"ash-new", p_ash_new, "( -- p )"}, {"pit-embers-new", p_pit_embers_new, "( flames? -- p )"}, {"particles-place", p_particles_place, "( p F: x y z -- )"}, {"particles-rest!", p_particles_rest, "( p frames -- )"}, {"swim-path", p_swim_path, "( i nx ny nz frames -- ) ( F: x y z -- )"}, {"swim-step", p_swim_step, "( i -- ) ( F: x y z yaw -- F: x y z yaw )"}, {"body-advance", p_body_advance, "( F: x z speed -- ) ( -- there? )"}, {"particles-command", p_particles_command, "( p v -- )"}, {"particles-alive?", p_particles_alive, "( p -- flag )"}, {"particles-children", p_particles_children, "( p -- n )"}, {"particles-free", p_particles_free, "( p -- )"}, {"particles-info", p_particles_info, "( p -- kind frame rest )"},
+        {"cam-update", p_cam_update, "( -- )"}, {"cam-restart", p_cam_restart, "( -- )"}, {"cam-changed?", p_cam_changed, "( -- flag )"}, {"cam-set@", p_cam_set, "( -- set )"}, {"actor-load-textured", p_actor_load_textured, "( addr len tex-addr tex-len -- id )"}, {"motions-load", p_motions_load, "( addr len model -- flag )"}, {"motions-use", p_motions_use, "( on model -- )"}, {"cam-place", p_cam_place, "( F: ex ey ez lx ly lz -- )"}, {"cam-retake", p_cam_retake, "( -- )"}, {"frame-blend", p_frame_blend, "( a -- )"}, {"frame-blend-off", p_frame_blend_off, "( -- )"}, {"panic-negative", p_panic_negative, "( -- )"}, {"zoom-blur", p_zoom_blur, "( -- )"}, {"panic-tint", p_panic_tint, "( limit amount -- )"}, {"flicker-new", p_flicker_new, "( slow -- p ) ( F: x y z -- )"}, {"flame-new", p_flame_new, "( kind -- p ) ( F: x y z -- )"}, {"swarm-new", p_swarm_new, "( count spread rgba -- p ) ( F: x y z -- )"}, {"splash-new", p_splash_new, "( count spread rgba -- p ) ( F: x y z from-x from-y from-z -- )"}, {"burst-new", p_burst_new, "( kind r g b top -- p ) ( F: x y z -- )"}, {"spray", p_spray, "( tri heavy F: x y z -- )"}, {"thing-new", p_thing_new, "( kind room tri -- i ) ( F: x y z vx vy vz -- )"}, {"thing-free", p_thing_free, "( i -- )"}, {"things-clear", p_things_clear, "( -- )"}, {"thing-used?", p_thing_used, "( i -- flag )"}, {"thing-kind", p_thing_kind, "( i -- kind )"}, {"thing-room", p_thing_room, "( i -- room )"}, {"thing-tri", p_thing_tri, "( i -- tri )"}, {"thing-age", p_thing_age, "( i -- frames )"}, {"thing-state", p_thing_state, "( i -- state )"}, {"thing-at", p_thing_at, "( i -- v )"}, {"thing-speed", p_thing_speed, "( i -- ) ( F: -- F: s )"}, {"thing-age!", p_thing_age_store, "( age i -- )"}, {"thing-place", p_thing_place, "( i room tri F: x y z -- )"}, {"thing-kick", p_thing_kick, "( i F: dx dy dz -- )"}, {"thing-fade", p_thing_fade, "( i -- )"}, {"thing-events", p_thing_events, "( i -- bits )"}, {"thing-turn", p_thing_turn, "( i -- 0..255 )"}, {"things-step", p_things_step, "( room running -- )"}, {"thing-reaches?", p_thing_reaches, "( body i -- flag ) ( F: across high -- )"}, {"puffs", p_puffs, "( F: x y z -- )"}, {"debris-cloud", p_debris_cloud, "( r g b F: x y z -- )"}, {"drop-splash", p_drop_splash, "( r g b -- ) ( F: x y z size -- )"}, {"strand-new", p_strand_new, "( model kind strand -- )"}, {"gun-smoke", p_gun_smoke, "( F: x y z -- )"}, {"strike-mark", p_strike_mark, "( model bone -- ) ( F: ox oy oz bx by bz -- )"}, {"spark", p_spark, "( life F: x y z rise size growth -- )"}, {"particles-engines", p_particles_engines, "( p -- )"}, {"sink-ring", p_sink_ring, "( rising F: x y z -- )"}, {"water-step", p_water_step, "( big v -- )"}, {"welling", p_welling, "( tri F: x y z -- )"}, {"shards-new", p_shards_new, "( gs kind tex -- p ) ( F: x y z u v du dv floor -- )"}, {"butterflies-new", p_butterflies_new, "( count -- p ) ( F: x y z -- )"}, {"butterflies-to", p_butterflies_to, "( p count F: x y z -- )"}, {"butterflies-at", p_butterflies_at, "( p -- ok ) ( F: -- F: x y z | )"}, {"wander-new", p_wander_new, "( -- ) ( -- p ) ( F: x y z rx rz tx ty tz -- )"}, {"spirit-new", p_spirit_new, "( red -- p ) ( F: x y z bob -- )"}, {"spirit-at", p_spirit_at, "( p shown F: x y z -- )"}, {"spirit-vanish", p_spirit_vanish, "( p seen -- )"}, {"vanish-new", p_vanish_new, "( r g b a -- p ) ( F: x y z -- )"}, {"stones-new", p_stones_new, "( gs tex -- p ) ( F: height u v du dv -- )"}, {"reflect!", p_reflect_set, "( slot screen strength F: x0 y0 z0 x1 y1 z1 x2 y2 z2 x3 y3 z3 -- )"}, {"reflect-off", p_reflect_off, "( slot -- )"}, {"reflect-only", p_reflect_only, "( slot model -- )"}, {"debris-new", p_debris_new, "( kind -- p )"}, {"rising-smoke-new", p_rising_smoke_new, "( -- p )"}, {"dust-shaft-new", p_dust_shaft_new, "( -- p )"}, {"spiral-smoke-new", p_spiral_smoke_new, "( -- p )"}, {"drips-new", p_drips_new, "( -- p )"}, {"one-drip-new", p_one_drip_new, "( -- p )"}, {"ceiling-drips-new", p_ceiling_drips_new, "( -- p )"}, {"rising-motes-new", p_rising_motes_new, "( -- p )"}, {"embers-new", p_embers_new, "( ending -- p )"}, {"flecks-new", p_flecks_new, "( -- ) ( -- p ) ( F: x y z half-w depth tx ty tz -- )"}, {"smoke-puffs-new", p_smoke_puffs_new, "( -- p )"}, {"wall-shadow-new", p_wall_shadow_new, "( -- p )"}, {"fire-new", p_fire_new, "( spot big -- p )"}, {"steam-new", p_steam_new, "( spot -- p )"}, {"floor-glow-new", p_floor_glow_new, "( -- p )"}, {"tv-new", p_tv_new, "( which -- p )"}, {"big-fire-new", p_big_fire_new, "( -- p )"}, {"light-shaft-new", p_light_shaft_new, "( -- p )"}, {"glint-new", p_glint_new, "( model -- p )"}, {"marker-new", p_marker_new, "( model other second? -- p ) ( F: size -- )"}, {"window-flash-new", p_window_flash_new, "( -- ) ( -- p ) ( F: x y z turn -- )"}, {"smoke-trail-new", p_smoke_trail_new, "( thing -- p )"}, {"mag-burst-new", p_mag_burst_new, "( prima? -- p ) ( F: x y z nx ny nz -- )"}, {"mirror-square", p_mirror_square, "( F: nx ny nz tx ty tz x y z -- F: x0 y0 z0 x1 y1 z1 x2 y2 z2 x3 y3 z3 )"}, {"haze-new", p_haze_new, "( -- p )"}, {"caustic-new", p_caustic_new, "( tex rgba -- p ) ( F: x y z size step turn -- )"}, {"glow-new", p_glow_new, "( rgba -- p ) ( F: x y z size -- )"}, {"wisp-column-new", p_wisp_column_new, "( -- p )"}, {"spark-spray-new", p_spark_spray_new, "( side -- p )"}, {"heat-haze-new", p_heat_haze_new, "( -- p )"}, {"leaves-new", p_leaves_new, "( -- p )"}, {"loop-sprite-new", p_loop_sprite_new, "( -- ) ( -- p ) ( F: x y z -- )"}, {"object-glow-new", p_object_glow_new, "( idx -- p ) ( F: x y z -- )"}, {"rain-new", p_rain_new, "( -- p )"}, {"ash-new", p_ash_new, "( -- p )"}, {"pit-embers-new", p_pit_embers_new, "( flames? -- p )"}, {"particles-place", p_particles_place, "( p F: x y z -- )"}, {"particles-rest!", p_particles_rest, "( p frames -- )"}, {"swim-path", p_swim_path, "( i nx ny nz frames -- ) ( F: x y z -- )"}, {"swim-step", p_swim_step, "( i -- ) ( F: x y z yaw -- F: x y z yaw )"}, {"body-advance", p_body_advance, "( -- ) ( -- there? ) ( F: x z speed -- )"}, {"particles-command", p_particles_command, "( p v -- )"}, {"particles-alive?", p_particles_alive, "( p -- flag )"}, {"particles-children", p_particles_children, "( p -- n )"}, {"particles-free", p_particles_free, "( p -- )"}, {"particles-last", p_particles_last, "( -- p )"}, {"particles-strands", p_particles_strands, "( -- n )"}, {"particles-part", p_particles_part, "( p i -- r g b a ) ( F: -- x y z )"}, {"room-effect0!", p_room_effect0, "( flag -- )"}, {"pursuer-kind!", p_pursuer_kind, "( kind -- )"}, {"particles-info", p_particles_info, "( p -- kind frame rest )"},
         {".director", p_cam_info, "( -- )"}, {"area-in?", p_area_in, "( area -- flag ) ( F: x y z -- )"}, {"nav-path", p_nav_path, "( from to -- n ) ( F: ax ay az bx by bz -- )"}, {"v-slide", p_v_slide, "( v tri mask -- tri' | -1 ) ( F: dx dz -- )"}, {"v-nav-move", p_v_nav_move, "( v mask -- tri ) ( F: dx dz -- )"}, {"v-walk", p_v_walk, "( tri a b mask -- tri' )"}, {"can-walk-between?", p_can_walk_between, "( ta a tb b mask -- flag )"}, {"v-wall", p_v_wall, "( tri a b mask -- flag ) ( F: -- F: yaw )"}, {"nav-links", p_nav_links, "( -- n )"}, {"nav-next", p_nav_next, "( tri k -- tri' )"}, {"nav-link-tri", p_nav_link_tri, "( i side -- tri )"}, {"nav-link-yaw", p_nav_link_yaw, "( i side -- ) ( F: -- F: yaw )"}, {"nav-link-spot", p_nav_link_spot, "( i side -- ) ( F: -- F: x y z )"}, {"nav-link-at?", p_nav_link_at, "( v i -- flag )"}, {"nav-link-side", p_nav_link_side, "( v tri i -- side )"}, {"nav-link-front", p_nav_link_front, "( i side -- tri ) ( F: ox oz -- F: x y z )"}, {"v-free", p_v_free, "( tri v mask -- ) ( F: yaw dist -- F: free )"},
         {"v-path", p_v_path, "( from a to b mask -- n )"}, {"v-path-curved", p_v_path_curved, "( from a to b mask -- n )"}, {"v-tri", p_v_tri, "( v -- tri )"}, {"nav-floor", p_nav_floor, "( -- found ) ( F: x y z -- F: y' )"}, {"v-tri-in", p_v_tri_in, "( v mask -- tri )"}, {"v-tri-placed", p_v_tri_placed, "( v mask -- tri )"}, {"vec!", p_vec_store, "( v -- ) ( F: x y z -- )"}, {"vec@", p_vec_fetch, "( v -- ) ( F: -- F: x y z )"}, {"vec-copy", p_vec_copy, "( dst src -- )"},
         {"vec-dist", p_vec_dist, "( a b -- ) ( F: -- F: d )"}, {"vec-dist-xz", p_vec_dist_xz, "( a b -- ) ( F: -- F: d )"}, {"vec-heading", p_vec_heading, "( a b -- ) ( F: -- F: yaw )"}, {"vec-ahead", p_vec_ahead, "( dst src -- ) ( F: yaw d -- )"},
         {"angle-wrap", p_angle_wrap, "( F: a -- F: a' )"}, {"nav-walk", p_nav_walk, "( from -- tri ) ( F: ax ay az bx by bz -- F: reach )"}, {"nav-crosses?", p_nav_crosses, "( tri a b mask -- flag )"}, {"nav-path-point", p_nav_path_point, "( i -- ) ( F: -- F: x y z )"}, {"placed-op", p_placed_op, "( addr len op arg -- )"}, {"placed-frame!", p_placed_frame_store, "( addr len frame -- )"}, {"placed-frame@", p_placed_frame_fetch, "( addr len -- frame )"}, {"placed-at", p_placed_at, "( addr len -- ) ( F: x y z -- )"}, {"placed-f@", p_placed_f_fetch, "( addr len off -- ) ( F: -- F: v )"}, {"placed-f!", p_placed_f_store, "( addr len off -- ) ( F: v -- )"}, {"placed-l@", p_placed_l_fetch, "( addr len off -- n )"}, {"placed-l!", p_placed_l_store, "( n addr len off -- )"}, {"placed-here?", p_placed_here, "( addr len -- flag )"}, {"placed-shown?", p_placed_shown, "( addr len -- flag )"}, {"nav-square-step", p_nav_square_step, "( a b -- a' b' ok? ) ( F: dx dz -- )"}, {"obstacles-reset", p_obstacles_reset, "( -- )"}, {"obstacle-placed?", p_obstacle_placed, "( i -- flag )"}, {"obstacle-make", p_obstacle_make, "( i kind a b -- ok? )"}, {"obstacle-stop", p_obstacle_stop, "( i -- )"}, {"obstacle-square", p_obstacle_square, "( i -- a b )"}, {"obstacle-at", p_obstacle_at, "( i -- ) ( F: -- F: x y z )"}, {"obstacle-middle", p_obstacle_middle, "( i -- ) ( F: -- F: x y z )"}, {"obstacles-ring-mask", p_obstacles_ring_mask, "( tri -- bits )"}, {"obstacle-on-square?", p_obstacle_on_square, "( i tri -- flag )"}, {"obstacle-can-push?", p_obstacle_can_push, "( i tris n -- flag ) ( F: dx dz -- )"}, {"obstacle-push", p_obstacle_push, "( i -- ) ( F: dx dz -- )"}, {"obstacle-step", p_obstacle_step, "( i -- scrape? )"}, {"obstacle-moved", p_obstacle_moved, "( i -- )"}, {".placed", p_placed_list, "( -- )"}, {"door-swing", p_door_swing, "( exit at-once -- ) ( F: degrees -- )"}, {"door-shades", p_door_shades, "( -- n )"}, {"door-shade", p_door_shade, "( i -- exit light ) ( F: -- F: alpha )"}, {"light-blocker", p_light_blocker, "( F: x0 y0 z0 x1 y1 z1 x2 y2 z2 x3 y3 z3 -- )"}, {"light-blockers", p_light_blockers, "( -- n )"}, {"light-blocked?", p_light_blocked, "( light -- flag ) ( F: x y z -- )"}, {"room-door-at", p_door_at, "( exit -- flag ) ( F: -- F: x y z )"}, {"door-user-spot", p_door_user_spot, "( exit anim -- tri ) ( F: -- F: x y z yaw )"},
         {"door-anim", p_door_anim, "( exit anim -- flag )"}, {"door-side", p_door_side, "( exit -- side ) ( F: x y z -- )"}, {"door-near?", p_door_near, "( exit -- flag ) ( F: x y z -- )"}, {"door-in-area?", p_door_in_area, "( exit kind -- flag ) ( F: x y z -- )"}, {"walkable", p_walkable, "( tri v out mask -- tri' )"},
-        {"door-animating?", p_door_animating, "( exit -- flag )"}, {"door-on-side?", p_door_on_side, "( exit side tri -- flag )"}, {"door-side-flags", p_door_side_flags, "( exit side flags set? -- )"}, {"door-passage", p_door_passage, "( exit open? locks -- )"}, {"door-move", p_door_move, "( exit open? slam? -- )"}, {"door-burst", p_door_burst, "( exit positive? -- )"}, {"door-set-opened", p_door_set_opened, "( exit open? -- ok? )"}, {"game-tick", p_game_tick, "( -- )"}, {"door-events", p_door_events, "( exit -- sound how settled )"}, {"door-here?", p_door_present, "( exit -- flag )"}, {"door-turn", p_door_turn, "( exit -- ) ( F: -- F: a )"}, {"door-poses-clear", p_door_poses_clear, "( -- )"}, {"screen-face", p_screen_face, "( -- )"}, {"door-angle", p_door_angle, "( exit -- ) ( F: -- F: degrees )"}, {"area-middle", p_area_middle, "( area -- flag ) ( F: -- F: x y z )"}, {"to-screen", p_to_screen, "( -- flag ) ( F: x y z -- F: sx sy )"}, {"placed-count", p_placed_count, "( -- n )"}, {"placed-info", p_placed_info, "( i -- addr len shown ) ( F: -- F: x y z )"}, {".placed-anims", p_placed_anims, "( -- )"}, {"placed-draws", p_placed_draws, "( i -- layer mask? )"}, {"area-count", p_area_count, "( -- n )"}, {"area-kind", p_area_kind, "( area -- kind )"}, {"area-corner", p_area_corner, "( area k -- flag ) ( F: -- F: x y z )"}, {"area-cross", p_area_cross, "( area -- n ) ( F: px py pz x y z -- )"}, {"exit-area", p_exit_area, "( exit -- area )"}, {"movie-open", p_movie_open, "( addr len -- flag )"}, {"movie-status", p_movie_status, "( -- n )"},
+        {"door-animating?", p_door_animating, "( exit -- flag )"}, {"door-on-side?", p_door_on_side, "( exit side tri -- flag )"}, {"door-side-flags", p_door_side_flags, "( exit side flags set? -- )"}, {"door-passage", p_door_passage, "( exit open? locks -- )"}, {"door-move", p_door_move, "( exit open? slam? -- )"}, {"door-burst", p_door_burst, "( exit positive? -- )"}, {"door-set-opened", p_door_set_opened, "( exit open? -- ok? )"}, {"game-tick", p_game_tick, "( -- )"}, {"door-events", p_door_events, "( exit -- sound how settled )"}, {"door-here?", p_door_present, "( exit -- flag )"}, {"door-closing?", p_door_closing, "( exit -- flag )"}, {"door-turn", p_door_turn, "( exit -- ) ( F: -- F: a )"}, {"door-poses-clear", p_door_poses_clear, "( -- )"}, {"screen-face", p_screen_face, "( -- )"}, {"door-angle", p_door_angle, "( exit -- ) ( F: -- F: degrees )"}, {"area-middle", p_area_middle, "( area -- flag ) ( F: -- F: x y z )"}, {"to-screen", p_to_screen, "( -- flag ) ( F: x y z -- F: sx sy )"}, {"placed-count", p_placed_count, "( -- n )"}, {"placed-info", p_placed_info, "( i -- addr len shown ) ( F: -- F: x y z )"}, {".placed-anims", p_placed_anims, "( -- )"}, {"placed-draws", p_placed_draws, "( i -- layer mask? )"}, {"area-count", p_area_count, "( -- n )"}, {"area-kind", p_area_kind, "( area -- kind )"}, {"area-corner", p_area_corner, "( area k -- flag ) ( F: -- F: x y z )"}, {"area-cross", p_area_cross, "( area -- n ) ( F: px py pz x y z -- )"}, {"exit-area", p_exit_area, "( exit -- area )"}, {"movie-open", p_movie_open, "( addr len -- flag )"}, {"movie-status", p_movie_status, "( -- n )"},
         {"movie-frame", p_movie_frame, "( -- n )"}, {"cutscene-load", p_cs_start, "( addr len -- flag )"}, {"cutscene-run", p_cs_run, "( -- )"}, {"cutscene-go", p_cs_go, "( -- )"},
-        {"cutscene-frame!", p_cs_frame_set, "( n -- )"}, {"cutscene-frame", p_cs_frame, "( -- frame )"}, {"cutscene-update", p_cs_update, "( -- )"}, {"cutscene-end", p_cs_end, "( -- )"}, {"cutscene-leave-alone", p_cutscene_leave_alone, "( actor -- )"}, {"cutscene-keep-model", p_cutscene_keep_model, "( actor -- )"}, {"soft-reset", p_soft_reset, "( -- )"},
+        {"cutscene-frame!", p_cs_frame_set, "( n -- )"}, {"cutscene-frame", p_cs_frame, "( -- frame )"}, {"cutscene-update", p_cs_update, "( -- )"}, {"cutscene-end", p_cs_end, "( -- )"}, {"cutscene-leave-alone", p_cutscene_leave_alone, "( actor -- )"}, {"cutscene-keep-model", p_cutscene_keep_model, "( actor -- )"}, {"soft-reset", p_soft_reset, "( -- )"}, {"soft-reset?", p_soft_reset_q, "( -- flag )"},
         {"cutscene-status", p_cs_status, "( -- n )"}, {"cutscene-in-shot?", p_cs_in_shot, "( -- flag )"}, {"cutscene-near?", p_cs_near_end, "( -- flag )"}, {"cutscene-shot-at", p_cs_shot_at, "( frame -- shot )"},
-        {"cutscene-signals", p_cs_signals, "( bit -- n )"}, {"cutscene-active?", p_cs_active, "( -- flag )"}, {"pause!", p_pause, "( flag -- )"}, {"still!", p_still, "( flag -- )"}, {"seq-bank", p_seq_bank, "( addr len -- flag )"}, {"seq-load", p_seq_load, "( k addr len -- flag )"}, {"seq-play", p_seq_play, "( k on -- )"},
+        {"cutscene-signals", p_cs_signals, "( bit -- n )"}, {"cutscene-active?", p_cs_active, "( -- flag )"}, {"pause!", p_pause, "( flag -- )"}, {"still!", p_still, "( flag -- )"}, {"sound-out!", p_sound_out, "( mode -- )"}, {"voice-lr", p_voice_lr, "( v -- l r on? )"}, {"seq-bank", p_seq_bank, "( addr len -- flag )"}, {"seq-load", p_seq_load, "( k addr len -- flag )"}, {"seq-play", p_seq_play, "( k on -- )"},
         {"seq-playing?", p_seq_playing, "( k -- flag )"}, {"seq-volume", p_seq_volume, "( k v -- )"}, {"seq-port-volume", p_seq_port_volume, "( k v -- )"},
         {"seq-chan-volume", p_seq_chan_volume, "( k ch v -- )"}, {"seq-midi", p_seq_midi, "( k status d1 d2 -- )"}, {"seq-reset", p_seq_reset, "( -- )"}, {"music-play", p_music_play, "( addr len loop paused -- flag )"}, {"music-stop", p_music_stop, "( -- )"},
         {"music-pause", p_music_pause, "( on -- )"}, {"music-volume!", p_music_volume, "( F: v -- )"}, {"music-playing?", p_music_playing, "( -- flag )"}, {"cutscene-signal-total", p_cs_total, "( bit -- n )"}, {"cutscene-letterbox-off", p_cs_letterbox_off, "( flag -- )"}, {"black-frame", p_black_frame, "( -- )"}, {"cutscene-next", p_cs_next, "( -- )"}, {"movie-close", p_movie_close, "( -- )"}, {"movie-pause", p_movie_pause, "( on -- )"}, {"movie-paused?", p_movie_paused, "( -- flag )"}, {"movie-compose", p_movie_compose, "( compo lo hi -- )"},
@@ -4321,9 +4515,9 @@ void bind_engine(Forth *f) {
         {"message-options", p_message_options, "( -- n )"}, {"message-option-at", p_message_option_at, "( i -- page line col )"}, {"message-option-leads", p_message_option_leads, "( i -- msg )"},
         {"message-choice-flags", p_message_choice_flags, "( -- flags )"}, {"message-typed", p_message_typed, "( page -- frame )"}, {"message-skip", p_message_skip, "( page frame -- frame' )"},
         {"message-close-after", p_message_close_after, "( -- n )"}, {"message-run", p_message_run, "( page line col frame -- addr len colour )"}, {"message-place", p_message_place, "( page -- n )"}, {"message-align", p_message_align, "( page line -- n )"}, {"ui-text-in", p_ui_text_in, "( layer addr len x y rgba scale palette -- )"}, {"ui-blend", p_ui_blend, "( layer mode fix -- )"}, {"ui-image4", p_ui_image4, "( layer x0 y0 x1 y1 x2 y2 x3 y3 group id csa u v uw vh rgba -- )"}, {"message-param!", p_message_param, "( slot id -- )"}, {"message-param$", p_message_param_text, "( slot addr len -- )"}, {"exit-spot", p_exit_spot, "( exit which -- tri ) ( F: -- F: x y z )"},
-        {"actor-load", p_actor_load, "( addr len -- id )"}, {"actor-free", p_actor_free, "( id -- )"}, {"cloth-force!", p_cloth_force, "( model set -- ) ( F: x y z -- )"}, {"cloth-back!", p_cloth_back, "( model pose -- )"}, {"actor-texture-swap", p_actor_texture_swap, "( model sel addr len -- flag )"}, {"actor-texture-restore", p_actor_texture_restore, "( model -- )"}, {"actor-markers", p_actor_markers, "( id addr len -- )"}, {"actor", p_actor, "( id -- addr )"},
+        {"actor-load", p_actor_load, "( addr len -- id )"}, {"prop-load", p_prop_load, "( addr len -- id )"}, {"prop-free", p_prop_free, "( id -- )"}, {"data-file?", p_data_file, "( addr len -- flag )"}, {"prop-place", p_prop_place, "( id room -- ) ( F: x y z -- )"}, {"prop-turn", p_prop_turn, "( id -- ) ( F: rx ry rz -- )"}, {"prop-scale", p_prop_scale, "( id -- ) ( F: s -- )"}, {"prop-show", p_prop_show, "( id on -- )"}, {"prop-at", p_prop_at, "( id -- ) ( F: -- x y z )"}, {"prop-bounds", p_prop_bounds, "( id -- ) ( F: -- x0 y0 z0 x1 y1 z1 )"}, {"actor-free", p_actor_free, "( id -- )"}, {"cloth-force!", p_cloth_force, "( model set -- ) ( F: x y z -- )"}, {"cloth-back!", p_cloth_back, "( model pose -- )"}, {"actor-texture-swap", p_actor_texture_swap, "( model sel addr len -- flag )"}, {"actor-texture-restore", p_actor_texture_restore, "( model -- )"}, {"actor-markers", p_actor_markers, "( id addr len -- )"}, {"actor", p_actor, "( id -- addr )"},
         {"motion!", p_motion_store, "( id motion-id -- )"}, {"has-motion?", p_has_motion, "( id motion-id -- flag )"}, {"motion-play", p_motion_play, "( id motion-id blend flags -- )"}, {"motion-entry", p_motion_entry, "( id motion-id -- blend pose flags )"}, {"motion-index", p_motion_index, "( id motion-id -- i | -1 )"}, {"motion-variant", p_motion_variant, "( id motion-id -- )"}, {"motion-events", p_motion_events, "( id layer dt loop -- bits )"},
-        {"motion-table", p_motion_table, "( id addr len -- )"}, {"exe-table", p_exe_table, "( addr len -- addr n | 0 0 )"}, {"root-delta", p_root_delta, "( id -- ) ( F: -- F: turn dx dy dz )"}, {"bone-pos", p_bone_pos, "( id bone -- ) ( F: -- F: x y z )"}, {"bone-point", p_bone_point, "( id bone -- ) ( F: ox oy oz -- F: x y z )"}, {"foot-down?", p_foot_down, "( id foot -- flag )"}, {"dog-legs", p_dog_legs, "( id on -- )"}, {"human-legs", p_human_legs, "( id right left -- )"}, {"legs-fit", p_legs_fit, "( id tri mask plant -- ) ( F: back front -- )"}, {"lorenzo-chair", p_lorenzo_chair, "( id on -- )"}, {"chair-fit", p_chair_fit, "( id tri mask -- ) ( F: front back pitch yaw -- )"}, {"chair-rises", p_chair_rises, "( id -- ) ( F: body front -- )"}, {"head-bones", p_head_bones, "( id head neck -- )"}, {"head-turn", p_head_turn, "( id -- ) ( F: pitch yaw -- )"}, {"legs-height", p_legs_height, "( id -- ) ( F: -- F: y )"}, {"motion-track", p_motion_track, "( id code prev? -- flag ) ( F: -- F: a b c )"}, {"motion-track-by", p_motion_track_by, "( id code prev? -- flag ) ( F: dt -- F: a b c )"}, {"foot-at", p_foot_at, "( id left? -- down? ) ( F: dt -- F: x y z )"}, {"motion-overlay", p_motion_overlay, "( id motion-id -- )"}, {"turns-clear", p_turns_clear, "( id -- )"}, {"turn+", p_turn_add, "( id bone -- ) ( F: pitch yaw -- )"}, {"motion@", p_motion_fetch, "( id -- motion-id | -1 )"}, {"motion-done?", p_motion_done, "( id -- flag )"},
+        {"motion-table", p_motion_table, "( id addr len -- )"}, {"exe-table", p_exe_table, "( addr len -- addr n | 0 0 )"}, {"root-delta", p_root_delta, "( id -- ) ( F: -- F: turn dx dy dz )"}, {"bone-pos", p_bone_pos, "( id bone -- ) ( F: -- F: x y z )"}, {"bone-point", p_bone_point, "( id bone -- ) ( F: ox oy oz -- F: x y z )"}, {"foot-down?", p_foot_down, "( id foot -- flag )"}, {"dog-legs", p_dog_legs, "( id on -- )"}, {"human-legs", p_human_legs, "( id right left -- )"}, {"legs-fit", p_legs_fit, "( id tri mask plant -- ) ( F: back front -- )"}, {"lorenzo-chair", p_lorenzo_chair, "( id on -- )"}, {"chair-fit", p_chair_fit, "( id tri mask -- ) ( F: front back pitch yaw -- )"}, {"chair-rises", p_chair_rises, "( id -- ) ( F: body front -- )"}, {"head-bones", p_head_bones, "( id head neck -- )"}, {"head-turn", p_head_turn, "( id -- ) ( F: pitch yaw -- )"}, {"legs-height", p_legs_height, "( id -- ) ( F: -- F: y )"}, {"motion-track", p_motion_track, "( id code prev? -- flag ) ( F: -- F: a b c )"}, {"motion-track-by", p_motion_track_by, "( id code prev? -- flag ) ( F: dt -- F: a b c )"}, {"foot-at", p_foot_at, "( id left? -- down? ) ( F: dt -- F: x y z )"}, {"motion-overlay", p_motion_overlay, "( id motion-id -- )"}, {"turns-clear", p_turns_clear, "( id -- )"}, {"turn+", p_turn_add, "( id bone -- ) ( F: pitch yaw -- )"}, {"bone-count", p_bone_count, "( id -- n )"}, {"bone-named", p_bone_named, "( id addr len -- bone )"}, {"bone-parent", p_bone_parent, "( id bone -- parent )"}, {"bone-rest", p_bone_rest, "( id bone -- ) ( F: -- rx ry rz )"}, {"bone-set", p_bone_set, "( id bone -- ) ( F: rx ry rz -- )"}, {"bone-free", p_bone_free, "( id bone -- )"}, {"bones-free", p_bones_free, "( id -- )"}, {"motion@", p_motion_fetch, "( id -- motion-id | -1 )"}, {"motion-done?", p_motion_done, "( id -- flag )"},
         {"motion-frames", p_motion_frames, "( id -- frames )"}, {".motions", p_motions, "( id -- )"},
         {"rumble", p_rumble, "( channel strength frames -- )"}, {"rumble-buzz", p_rumble_buzz, "( channel on frames -- )"}, {"rumble-swell", p_rumble_swell, "( channel from to frames -- )"}, {"rumble-sequence-clear", p_rumble_seq_clear, "( -- )"}, {"rumble-step", p_rumble_seq_add, "( small? from to frames -- )"}, {"rumble-now", p_rumble_now, "( -- small? large )"}, {"rumble-allowed!", p_rumble_allow, "( flag -- )"}, {"game-volume!", p_game_volume, "( F: v -- )"}, {"world-volume!", p_world_volume, "( F: v -- )"}, {"world-volume", p_world_volume_q, "( F: -- v )"}, {"pad-stick", p_pad_stick, "( F: -- x y )"}, {"key-down?", p_key_down, "( key -- flag )"}, {"key-hold", p_key_hold, "( scancode flag -- )"}, {"controls", p_controls, "( -- n )"}, {"control-key", p_control_key, "( i -- scancode )"}, {"control-binding", p_control_binding, "( i which -- scancode )"}, {"control-bind", p_control_bind, "( scancode i which -- )"}, {"controls-reset", p_controls_reset, "( -- )"}, {"control-bind-next", p_control_bind_next, "( i -- )"}, {"control-waiting", p_control_waiting, "( -- i )"}, {"key-name", p_key_name, "( scancode -- addr len )"}, {"mod-camera", p_mod_camera, "( -- addr )"}, {"mod-camera!", p_mod_camera_set, "( on -- )"}, {"mod-camera?", p_mod_camera_has, "( -- flag )"}, {"mouse-capture", p_mouse_capture, "( on -- )"}, {"art-picture", p_art_picture, "( picture group -- h flag )"}, {"thumbnail", p_thumbnail, "( movie group -- flag )"}, {"alone", p_alone, "( id -- )"}, {"cam-keep", p_cam_keep, "( -- )"}, {"cam-kept", p_cam_kept, "( -- )"}, {"key-push", p_key_push, "( scancode -- )"}, {"key-pressed?", p_key_pressed, "( key -- flag )"}, {"mouse-dx", p_mouse_dx, "( F: -- F: dx )"},
         {"mouse-dy", p_mouse_dy, "( F: -- F: dy )"}, {"freecam?", p_freecam, "( -- flag )"}, {"freecam!", p_freecam_set, "( on -- )"}, {"vr-calibrate", p_vr_calibrate, "( -- )"}, {"vr-height!", p_vr_height, "( F: metres -- )"}, {"vr-scale!", p_vr_scale, "( F: scale -- )"}, {"vr-body", p_vr_body, "( -- ) ( F: -- F: height scale )"}, {"vase-named?", p_vase_named, "( xt -- flag )"}, {"vase-scale", p_vase_scale, "( -- ) ( F: -- F: scale )"}, {"vase-part", p_vase_part, "( group -- ) ( F: x y z scale -- )"}, {"vr-stick", p_vr_stick, "( -- ) ( F: -- F: x y )"}, {"vr-look-yaw", p_vr_look_yaw, "( -- ) ( F: -- F: yaw )"}, {"vr-face", p_vr_face, "( -- ) ( F: -- F: yaw )"}, {"vr-down?", p_vr_down, "( button -- flag )"}, {"vr-pressed?", p_vr_pressed, "( button -- flag )"}, {"vr-run?", p_vr_run, "( -- flag )"}, {"voice-heard", p_voice_heard, "( -- id )"}, {"voice-gen", p_voice_gen, "( -- n )"}, {"voice-text", p_voice_text, "( -- addr len )"}, {"voice-debug", p_voice_debug, "( flag -- )"}, {"voice-debug?", p_voice_debug_q, "( -- flag )"}, {"voice-open-mic", p_voice_open, "( flag -- )"}, {"voice-open-mic?", p_voice_open_q, "( -- flag )"}, {"vr-right", p_vr_right, "( -- ) ( F: -- F: x )"}, {"vr-petting?", p_vr_petting, "( side -- flag )"}, {"hand-blow?", p_hand_blow, "( -- flag )"}, {"hand-swing?", p_hand_swing, "( -- flag )"}, {"hand-shove?", p_hand_shove, "( -- flag )"}, {"hand-shove-take", p_hand_shove_take, "( -- )"}, {"hand-door?", p_hand_door, "( -- exit )"}, {"hand-door-way", p_hand_door_way, "( -- sign )"}, {"hand-door-take", p_hand_door_take, "( -- )"}, {"door-hits", p_door_hits, "( -- bits )"}, {"loot-sparkle", p_loot_sparkle, "( n -- n )"}, {"loot-at", p_loot_at, "( item -- ) ( F: x y z -- )"}, {"loot-move", p_loot_move, "( item -- ) ( F: x y z -- )"}, {"loot-part", p_loot_part, "( item fact fx part -- )"}, {"loot-doll", p_loot_doll, "( item fact fx -- )"}, {"loot-script", p_loot_script, "( xt -- )"}, {"loot-offer", p_loot_offer, "( xt -- )"}, {"loot-spark?", p_loot_spark_q, "( -- fx true | false )"}, {"loot-waiting?", p_loot_waiting, "( -- flag )"}, {"loot-take?", p_loot_take, "( -- item fact fx mode xt true | false )"}, {"loot-idle", p_loot_idle, "( -- )"}, {"loot-fact", p_loot_fact, "( -- fact )"}, {"loot-consume", p_loot_consume, "( -- )"}, {"loot-keep?", p_loot_keep, "( -- fx flag ) ( F: -- x y z )"}, {"loot-got", p_loot_got, "( item -- )"}, {"defense-let", p_defense_let, "( -- n flag ) ( F: -- x y z vx vy vz )"}, {"vr-head", p_vr_head, "( -- flag ) ( F: -- F: x y z )"}, {"vr-turn!", p_vr_turn, "( -- ) ( F: yaw -- )"}, {"mouse-down?", p_mouse_down, "( button -- flag )"},
@@ -4373,6 +4567,7 @@ void bind_engine(Forth *f) {
     field(f, "act.vweight", offsetof(Actor, vweight));  /* sf@: the motion against its variant (1: alone) */
     field(f, "act.variant", offsetof(Actor, variant));  /* 32-bit: the variant's index, -1 none */
     field(f, "act.visible", offsetof(Actor, visible));  /* 32-bit: l@ l! */
+    field(f, "act.character", offsetof(Actor, character));  /* 32-bit: l@ l! */
     field(f, "act.shadow", offsetof(Actor, shadow_size));
     field(f, "act.shadow-off", offsetof(Actor, shadow_off));   /* 32-bit: l@ l! */
     field(f, "act.layer", offsetof(Actor, layer));      /* 32-bit: its draw layer (0: $A) */
@@ -4445,5 +4640,6 @@ void bind_engine(Forth *f) {
     field(f, "gfx.room-bloom", offsetof(RenderSettings, room_bloom));
     field(f, "gfx.game-font", offsetof(RenderSettings, game_font));
     field(f, "gfx.fullscreen", offsetof(RenderSettings, fullscreen));
-    f->m.current = saved;
+    forth_set_current(f, saved);
 }
+

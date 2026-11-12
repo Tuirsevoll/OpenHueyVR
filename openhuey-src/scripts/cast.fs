@@ -55,7 +55,7 @@ state: cast-state
   cell field shown             \ the story's show / hide
   cell field in-scene          \ a cutscene has it (its director moves the model)
   cell field anim
-  cell field act               \ what it does each frame (an xt)
+  cell field act  holds: ( -- )   \ what it does each frame (an xt)
   cell field mv-done  cell field mv-kind  cell field mv-a  cell field mv-b
   /vec field mv-at  1 floats field mv-yaw
   \ an animal's ways (the rabbits: Kind26_Behaviour) - what it is doing and whether that just
@@ -192,7 +192,7 @@ is walk-start
 : at-goal ( -- )
     self body-tri goal-tri @ = if  ['] turned-there act !  turned-there exit  then
     goal-tri @ goal-at plan 0> if  way-left  else  -1e  then
-    fdup f0< 0=  fswap 0.1e f< and if  room-id goal-tri @ goal-at vec@ body-place exit  then
+    fdup f0< 0=  0.1e f< and if  room-id goal-tri @ goal-at vec@ body-place exit  then   \ (a way, under 0.1 long)
     walk-start ;
 : goal! ( tri -- )   \ (NPC_GoTo: the move's point on it, else its middle)
     dup goal-tri !  dup mv-at mv-at 0 v-walk over = if  drop goal-at mv-at vec-copy  else  tri-center goal-at vec!  then ;
@@ -210,7 +210,7 @@ is walk-start
     head-yaw f@ goal f> if  head-yaw f@ rate f-  else  head-yaw f@ rate f+  then  head-yaw f! ;
 -2 constant at-point
 : look-char ( -- id | at-point )
-    look-who @ case  0 of  s" fiona" actor-named  endof   1 of  s" hewie" actor-named  endof
+    look-who @ case  0 of  fiona-id  endof   1 of  hewie-id  endof
                      >r at-point r>  endcase ;
 : look-target ( -- v | 0 )   \ (one gone: none)
     look-char dup at-point = if  drop look-pt exit  then
@@ -242,8 +242,8 @@ create who-at /vec allot
 : nearer ( F: best d2 -- best' )   \ (the nearer kept, and its place in who-at)
     fover fover f> if  fnip  who-at an-near vec-copy  else  fdrop  then ;
 : nearest-sq ( -- ) ( F: -- d2 )   \ (Kind26_NearestDistSq: Fiona, Hewie, the stalker; its place in who-at)
-    s" fiona" actor-named near-sq  who-at an-near vec-copy
-    s" hewie" actor-named near-sq nearer
+    fiona-id near-sq  who-at an-near vec-copy
+    hewie-id near-sq nearer
     st-actor @ near-sq nearer ;
 : an-go ( doing -- )  an-doing !  1 an-new ! ;
 : an-face ( F: x z -- )   \ (turned 0.3 of the way to it)
@@ -355,7 +355,7 @@ create who-at /vec allot
     self body? 0= if  0 him act.visible l!  exit  then
     my-at v.x sf@ him act.x sf!  my-at v.y sf@ him act.y sf!  my-at v.z sf@ him act.z sf!
     yaw him act.yaw sf!
-    self body-room room-id =  shown @ and  0<> 1 and  him act.visible l! ;
+    self body-room room-id =  shown @ and  0<> 1 and  him act.visible l!  1 him act.character l! ;   \ (not drawn while the world is frozen)
 \ its feet on the floor (Pursuer_ModelUpdate: the model's +0x40 by its stance's points - its kinds
 \ set none, 0 0: at its own height - and +0x4C): in the room played, on its triangle, planted but
 \ while a script walks it through blocked floor; a scene's (its director's motion) not
@@ -379,6 +379,7 @@ behaviour figure
   on cast-dress ( model -- )  dress ;
   on cast-out ( -- )  body-off ;
   on tick ( -- )   \ (a scene having it - Character_Disable - its frame waits: the scene moves its model)
+      flag-names:panic-starting state-flag? if  exit  then   \ (her panic's start: held still)
       model @ 0< 0= self body? and  model @ scene-has? 0= and if  act @ execute  look  then  pose  fit-legs ;
   on frame-end ( -- )
       model @ 0< 0= self body? and if  mv-done @  ended?  model @ 0 0 1 motion-events  broadcast moving  then ;

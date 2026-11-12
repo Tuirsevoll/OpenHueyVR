@@ -25,7 +25,8 @@ enum {
     SPRITE_ADD = 0x40,     /* added to the picture */
     SPRITE_GLOW = 0x80,    /* also glows (the original's glow pass: drawn again into its buffer) */
     SPRITE_OPAQUE = 0x100, /* not blended, writes depth (the shards' boxes) */
-    SPRITE_MASK = 0x200    /* only marks the bloom mask (the original's layer 0x26), draws no colour */
+    SPRITE_MASK = 0x200,   /* only marks the bloom mask (the original's layer 0x26), draws no colour */
+    SPRITE_WHOLE = 0x400   /* the batch drawn only when all of it is in view (the original's clip check before drawing) */
 };
 
 typedef struct Sprite {
@@ -67,6 +68,7 @@ void sprites_uv(int b, float u0, float v0, float u1, float v1);   /* a cell in t
 Sprite *sprites_records(int b, int n);
 
 void sprites_draw(const Mat4 *view_proj, const Mat4 *view);
+void sprites_draw_layer(const Mat4 *view_proj, const Mat4 *view, int layer, int last);   /* one renderer layer's batches (`last`: the highest layer) */
 /* the glow pass: whether any batch drawn this frame glows; those drawn again (after sprites_draw) */
 int sprites_glowing(void);
 void sprites_draw_glow(const Mat4 *view_proj);

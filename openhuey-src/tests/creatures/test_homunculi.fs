@@ -69,6 +69,11 @@ testing sight 0: it wakes, turns to her and comes; close, it closes in to grab h
 5 run-frames
 T{ [: awake @ ;] of7 -> -1 }T
 full-suite   \ (on: waits, scenes, walks - the full run's)
+testing the world frozen (a room's close look, flag $17): it holds where it is - neither updated nor drawn
+testing ... (Creatures_Update, Creatures_Draw: its model a character's); hers a character's too, not drawn meanwhile
+world-frozen state-flag-set  d-her constant d-frozen
+T{ 60 run-frames  d-her d-frozen =  game:fiona enter  her-model @  leave-actor actor act.character l@ -> -1 1 }T
+world-frozen state-flag-clear
 d-her constant d0
 T{ [: [: running @ 3 = ;] of7 ;] 900 soon -> -1 }T
 T{ d-her d0 < -> -1 }T
@@ -127,6 +132,11 @@ T{ room-id left-room <>  [: my-room @ ;] of7 left-room =  h7 body?  h7 body-room
 T{ [: trip creatures.trip:t.last @ ;] of7  left-room way-out room-exit-door = -> -1 }T
 was-at h7 body-at vec-copy  30 run-frames
 T{ moved 9 12 within -> -1 }T   \ (0.35 a frame)
+testing ... at the door at its end held by someone it waits; locked against creatures (Progress_ExitPassable kind 2), its trip is over
+: d1 ( -- door )  left-room way-out room-exit-door ;
+T{ d1 doors:held-bit doors:set-bits  [: trip d1 door-ahead ;] of7  d1 doors:held-bit doors:clear-bits -> pass-wait }T
+T{ d1 $40 doors:set-bits  [: trip d1 door-ahead ;] of7  d1 $40 doors:clear-bits -> pass-shut }T
+T{ [: trip d1 door-ahead ;] of7 -> pass-on }T
 testing trodden on there off screen, a magnesia goes off: it is struck, facing heading 0 (ThingShared_StompStalkers)
 was-at h7 body-at vec-copy
 2 left-room -1  was-at vec@  0e 0e 0e  thing-new constant trodden

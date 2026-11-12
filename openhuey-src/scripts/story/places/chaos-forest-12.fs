@@ -21,7 +21,7 @@ create cameras  $C , 0 , 0 ,  $D , 1 , 1 ,   \ (area, set, path)
 : him-loaded ( -- )  his-scene-ahead? if  him-ahead ahead-slot figure-in  then ;
 : ways ( -- )
     0 0 leaves-by  1 1 leaves-by  3 3 leaves-by
-    fiona 2 in-area?  fiona held? 0= and if  him-loaded  2 2 leaves-by  then
+    fiona 2 in-area?  fiona held? 0= and if  him-loaded  2 exit-checked  then   \ (hers alone, even with Hewie played)
     cameras 2 cameras-at
     fiona 4 entered? if  0 prepare-exit  then
     fiona 5 entered?  fiona 6 entered? or  fiona 8 entered? or if  1 prepare-exit  then
@@ -37,3 +37,4 @@ create cameras  $C , 0 , 0 ,  $D , 1 , 1 ,   \ (area, set, path)
 : went ( -- )  wisp-slot figure-out ;
 
 ' came-in ' person-in ' each-frame ' went chaos-forest-12 place!
+here  camomile , ' pick-camomile , camomile-fx ,  -1 ,  chaos-forest-12 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

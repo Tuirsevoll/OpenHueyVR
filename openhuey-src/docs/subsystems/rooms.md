@@ -20,6 +20,12 @@ the next when the controlled character goes through an exit.
 **Facts:** `room-id` (the played room), the room graph (`room-exit-leads`, `route`...), whether
 a room exists, its exits' spots (`exit-spot`, `exit-stand`).
 
+An exit's spots are 4 inside the room from its door, 12 beyond it and 12 inside (`exit-spot` 0, 1,
+2: `Doors_NavSpot`): found by walking the nav mesh from the door's own spot, then from each
+triangle's centre, by the edge the step leaves through (`NavTri_ExitEdge` - a spot on a
+triangle's edge is in it). Arriving, she stands on the first; without one, on the third
+(`Fiona_Vt38`'s), else by the room's first camera.
+
 Names: rooms are named in `scripts/room-names.fs` (`front-garden-2`).
 
 ## State
@@ -52,6 +58,13 @@ From `SceneGame_LeaveRoom`, the play sub-state (`scene_game.c` ~1033-1095), `Sce
    exit) - arriving by that same number (SceneGame_LeaveRoom). The room left stays in the spare
    slot (the original's two slots swap), so a forced exit with nothing else loaded ahead goes back
    to it; with no room left either (a new game, a jump) it takes exit 0's door.
+   A save keeps the spare (`spare-was`, the rooms actor's line; put back as the save's people are):
+   the hidden room $27 (`off-map-27`), in by a hole from any of six rooms, has only its forced way
+   out. The original can't save there; OpenHuey's quick and bug saves can, and before 0.2.42 a load
+   there left the spare as the room played before - its way out led elsewhere or nowhere.
+   A save point's save (`save-slot`, SceneGame_Save) clears flag $18 (the stalkers kept where they
+   are) in the game as it saves - so it is neither saved nor kept on; a quick save leaves it.
+   The rooms' saved words (Rooms_SavedState, 13) are the closed-off doors: the progress's.
 
 ## Drawing
 
@@ -84,10 +97,10 @@ character off the nav mesh takes light 0 alone, wherever it reaches (`Lights_For
 
 ## Status
 
-**Built** (`scripts/rooms.fs`). Checked by `tests/rooms/test_rooms.fs` (21 tests: a new game in
+**Built** (`scripts/rooms.fs`). Checked by `tests/rooms/test_rooms.fs` (26 tests: a new game in
 the cage room; out by an exit - leaving / arrived / entered in order, with both exits; back
 again; an exit to nowhere; a jump; the fog drawn early by its 26 bytes, past its section; no
-lights section; light 0 off the mesh). The placed objects' layers: `tests/graphics`. Listeners subscribe to `leaving-room`, `arrived` and
+lights section; light 0 off the mesh; an exit's spots on a triangle's edge, her arrival back from the kiln room). The placed objects' layers: `tests/graphics`. Listeners subscribe to `leaving-room`, `arrived` and
 `entered-room`.
 
 The rooms' own sounds come with their scripts (`room-sounds`). The sections where Hewie is the

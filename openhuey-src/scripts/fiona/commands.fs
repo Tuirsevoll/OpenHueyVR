@@ -9,7 +9,6 @@
 IN: fiona.commands
 USING: engine vectors game-state actors messages hewie-names common facts keys fiona.state fiona.anims fiona.model fiona.moving fiona.spots fiona.looks flag-names floor-flags ;
 
-: dog-in? ( -- flag )  dog-here @ dog-absent <> ;            \ in the game (+0x1AD5D4)
 : dog-at ( -- v )  hewie-id body-at ;
 : dog-dist ( F: -- d )  dog-ok? if  her-at dog-at vec-dist  else  1000e  then ;
 : react ( n -- )  hewie-id send reaction ;          \ Fiona_HewieReact (his to weigh)
@@ -58,7 +57,7 @@ USING: engine vectors game-state actors messages hewie-names common facts keys f
 create ch-at /vec allot
 : go-spot ( -- )
     dog-ok? 0= if  exit  then
-    hewie-id body-tri dog-at hewie-floor her-act-yaw f@ 15e v-free     ( F: d )
+    her-act-tri @ her-act-at hewie-floor her-act-yaw f@ 15e v-free     ( F: d )   \ (from where she was, by his floor: Actor_FreeDistance)
     fdup 5e f> if
         5e f-  her-act-yaw f@ fswap ch-at her-act-at vec-ahead
         her-tri @ her-at ch-at hewie-floor v-walk dup 0< if  drop  else  her-act-tri !  her-act-at ch-at vec-copy  then
@@ -315,3 +314,8 @@ create ch-at /vec allot
 : read-command ( -- )
     her-busy-t @ if  -1 her-busy-t +!  then
     reads-pad? if  gesture  else  no-gesture  then  her-cmd ! ;
+\ a script has her (Fiona_Think, the frame of a character in a script's hands): the gesture read
+\ whatever she is doing, while Hewie may be commanded and she isn't kept busy - the story's to
+\ read (the attack lesson's "push up on the right stick")
+: read-command-scripted ( -- )
+    hewie-commandable state-flag?  fiona-occupied state-flag? 0= and if  gesture  else  no-gesture  then  her-cmd ! ;

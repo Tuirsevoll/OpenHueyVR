@@ -48,7 +48,7 @@ create flames  6e 21.8e -3.2e f, f, f,   29e 41.8e 41.9e f, f, f,   -46.8e 93.8e
 
 \ ---- Debilitas coming in after her (the golem done, she back by exit 1) ----
 : run-to-tri ( id tri -- )  {: id tri :}  id run-path-move tri -1  tri tri-center 0e  move  id wait-move ;
-: entrance-over ( -- )  hewie-no-attack state-off  force-followed state-off  0 his-entrance !  stalker let-go ;
+: entrance-over ( -- )  hewie-no-attack state-off  force-followed state-off  0 his-entrance !  stalker let-go  0 summon-take ;
 : bursts-in ( -- )   \ (in by the far door, through the near one if shut, on along the gallery)
     yield  stalker -1 -1 camera-set  stalker full-health
     stalker hold  1 $FF 8 rumble-pad  stalker $A1 -90 place-on-tri
@@ -66,7 +66,7 @@ create flames  6e 21.8e -3.2e f, f, f,   29e 41.8e 41.9e f, f, f,   -46.8e 93.8e
     stalker hold  stalker his-motions motions-for  stalker $8A 0 31.949e -18.333e walk-to
     stalker use-motions  stalker true noclip  -1 his-scene !  stalker room-motion his-shove + 5 start-blend8
     0  begin
-        stalker fiona 0 close-to? if  stalker throws-her  then
+        stalker fiona self-touching? if  stalker throws-her  then
         dup 60 = if  29e 19e 25e dust  36e 19e 25e dust  thud-sound room-bank stalker sound-by  then
         1+  st-kind-now @  cam-set@ 0<> no-shadow
         stalker went-round? 0= while  yield
@@ -75,7 +75,7 @@ create flames  6e 21.8e -3.2e f, f, f,   29e 41.8e 41.9e f, f, f,   -46.8e 93.8e
 : shove? ( -- )
     him-sent @  4 stalker-alert? or  st-cond-now @ down-cond = or  debilitas? 0= or if  exit  then
     0 stalker-alert?  2 stalker-alert? or 0= if  exit  then
-    stalker rubble-area in-area?  in-gallery @ and if  -1 him-sent !  ['] shoves start drop  then ;
+    stalker rubble-area in-area?  in-gallery @ and if  -1 him-sent !  stalker held? 0= if  ['] shoves start drop  then  then ;   \ (mode 0: not while he's held)
 
 \ ---- the chapter turns (brought in after Daniella's scene): the castle's doors anew, Daniella the
 \ stalker, she weak; her costume and Hewie's coat put on afresh, the stage music anew ----
@@ -135,7 +135,7 @@ create locked-doors   2 , $34 , $62 , $44 , $47 , $4F , $56 , $67 , $7D , $51 , 
     drop  room-sounds  0 his-scene !
     the-vase as-it-stands
     the-vase broken?  c1f-5-antimony-powder fact? 0= and if  antimony-fx 41e 1e -19e flicker-at  then
-    night? 0= if  $84 $60 $3C $50 $24 $2A $2A $46 room-tint  then
+    night? 0= if  daylight-tint  then
     flames-lit
     c1f-6-flag1 fact?  over-music-b fact? 0= and if  hewie let-go  then
     1 $2300 sound-reverb! ;
@@ -185,3 +185,4 @@ $3D constant bedroom-door
     stalker held?  his-scene @ and if  stalker $196 0 place-on-tri  st-kind-now @ false no-shadow  0 his-scene !  then ;
 
 ' came-in ' person-in ' each-frame ' went castle-1f-5 place!
+here  antimony-powder , ' pick-antimony , antimony-fx ,  -1 ,  castle-1f-5 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)
