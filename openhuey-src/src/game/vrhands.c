@@ -129,6 +129,10 @@ static Vec3 sCenter[2];
 /* The arm stops at the room's mesh where the hand's buzz fires (SWING_SKIN's 0.40): the hand is
  * stopped at the surface it has just been warned of, from the wrist and from the fingertip. */
 #define HAND_STOP 0.40f
+/* the soft buzz when a hand touches a wall, floor, ceiling, door or placed object; 0 is off, 1 is on */
+#define WALL_BUZZ 0
+/* the sharp pulse when the arm stop engages; 0 is off, 1 is on */
+#define STOP_PULSE 0
 /* (temporary: the arm stops letting go when the hand is this far from its stop, about an arm's
  * length) */
 #define HAND_RELEASE 5.0f
@@ -885,7 +889,9 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
             int held = vec3_len(vec3_sub(sStopRaw[side], at)) > 0.05f;
 
             if (held && !sStopHeld[side]) {
-                vr_haptic(side, 0.6f, 0.02f);
+                if (STOP_PULSE) {
+                    vr_haptic(side, 0.6f, 0.02f);
+                }
             }
             sStopHeld[side] = held;
         }
@@ -3210,7 +3216,9 @@ void vrhands_tick(Engine *e) {
                         hand_path_hits_placed(&e->room.placed, skipProp, sHandAt[side], at, 0.40f));
 
             if (wall && !sWallNear[side]) {
-                vr_haptic(side, 0.15f, 0.03f);
+                if (WALL_BUZZ) {
+                    vr_haptic(side, 0.15f, 0.03f);
+                }
                 sWallNear[side] = 1;
             }
             if (!wall) {

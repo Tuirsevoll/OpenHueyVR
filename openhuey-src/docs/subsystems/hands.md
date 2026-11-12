@@ -67,6 +67,9 @@ swept through something solid.
 Walls, floors and ceilings stop the arm at 0.40 and let it slide along them. Doors and placed
 objects buzz only.
 
+Both touch buzzes are off (WALL_BUZZ 0 and STOP_PULSE 0 in vrhands.c); detection and the arm stop
+still run.
+
 Checked by `tests/hands_sweep_check.c` (`hands_sweep_check`): a path across a wall, a path clear of
 it, a fast sweep through a thin wall, a path along a floor (a flat face counts), a path coming down
 onto a table top within the skin and one staying well above it, a path across a shut door's leaf
