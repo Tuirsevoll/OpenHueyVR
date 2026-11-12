@@ -787,6 +787,13 @@ static float sAlign;
 static int sAlignSet;
 static int sRecenter;
 
+/* the look the blend took this frame (draw): her eyes on the blended place, the height of her head
+ * as the last posed skeleton has it - the same the hands' anchor was set on. draw_frame uses it for
+ * the played camera instead of looking again, so the two cannot disagree (cleared on every other
+ * frame: then draw_frame looks for itself, as it always has). */
+static Camera sBlendCam;
+static int sBlendCamHave;
+
 /* her eyes. the headset's own orientation is applied on top of sAlign, so looking around does not
  * go through her body yaw. a cutscene and the free camera keep the game's camera. */
 static int fiona_view(Engine *e, Camera *out) {
@@ -1115,7 +1122,14 @@ static void draw_frame(Engine *e) {
             {
                 Camera played;
                 Mat4 body;
-                int fp = fiona_view(e, &played) && vr_body_view(&body);
+                int fp;
+
+                if (sBlendCamHave) {   /* (her eyes' own look, taken before the shadows: the same head height as the hands) */
+                    played = sBlendCam;
+                    fp = vr_body_view(&body);
+                } else {
+                    fp = fiona_view(e, &played) && vr_body_view(&body);
+                }
 
                 if (!fp) {
                     sFp = NULL;
@@ -1178,6 +1192,7 @@ static void draw_frame(Engine *e) {
 static void draw(Engine *e) {
     Actor *p = fiona_pick(e);
 
+    sBlendCamHave = 0;   /* (only a blend sets it: otherwise draw_frame looks for itself) */
     if (vr_active() && sPose.have && p != NULL && p == sPose.who && p->drive == NULL &&
         !cutscene_on_screen() && !freecam_active() && !gCamDir.scene) {
         Vec3 saved_pos = p->pos;
@@ -1198,7 +1213,10 @@ static void draw(Engine *e) {
         fiona_view(e, &blended);
         saved_align = sAlign;   /* (taken here: the turn it just took stays taken - the frame only blends) */
         sAlign = angle_wrap(sPose.prev_align + angle_delta(sPose.cur_align, sPose.prev_align) * sPose.alpha);
-        fiona_view(e, &blended);   /* (again, so the eyes and the camera use the blended yaw) */
+        if (fiona_view(e, &blended)) {   /* (again, so the eyes and the camera use the blended yaw) */
+            sBlendCam = blended;   /* (the camera the hands' anchor was set on: draw_frame uses this one) */
+            sBlendCamHave = 1;
+        }
 #if VR_STEP_LOG
         t0 = SDL_GetPerformanceCounter();   /* (temporary: the whole blended frame, timed) */
 #endif
