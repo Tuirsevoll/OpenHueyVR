@@ -23,8 +23,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <SDL3/SDL.h>
-
 #define HOLD_NONE 0
 #define HOLD_DOOR 1
 #define HOLD_PROP 2
@@ -67,19 +65,6 @@ static int sGrace[2], sGraceDoor[2];   /* after a throw, that hand does not shov
 static Vec3 sHandAt[2];
 static int sHandHave[2];
 static int sPoseRoom = -2;
-/* (temporary: the arm diagnostics - pose_arm calls since each side last wrote a line) */
-static unsigned sArmLog[2];
-/* (temporary: the palm-gap diagnostic's write limiter, a side at a time) */
-static unsigned sPalmLog[2];
-/* (temporary: the jump diagnostic - last frame's palm and elbow positions, Fiona's and the
- * eye's position and yaw, the controller's position, its write limiter, and the aim fallback's
- * running count for each side) */
-static float sPalmWas[2][3], sElbowWas[2][3];
-static float sBodyWas[2][3], sEyeWas[2][3], sAtWas[2][3];
-static float sBodyYawWas[2], sEyeYawWas[2];
-static int sPointHave[2];
-static unsigned sJumpLog[2];
-static unsigned sAimFallback[2];
 /* one pose per door, shared by both rooms it joins */
 static float sDoorSwing[DOORS];
 static unsigned char sDoorHave[DOORS], sDoorOpen[DOORS];
@@ -224,89 +209,6 @@ static void find_arms(Actor *a, const Mat4 *world) {
             sPalmBone[k] = palm_bone(m, sHandBone[k]);
         }
     }
-}
-
-/* (temporary) one bone of an arm's chain, then its children down to 6 levels: its index, its
- * place about the eye in metres, how much skin it moves, and what find_arms made of it */
-static void dump_bone(FILE *f, const Model *m, const Mat4 *world, const Mat4 *place, Vec3 eye,
-                      int side, int bone, int depth) {
-    Mat4 room = mat4_mul(*place, world[bone]);
-    const char *role = "-";
-    int n = 0, i, k;
-
-    for (i = 0; i < m->nv; i++) {
-        for (k = 0; k < 4; k++) {
-            if (m->v[i].bones[k] == bone && m->v[i].weights[k] >= 0.15f) {
-                n++;
-                break;
-            }
-        }
-    }
-    if (bone == sShoulder[side]) {
-        role = "shoulder";
-    } else if (bone == sElbow[side]) {
-        role = "elbow";
-    } else if (bone == sHandBone[side]) {
-        role = "hand";
-    } else if (bone == sPalmBone[side]) {
-        role = "palm";   /* (the arm solve's target now) */
-    }
-    fprintf(f, "side %d bone %d name no name parent %d pos %.4f %.4f %.4f verts %d role %s\n",
-            side, bone, m->bones[bone].parent,
-            (room.m[12] - eye.x) / VR_UNITS_PER_METER,
-            (room.m[13] - eye.y) / VR_UNITS_PER_METER,
-            (room.m[14] - eye.z) / VR_UNITS_PER_METER,
-            n, role);
-    if (depth >= 6) {
-        return;
-    }
-    for (i = 0; i < m->nbones; i++) {
-        if (m->bones[i].parent == bone) {
-            dump_bone(f, m, world, place, eye, side, i, depth + 1);
-        }
-    }
-}
-
-/* (temporary) when find_arms first finds a model's arms, its two chains, then the bind pose's
- * upper arm and forearm once: vr_arm_chain.txt beside the executable. The Model keeps no bone
- * names, so each row says "no name". */
-static void dump_arm_chain(const Actor *a, const Mat4 *world, const Mat4 *place) {
-    static const Model *done;
-    const Model *m = &a->model;
-    const char *base;
-    char path[1024];
-    Vec3 eye;
-    FILE *f;
-    int side;
-
-    if (done == m || (!sArmFound[0] && !sArmFound[1])) {
-        return;
-    }
-    if (!vr_anchor_get(&eye, NULL)) {
-        return;
-    }
-    base = SDL_GetBasePath();
-    snprintf(path, sizeof(path), "%svr_arm_chain.txt", base != NULL ? base : "./");
-    f = fopen(path, "a");
-    if (f == NULL) {
-        return;
-    }
-    done = m;
-    for (side = 0; side < 2; side++) {
-        if (sArmFound[side] && sShoulder[side] >= 0) {
-            dump_bone(f, m, world, place, eye, side, sShoulder[side], 0);
-        }
-    }
-    for (side = 0; side < 2; side++) {
-        if (sArmLenHave[side]) {
-            fprintf(f, "bind side %d l1 %.4f l2 %.4f reach %.4f\n",
-                    side,
-                    sArmLen[side][0] / VR_UNITS_PER_METER,
-                    sArmLen[side][1] / VR_UNITS_PER_METER,
-                    (sArmLen[side][0] + sArmLen[side][1]) / VR_UNITS_PER_METER);
-        }
-    }
-    fclose(f);
 }
 
 /* play space matches the camera: +X right, +Y up, -Z forward. `p` is an offset from her eyes. */
@@ -739,136 +641,13 @@ static Mat4 grip_matrix(Vec3 at, Vec3 fwd, Vec3 up, float scale, Vec3 center, in
     return m;
 }
 
-/* (temporary) one line a second per arm: the bone lengths the arm is solved with, how far the
- * controller is, whether the reach clamp ran, and where controller and shoulder sit about the
- * eye - lengths and offsets in metres. Appends to vr_arm_debug.txt beside the executable. */
-static void log_arm(int side, float l1, float l2, Vec3 at, const float *root, int clamped) {
-    const char *base = SDL_GetBasePath();
-    char path[1024];
-    Vec3 eye;
-    float scale = 1.0f;
-    FILE *f;
-
-    if (!vr_anchor_get(&eye, NULL)) {
-        return;
-    }
-    vr_body(NULL, &scale);
-    snprintf(path, sizeof(path), "%svr_arm_debug.txt", base != NULL ? base : "./");
-    f = fopen(path, "a");
-    if (f == NULL) {
-        return;
-    }
-    fprintf(f,
-            "side %d l1 %.4f l2 %.4f reach %.4f dist %.4f clamp %d "
-            "controller %.4f %.4f %.4f shoulder %.4f %.4f %.4f head_yaw %.2f scale %.4f\n",
-            side,
-            l1 / VR_UNITS_PER_METER, l2 / VR_UNITS_PER_METER, (l1 + l2) / VR_UNITS_PER_METER,
-            vec3_len(vec3_sub(at, vec3(root[0], root[1], root[2]))) / VR_UNITS_PER_METER,
-            clamped,
-            (at.x - eye.x) / VR_UNITS_PER_METER, (at.y - eye.y) / VR_UNITS_PER_METER,
-            (at.z - eye.z) / VR_UNITS_PER_METER,
-            (root[0] - eye.x) / VR_UNITS_PER_METER, (root[1] - eye.y) / VR_UNITS_PER_METER,
-            (root[2] - eye.z) / VR_UNITS_PER_METER,
-            vr_head_yaw() * 57.2957795f, scale);
-    fclose(f);
-}
-
-/* (temporary) one line for a palm further than 3 cm from its controller: the gap and the arm's
- * state at that moment - lengths and distances in metres, as log_arm. Appends to the same
- * vr_arm_debug.txt beside the executable. */
-static void log_palm_gap(int side, float err, float dist, float reach, float l1, float l2,
-                         int clamped, float shoulder_wrist, float elbow_wrist) {
-    const char *base = SDL_GetBasePath();
-    char path[1024];
-    FILE *f;
-
-    snprintf(path, sizeof(path), "%svr_arm_debug.txt", base != NULL ? base : "./");
-    f = fopen(path, "a");
-    if (f == NULL) {
-        return;
-    }
-    fprintf(f,
-            "palm side %d error %.4f dist %.4f reach %.4f l1 %.4f l2 %.4f clamp %d "
-            "shoulder_wrist %.4f elbow_wrist %.4f\n",
-            side,
-            err / VR_UNITS_PER_METER, dist / VR_UNITS_PER_METER, reach / VR_UNITS_PER_METER,
-            l1 / VR_UNITS_PER_METER, l2 / VR_UNITS_PER_METER, clamped,
-            shoulder_wrist / VR_UNITS_PER_METER, elbow_wrist / VR_UNITS_PER_METER);
-    fclose(f);
-}
-
-/* (temporary) whether aim would take its fallback: the same test aim_x makes - the reference
- * within AIM_PARALLEL of the bone's length (or no reference at all). Counted from outside so
- * aim itself is untouched. */
-static int aim_would_fallback(const float *ref, const float *from, const float *to) {
-    float x[3], c[3];
-    float rl = v_len(ref);
-
-    v_sub(x, to, from);
-    v_norm(x, x);
-    v_cross(c, ref, x);
-    return rl < 1.0e-5f || v_len(c) < AIM_PARALLEL * rl;
-}
-
-/* (temporary) one line for a palm or elbow that jumped in a frame: how far each moved, the
- * palm's signed offset from the controller, both points before and after about the eye, the
- * shoulder-to-controller distance, what the solve used, and how Fiona, the eye and the
- * controller moved that frame - metres (yaw in degrees), in vr_arm_debug.txt. */
-static void log_jump(int side, const char *which, float palm_move, float elbow_move,
-                     const float *palm_now, const float *palm_was,
-                     const float *elbow_now, const float *elbow_was, Vec3 at, const float *root,
-                     int bend, int aimfb, int clamp, unsigned aimfb_total,
-                     float body_move, float body_yaw, float eye_move, float eye_yaw,
-                     float ctrl_move) {
-    const char *base = SDL_GetBasePath();
-    char path[1024];
-    Vec3 eye;
-    FILE *f;
-
-    if (!vr_anchor_get(&eye, NULL)) {
-        return;
-    }
-    snprintf(path, sizeof(path), "%svr_arm_debug.txt", base != NULL ? base : "./");
-    f = fopen(path, "a");
-    if (f == NULL) {
-        return;
-    }
-    fprintf(f,
-            "jump side %d %s palm_move %.4f elbow_move %.4f "
-            "palm_off %.4f %.4f %.4f dist %.4f "
-            "palm_was %.4f %.4f %.4f palm_now %.4f %.4f %.4f "
-            "elbow_was %.4f %.4f %.4f elbow_now %.4f %.4f %.4f "
-            "bend %d aimfb %d clamp %d aimfb_total %u "
-            "body_move %.4f body_yaw %.2f eye_move %.4f eye_yaw %.2f ctrl_move %.4f\n",
-            side, which, palm_move, elbow_move,
-            (palm_now[0] - at.x) / VR_UNITS_PER_METER,
-            (palm_now[1] - at.y) / VR_UNITS_PER_METER,
-            (palm_now[2] - at.z) / VR_UNITS_PER_METER,
-            vec3_len(vec3_sub(at, vec3(root[0], root[1], root[2]))) / VR_UNITS_PER_METER,
-            (palm_was[0] - eye.x) / VR_UNITS_PER_METER,
-            (palm_was[1] - eye.y) / VR_UNITS_PER_METER,
-            (palm_was[2] - eye.z) / VR_UNITS_PER_METER,
-            (palm_now[0] - eye.x) / VR_UNITS_PER_METER,
-            (palm_now[1] - eye.y) / VR_UNITS_PER_METER,
-            (palm_now[2] - eye.z) / VR_UNITS_PER_METER,
-            (elbow_was[0] - eye.x) / VR_UNITS_PER_METER,
-            (elbow_was[1] - eye.y) / VR_UNITS_PER_METER,
-            (elbow_was[2] - eye.z) / VR_UNITS_PER_METER,
-            (elbow_now[0] - eye.x) / VR_UNITS_PER_METER,
-            (elbow_now[1] - eye.y) / VR_UNITS_PER_METER,
-            (elbow_now[2] - eye.z) / VR_UNITS_PER_METER,
-            bend, aimfb, clamp, aimfb_total,
-            body_move, body_yaw, eye_move, eye_yaw, ctrl_move);
-    fclose(f);
-}
-
 static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace, int side, Vec3 at, Vec3 fwd, Vec3 up) {
     const Model *m = &a->model;
     int sh = sShoulder[side], el = sElbow[side];
     int wr = sHandBone[side], pa = sPalmBone[side] >= 0 ? sPalmBone[side] : sHandBone[side];
     Mat4 room[3], grip, old;
     float root[3], mid[3], pole[3], l1, l2, yaw, hs;
-    int i, clamped = 0;
+    int i;
 
     if (!sArmFound[side] || sh < 0 || el < 0 || wr < 0 || wr >= m->nbones || pa < 0 || pa >= m->nbones) {
         return;
@@ -914,7 +693,6 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
             grip.m[12] = reach[0];
             grip.m[13] = reach[1];
             grip.m[14] = reach[2];
-            clamped = 1;
         }
         place_middle(root, mid, reach, pole, l1, l2, side);
         if (side == 0) {
@@ -1005,136 +783,6 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
             }
         }
     }
-    if (sArmLog[side]++ % 60 == 0) {
-        log_arm(side, l1, l2, at, root, clamped);
-    }
-    {
-        /* (temporary) the gap between the placed palm and its controller, and the arm's state
-         * then; a line only over 3 cm, at most 10 a second a side */
-        Mat4 palm = mat4_mul(*place, world[pa]);
-        Mat4 wrist = mat4_mul(*place, world[wr]);
-        float ctr[3] = {at.x, at.y, at.z};
-        float d3[3];
-        float err, dist, shoulder_wrist, elbow_wrist;
-
-        d3[0] = palm.m[12] - at.x;
-        d3[1] = palm.m[13] - at.y;
-        d3[2] = palm.m[14] - at.z;
-        err = v_len(d3);
-        v_sub(d3, ctr, root);
-        dist = v_len(d3);
-        d3[0] = wrist.m[12] - root[0];
-        d3[1] = wrist.m[13] - root[1];
-        d3[2] = wrist.m[14] - root[2];
-        shoulder_wrist = v_len(d3);
-        d3[0] = wrist.m[12] - mid[0];
-        d3[1] = wrist.m[13] - mid[1];
-        d3[2] = wrist.m[14] - mid[2];
-        elbow_wrist = v_len(d3);
-        if (err > 0.03f * VR_UNITS_PER_METER && sPalmLog[side]++ % 6 == 0) {
-            log_palm_gap(side, err, dist, l1 + l2, l1, l2, clamped,
-                         shoulder_wrist, elbow_wrist);
-        }
-    }
-    {
-        /* (temporary) a palm or elbow moving over 2 cm in a frame: where it was and is, what the
-         * solve used then, and how often aim has fallen back - at most 20 lines a second a side */
-        Mat4 palm = mat4_mul(*place, world[pa]);
-        Mat4 elbow = mat4_mul(*place, world[el]);
-        float palm_now[3] = {palm.m[12], palm.m[13], palm.m[14]};
-        float elbow_now[3] = {elbow.m[12], elbow.m[13], elbow.m[14]};
-        float reachp[3] = {grip.m[12], grip.m[13], grip.m[14]};
-        float d3[3];
-        float palm_move = 0.0f, elbow_move = 0.0f;
-        float body_move = 0.0f, body_yaw = 0.0f, eye_move = 0.0f, eye_yaw = 0.0f;
-        float ctrl_move = 0.0f;
-        Vec3 eye_now = vec3(0.0f, 0.0f, 0.0f);
-        float eye_yaw_now = 0.0f;
-        int bend = l1 > 0.05f && l2 > 0.05f ? 1 : 0;
-        int aimfb = 0;
-        unsigned count = 0;
-
-        (void)vr_anchor_get(&eye_now, &eye_yaw_now);
-        if (bend) {
-            float wp[3];
-            int fb;
-
-            fb = aim_would_fallback(sBendWas[side], root, mid);
-            aimfb |= fb;
-            count += (unsigned)fb;
-            fb = aim_would_fallback(sBendWas[side], mid, reachp);
-            aimfb |= fb;
-            count += (unsigned)fb;
-            if (pa != wr) {
-                wp[0] = mid[0] + (reachp[0] - mid[0]) * sWristT[side];
-                wp[1] = mid[1] + (reachp[1] - mid[1]) * sWristT[side];
-                wp[2] = mid[2] + (reachp[2] - mid[2]) * sWristT[side];
-                fb = aim_would_fallback(pole, wp, reachp);
-                aimfb |= fb;
-                count += (unsigned)fb;
-            }
-            sAimFallback[side] += count;
-        }
-        if (sPointHave[side]) {
-            float dy;
-
-            d3[0] = palm_now[0] - sPalmWas[side][0];
-            d3[1] = palm_now[1] - sPalmWas[side][1];
-            d3[2] = palm_now[2] - sPalmWas[side][2];
-            palm_move = v_len(d3) / VR_UNITS_PER_METER;
-            d3[0] = elbow_now[0] - sElbowWas[side][0];
-            d3[1] = elbow_now[1] - sElbowWas[side][1];
-            d3[2] = elbow_now[2] - sElbowWas[side][2];
-            elbow_move = v_len(d3) / VR_UNITS_PER_METER;
-            /* how Fiona, the eye anchor and the controller moved since last frame */
-            d3[0] = a->pos.x - sBodyWas[side][0];
-            d3[1] = a->pos.y - sBodyWas[side][1];
-            d3[2] = a->pos.z - sBodyWas[side][2];
-            body_move = v_len(d3) / VR_UNITS_PER_METER;
-            dy = a->yaw - sBodyYawWas[side];
-            dy = atan2f(sinf(dy), cosf(dy));
-            body_yaw = fabsf(dy) * 57.2957795f;
-            d3[0] = eye_now.x - sEyeWas[side][0];
-            d3[1] = eye_now.y - sEyeWas[side][1];
-            d3[2] = eye_now.z - sEyeWas[side][2];
-            eye_move = v_len(d3) / VR_UNITS_PER_METER;
-            dy = eye_yaw_now - sEyeYawWas[side];
-            dy = atan2f(sinf(dy), cosf(dy));
-            eye_yaw = fabsf(dy) * 57.2957795f;
-            d3[0] = at.x - sAtWas[side][0];
-            d3[1] = at.y - sAtWas[side][1];
-            d3[2] = at.z - sAtWas[side][2];
-            ctrl_move = v_len(d3) / VR_UNITS_PER_METER;
-            if ((palm_move > 0.02f || elbow_move > 0.02f) && sJumpLog[side]++ % 3 == 0) {
-                const char *which = palm_move > 0.02f
-                                        ? (elbow_move > 0.02f ? "palm+elbow" : "palm")
-                                        : "elbow";
-
-                log_jump(side, which, palm_move, elbow_move, palm_now, sPalmWas[side],
-                         elbow_now, sElbowWas[side], at, root, bend, aimfb, clamped,
-                         sAimFallback[side], body_move, body_yaw, eye_move, eye_yaw,
-                         ctrl_move);
-            }
-        }
-        sPalmWas[side][0] = palm_now[0];
-        sPalmWas[side][1] = palm_now[1];
-        sPalmWas[side][2] = palm_now[2];
-        sElbowWas[side][0] = elbow_now[0];
-        sElbowWas[side][1] = elbow_now[1];
-        sElbowWas[side][2] = elbow_now[2];
-        sBodyWas[side][0] = a->pos.x;
-        sBodyWas[side][1] = a->pos.y;
-        sBodyWas[side][2] = a->pos.z;
-        sBodyYawWas[side] = a->yaw;
-        sEyeWas[side][0] = eye_now.x;
-        sEyeWas[side][1] = eye_now.y;
-        sEyeWas[side][2] = eye_now.z;
-        sEyeYawWas[side] = eye_yaw_now;
-        sAtWas[side][0] = at.x;
-        sAtWas[side][1] = at.y;
-        sAtWas[side][2] = at.z;
-        sPointHave[side] = 1;
-    }
 }
 
 static void log_hands(float left, float right, int posed) {
@@ -1152,7 +800,6 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
     }
     find_arms(a, world);
     arm_lengths(a);
-    dump_arm_chain(a, world, place);
     for (side = 0; side < 2; side++) {
         Vec3 at, right, fwd, up;
         float grip, index, thumb;
