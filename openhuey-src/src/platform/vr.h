@@ -24,6 +24,9 @@ typedef struct VrOptions {
     float seated_height;      /* the eye height seated play is sized to, metres (1.6: as standing) */
     float seated_offset;      /* the view raised or lowered within her body, metres */
     int32_t left_handed;      /* the sticks and the face buttons swapped between the hands */
+    int32_t whisper_open;     /* the microphone: 0 the right stick holds it (PTT), 1 open mic */
+    int32_t whisper_debug;    /* the speech subtitles: 0 off, 1 the command alone, 2 the command and
+                               * the words Whisper heard (the name is kept: it is the saved field) */
     int32_t calibrate_start;  /* the start-up height calibration: a first run, or asked for */
     int32_t cutscene_first_person;   /* retired: kept so an older options file still loads; nothing
                                       * reads it and no row writes it (a cutscene keeps its screen) */

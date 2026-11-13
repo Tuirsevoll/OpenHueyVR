@@ -27,6 +27,8 @@ rest single floats (`sf@ sf!`).
 | `vr.seated-height` | the eye height seated play is sized to, metres | 1.6 |
 | `vr.seated-height` | the eye height seated play is sized to, metres (not a row: 1.6 stands for a seat) | 1.6 |
 | `vr.left-handed` | the sticks and face buttons swapped between the hands | 0 |
+| `vr.whisper-open` | the microphone: 0 the right stick holds it (PTT), 1 open mic | 0 |
+| `vr.whisper-debug` | the speech subtitles: 0 off, 1 the command alone, 2 the command and the words heard | 0 |
 | `vr.calibrate-start` | the start-up height calibration (a first run, or asked for) | 1 |
 | `vr.cutscene-first-person` | an in-game scene watched from her eyes | 0 |
 | `vr.eye-height` | her eyes above the floor, metres (what a calibration measured) | 1.6 |
@@ -61,10 +63,11 @@ in, reachable without a keyboard:
   (`read-arrows`), so every page of the sub screen - the lists, the map, the files, the options -
   and this one are worked with the controllers: the left stick moves, the cross answers, the
   triangle backs out.
-- **Its rows**, seven of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
+- **Its rows**, nine of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
   Comfort vignette (Off, Low, Med, High), Teleport movement (Off, Fixed, Dynamic),
-  Calibrate height (the measurement, or Not set), Seated mode (Off, On) and View height offset
-  (5 cm a step). A label on the left, its value on the right, the row chosen drawn in a lit bar:
+  Calibrate height (the measurement, or Not set), Seated mode (Off, On), View height offset
+  (5 cm a step), Whisper (PTT, Open Mic) and Whisper Subtitles (Off, On, Debug). A label on the
+  left, its value on the right, the row chosen drawn in a lit bar:
   up / down choose, left / right step the row (a choice round its words, a number by its step),
   and the cross steps it too - on Calibrate height the cross is the measurement itself
   (`vr-calibrate`; without a headset the buzzer says so, and the row reads Not set). A change is
@@ -198,7 +201,8 @@ in, reachable without a keyboard:
   sampled with `GL_NEAREST` (a sampler of their own, only while the game's font draws), so a
   stroke is a stroke; the art around them keeps its smooth filtering.
 - **The defaults are the game as it was**: smooth turning, no vignette, the stick walking her,
-  neither seated nor left-handed, her eyes as the first pose found them, a scene on its screen.
+  neither seated nor left-handed, her eyes as the first pose found them, a scene on its screen,
+  the right stick holding the microphone and the subtitles off.
   `vr.calibrate-start` is 1: a first run is asked to calibrate once (with no calibration kept, the
   first pose's height is used as before).
 
@@ -212,14 +216,19 @@ one action: the height, the world's size and the view's origin together), **seat
 (`vr.seated`, with `vr.seated-offset` for the view's height in the body), **teleporting**
 (`vr.teleport`: Off, Fixed, Dynamic - the stick flick, its aim walking out until something stops
 it, facing the way it went, a glow for the landing), **left-handed play** (`vr.left-handed`: the
-sticks and face buttons over, the hands as they are), and **the VR options page**
-(`scripts/subscreen/vr.fs`, seven rows): the title's `VR OPTIONS` row and, in a game, the sub
+sticks and face buttons over, the hands as they are), **the microphone's mode** (`vr.whisper-open`:
+PTT, Open Mic) and **its subtitles** (`vr.whisper-debug`: Off, On, Debug - Off none; On the command
+Hewie heard, capitalised and with an exclamation mark, and nothing when the words made no command;
+Debug the command and the words Whisper heard in brackets, or `UNRECOGNISED:` and the words, in the
+message window's panel at the bottom of the screen), and **the VR options page**
+(`scripts/subscreen/vr.fs`, nine rows): the title's `VR OPTIONS` row and, in a game, the sub
 screen's page after the options - both worked with the controllers, the sub screen's arrows read
 from the VR stick in a headset.
 
 The options the game had are the defaults, so a run with none of them picked plays as it always did.
 Each row that is a choice steps round its words (Smooth, Snap 45, Snap 90; Off, Low, Med, High;
-Off, Fixed, Dynamic; On, Off) and the row's value is capitalised as the other menus' words are.
+Off, Fixed, Dynamic; On, Off; Off, On, Debug) and the row's value is capitalised as the other
+menus' words are.
 `vr.teleport-reach`, `vr.seated-height` and the calibration are kept in the options but are not
 rows - the reach is what a Dynamic flick grows to, and seated play sizes the world itself.
 The F1 settings menu (`scripts/graphics.fs`) is still the keyboard's: arrow keys only.

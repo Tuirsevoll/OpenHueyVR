@@ -1,9 +1,11 @@
 /* Hewie's voice, in process: a capture thread, then Whisper (tiny or base) on its own thread.
- * No console window and no whisper.exe. Push-to-talk is the right stick click. The open mic
- * is off until asked. A missing model leaves the commands quiet. */
+ * No console window and no whisper.exe. Push-to-talk is the right stick click; the open mic is
+ * the VR options' other choice (vr.h VrOptions). The transcript's subtitles are an option too.
+ * A missing model leaves the commands quiet. */
 #include "voice.h"
 
 #include "disc.h"
+#include "vr.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,7 +20,7 @@
 #define MIN_N (RATE * 3 / 10)
 
 static const char *kPrompt =
-    "come here. go. stay. sit. good boy. bad dog. shake. heel. follow. hang on. nice one. naughty. fuck her up. you e. pukui. queep. queen. hee. cut.";
+    "come here. go. stay. stop. sit. good boy. bad dog. shake. heel. follow. hang on. nice one. naughty. fuck her up. you e. pukui. queep. queen. hee. cut.";
 
 static const char *kNames[] = {
     "models/ggml-tiny.en.bin", "models/ggml-tiny.bin", "models/ggml-base.en.bin", "models/ggml-base.bin",
@@ -65,9 +67,13 @@ static HANDLE sWorker;
 static HANDLE sJobEv;
 static volatile LONG sQuit;
 static volatile LONG sTalk;
-static volatile LONG sOpen;
 static int sStarted;
-static int sDebug = 1;   /* the transcript box starts on; Home toggles it */
+
+/* the microphone and the transcript are the VR options (vr.h VrOptions): C reads them as it
+ * runs, the options page and the F8 / Home keys write them */
+static int mic_open(void) {
+    return InterlockedCompareExchange((volatile LONG *)&gVrOptions.whisper_open, 0, 0) != 0;
+}
 
 static float sLive[PRE_N];
 static int sLiveN, sLiveAt;
@@ -132,7 +138,7 @@ static void submit(void) {
 
 static void hear(float s) {
     int talk = InterlockedCompareExchange(&sTalk, 0, 0) != 0;
-    int open = InterlockedCompareExchange(&sOpen, 0, 0) != 0;
+    int open = mic_open();
 
     if (talk && !sWasTalk) {
         preroll();   /* the quarter-second before the click, so the first syllable is kept */
@@ -164,7 +170,7 @@ static void hear(float s) {
 }
 
 static void energy(const float *mono, int n, int rate) {
-    int open = InterlockedCompareExchange(&sOpen, 0, 0) != 0;
+    int open = mic_open();
     int talk = InterlockedCompareExchange(&sTalk, 0, 0) != 0;
     double a = 0.0;
     int i;
@@ -480,7 +486,7 @@ static int phrase_kind(const char *text) {
         {"go ahead", VOICE_GO}, {"go on", VOICE_GO}, {"go there", VOICE_GO}, {"forward", VOICE_GO}, {"go", VOICE_GO},
         {"stay with me", VOICE_STAY}, {"wait there", VOICE_STAY}, {"stay still", VOICE_STAY},
         {"stay there", VOICE_STAY}, {"hang on", VOICE_STAY}, {"stay", VOICE_STAY},
-        {"wait", VOICE_STAY}, {"hold", VOICE_STAY},
+        {"wait", VOICE_STAY}, {"hold", VOICE_STAY}, {"stop", VOICE_STAY},
         {"sit down", VOICE_SIT}, {"sit", VOICE_SIT},
         {"good boy", VOICE_PRAISE}, {"good dog", VOICE_PRAISE}, {"nice one", VOICE_PRAISE},
         {"who's a good", VOICE_PRAISE}, {"whos a good", VOICE_PRAISE},
@@ -765,19 +771,19 @@ void voice_copy(char *dst, int cap) {
 }
 
 void voice_set_debug(int on) {
-    sDebug = on ? 1 : 0;
-    fprintf(stderr, "voice: transcript %s\n", sDebug ? "on" : "off");
+    gVrOptions.whisper_debug = on ? 2 : 0;   /* (the key's toggle: off, or the full debug transcript) */
+    fprintf(stderr, "voice: subtitles %s\n", voice_debug() ? "on" : "off");
 }
 
-int voice_debug(void) { return sDebug; }
+int voice_debug(void) { return gVrOptions.whisper_debug; }
 
 void voice_set_open_mic(int on) {
-    InterlockedExchange(&sOpen, on ? 1 : 0);
-    fprintf(stderr, "voice: open mic %s\n", on ? "on" : "off");
+    InterlockedExchange((volatile LONG *)&gVrOptions.whisper_open, on ? 1 : 0);
+    fprintf(stderr, "voice: open mic %s\n", voice_open_mic() ? "on" : "off");
 }
 
 int voice_open_mic(void) {
-    return InterlockedCompareExchange(&sOpen, 0, 0) != 0;
+    return mic_open();
 }
 
 #endif

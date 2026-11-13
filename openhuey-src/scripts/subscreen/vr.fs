@@ -1,14 +1,14 @@
 \ subscreen/vr.fs - the VR options page (docs/subsystems/comfort.md): the comfort and accessibility
 \ choices C keeps (vr.h VrOptions) - the turning, the vignette, teleporting, which hand does what,
-\ and her height - seven rows. hga's own page, in the sub screen's pages after the first list (one
-\ R1 from the menu); the title's VR OPTIONS opens it too.
+\ her height, and the microphone and its subtitles - nine rows. hga's own page, in the sub
+\ screen's pages after the first list (one R1 from the menu); the title's VR OPTIONS opens it too.
 \ A row each: the stick picks, left / right (or the cross) changes it, the triangle - or Select -
 \ leaves. Written as it changes (vr-options.fs), read back at start-up.
 IN: subscreen.vr
 USING: engine ps2-screen subscreen.state subscreen.art subscreen.input vr-options ;
 
-enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-offset ;
-: #vr-rows ( -- n )  vr-offset 1+ ;
+enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-offset vr-whisper vr-whisper-debug ;
+: #vr-rows ( -- n )  vr-whisper-debug 1+ ;
 
 variable vr-at   0 vr-at !
 
@@ -41,6 +41,10 @@ variable vr-at   0 vr-at !
 : turn$ ( -- addr len )  turn-level case 0 of s" Smooth" endof 1 of s" Snap 45" endof >r s" Snap 90" r> endcase ;
 : comfort$ ( -- addr len )  comfort-level case 0 of s" Off" endof 1 of s" Low" endof 2 of s" Med" endof >r s" High" r> endcase ;
 : teleport$ ( -- addr len )  teleport-level case 0 of s" Off" endof 1 of s" Fixed" endof >r s" Dynamic" r> endcase ;
+: whisper$ ( -- addr len )  vr-settings vr.whisper-open l@ if  s" Open Mic"  else  s" PTT"  then ;
+: subtitles-level ( -- n )  vr-settings vr.whisper-debug l@ 0 max 2 min ;
+: subtitles$ ( -- addr len )
+    subtitles-level case 0 of s" Off" endof 1 of s" On" endof >r s" Debug" r> endcase ;
 : on-off$ ( flag -- addr len )  if  s" On"  else  s" Off"  then ;
 
 \ its label, its value and the change a step (dir -1 or 1) makes
@@ -52,6 +56,8 @@ variable vr-at   0 vr-at !
           vr-cal of  s" Calibrate height"  endof
           vr-seated of  s" Seated mode"  endof
           vr-offset of  s" View height offset"  endof
+          vr-whisper of  s" Whisper"  endof
+          vr-whisper-debug of  s" Whisper Subtitles"  endof
           >r s" Calibrate height" r>  endcase ;
 : vr-row-value ( i -- addr len )
     case
@@ -62,6 +68,8 @@ variable vr-at   0 vr-at !
         vr-cal of  vr-settings vr.calibrated l@ if  vr-settings vr.eye-height sf@ 2 f>s$  else  s" Not set"  then  endof
         vr-seated of  vr-settings vr.seated l@ on-off$  endof
         vr-offset of  vr-settings vr.seated-offset sf@ 2 f>s$  endof
+        vr-whisper of  whisper$  endof
+        vr-whisper-debug of  subtitles$  endof
         >r  vr-settings vr.snap-degrees sf@ f>s n>s  r>
     endcase ;
 : vr-row-y ( i -- y )  $20 * $50 + ;
@@ -97,6 +105,12 @@ variable vr-step
             vr-was f@ vr-step @ s>f 0.05e f* f+  -0.3e fmax  0.3e fmin
             vr-settings vr.seated-offset sf!
             vr-settings vr.seated-offset sf@ vr-was f@ f= 0= if  se-cursor  save-vr-options  then endof
+        vr-whisper of
+            vr-settings vr.whisper-open l@ 0= 1 and vr-settings vr.whisper-open l!
+            se-decide  save-vr-options endof
+        vr-whisper-debug of
+            subtitles-level vr-step @ + 3 + 3 mod vr-settings vr.whisper-debug l!
+            se-decide  save-vr-options endof
         >r  vr-settings vr.turn-snap l@ 0= if  1  else  0  then  vr-settings vr.turn-snap l!
             se-decide  save-vr-options
         r>

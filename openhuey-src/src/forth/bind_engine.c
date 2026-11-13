@@ -4423,67 +4423,101 @@ static void ui_draw(void) {
 
 static const char *voice_order_name(int kind) {
     switch (kind) {
-    case VOICE_COME: return "come";
-    case VOICE_GO: return "go";
-    case VOICE_STAY: return "stay";
-    case VOICE_SIT: return "sit";
-    case VOICE_PRAISE: return "praise";
-    case VOICE_SCOLD: return "scold";
-    case VOICE_SHAKE: return "shake";
-    case VOICE_ATTACK: return "attack";
+    case VOICE_COME: return "Come!";
+    case VOICE_GO: return "Go!";
+    case VOICE_STAY: return "Stay!";
+    case VOICE_SIT: return "Sit!";
+    case VOICE_PRAISE: return "Praise!";
+    case VOICE_SCOLD: return "Scold!";
+    case VOICE_SHAKE: return "Shake!";
+    case VOICE_ATTACK: return "Attack!";
     default: return NULL;
     }
 }
 
-/* the last phrase, on the same world panel as the status menu, in the game font */
+/* the last phrase's subtitles: off, the command alone, or the command and what Whisper heard - in
+ * the message window's panel at the bottom of the screen (scripts/window.fs: its colours, edges and
+ * low place), in the game font. "On" shows only a command: a phrase no command came from shows
+ * nothing. "Debug" adds the words in brackets, or UNRECOGNISED: and the words. */
 static void voice_caption(Engine *e) {
     static int seen, left;
-    char text[192];
+    char text[192], line[256];
     const char *order;
-    int gen, sc, n;
-    float bw, bh, x, y, tw;
+    int gen, level, n;
+    float sc, bw, bh, pad, x, y, tw, fit;
 
-    if (!voice_debug() || e->height < 16) {
+    level = voice_debug();   /* 0 off, 1 the command alone, 2 the command and the words */
+    if (level <= 0 || e->height < 16) {
+        left = 0;
+        seen = voice_gen();   /* (nothing shown: a phrase heard meanwhile is not shown later) */
         return;
     }
     gen = voice_gen();
     voice_copy(text, (int)sizeof text);
+    order = voice_order_name(voice_kind());
     if (gen != seen) {
         seen = gen;
-        if (text[0] != 0) {
+        if (text[0] != 0 && (order != NULL || level >= 2)) {
             left = 180;
             vr_screen_face();   /* this draw places the panel, in front of the current look */
+        } else {
+            left = 0;   /* (On: a phrase with no command shows nothing) */
+            return;
         }
     }
-    if (left <= 0 || text[0] == 0) {
+    if (left <= 0 || text[0] == 0 || (order == NULL && level < 2)) {
+        left = 0;
         return;
     }
     left--;
-    order = voice_order_name(voice_kind());
-    sc = e->height / 224;
-    if (sc < 1) {
-        sc = 1;
-    }
-    n = (int)strlen(text);
-    bw = (float)e->width * 2.0f / 3.0f;
-    bh = (float)sc * (order != NULL ? 52.0f : 32.0f);
-    x = ((float)e->width - bw) * 0.5f;
-    y = ((float)e->height - bh) * 0.5f;
-    render_rect(x, y, bw, bh, 0x0A0A12D8u);
-    render_rect(x, y, bw, 2.0f, 0x8C7A5AC0u);
-    render_rect(x, y + bh - 2.0f, bw, 2.0f, 0x8C7A5AC0u);
-    render_rect(x, y, 2.0f, bh, 0x8C7A5AC0u);
-    render_rect(x + bw - 2.0f, y, 2.0f, bh, 0x8C7A5AC0u);
-    tw = text_width(text, n, (float)sc);
-    if (!game_text(x + (bw - tw) * 0.5f, y + (float)sc * 4.0f, (float)sc, 0xF0EBE0FFu, text, 0)) {
-        render_text(x + (bw - tw) * 0.5f, y + (float)sc * 4.0f, (float)sc, 0xF0EBE0FFu, text, n);
-    }
     if (order != NULL) {
-        n = (int)strlen(order);
-        tw = text_width(order, n, (float)sc);
-        if (!game_text(x + (bw - tw) * 0.5f, y + (float)sc * 26.0f, (float)sc, 0xF0EBE0FFu, order, 0)) {
-            render_text(x + (bw - tw) * 0.5f, y + (float)sc * 26.0f, (float)sc, 0xF0EBE0FFu, order, n);
+        if (level >= 2) {
+            snprintf(line, sizeof(line), "%s (%s)", order, text);
+        } else {
+            snprintf(line, sizeof(line), "%s", order);
         }
+    } else {
+        snprintf(line, sizeof(line), "UNRECOGNISED: %s", text);
+    }
+    n = (int)strlen(line);
+    /* the message window's measurements for one line (window.fs measure): the words scaled with
+     * the screen's height, the panel 84% of the width at most, a line too wide drawn smaller */
+    sc = (float)e->height / 224.0f;
+    if (sc < 1.0f) {
+        sc = 1.0f;
+    }
+    bw = (float)e->width * 0.84f;
+    if (bw > (float)e->height * 1.6f) {
+        bw = (float)e->height * 1.6f;
+    }
+    tw = text_width(line, n, 1.0f);
+    fit = bw / (tw + 24.0f);
+    if (sc > fit) {
+        sc = fit;
+    }
+    if (sc < 1.0f) {
+        sc = 1.0f;
+    }
+    pad = sc * 6.0f;
+    bh = sc * 12.0f * 3.0f + pad * 2.0f;   /* (a page is at least three lines: Task_BoxSize) */
+    x = ((float)e->width - bw) * 0.5f;
+    y = (float)e->height * 370.0f / 448.0f - bh * 0.5f;   /* (place 0x0A 0: low) */
+    if (y < (float)e->height / 20.0f) {
+        y = (float)e->height / 20.0f;
+    }
+    if (y > (float)e->height - (float)e->height / 20.0f - bh) {
+        y = (float)e->height - (float)e->height / 20.0f - bh;
+    }
+    if (y < 0.0f) {
+        y = 0.0f;
+    }
+    render_rect(x, y, bw, bh, 0x0A0A12D8u);
+    render_rect(x, y, bw, 1.0f, 0x8C7A5AC0u);
+    render_rect(x, y + bh - 1.0f, bw, 1.0f, 0x8C7A5AC0u);
+    render_rect(x, y, 1.0f, bh, 0x8C7A5AC0u);
+    render_rect(x + bw - 1.0f, y, 1.0f, bh, 0x8C7A5AC0u);
+    if (!game_text(x + pad * 2.0f, y + pad, sc, 0xF0EBE0FFu, line, 0)) {
+        render_text(x + pad * 2.0f, y + pad, sc, 0xF0EBE0FFu, line, n);
     }
 }
 
@@ -4710,6 +4744,8 @@ void bind_engine(Forth *f) {
     field(f, "vr.seated-height", offsetof(VrOptions, seated_height));
     field(f, "vr.seated-offset", offsetof(VrOptions, seated_offset));
     field(f, "vr.left-handed", offsetof(VrOptions, left_handed));
+    field(f, "vr.whisper-open", offsetof(VrOptions, whisper_open));
+    field(f, "vr.whisper-debug", offsetof(VrOptions, whisper_debug));
     field(f, "vr.calibrate-start", offsetof(VrOptions, calibrate_start));
     field(f, "vr.cutscene-first-person", offsetof(VrOptions, cutscene_first_person));
     field(f, "vr.eye-height", offsetof(VrOptions, eye_height));

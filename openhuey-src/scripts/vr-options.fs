@@ -28,7 +28,9 @@ PRIVATE>
     0 vr-settings vr.seated l!
     1.6e vr-settings vr.seated-height sf!
     0e vr-settings vr.seated-offset sf!
-    0 vr-settings vr.left-handed l!
+    0 vr-settings vr.left-handed l!                \ (the microphone and its transcript: vr.h VrOptions)
+    0 vr-settings vr.whisper-open l!               \ (the right stick holds it, as the game had it)
+    0 vr-settings vr.whisper-debug l!              \ (the subtitles off: the page steps Off, On, Debug)
     1 vr-settings vr.calibrate-start l!
     0 vr-settings vr.cutscene-first-person l! ;
 
@@ -49,6 +51,9 @@ PRIVATE>
     vr-settings vr.seated-height sf@ 6 f>s$ type     ."  vr-settings vr.seated-height sf!" cr
     vr-settings vr.seated-offset sf@ 6 f>s$ type     ."  vr-settings vr.seated-offset sf!" cr
     vr-settings vr.left-handed l@ n>s type           ."  vr-settings vr.left-handed l!" cr
+    vr-settings vr.whisper-open l@ n>s type          ."  vr-settings vr.whisper-open l!" cr
+    vr-settings vr.whisper-debug l@ n>s type         ."  vr-settings vr.whisper-debug l!" cr
+
     vr-settings vr.calibrate-start l@ n>s type       ."  vr-settings vr.calibrate-start l!" cr
     vr-settings vr.eye-height sf@ 6 f>s$ type        ."  vr-settings vr.eye-height sf!" cr
     vr-settings vr.body-scale sf@ 6 f>s$ type        ."  vr-settings vr.body-scale sf!" cr

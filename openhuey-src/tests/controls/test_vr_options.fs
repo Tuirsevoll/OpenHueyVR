@@ -10,11 +10,14 @@ T{ vr-settings vr.turn-snap l@  vr-settings vr.snap-degrees sf@ f>s -> 0 45 }T
 T{ vr-settings vr.comfort l@  vr-settings vr.comfort-strength sf@ 1000e f* fround f>s -> 0 500 }T
 T{ vr-settings vr.teleport l@  vr-settings vr.seated l@  vr-settings vr.left-handed l@ -> 0 0 0 }T
 T{ vr-settings vr.calibrate-start l@ -> 1 }T
+testing the microphone and subtitles: PTT, the subtitles off until the page asks
+T{ vr-settings vr.whisper-open l@  vr-settings vr.whisper-debug l@ -> 0 0 }T
 
 testing vr-defaults puts them back after a change
 1 vr-settings vr.turn-snap l!  90e vr-settings vr.snap-degrees sf!  1 vr-settings vr.teleport l!
-1 vr-settings vr.seated l!  vr-defaults
+1 vr-settings vr.seated l!  1 vr-settings vr.whisper-open l!  1 vr-settings vr.whisper-debug l!  vr-defaults
 T{ vr-settings vr.turn-snap l@  vr-settings vr.snap-degrees sf@ f>s  vr-settings vr.teleport l@  vr-settings vr.seated l@ -> 0 45 0 0 }T
+T{ vr-settings vr.whisper-open l@  vr-settings vr.whisper-debug l@ -> 0 0 }T
 
 testing a turn by an angle: her yaw and her heading the same, the view asked for the same turn
 fvariable yaw-after   fvariable head-after
@@ -132,10 +135,23 @@ key: Right tap
 T{ vr-settings vr.seated-offset sf@ 1000e f* fround f>s -> 50 }T
 key: Left tap
 T{ vr-settings vr.seated-offset sf@ 1000e f* fround f>s -> 0 }T
+testing the whisper rows below it: PTT to open mic, then the subtitles off, on and debug
+key: Down tap
+T{ vr-settings vr.whisper-open l@  vr-settings vr.whisper-debug l@ -> 0 0 }T
+key: X tap
+T{ vr-settings vr.whisper-open l@ -> 1 }T
+key: Down tap
+key: X tap
+T{ vr-settings vr.whisper-debug l@ -> 1 }T
+key: X tap
+T{ vr-settings vr.whisper-debug l@ -> 2 }T
+key: X tap
+T{ vr-settings vr.whisper-debug l@ -> 0 }T
 testing the seated height sizes the world: 1.6 / 1.28 for the scale in use
 1.28e vr-settings vr.seated-height sf!
 T{ vr-body 1000e f* fround f>s  1000e f* fround f>s -> 1250 1280 }T
 vr-defaults
+T{ vr-settings vr.whisper-open l@  vr-settings vr.whisper-debug l@ -> 0 0 }T
 testing the triangle leaves the page
 key: V tap  20 run-frames
 T{ stage@ -> 0 }T

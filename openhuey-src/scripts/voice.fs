@@ -1,6 +1,7 @@
 \ voice.fs - a phrase from the in-process recogniser. Fiona sends Hewie the command.
-\ She does not stop or play the gesture. The transcript is drawn by the engine onto the world panel.
-\ Home hides it. F8 is the open mic.
+\ She does not stop or play the gesture. With Whisper Subtitles on (the VR options page, or Home:
+\ off, or the debug transcript), the engine draws them as a subtitle at the bottom of the screen.
+\ F8 is the open mic.
 IN: voice
 USING: engine actors messages keys ;
 

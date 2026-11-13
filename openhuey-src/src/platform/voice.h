@@ -22,6 +22,8 @@ int voice_take(void);           /* the phrase kind, then cleared */
 int voice_gen(void);            /* bumps when a new phrase is stored, match or not */
 int voice_kind(void);           /* last phrase's command kind; not cleared by voice_take */
 void voice_copy(char *dst, int cap);
+/* the subtitles' level: 0 off, 1 the command alone, 2 the command and the words heard. The setter
+ * turns them on at level 2 (debug), or off: Home's toggle (scripts/voice.fs) */
 void voice_set_debug(int on);
 int voice_debug(void);
 void voice_set_open_mic(int on);

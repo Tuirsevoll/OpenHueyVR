@@ -33,6 +33,8 @@ VrOptions gVrOptions = {
     1.6f,     /* seated_height: as standing */
     0.0f,     /* seated_offset */
     0,        /* left_handed */
+    0,        /* whisper_open: the right stick holds the microphone */
+    0,        /* whisper_debug: subtitles off */
     1,        /* calibrate_start: a first run is asked (the title's step, once) */
     0,        /* cutscene_first_person */
     1.6f,     /* eye_height: her eyes, before anything measures them */
