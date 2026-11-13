@@ -185,13 +185,30 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
 \ side 0 is the physical top on this ladder (the end at the larger height); side 1 is the physical bottom.
 : at-top-window? ( -- flag )   \ (her height at the top's floor, within 3 of it or past it)
     her-at v.y sf@ 0 end-y 3e f- f>= ;
+variable ladder-free-ticks                 \ (ticks with no hand on a mid-ladder hold: the let-go's count)
+9 constant LET_GO_TICKS                    \ (0.3 s at the game's 30 ticks: both hands off this long mid-ladder, and she falls)
+: at-bottom? ( -- flag )                   \ (her height at the bottom's floor, within 3 of it or past it: the bottom is side 1)
+    her-at v.y sf@ 1 end-y 3e f+ f<= ;
+: let-go-fall ( -- )                       \ (both hands let go mid-ladder: she falls off, the same reaction as the panic's let-go)
+    thrown-doing her-doing !  thrown-mode her-mode !  off-ladder-r her-sub !  knocked-off ;
 : vr-climb ( -- )
     hold-still
     ladder-both? 0= at-top-window? 0 stalker-on 0= and and if   \ (at the top, and not both hands on the ladder: she steps off)
+        0 ladder-free-ticks !
         0 walk-off-top-start exit
     then
-    ladder-hands? 0= if  exit  then                            \ (no hand on it: she hangs)
-    ladder-pull {: F: pull :}                                  \ (this tick's pull: down the hand is up her)
+    ladder-hands? 0= if                                         \ (no hand on the ladder)
+        at-top-window? 0= at-bottom? 0= and if                  \ (mid-ladder: she falls once both hands have been off for LET_GO_TICKS)
+            1 ladder-free-ticks +!
+            ladder-free-ticks @ LET_GO_TICKS >=
+            if  0 ladder-free-ticks !  let-go-fall  then
+        else
+            0 ladder-free-ticks !                               \ (at either end: no fall, and the count starts again)
+        then
+        exit
+    then
+    0 ladder-free-ticks !                                       \ (a hand on it: the count is cleared)
+    ladder-pull {: F: pull :}                                   \ (this tick's pull: down the hand is up her)
     pull her-at v.y sf@ f+ her-at v.y sf!
     pull 0e f<  her-at v.y sf@ 1 end-y f- 3e f<= and  0 stalker-on 0= and if   \ (up this tick, at the bottom: placed there)
         her-ladder @ 1 off-offset nav-link-front                      ( tri ) ( F: x y z )

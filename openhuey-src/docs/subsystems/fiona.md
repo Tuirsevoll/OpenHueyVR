@@ -353,8 +353,10 @@ is not on that side, whose rules are unchanged. With no hand on it she hangs: no
 On this ladder side 0 is the physical top (the end at the larger height) and side 1 the physical
 bottom: a hand's climb to the top starts her stepping off it and a hand's climb to the bottom places
 her at once, neither with a step-off animation. Letting go with one hand at the top dismounts her;
-letting go with both hands at the bottom places her there (unchanged); the mid-ladder both-hands fall
-is not built yet. Grabbing a ladder's air starts her getting on, the same as the button, from the
+letting go with both hands at the bottom places her there (unchanged); mid-ladder, letting go with
+both hands makes her fall after about a third of a second (`LET_GO_TICKS`), while at either end it is
+the dismount (the top) or nothing (the bottom), as before. Grabbing a ladder's air starts her getting
+on, the same as the button, from the
 nearer end; from the top, the walk to the spot is still used (to be changed later). A grab mounts her
 at once, with no mounting animation, at the end's front, so she can climb straight away; the button
 keeps its mounting animation. At the top, mounting (by the button or a grab) lowers her onto the first
