@@ -354,7 +354,8 @@ On this ladder side 0 is the physical top (the end at the larger height) and sid
 bottom: a hand's climb to the top starts her stepping off it and a hand's climb to the bottom places
 her at once, neither with a step-off animation. Letting go with one hand at the top dismounts her;
 letting go with both hands at the bottom places her there (unchanged); the mid-ladder both-hands fall
-is not built yet.
+is not built yet. Grabbing a ladder's air starts her getting on, the same as the button, from the
+nearer end; from the top, the walk to the spot is still used (to be changed later).
 
 Also fixed with it: `walk-anim` (Fiona_StateCmdWalkAnim) read the animation's key events for
 `MOTION_EVENTS` $20; it is the motion's come-round flag (`ended?`).

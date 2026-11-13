@@ -71,6 +71,9 @@ int vrhands_ladder_hold(int side);
 int vrhands_ladder_hands(void);
 /* 1 when both hands hold a ladder. */
 int vrhands_ladder_both(void);
+/* a hand's new ladder grab, taken once: its link and the side nearer the grab (0 the nav foot, 1 the
+ * top); link -1 none */
+void vrhands_ladder_grab(int *link, int *side);
 /* the pull the hands have given since the scripts last took it, in the game's y (which runs down,
  * so up is negative), both hands together; the call takes it (clears it). */
 float vrhands_ladder_pull(void);

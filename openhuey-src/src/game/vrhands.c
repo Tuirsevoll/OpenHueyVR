@@ -64,6 +64,8 @@ static int sHold[2], sHoldId[2], sDoorAxis[2];
  * Fiona climbs, and the pull of that hand, which is what climbs her (docs/subsystems/hands.md,
  * "Pull to climb") */
 static int sLadderHold[2] = {-1, -1};
+static int sLadderFresh[2];      /* 1 from the grab until Fiona has taken it (ladder-grab) */
+static Vec3 sLadderGrabAt[2];    /* where the hand was when it grabbed */
 /* where each hand was in play space - an offset from her eyes, turned by her yaw - which is the
  * anchor its pull is measured from, and whether that anchor is set yet */
 static Vec3 sLadderAnchor[2];
@@ -1625,6 +1627,7 @@ static void release_hand(Room *r, int side) {
     }
     sHold[side] = HOLD_NONE;
     sLadderHold[side] = -1;   /* (a hand let go of its ladder with whatever it held) */
+    sLadderFresh[side] = 0;
 }
 
 static void drive_door(Engine *e, int id, int axis, Vec3 hand) {
@@ -3145,6 +3148,40 @@ int vrhands_ladder_both(void) {   /* true when both hands hold a ladder */
     return vrhands_ladder_hold(0) >= 0 && vrhands_ladder_hold(1) >= 0;
 }
 
+/* a hand's new ladder grab, taken once: its link and the side nearer the grab (0 the nav foot, 1 the
+ * top); link -1 none */
+void vrhands_ladder_grab(int *link, int *side) {
+    const NavMesh *nav = &gEngine.room.nav;
+    int h;
+
+    *link = -1;
+    *side = -1;
+    for (h = 0; h < 2; h++) {
+        const NavLink *l;
+        Vec3 a, s0, s1;
+        float d0, d1;
+        int at;
+
+        if (!sLadderFresh[h]) {
+            continue;
+        }
+        sLadderFresh[h] = 0;   /* (taken: a grab is never kept for later) */
+        at = sLadderHold[h];
+        if (at < 0 || at >= nav->nlinks) {
+            return;   /* (its ladder is gone: nothing to take) */
+        }
+        l = &nav->links[at];
+        a = sLadderGrabAt[h];
+        s0 = l->spot[0];
+        s1 = l->spot[1];
+        d0 = (a.x - s0.x) * (a.x - s0.x) + (a.y - s0.y) * (a.y - s0.y) + (a.z - s0.z) * (a.z - s0.z);
+        d1 = (a.x - s1.x) * (a.x - s1.x) + (a.y - s1.y) * (a.y - s1.y) + (a.z - s1.z) * (a.z - s1.z);
+        *link = at;
+        *side = d1 < d0 ? 1 : 0;
+        return;
+    }
+}
+
 float vrhands_ladder_pull(void) {
     float pulled = sLadderPull;
 
@@ -3183,6 +3220,7 @@ void vrhands_tick(Engine *e) {
         sHandHave[0] = sHandHave[1] = 0;        /* (another room's doors and walls are not the old's) */
         sHandStopHave[0] = sHandStopHave[1] = 0;
         sLadderHold[0] = sLadderHold[1] = -1;   /* (another room's links are not these) */
+        sLadderFresh[0] = sLadderFresh[1] = 0;
         sLadderAnchorHave[0] = sLadderAnchorHave[1] = 0;
         sLadderPull = 0.0f;
         sPushRoom = e->room.id;
@@ -3202,6 +3240,7 @@ void vrhands_tick(Engine *e) {
             sGripWas[side] = 0.0f;
             sHandHave[side] = 0;
             sLadderHold[side] = -1;   /* (no hand, no ladder) */
+            sLadderFresh[side] = 0;
             sLadderAnchorHave[side] = 0;   /* (and no anchor: what was pulled and not taken is dropped) */
             sLadderPull = 0.0f;
             sHandStopHave[side] = 0;   /* (no hand, no stop: the next one takes the hand as it is) */
@@ -3268,6 +3307,7 @@ void vrhands_tick(Engine *e) {
 #endif
         if (grip <= 0.4f) {
             sLadderHold[side] = -1;   /* (let go: of the ladder too) */
+            sLadderFresh[side] = 0;
             if (sHold[side] == HOLD_LOOT) {
                 loot_let_go(sHoldId[side], side);
                 sHold[side] = HOLD_NONE;
@@ -3341,6 +3381,7 @@ void vrhands_tick(Engine *e) {
             if (p == NULL || !p->shown) {
                 sHold[side] = HOLD_NONE;
                 sLadderHold[side] = -1;
+                sLadderFresh[side] = 0;
             } else {
                 p->pos = at;
                 p->rot = sGrabRot[side];
@@ -3352,6 +3393,7 @@ void vrhands_tick(Engine *e) {
             if (p == NULL || !p->shown || !ward_leaf(p->name)) {
                 sHold[side] = HOLD_NONE;   /* (gone: a room away from it, or put away) */
                 sLadderHold[side] = -1;
+                sLadderFresh[side] = 0;
             } else {
                 /* (the hiding may have played it since, or left its track to run: the leaf is
                  * taken again where it now stands, and then turned by the hand as before) */
@@ -3364,11 +3406,13 @@ void vrhands_tick(Engine *e) {
          * that controller buzzes once. It sets no hold and moves nothing by itself - her climbing is
          * the scripts' (docs/subsystems/hands.md). The grabs above have already run, so a door, a prop,
          * a leaf or loot taken in this same frame wins. */
-        if (sHold[side] == HOLD_NONE && sLadderHold[side] < 0 && grip > LADDER_GRAB_GRIP && ladder_climbing()) {
+        if (sHold[side] == HOLD_NONE && sLadderHold[side] < 0 && grip > LADDER_GRAB_GRIP) {
             int link = ladder_grab_link(at);
 
             if (link >= 0) {
                 sLadderHold[side] = link;
+                sLadderFresh[side] = 1;   /* (hers to take: ladder-grab) */
+                sLadderGrabAt[side] = at;
                 vr_haptic(side, 0.15f, 0.03f);
             }
         }

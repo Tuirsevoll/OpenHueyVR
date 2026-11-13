@@ -231,7 +231,7 @@ create feet-off-acts   \ (the states that clear +0x1AD5BC)
         read-controls
         her-mode @ own-mode = if  panic-controls  else  false  then  0=  hands-off? 0= and if  control-command  then
     then
-    hands-off? if  her-scripted @ if  read-command-scripted  else  -1 her-cmd !  then  else  read-command  try-backstep  try-defend  try-doors  try-ladders  try-let-go  then
+    hands-off? if  her-scripted @ if  read-command-scripted  else  -1 her-cmd !  then  else  read-command  try-backstep  try-defend  try-doors  try-ladders  try-ladder-grab  try-let-go  then
     \ (her point of interest before her state runs: the original's room scripts test it - phases 1 to 3 - ahead
     \ of Progress_CharsThink, so a kick that lands on a wall still shows its point that frame; told after, the
     \ wall's end had already changed her motion and the point was never seen - a wall's or a board's kick lost)

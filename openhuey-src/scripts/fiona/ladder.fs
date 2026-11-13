@@ -240,4 +240,12 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     stalker-touching? if  2drop exit  then
     her-ladder-side !  her-ladder !
     getting-on her-sub !  ladder-doing her-doing !  ladder-mode her-mode !  ladder-start ;
+: try-ladder-grab ( -- )   \ (a hand just grabbed a ladder's air: she gets on there, as the button does - no button needed)
+    ladder-grab {: link side :}                              \ (always taken, so a grab is not kept for later)
+    link 0< if  exit  then
+    her-mode @ own-mode <>  her-doing @ free-doing <> or  her-panic-stage @ panicking >= or if  exit  then
+    stalker-touching? if  exit  then
+    link stalker-side side = if  exit  then                  \ (the stalker is on that side: as the button path does)
+    link her-ladder !  side her-ladder-side !
+    getting-on her-sub !  ladder-doing her-doing !  ladder-mode her-mode !  ladder-start ;
 

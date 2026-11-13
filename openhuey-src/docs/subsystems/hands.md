@@ -121,7 +121,9 @@ Walls, floors and ceilings stop the arm at 0.40 and let it slide along them. Doo
 objects buzz only.
 
 A hand also grabs a ladder in the air beside it while she climbs: the link is kept and that
-controller buzzes once. Pulling a hand on a ladder now climbs her (`docs/subsystems/fiona.md`, F5:
+controller buzzes once. The grab no longer needs the climb to be running: a new grab on a ladder
+starts her getting on, from the nearer end, with no button (the button still works).
+Pulling a hand on a ladder now climbs her (`docs/subsystems/fiona.md`, F5:
 `vr-climb`), and an end is taken when her height has reached it. Letting go with one hand at the top
 dismounts her; letting go with both hands at the bottom places her there (unchanged); the mid-ladder
 both-hands fall is not built yet.
