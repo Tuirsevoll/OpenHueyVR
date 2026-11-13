@@ -183,14 +183,23 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     anim@ {: anim :}
     anim ladder-hold-anim = anim ladder-hold-2-anim = or 0= if  ladder-hold-anim play-own  then ;
 \ side 0 is the physical top on this ladder (the end at the larger height); side 1 is the physical bottom.
-: at-top-window? ( -- flag )   \ (her height at the top's floor, within 3 of it or past it)
-    her-at v.y sf@ 0 end-y 3e f- f>= ;
+: at-top-window? ( -- flag )   \ (her height at the top's floor, within 6 of it or past it)
+    her-at v.y sf@ 0 end-y 6e f- f>= ;
 variable ladder-free-ticks                 \ (ticks with no hand on a mid-ladder hold: the let-go's count)
+variable ladder-gripped                     \ (1 once a hand has gripped the ladder since she mounted: a fall needs this first)
+variable fall-breath                        \ (the breath frames a fall gives, set when she falls, used when she lands)
 9 constant LET_GO_TICKS                    \ (0.3 s at the game's 30 ticks: both hands off this long mid-ladder, and she falls)
-: at-bottom? ( -- flag )                   \ (her height at the bottom's floor, within 3 of it or past it: the bottom is side 1)
-    her-at v.y sf@ 1 end-y 3e f+ f<= ;
+: at-bottom? ( -- flag )                   \ (within 10 of the bottom's floor, or past it: the bottom is side 1)
+    her-at v.y sf@ 1 end-y 10e f+ f<= ;
 : let-go-fall ( -- )                       \ (both hands let go mid-ladder: she falls off, the same reaction as the panic's let-go)
+    her-at v.y sf@ 1 end-y f- 0e fmax  {: F: h :}               \ (the height fallen: her y less the bottom floor's, never below 0)
+    65e  1.2e h f*  fmin  add-fear                              \ (fear: 1.2 a unit, at most 65)
+    1.6e h f*  f>s  85 min  dup her-run-t !  fall-breath !      \ (breath: the frames it lasts, at most 85)
     thrown-doing her-doing !  thrown-mode her-mode !  off-ladder-r her-sub !  knocked-off ;
+: bottom-off ( -- )   \ (placed on the ground at the bottom: the end's front, free)
+    her-ladder @ 1 off-offset nav-link-front                      ( tri ) ( F: x y z )
+    dup 0< if  drop fdrop fdrop fdrop  else  her-tri !  her-at vec!  then
+    own-mode her-mode !  off-ladder ;
 : vr-climb ( -- )
     hold-still
     ladder-both? 0= at-top-window? 0 stalker-on 0= and and if   \ (at the top, and not both hands on the ladder: she steps off)
@@ -198,7 +207,10 @@ variable ladder-free-ticks                 \ (ticks with no hand on a mid-ladder
         0 walk-off-top-start exit
     then
     ladder-hands? 0= if                                         \ (no hand on the ladder)
-        at-top-window? 0= at-bottom? 0= and if                  \ (mid-ladder: she falls once both hands have been off for LET_GO_TICKS)
+        at-top-window? 0= at-bottom? and 0 stalker-on 0= and if   \ (at the bottom, not at the top: she is put on the ground there)
+            bottom-off exit
+        then
+        at-top-window? 0= at-bottom? 0= and ladder-gripped @ and if                  \ (mid-ladder: she falls once both hands have been off for LET_GO_TICKS)
             1 ladder-free-ticks +!
             ladder-free-ticks @ LET_GO_TICKS >=
             if  0 ladder-free-ticks !  let-go-fall  then
@@ -208,12 +220,11 @@ variable ladder-free-ticks                 \ (ticks with no hand on a mid-ladder
         exit
     then
     0 ladder-free-ticks !                                       \ (a hand on it: the count is cleared)
+    1 ladder-gripped !
     ladder-pull {: F: pull :}                                   \ (this tick's pull: down the hand is up her)
     pull her-at v.y sf@ f+ her-at v.y sf!
     pull 0e f<  her-at v.y sf@ 1 end-y f- 3e f<= and  0 stalker-on 0= and if   \ (up this tick, at the bottom: placed there)
-        her-ladder @ 1 off-offset nav-link-front                      ( tri ) ( F: x y z )
-        dup 0< if  drop fdrop fdrop fdrop  else  her-tri !  her-at vec!  then
-        own-mode her-mode !  off-ladder exit
+        bottom-off exit
     then ;
 : on-ladder ( -- )   \ (Fiona_StateOnLadder; until the move has faded in: still)
     settled? 0= if  exit  then
@@ -259,6 +270,7 @@ variable ladder-free-ticks                 \ (ticks with no hand on a mid-ladder
 : ladder-walk ( -- )
     walk-to-spot dup 0< if  drop off-ladder exit  then  if  exit  then
     on-rungs her-sub !
+    0 ladder-gripped !
     her-ladder-side @ if  on-ladder-top-anim  else  on-ladder-foot-anim  then
     play-own
     her-ladder-side @ 0= if  lower-start  else  ['] on-ladder her-act !  then ;
@@ -290,6 +302,7 @@ variable ladder-free-ticks                 \ (ticks with no hand on a mid-ladder
     her-ladder-side !  her-ladder !
     getting-on her-sub !  ladder-doing her-doing !  ladder-mode her-mode !  ladder-start ;
 : grab-on ( -- )   \ (a grab mounts her at once, with no mounting animation: she is put at the end's front, facing the ladder, holding on, so she can climb straight away)
+    0 ladder-gripped !
     her-ladder @ her-ladder-side @  dup if  0e 6.7e  else  0e -7.1068e  then  nav-link-front   ( tri ) ( F: x y z )
     dup 0< if  drop fdrop fdrop fdrop off-ladder exit  then
     her-tri !  her-at vec!

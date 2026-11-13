@@ -120,8 +120,8 @@ not read there and her root motion is not used (`scripts/fiona/ladder.fs`, `vr-c
 Walls, floors and ceilings stop the arm at 0.40 and let it slide along them. Doors and placed
 objects buzz only.
 
-A hand also grabs a ladder in the air beside it while she climbs: the link is kept and that
-controller buzzes once. The grab no longer needs the climb to be running: a new grab on a ladder
+A hand also grabs a ladder in the air beside it while she climbs: the link is kept, that
+controller buzzes once, and the base game's rung sound plays. The grab no longer needs the climb to be running: a new grab on a ladder
 starts her getting on, from the nearer end, with no button (the button still works).
 Pulling a hand on a ladder now climbs her (`docs/subsystems/fiona.md`, F5:
 `vr-climb`), and an end is taken when her height has reached it. Letting go with one hand at the top

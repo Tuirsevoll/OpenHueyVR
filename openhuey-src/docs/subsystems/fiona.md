@@ -355,7 +355,12 @@ bottom: a hand's climb to the top starts her stepping off it and a hand's climb 
 her at once, neither with a step-off animation. Letting go with one hand at the top dismounts her;
 letting go with both hands at the bottom places her there (unchanged); mid-ladder, letting go with
 both hands makes her fall after about a third of a second (`LET_GO_TICKS`), while at either end it is
-the dismount (the top) or nothing (the bottom), as before. Grabbing a ladder's air starts her getting
+the dismount (the top) or nothing (the bottom), as before. A fall to the bottom counts the height
+fallen: fear rises by 1.2 a unit (at most 65) and the breath counter is set to 1.6 a unit (at most
+85). Letting go with both hands at the bottom places her on the ground, with no fall.
+She cannot fall off a ladder until a hand
+has gripped it since she mounted; the top dismount registers within 6 units of the top's floor.
+Grabbing a ladder's air starts her getting
 on, the same as the button, from the
 nearer end; from the top, the walk to the spot is still used (to be changed later). A grab mounts her
 at once, with no mounting animation, at the end's front, so she can climb straight away; the button

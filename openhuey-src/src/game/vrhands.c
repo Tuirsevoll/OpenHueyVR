@@ -1026,6 +1026,8 @@ static float dist2(Vec3 a, Vec3 b) {
 #define PUSH_GRACE  12      /* frames the throwing hand ignores the leaf */
 #define RATTLE_SOUND 0x71u  /* Fiona's bank: the locked handle */
 #define RATTLE_BANK  5
+#define LADDER_RUNG_SOUND 0x14u   /* the base game's rung sound (scripts/fiona/moving.fs, rungs-sound) */
+#define LADDER_RUNG_BANK 4        /* Fiona's bank for it (moving.fs: rungs-sound 4 0 0) */
 
 static Mat4 door_place_at(const RoomDoor *d, float swing) {
     float y = d->rot.y + swing * 3.14159265f / 180.0f;
@@ -3414,6 +3416,7 @@ void vrhands_tick(Engine *e) {
                 sLadderFresh[side] = 1;   /* (hers to take: ladder-grab) */
                 sLadderGrabAt[side] = at;
                 vr_haptic(side, 0.15f, 0.03f);
+                engine_sound_at(LADDER_RUNG_SOUND, LADDER_RUNG_BANK, at);
             }
         }
         if (sHold[side] == HOLD_NONE && grip <= 0.4f) {
