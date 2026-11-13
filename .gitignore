@@ -62,5 +62,3 @@ openhuey-src/external/whisper.cpp/models/for-tests-ggml-tiny.en.bin
 openhuey-src/external/whisper.cpp/models/for-tests-silero-v6.2.0-ggml.bin
 openhuey-src/external/whisper.cpp/tests/earnings21/requirements.txt
 openhuey-src/external/whisper.cpp/tests/librispeech/requirements.txt
-openhuey-src/external/clankforth
-openhuey-src/external/clankforth
