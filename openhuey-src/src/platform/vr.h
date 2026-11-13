@@ -121,6 +121,10 @@ int vr_head_forward(Vec3 *out);
 /* the next panel placement is once, in front of the current look, and then stays put */
 void vr_screen_face(void);
 void vr_screen_loose(int on);   /* kept for callers; the panel does not follow the head */
+/* the comfort vignette at the strength chosen, for a moment: the options page asks when its row
+ * changes, so a player can see what they picked without walking */
+void vr_comfort_preview(void);
+int vr_comfort_previewing(void);
 /* this eye's image. `view` maps camera space onto the eye (headset pose, in world units);
  * `proj` is its OpenXR field of view over the camera's near and far. `fbo` is the swapchain. */
 int vr_eye_begin(int eye, float znear, float zfar, int *w, int *h, Mat4 *proj, Mat4 *view, unsigned *fbo);

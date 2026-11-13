@@ -820,7 +820,11 @@ static void make_comfort(void) {
             float u = ((float)x + 0.5f) / (float)N - 0.5f;
             float v = ((float)y + 0.5f) / (float)N - 0.5f;
             float r = sqrtf(u * 1.25f * (u * 1.25f) + v * v);
-            float t = (r - 0.28f) / (0.88f - 0.28f);
+            /* the ring starts just outside the middle and is at its full at about half of the
+             * half-width: on a headset's wide eyes the outside of the visible picture is well
+             * inside the texture's corner, so a ramp that only reached full at the corner was a
+             * smudge at the very edge of vision and nothing else */
+            float t = (r - 0.02f) / (0.55f - 0.02f);
             uint8_t *p = &px[(y * N + x) * 4];
 
             t = t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
@@ -1118,6 +1122,46 @@ static float sFix2d;     /* ... at FIX / 128 */
 void render_blend_2d(int mode, int fix) {
     sBlend2d = mode;
     sFix2d = (float)(fix < 0 ? 0 : fix > 255 ? 255 : fix) / 128.0f;
+}
+
+/* a menu's panel is a picture put in front of the room, and its alpha is what holds the room out:
+ * the GS's blending (and every translucent piece of the art) would otherwise leave the panel's
+ * alpha at whatever it happened to be, and the room shows through the words, the icons and the
+ * highlight. This puts the panel's own alpha back over the whole of it, after everything drew -
+ * the colour untouched, so the picture stays exactly as drawn, and faded in by `alpha`. */
+void render_panel_opaque(float alpha) {
+    Mat4 proj;
+    float a = alpha < 0.0f ? 0.0f : alpha > 1.0f ? 1.0f : alpha;
+    uint32_t rgba;
+    /* the solid texel render_rect uses (the middle of the font's block glyph): a quad of uv 0,0
+     * would sample the atlas's transparent corner and write no alpha at all */
+    float u = ((FONT_COUNT - 1) * FONT_CELL_W + 2.5f) / FONT_ATLAS_W, v = 3.5f / FONT_CELL_H;
+
+    if (a <= 0.0f || a != a) {
+        return;
+    }
+    flush_2d();   /* (what is queued goes first, as it is) */
+    rgba = (uint32_t)(a * 255.0f + 0.5f);
+    quad(0.0f, 0.0f, (float)R.w, (float)R.h, u, v, u, v, rgba);
+    proj = mat4_ortho2d((float)R.w, (float)R.h);
+    glBindFramebuffer(GL_FRAMEBUFFER, R.present);
+    glViewport(0, 0, R.w, R.h);
+    glNamedBufferData(R.vbo2d, (GLsizeiptr)(R.n2d * sizeof(Vertex2d)), R.v2d, GL_STREAM_DRAW);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);   /* (alpha: a + dst * (1 - a)) */
+    glColorMaski(0, GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+    glProgramUniformMatrix4fv(R.prog2d, 0, 1, GL_FALSE, proj.m);
+    glUseProgram(R.prog2d);
+    glBindTextureUnit(0, R.font);
+    glBindSampler(0, 0);
+    glBindVertexArray(R.vao2d);
+    glDrawArrays(GL_TRIANGLES, 0, R.n2d);
+    glBindVertexArray(0);
+    glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDisable(GL_BLEND);
+    R.n2d = 0;
 }
 
 static void image_draw(GpuTexture t);

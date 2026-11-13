@@ -149,6 +149,10 @@ $D8D0C400 constant plain-colour   \ (the font's own, palette 0: its white tinted
     frame!  screen-size nip 224 / 1 max pen !
     pause-layer  0 0 screen-size  dim  ui-rect
     in-movie? if  unpause-msg $140 $190 line-at  skip-msg $140 $1A4 line-at  else  play-lines  then
+    \ the dim over the whole screen is this menu's page: its panel keeps its own alpha (panel-opaque)
+    \ so the words' PS2 blending cannot punch the room through them, and the dim's own opacity is
+    \ what the world is seen through - exactly as it was
+    dim s>f 255e f/ panel-opaque
     vr? in-movie? 0= and if  pause-layer s" Page Up: set height"  48  36  $D8D0C8FF 2 ui-text  then ;
 
 : quit-asked? ( -- flag )   \ (cleared as taken)

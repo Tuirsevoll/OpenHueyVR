@@ -61,9 +61,9 @@ int vr_begin_frame(void) { return 0; }
 int vr_should_render(void) { return 0; }
 void vr_end_frame(void) {}
 int vr_eye_count(void) { return 0; }
-void vr_lock_pose(int on) { (void)on; }
-void vr_cutscene_screen(int active, Vec3 corners[4]) { (void)active; (void)corners; }
 int vr_head_view(int eye, Mat4 *view) { (void)eye; (void)view; return 0; }
+void vr_comfort_preview(void) {}
+int vr_comfort_previewing(void) { return 0; }
 int vr_tracking(void) { return 0; }
 int vr_body_view(Mat4 *view) { (void)view; return 0; }
 int vr_eye_body(int eye, Mat4 *view) { (void)eye; (void)view; return 0; }
@@ -1594,6 +1594,24 @@ static Vec3 sScreen[4];
 void vr_screen_face(void) { sScreenSnap = 1; }
 void vr_screen_loose(int on) { (void)on; }
 
+/* ---- the comfort vignette's preview: the ring, at the strength chosen, for a moment after the
+ * options page changes the row - so the setting can be seen where it is set, still standing ---- */
+static XrTime sPreviewAt;
+
+void vr_comfort_preview(void) { sPreviewAt = 1; }
+
+int vr_comfort_previewing(void) {
+    if (sPreviewAt == 0 || sFrame.predictedDisplayTime <= 0) {
+        return 0;
+    }
+    /* (the first frame after the request starts the clock: the page's change is a tick, not a frame) */
+    if (sPreviewAt == 1) {
+        sPreviewAt = sFrame.predictedDisplayTime;
+        return 1;
+    }
+    return sFrame.predictedDisplayTime - sPreviewAt < (XrTime)1200000000;   /* 1.2 s */
+}
+
 static float quat_yaw(XrQuaternionf q) {
     float siny = 2.0f * (q.w * q.y + q.x * q.z);
     float cosy = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
@@ -1601,17 +1619,21 @@ static float quat_yaw(XrQuaternionf q) {
     return atan2f(siny, cosy);
 }
 
-/* one placement: level, 1.8 m in front of the look at this moment. Stored, not rebuilt. */
+/* one placement: level, 1.8 m in front of the look at this moment. Stored, not rebuilt.
+ * The look's forward in play space is R_y(yaw)·(0,0,-1) = (-sin yaw, 0, -cos yaw) and its right is
+ * R_y(yaw)·(1,0,0) = (cos yaw, 0, -sin yaw): the x of each was taken positive, which put the panel
+ * at the *opposite* yaw - a menu would open as far to one side as the player had turned to the
+ * other. */
 static void place_screen(Vec3 out[4]) {
     XrPosef head = head_look();
     float yaw = quat_yaw(head.orientation);
     float dist = 1.8f * VR_UNITS_PER_METER;
     float half_h = dist * 0.36f;
     float half_w = half_h * (4.0f / 3.0f);
-    float fx = sinf(yaw);
+    float fx = -sinf(yaw);
     float fz = -cosf(yaw);
     float rx = cosf(yaw);
-    float rz = sinf(yaw);
+    float rz = -sinf(yaw);
     Vec3 center = vec3(head.position.x * VR_UNITS_PER_METER + fx * dist,
                        head.position.y * VR_UNITS_PER_METER - 0.08f * VR_UNITS_PER_METER,
                        head.position.z * VR_UNITS_PER_METER + fz * dist);
@@ -1632,7 +1654,7 @@ void vr_cutscene_screen(int active, Vec3 corners[4]) {
         return;
     }
     if (!sScreenOn || sScreenSnap) {
-        place_screen(sScreen);   /* in front of the current look, then left there */
+        place_screen(sScreen);   /* in front of the current look (a menu: every frame) */
         sScreenOn = 1;
         sScreenSnap = 0;
     }
@@ -1714,6 +1736,7 @@ static int recenter_play_space(void) {
         xrDestroySpace(sSpace);
     }
     sSpace = play;
+    sScreenSnap = 1;   /* (a menu's panel was placed in the old space: put it in front again) */
     sOrigin.orientation.x = sOrigin.orientation.y = sOrigin.orientation.z = 0.0f;
     sOrigin.orientation.w = 1.0f;
     sOrigin.position.x = sOrigin.position.y = sOrigin.position.z = 0.0f;

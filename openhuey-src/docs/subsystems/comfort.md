@@ -102,12 +102,12 @@ in, reachable without a keyboard:
   over 0.12 s and lets go over 0.45 s, and it is nothing while the world is held, a scene has the
   camera or the free camera does. The share is `sComfort x vr.comfort-strength`. The ring is drawn
   by the renderer over the finished picture - `render_post`, window or eye the same, before the
-  menus, so the UI stays bright - from a small radial ramp (clear to 0.28 of the half-width, opaque
-  by 0.88, the wide axis stretched 1.25) times the share; the picture's own vignette setting and
+  menus, so the UI stays bright - from a radial ramp (clear to 0.02 of the half-width, at its full
+  by 0.55, the wide axis stretched 1.25: the outside of a headset's visible picture is well
+  inside the texture's corner, so a ramp that only reached full at the corner was a smudge at the
+  very edge of vision and nothing else) times the share; the picture's own vignette setting and
   shader are untouched. The page's Low, Med and High are 0.25, 0.5 and 0.75 of it - the corners
-  about half at High on a walk - and off is off.
-- **The height calibration, one action** (`vr_calibrate`; `scripts/opening.fs` `calibrate-*`; the
-  page's row; nothing else reaches it - the stick clicks are the run's and the talk's): she stands
+  about half at High on a walk, the middle clear - and off is off.
   straight, the headset height above the floor becomes her eye height, the world is sized to her
   (see below), and the play space's origin is taken again where she stands, so the new size
   applies from there and the view does not shift by her offset from the old one. The result lives
@@ -164,6 +164,29 @@ in, reachable without a keyboard:
   not used and the story's camera stays the picture's. (An option to watch the game's scenes from
   her head was tried and taken out: `vr.cutscene-first-person` is still a field, kept so an older
   options file loads, but nothing reads it and no row writes it.)
+- **A menu opens in front of the look, then stays in the room** (`vr.c` `place_screen`, `vr_screen_face`;
+  `main.c` `draw_frame`; `scripts/subscreen.fs` `opened`): the panel a menu is drawn on is placed
+  once, 1.8 m ahead of the head and level, when the menu opens (`vr_screen_face`: the sub screen,
+  the pause, a cutscene, the title's screens; and again after the play space is taken again, since
+  a panel placed in the old space would be somewhere else in the new). The look's forward and
+  right in play space are `(-sin yaw, 0, -cos yaw)` and `(cos yaw, 0, -sin yaw)`: their x was
+  taken positive at first, which put the panel at the opposite yaw - a menu opened as far to one
+  side as the player had turned to the other. After the placement it is part of the room: turning
+  the head looks around it, it does not come with you.
+- **The sub screen's panel is a page, and it holds the room out** (`scripts/subscreen.fs`
+  `page-ground`, `panel-opaque`; `render.c` `render_panel_opaque`): the menu is composed the way the
+  PS2 composed it, its pieces and words blended by the GS's ALPHA register - arithmetic on the
+  screen, whose alpha nobody read. On a headset's panel the alpha is what puts the picture in front
+  of the room, so that blending (and every translucent piece: the highlight's band too) took the
+  panel's alpha away with it, and the room showed through the words, the game's font, the button
+  symbols and the highlighted row (the tab headings, from the art's own picture, were opaque and
+  stayed right). Two things: the page's paper on layer 9 under the art, so the ink blends with
+  paper rather than with the room; and `panel-opaque`, after everything has drawn, which puts the
+  panel's own alpha back over all of it - a full-screen quad of the font's solid texel, alpha
+  only, the colour untouched, so the picture stays exactly as drawn (a quad that sampled the
+  atlas's corner, as the first try did, wrote no alpha at all and changed nothing). The pause menu
+  asks for it too, at its dim's own alpha, so the world is still seen through the dim and not
+  through its letters.
 - **The defaults are the game as it was**: smooth turning, no vignette, the stick walking her,
   neither seated nor left-handed, her eyes as the first pose found them, a scene on its screen.
   `vr.calibrate-start` is 1: a first run is asked to calibrate once (with no calibration kept, the

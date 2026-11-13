@@ -80,6 +80,7 @@ variable vr-step
             se-decide  save-vr-options endof
         vr-comfort of
             comfort-level vr-step @ + 4 + 4 mod comfort-set
+            vr-preview   \ (the ring at the strength chosen, so it can be seen here)
             se-decide  save-vr-options endof
         vr-teleport of
             teleport-level vr-step @ + 3 + 3 mod teleport-set

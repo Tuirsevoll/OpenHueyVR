@@ -21,7 +21,9 @@ USING: engine game-state actors messages keys facts flag-names items items.table
     her-mode @ 0= and  the-panic @ 4 < and  cutscene-active? 0= and   \ (her mode only: out of breath, pushing - it opens)
     her-reach @ 24 and 0= and ;   \ (not a script's, not held: Fiona +0xE0, +0x14E8 5 - her plight's reach bits 8 / 16)
 : opened ( -- )
-    menu-art  opening stage !  0 openness !  back-to-page  0 quiet !  0 opt-editing !  back-to-her  frames @ opened-at !  0 tab !  1 pause! ;   \ (the item's tab gone: SubScreen_TakeOver)
+    menu-art  opening stage !  0 openness !  back-to-page  0 quiet !  0 opt-editing !  back-to-her  frames @ opened-at !  0 tab !  1 pause!
+    screen-face ;   \ (the panel is put where the player is looking now, and left there: a menu is
+                    \ in front of them when it opens, and stays in the room after)
 : open-menu ( -- )  opened  -1 the-menu !  se-open ;
 \ one of the other screens: Select isn't theirs; its sound as it opens only the word plate's, the slot
 \ machine's and the options' (SubScreen_Open: modes 0, 2..5 - the save point, the wardrobe, the
@@ -83,6 +85,13 @@ USING: engine game-state actors messages keys facts flag-names items items.table
                          pg-vr of  vr-options-keys  endof
                          pg-options of  options-keys  endof  >r list-keys r>  endcase  endof
     endcase ;
+\ the page's own paper, on its own layer under the art (subscreen/art.fs: the original composed the
+\ menu from pieces that mix with what is under them; on a headset's panel that was the room, so
+\ every word and edge showed it through). Faded in with the page, and opaque once it is up.
+: page-ground ( -- )
+    openness @ 0> if
+        9  0 0 screen-size  $72655200  openness @ 2* 255 min  or  ui-rect
+    then ;
 \ the machines' pages are the whole screen (nothing of the world behind): beyond the 4:3 frame
 \ on a wider window, black - faded in with the page (subscreen/galleries.fs `page-black`)
 : draw-page ( -- )
@@ -114,8 +123,18 @@ USING: engine game-state actors messages keys facts flag-names items items.table
     \ layer 3 is the options page's own (its "Page Up: set height", options.fs): cleared here, every
     \ frame, so a line it drew cannot outlive the page - nothing else draws on it
     3 ui-clear
-    stage @ shut <> if  draw-page exit  then
-    tab @ if  $80 openness !  draw-tab  0 openness !  then ;
+    \ the page's own paper, on its own layer under the art: the menu is composed as the PS2 composed
+    \ it (its words and pieces mix with what is under them), and on a headset's panel what was under
+    \ them was the room - every word and every edge showed it through. A paper ground makes the panel
+    \ a page again, and the panel is opaque.
+    9 ui-clear
+    stage @ shut <> if  page-ground  draw-page
+    else  tab @ if  $80 openness !  draw-tab  0 openness !  then  then
+    \ ... and the panel's own alpha over all of it (panel-opaque): the PS2 composed this from
+    \ pieces blended by its ALPHA register - arithmetic on a screen whose alpha nobody read. On a
+    \ panel that alpha is what holds the room out, so the words, the icons and the highlight were
+    \ holes. The colour stays exactly as drawn; only the alpha is put back, faded in with the page.
+    openness @ 0> if  openness @ s>f 128e f/ panel-opaque  then ;
 
 \ ---- the sound turned down as it opens, back up as it closes (sub_set_volume: by the fade -
 \ 1 - fade / 255 - the effects' master, the stream, the stage music) ----

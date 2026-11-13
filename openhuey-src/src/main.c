@@ -1083,7 +1083,9 @@ static void comfort_tick(Engine *e) {
         k = 1.0f;
     }
     sComfort += (sComfortWant - sComfort) * k;
-    render_comfort(sComfort * gVrOptions.comfort_strength);
+    /* the options page's preview: the ring at the strength chosen, the moment the row is changed */
+    render_comfort(vr_comfort_previewing() ? gVrOptions.comfort_strength
+                                           : sComfort * gVrOptions.comfort_strength);
 }
 
 static void hear_from_her(Engine *e) {
@@ -1243,6 +1245,9 @@ static void draw_frame(Engine *e) {
             }
         } else {
             vr_screen_loose(1);
+            /* a menu's panel is placed once, when it opens, in front of where the player is looking
+             * then - and left there, in the room, like a cutscene's screen (vr_screen_face is called
+             * as the sub screen opens: subscreen.fs) */
             /* menus and prompts share one picture. It is placed when something opens it, then
              * stays in the room: turning the head does not slide it. */
             Vec3 corners[4];
