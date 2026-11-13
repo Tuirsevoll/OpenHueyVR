@@ -117,7 +117,8 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
         drop fdrop fdrop fdrop  own-mode her-mode !  off-ladder exit
     then
     her-drop-tri !  her-drop-at vec!
-    her-ladder @ side nav-link-spot her-at vec!      \ (placed on the floor's edge at this end, at its height, before the walk)
+    ." [LADDER walk x/z] her-x=" her-at v.x sf@ f>s .  ." her-z=" her-at v.z sf@ f>s .  ." spot0-x=" her-ladder @ 0 nav-link-spot fdrop fdrop f>s .  ." spot0-z=" her-ladder @ 0 nav-link-spot f>s . fdrop fdrop  ." target-x=" her-drop-at v.x sf@ f>s .  ." target-z=" her-drop-at v.z sf@ f>s .  cr   \ TEMP-LADDER-LOG (remove later)
+    side end-y her-at v.y sf!      \ (raised to this end's floor height before the walk; her place across the floor is left as it is)
     WALK_OFF_TICKS her-drop-n !
     WALK_OFF_TICKS s>f {: F: n :}
     her-drop-at v.x sf@ her-at v.x sf@ f- n f/  her-drop-dx f!
@@ -217,7 +218,9 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
 : ladder-walk ( -- )
     walk-to-spot dup 0< if  drop off-ladder exit  then  if  exit  then
     on-rungs her-sub !
-    her-ladder-side @ if  on-ladder-top-anim  else  on-ladder-foot-anim  then  play-own  ['] on-ladder her-act ! ;
+    her-ladder-side @ if  on-ladder-top-anim  else  on-ladder-foot-anim  then
+    ." [LADDER on] side=" her-ladder-side @ .  ." x=" her-at v.x sf@ f>s .  ." y=" her-at v.y sf@ f>s .  ." z=" her-at v.z sf@ f>s .  cr   \ TEMP-LADDER-LOG (remove later)
+    play-own  ['] on-ladder her-act ! ;
 : ladder-start ( -- )
     her-ladder @ her-ladder-side @  dup if  0e 6.7e  else  0e -7.1068e  then  nav-link-front   ( tri ) ( F: x y z )
     dup 0< if  drop fdrop fdrop fdrop off-ladder exit  then
