@@ -84,12 +84,45 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     0e her-drop-dy f!  ['] crawl-drop her-act ! ;
 
 \ ---- off (Fiona_StateLadderOff): at the event $20 put by that end, free ----
-: ladder-off ( -- )
-    motion-flags $20 and 0= if  climb-move exit  then
+\ where a dismount puts her: by the end's front, her triangle there, free
+: place-off ( -- )
     anim@ off-ladder-top-anim = 1 0 ?  {: side :}
     her-ladder @ side off-offset nav-link-front                      ( tri ) ( F: x y z )
     dup 0< if  drop fdrop fdrop fdrop  else  her-tri !  her-at vec!  then
     own-mode her-mode !  off-ladder ;
+: ladder-off ( -- )
+    motion-flags $20 and 0= if  climb-move exit  then
+    place-off ;
+\ ---- walking off the top in the headset (docs/subsystems/fiona.md, F5): her hands' climb ends with
+\ her stepping onto the floor beyond the top - no root motion and no step-off animation (its pose still
+\ shows a climb) ----
+30 constant WALK_OFF_TICKS   \ (a second at the game's 30 ticks)
+: walk-off-top ( -- )   \ (one tick of her walk off the top: the step)
+    ladder-pull fdrop                                          \ (a hand's pull is not what walks her now)
+    her-drop-n @ 0= if                                         \ (there: put her at the top's front, and free her)
+        ." [LADDER walk done]" cr                               \ TEMP-LADDER-LOG (remove later)
+        her-at her-drop-at vec-copy
+        her-drop-tri @ dup 0< if  drop  else  her-tri !  then
+        own-mode her-mode !  off-ladder exit
+    then
+    her-drop-dx f@ her-at v.x sf@ f+ her-at v.x sf!
+    her-drop-dy f@ her-at v.y sf@ f+ her-at v.y sf!
+    her-drop-dz f@ her-at v.z sf@ f+ her-at v.z sf!
+    -1 her-drop-n +! ;
+: walk-off-top-start ( -- )   \ (a hand's climb to the top: the walk off it begun - its target and steps)
+    her-ladder @ 1 off-offset nav-link-front                      ( tri ) ( F: x y z )
+    dup 0< if                                                   \ (no floor beyond it: she steps off where she is)
+        ." [LADDER no-tri]" cr                                  \ TEMP-LADDER-LOG (remove later)
+        drop fdrop fdrop fdrop  own-mode her-mode !  off-ladder exit
+    then
+    dup her-drop-tri !  her-drop-at vec!
+    WALK_OFF_TICKS her-drop-n !
+    WALK_OFF_TICKS s>f {: F: n :}
+    her-drop-at v.x sf@ her-at v.x sf@ f- n f/  her-drop-dx f!
+    her-drop-at v.y sf@ her-at v.y sf@ f- n f/  her-drop-dy f!
+    her-drop-at v.z sf@ her-at v.z sf@ f- n f/  her-drop-dz f!
+    walk-anim play-cut
+    ['] walk-off-top her-act ! ;
 
 \ ---- on it (Fiona_StateOnLadder): as each move comes round, the stick picks the next ----
 \ (the stick's down plus the pad's down less its up - as the original reads it, pushed up is
@@ -155,10 +188,15 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     ladder-pull {: F: pull :}                                  \ (this tick's pull: down the hand is up her)
     pull her-at v.y sf@ f+ her-at v.y sf!
     pull 0e f>  her-at v.y sf@ 0 end-y f>= and  0 stalker-on 0= and if    \ (down this tick, at the foot)
-        off-ladder-foot-anim play-own  ['] ladder-off her-act !  exit
+        ." [LADDER foot] y=" her-at v.y sf@ f>s .  cr           \ TEMP-LADDER-LOG (remove later)
+        her-ladder @ 0 off-offset nav-link-front                      ( tri ) ( F: x y z )
+        dup 0< if  drop fdrop fdrop fdrop
+        else  her-tri !  her-at vec!  stand-anim play-cut  then
+        own-mode her-mode !  off-ladder exit
     then
     pull 0e f<  her-at v.y sf@ 1 end-y f- 3e f<= and  0 stalker-on 0= and if   \ (up this tick, at the top)
-        off-ladder-top-anim play-own  ['] ladder-off her-act !  exit
+        ." [LADDER top] y=" her-at v.y sf@ f>s .  ." top-end=" 1 end-y f>s .  cr   \ TEMP-LADDER-LOG (remove later)
+        walk-off-top-start exit
     then ;
 : on-ladder ( -- )   \ (Fiona_StateOnLadder; until the move has faded in: still)
     settled? 0= if  exit  then

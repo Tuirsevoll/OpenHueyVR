@@ -350,6 +350,8 @@ that her own move cannot feed back into it. On a ladder in VR the stick does not
 the keyboard's - `off-ladder-top-anim` / `off-ladder-foot-anim`, then `ladder-off` - taken when her
 height has reached the end's (`end-y 0` at the foot; `end-y 1` within 3 at the top) and the stalker
 is not on that side, whose rules are unchanged. With no hand on it she hangs: no stick, no fall.
+A hand's climb to the top ends with her walking off the top's front, turning to face away from the
+ladder, without the top step-off animation.
 
 Also fixed with it: `walk-anim` (Fiona_StateCmdWalkAnim) read the animation's key events for
 `MOTION_EVENTS` $20; it is the motion's come-round flag (`ended?`).
