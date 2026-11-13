@@ -277,6 +277,7 @@ void platform_poll(Input *in) {
      * tick, and a press then must not be lost) */
     in->text[0] = 0;
     in->fullscreen_toggle = 0;
+    in->debug_skip_cycle = 0;
     memset(in->typed, 0, sizeof(in->typed));
     while (SDL_PollEvent(&e)) {
         switch (e.type) {
@@ -293,6 +294,10 @@ void platform_poll(Input *in) {
                        e.key.scancode == SDL_SCANCODE_F11) {
                 if (!e.key.repeat) {
                     in->fullscreen_toggle = 1;
+                }
+            } else if (e.key.scancode == SDL_SCANCODE_F9) {   /* (a debug aid: the next draw pass off) */
+                if (!e.key.repeat) {
+                    in->debug_skip_cycle = 1;
                 }
             } else if (!e.key.repeat || e.key.scancode == SDL_SCANCODE_BACKSPACE) {
                 key_pressed(in, e.key.scancode);
@@ -353,6 +358,12 @@ void platform_mouse_capture(int on) {
 void platform_fullscreen(int on) {
     if (sWindow != NULL) {
         SDL_SetWindowFullscreen(sWindow, on != 0);   /* (no mode set: the desktop's, borderless) */
+    }
+}
+
+void platform_title(const char *text) {
+    if (sWindow != NULL) {
+        SDL_SetWindowTitle(sWindow, text);
     }
 }
 

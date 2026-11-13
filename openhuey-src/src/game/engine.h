@@ -86,8 +86,10 @@ void engine_sound_at(uint32_t id, int bank, Vec3 at);
 /* the scripts' 2D drawing for this frame (the on-draw hooks) */
 void engine_draw_2d(Engine *e);
 /* a debugging aid: OPENHUEY_SKIP=loot,props,refl,... switches one draw pass off, to find which one
- * draws something bad (a name is matched as a substring of the comma-separated list) */
+ * draws something bad (a name is matched as a substring of the comma-separated list); with the
+ * variable unset, F9 in the game steps through the passes one at a time */
 int engine_skip(const char *what);
+void engine_skip_cycle(void);
 int freecam_active(void);
 /* the listener, when the headset is on her head (NULL: the game camera) */
 void engine_set_ear(const Mat4 *view);

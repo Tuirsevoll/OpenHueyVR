@@ -703,10 +703,30 @@ static Vec3 view_forward(const Mat4 *v) {
     return vec3(-v->m[2], -v->m[6], -v->m[10]);
 }
 
+/* the passes F9 tries in turn: each one switched off, then all of them ('' = none off) */
+static const char *const kSkipModes[] = {"",        "things",  "props", "vrhands", "sprites",
+                                         "glow",    "shine",   "refl",  "loot",
+                                         "things,props,vrhands,sprites,glow,shine,refl,loot"};
+static int sSkipMode = 0;
+
 int engine_skip(const char *what) {
     const char *list = getenv("OPENHUEY_SKIP");
 
+    if (list == NULL) {
+        list = kSkipModes[sSkipMode];
+    }
     return list != NULL && what != NULL && strstr(list, what) != NULL;
+}
+
+void engine_skip_cycle(void) {
+    char title[160];
+    const char *mode = kSkipModes[0];
+
+    sSkipMode = (sSkipMode + 1) % (int)(sizeof(kSkipModes) / sizeof(kSkipModes[0]));
+    mode = kSkipModes[sSkipMode];
+    snprintf(title, sizeof(title), "openhuey  -  skip: %s", mode[0] != 0 ? mode : "none");
+    platform_title(title);
+    printf("skip: %s\n", mode[0] != 0 ? mode : "none");
 }
 
 /* one picture: the window, or one eye. Shadows were already drawn. */
@@ -1468,6 +1488,9 @@ int main(int argc, char **argv) {
         }
         if (e->input.fullscreen_toggle) {
             gRender.fullscreen = !gRender.fullscreen;
+        }
+        if (e->input.debug_skip_cycle) {
+            engine_skip_cycle();   /* (F9: the next draw pass switched off - see engine_skip) */
         }
         if (!opt.hidden && gRender.fullscreen != fullscreen) {   /* (the setting: F11, the menu, the saved one) */
             fullscreen = gRender.fullscreen;
