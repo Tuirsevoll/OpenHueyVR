@@ -8,7 +8,7 @@
  * by its animation's frame instead: the hand's angle about its hinge is the frame its track gives,
  * and a leaf let go while it was turning keeps that speed to the stop it was heading for. */
 /* temporary, for the headset smoothing test; remove later */
-#define VR_STEP_LOG 1
+#define VR_STEP_LOG 0
 
 #include "vrhands.h"
 #include "loot.h"
@@ -3139,6 +3139,10 @@ int vrhands_ladder_hold(int side) {
 
 int vrhands_ladder_hands(void) {
     return vrhands_ladder_hold(0) >= 0 || vrhands_ladder_hold(1) >= 0;
+}
+
+int vrhands_ladder_both(void) {   /* true when both hands hold a ladder */
+    return vrhands_ladder_hold(0) >= 0 && vrhands_ladder_hold(1) >= 0;
 }
 
 float vrhands_ladder_pull(void) {

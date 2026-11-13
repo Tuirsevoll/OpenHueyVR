@@ -100,7 +100,6 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
 : walk-off-top ( -- )   \ (one tick of her walk off the top: the step)
     ladder-pull fdrop                                          \ (a hand's pull is not what walks her now)
     her-drop-n @ 0= if                                         \ (there: put her at the top's front, and free her)
-        ." [LADDER walk done]" cr                               \ TEMP-LADDER-LOG (remove later)
         her-at her-drop-at vec-copy
         her-drop-tri @ dup 0< if  drop  else  her-tri !  then
         own-mode her-mode !  off-ladder exit
@@ -113,11 +112,9 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     {: side :}
     her-ladder @ side off-offset nav-link-front                   ( tri ) ( F: x y z )
     dup 0< if                                                   \ (no floor beyond it: she steps off where she is)
-        ." [LADDER no-tri]" cr                                  \ TEMP-LADDER-LOG (remove later)
         drop fdrop fdrop fdrop  own-mode her-mode !  off-ladder exit
     then
     her-drop-tri !  her-drop-at vec!
-    ." [LADDER walk x/z] her-x=" her-at v.x sf@ f>s .  ." her-z=" her-at v.z sf@ f>s .  ." spot0-x=" her-ladder @ 0 nav-link-spot fdrop fdrop f>s .  ." spot0-z=" her-ladder @ 0 nav-link-spot f>s . fdrop fdrop  ." target-x=" her-drop-at v.x sf@ f>s .  ." target-z=" her-drop-at v.z sf@ f>s .  cr   \ TEMP-LADDER-LOG (remove later)
     side end-y her-at v.y sf!      \ (raised to this end's floor height before the walk; her place across the floor is left as it is)
     WALK_OFF_TICKS her-drop-n !
     WALK_OFF_TICKS s>f {: F: n :}
@@ -190,17 +187,13 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     her-at v.y sf@ 0 end-y 3e f- f>= ;
 : vr-climb ( -- )
     hold-still
-    ladder-hands? 0= if                                         \ (no hand on it: at the top she steps off; else she hangs)
-        at-top-window? 0 stalker-on 0= and if
-            ." [LADDER physical top]" cr                        \ TEMP-LADDER-LOG (remove later)
-            0 walk-off-top-start
-        then
-        exit
+    ladder-both? 0= at-top-window? 0 stalker-on 0= and and if   \ (at the top, and not both hands on the ladder: she steps off)
+        0 walk-off-top-start exit
     then
+    ladder-hands? 0= if  exit  then                            \ (no hand on it: she hangs)
     ladder-pull {: F: pull :}                                  \ (this tick's pull: down the hand is up her)
     pull her-at v.y sf@ f+ her-at v.y sf!
-    pull 0e f<  her-at v.y sf@ 1 end-y f- 3e f<= and  0 stalker-on 0= and if   \ (up this tick, at the top)
-        ." [LADDER physical bottom] y=" her-at v.y sf@ f>s .  ." top-end=" 1 end-y f>s .  cr   \ TEMP-LADDER-LOG (remove later)
+    pull 0e f<  her-at v.y sf@ 1 end-y f- 3e f<= and  0 stalker-on 0= and if   \ (up this tick, at the bottom: placed there)
         her-ladder @ 1 off-offset nav-link-front                      ( tri ) ( F: x y z )
         dup 0< if  drop fdrop fdrop fdrop  else  her-tri !  her-at vec!  then
         own-mode her-mode !  off-ladder exit
@@ -219,7 +212,6 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     walk-to-spot dup 0< if  drop off-ladder exit  then  if  exit  then
     on-rungs her-sub !
     her-ladder-side @ if  on-ladder-top-anim  else  on-ladder-foot-anim  then
-    ." [LADDER on] side=" her-ladder-side @ .  ." x=" her-at v.x sf@ f>s .  ." y=" her-at v.y sf@ f>s .  ." z=" her-at v.z sf@ f>s .  cr   \ TEMP-LADDER-LOG (remove later)
     play-own  ['] on-ladder her-act ! ;
 : ladder-start ( -- )
     her-ladder @ her-ladder-side @  dup if  0e 6.7e  else  0e -7.1068e  then  nav-link-front   ( tri ) ( F: x y z )

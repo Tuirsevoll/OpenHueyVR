@@ -122,7 +122,9 @@ objects buzz only.
 
 A hand also grabs a ladder in the air beside it while she climbs: the link is kept and that
 controller buzzes once. Pulling a hand on a ladder now climbs her (`docs/subsystems/fiona.md`, F5:
-`vr-climb`), and an end is taken when her height has reached it.
+`vr-climb`), and an end is taken when her height has reached it. Letting go with one hand at the top
+dismounts her; letting go with both hands at the bottom places her there (unchanged); the mid-ladder
+both-hands fall is not built yet.
 
 Both touch buzzes are off (WALL_BUZZ 0 and STOP_PULSE 0 in vrhands.c); detection and the arm stop
 still run.

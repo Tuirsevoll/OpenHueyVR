@@ -352,8 +352,9 @@ height has reached the end's (`end-y 0` at the foot; `end-y 1` within 3 at the t
 is not on that side, whose rules are unchanged. With no hand on it she hangs: no stick, no fall.
 On this ladder side 0 is the physical top (the end at the larger height) and side 1 the physical
 bottom: a hand's climb to the top starts her stepping off it and a hand's climb to the bottom places
-her at once, neither with a step-off animation. At the top she is placed on the floor's edge and steps
-onto the floor once both hands let go of the ladder; at the bottom she is placed on the ground at once.
+her at once, neither with a step-off animation. Letting go with one hand at the top dismounts her;
+letting go with both hands at the bottom places her there (unchanged); the mid-ladder both-hands fall
+is not built yet.
 
 Also fixed with it: `walk-anim` (Fiona_StateCmdWalkAnim) read the animation's key events for
 `MOTION_EVENTS` $20; it is the motion's come-round flag (`ended?`).

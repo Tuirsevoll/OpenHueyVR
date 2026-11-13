@@ -69,6 +69,8 @@ int vrhands_ladder_link(const NavMesh *nav, Vec3 at);
 int vrhands_ladder_hold(int side);
 /* 1 when either hand holds a ladder. */
 int vrhands_ladder_hands(void);
+/* 1 when both hands hold a ladder. */
+int vrhands_ladder_both(void);
 /* the pull the hands have given since the scripts last took it, in the game's y (which runs down,
  * so up is negative), both hands together; the call takes it (clears it). */
 float vrhands_ladder_pull(void);
