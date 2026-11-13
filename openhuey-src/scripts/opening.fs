@@ -15,13 +15,13 @@
 \   variable $26 = 1, Hewie's $27 = 0), room $2A - whose entering script does the rest.
 \ Without a window (tests, screenshots) the game starts at once.
 IN: opening
-USING: engine game-state actors messages keys vectors room-names facts flag-names ps2-screen saves subscreen.art subscreen.saving mods.menu updater ;
+USING: engine game-state actors messages keys vectors room-names facts flag-names ps2-screen saves subscreen.art subscreen.saving mods.menu updater vr-options ;
 
 6 constant movie-layer   7 constant menu-layer   \ (over everything)
 
 \ its stages: the menu; he gets up; he barks; the opening movie; the game started; the save slots;
 \ the options up; the mods menu; the updater
-enum: opening-stage  on-menu getting-up barking opening-movie started on-slots on-options on-mods on-update ;
+enum: opening-stage  on-menu on-calibrate getting-up barking opening-movie started on-slots on-options on-mods on-update ;
 
 state: opening-state
   cell field stage       \ (enum: opening-stage)
@@ -29,6 +29,8 @@ state: opening-state
   cell field slot-at     \ (the save slots) the one chosen
   cell field dog         \ the title's Hewie (a model of its own)
   cell field titled      \ the title is up (its lights and Hewie to put away)
+  cell field cal-t       \ (the calibration) frames its result is said, then the menu
+  cell field cal-ok      \ ... -1 measured, 0 no floor found
 end-state
 
 variable hard   \ the new game chosen is a hard one (the title's HARD MODE; new-game runs after the title has gone)
@@ -74,7 +76,7 @@ create spot  -258e f, -10e f, 174e f,   \ (on the circle, between the scarecrows
     x  y 4e f+  z  cam-place
     camera cam.yaw sf@ -0.22e f+ camera cam.yaw sf! ;
 : title-start ( -- )
-    0 stage !  0 picked !  -1 titled !
+    on-menu stage !  0 picked !  -1 titled !
     front-garden-5 room  cam-new-room  cam-room-start   \ (the scenery: no `arrived` - no story, nobody else)
     s" O_HEW/HEW_000" actor-load dog !   \ (no motion table: as new-src's title, the motions played as they are)
     spot@ him act.z sf!  him act.y sf!  him act.x sf!  round 0.65e f- him act.yaw sf!  1e him act.shadow sf!   \ (three-quarters to the camera)
@@ -83,13 +85,50 @@ create spot  -258e f, -10e f, 174e f,   \ (on the circle, between the scarecrows
     titled @ 0= if  exit  then  0 titled !
     dog @ actor-free  0 stage-lights  0.06e 0.06e 0.08e clear-color  menu-layer ui-clear ;
 : title-gone ( -- )  title-end  started stage !  self kill ;   \ (leaving the title for the game: a mod's entry)
+\ ---- the first run's height calibration (docs/subsystems/comfort.md): stand straight, the cross
+\ measures her eyes above the floor and keeps it (vr-options.fs) - then the menu. The triangle goes
+\ on to the menu without it; the VR options page has the same row for later.
+: calibrate-wanted? ( -- flag )
+    vr?  vr-settings vr.calibrate-start l@ 0<> and
+    vr-settings vr.calibrated l@ 0= and
+    vr-settings vr.seated l@ 0= and ;   \ (seated: its own height sizes the world)
+: calibrate-take ( -- )
+    vr-tracking? if
+        vr-calibrate
+        vr-settings vr.calibrated l@ 0<> if  save-vr-options  -1  else  0  then  cal-ok !
+    else  0 cal-ok !  then
+    90 cal-t ! ;   \ (about three seconds at the game's 30 ticks)
+: calibrate-keys ( -- )
+    cal-t @ 0> if  exit  then
+    cross button-pressed? if  calibrate-take  exit  then
+    triangle button-pressed? start-button button-pressed? or if  0 cal-t !  on-menu stage !  then ;
+: calibrate-frame ( -- )
+    cal-t @ 0> if  -1 cal-t +!  cal-t @ 0= if  on-menu stage !  then  then ;
+: cal-line ( addr len i -- )   \ (a line of its words, i down from under the title)
+    {: a n i | sw y :}  screen-size drop to sw
+    3 pen-scale  sw 8 /  char-size nip 3 2 */ +  to y   \ (under the title's own height)
+    2 pen-scale
+    menu-layer  a n  sw 10 /  y  i char-size nip 3 * * +  $D8D0C8FF 2 ui-text ;
+: draw-calibrate ( -- )
+    {: | sw :}  screen-size drop to sw  3 pen-scale
+    menu-layer  s" HEIGHT CALIBRATION"  sw 10 /  sw 8 /  $D8D0C8FF 3 ui-text
+    2 pen-scale
+    s" Stand straight and look ahead." 0 cal-line
+    s" Then press A to measure your height." 1 cal-line
+    s" B: skip for now (the VR options page has it too)" 2 cal-line
+    cal-t @ 0> if
+        cal-ok @ if  s" Measured." 3 cal-line
+        else  s" No headset floor found: Page Up tries again." 3 cal-line  then
+    then ;
+
+
 
 \ the menu, low on the left; the game's name above
 \ the entries: the last two only once a game has been cleared (the first clear's unlock)
 \ (MINI-GAME, hga's own: straight into the extras room's mini-game - its menu up, as at its door)
 \ (MODS, hga's own: only when there are mods in mods/ - the mods menu, mods/menu.fs)
 \ (UPDATE, OpenHuey's own: a release build's only - updater.fs)
-enum: menu-entry  e-new e-load e-options e-hard e-extras e-mini e-mods e-update e-quit e-mod ;
+enum: menu-entry  e-new e-load e-options e-vr e-hard e-extras e-mini e-mods e-update e-quit e-mod ;
 : cleared? ( -- flag )  0 resident-flag? ;
 create entries 16 cells allot   variable #entries
 : +entry ( e -- )  #entries @ 16 < if  entries #entries @ cells + !  1 #entries +!  else  drop  then ;
@@ -109,7 +148,7 @@ variable #mod-entries
 defer title-menu-hook ( -- )
 
 : entries! ( -- )   \ the menu's entries, as the title comes up
-    0 #entries !  0 #mod-entries !  e-new +entry  e-load +entry  e-options +entry
+    0 #entries !  0 #mod-entries !  e-new +entry  e-load +entry  e-options +entry  e-vr +entry
     cleared? if  e-hard +entry  e-extras +entry  e-mini +entry  then
     title-menu-hook
     mods-menu-count 0> if  e-mods +entry  then
@@ -119,6 +158,7 @@ defer title-menu-hook ( -- )
 : #items ( -- n )  #entries @ ;
 : item ( i -- addr len )
     entry case  e-new of  s" NEW GAME"  endof  e-load of  s" LOAD GAME"  endof  e-options of  s" OPTIONS"  endof
+                e-vr of  s" VR OPTIONS"  endof
                 e-hard of  s" HARD MODE"  endof  e-extras of  s" EXTRAS"  endof  e-mini of  s" MINI-GAME"  endof
                 e-mods of  s" MODS"  endof  e-update of  s" UPDATE"  endof
                 e-quit of  s" QUIT"  endof
@@ -148,6 +188,7 @@ defer title-menu-hook ( -- )
     sh 7 * 10 /  sh #items 1+ h * -  min  i h * + ;
 : menu-draw ( -- )
     menu-layer ui-clear
+    stage @ on-calibrate = if  draw-calibrate exit  then
     stage @ on-slots = if  slots-draw exit  then
     stage @ on-mods = if  menu-layer mods.menu:draw exit  then
     stage @ on-update = if  menu-layer updater:draw exit  then
@@ -169,6 +210,7 @@ defer title-menu-hook ( -- )
             e-hard of  -1 hard !  m-get-up 0 play  getting-up stage !  endof
             e-load of  0 slot-at !  on-slots stage !  endof
             e-options of  5 subscreen-id send menu-mode  subscreen-wanted flag-on  on-options stage !  endof
+            e-vr of  6 subscreen-id send menu-mode  subscreen-wanted flag-on  on-options stage !  endof
             e-extras of  title-end  started stage !  extras  self kill  endof
             e-mini of  title-end  started stage !  -1 mini-game-wanted !  extras  self kill  endof
             e-mods of  mods.menu:open  on-mods stage !  endof
@@ -201,9 +243,13 @@ defer title-menu-hook ( -- )
 behaviour opening-the-game
   on spawned ( -- )
       self subscribe tick  self subscribe frame-end
-      hidden? if  started stage !  self kill  else  title-start  entries!  then ;   \ (headless: game.fs started it)
+      hidden? if  started stage !  self kill  else
+          title-start  entries!
+          calibrate-wanted? if  on-calibrate stage !  0 cal-t !  screen-face  then
+      then ;   \ (headless: game.fs started it)
   on tick ( -- )
       stage @ case
+          on-calibrate of  calibrate-keys  calibrate-frame  endof
           on-menu of  menu-keys  endof
           on-slots of  slots-keys  endof
           on-mods of  mods.menu:keys if  on-menu stage !  then  endof

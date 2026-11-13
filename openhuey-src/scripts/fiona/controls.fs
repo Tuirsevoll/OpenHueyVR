@@ -64,13 +64,27 @@ enum: direction-from  by-camera by-facing by-none by-steering ;
 \ are not used, and she moves the way the stick points without waiting to face it.
 \ right stick: turn her in the world, and the view with her, so the room turns while
 \ the headset keeps facing the same way in the room
-: vr-smooth-turn ( -- )
-    hands-off? if  exit  then
-    vr-right fdup f0= if  fdrop exit  then
-    3.5e deg>rad f*
+\ a turn, as the stick gives it: her body, her heading and the view together (a snap carries its
+\ own angle; the arm stops are dropped, the hands' places in the room having moved with her)
+: turn-view ( F: yaw -- )
     fdup vr-turn!
     fdup her-yaw field+!
     her-heading field+! ;
+: vr-smooth-turn ( -- )
+    hands-off? if  exit  then
+    vr-right fdup f0= if  fdrop exit  then
+    3.5e deg>rad f*  turn-view ;
+\ the options' snap turning (scripts/vr-options.fs): one turn a push of the right stick, its angle
+\ chosen. The push is read every headset frame (vr.c: a flick between two ticks is still seen) and
+\ waits for this tick. Hands-off still takes it, so it does not fire later when she is free.
+: vr-snap-turn ( -- )
+    vr-snap {: F: a :}
+    hands-off? if  exit  then
+    a f0= if  exit  then
+    hand-stops-clear  a turn-view ;
+\ the right stick, as the options have it: smooth, or a snap a push
+: vr-turn ( -- )
+    vr-settings vr.turn-snap l@ if  vr-snap-turn  else  vr-smooth-turn  then ;
 \ the stick in the room, relative to where she looks (not the body, which follows the walk):
 \ x right, z down on the stick
 : vr-aim ( F: -- x z )
@@ -78,22 +92,34 @@ enum: direction-from  by-camera by-facing by-none by-steering ;
     vr-face to yaw
     yaw fcos fnegate sx f*  yaw fsin sz f* f-
     yaw fsin sx f*          yaw fcos sz f* f- ;
+\ the options' teleport (vr.teleport): fiona.fs sets it (it needs `put`); nothing until then
+defer vr-teleport-step ( -- )
+' noop is vr-teleport-step
+
 : vr-move ( -- )
     read-stick
-    vr-smooth-turn
-    sx sz vlen fdup f0> if  fdup sx fswap f/ way-x f!  sz fswap f/ way-z f!  else  fdrop 0e way-x f!  0e way-z f!  then
-    \ a light tilt still counts as moving; only a dead stick is "let go"
-    sx sz vlen 0.12e f< dup if  1 her-still +!  her-still @ 6 min her-still !  else  0 her-still !  then  drop
-    \ looking around does not turn her body: she faces the way she walks (moving.fs's
-    \ turn-to-stick). A story having her turns her by her animation, the view turning with her
-    \ (story-turned, fiona.fs's frame after her doing)
-    vr-aim dir!
-    camera-relative her-turn-mode !
-    0 her-cut !
-    sx her-stick v.x sf!  0e her-stick v.y sf!  sz her-stick v.z sf!
-    steer-yaw her-cam-yaw f!
-    nx her-last v.x sf!  0e her-last v.y sf!  nz her-last v.z sf!
-    run-held? her-run? ! ;
+    vr-turn
+    vr-settings vr.teleport l@ if
+        \ (no walking: the stick aims a place a fixed distance off, and letting go takes her there)
+        0e way-x f!  0e way-z f!  0e her-dir v.x sf!  0e her-dir v.z sf!
+        0e her-stick v.x sf!  0e her-stick v.y sf!  0e her-stick v.z sf!
+        6 her-still !  0 her-run? !
+    else
+        sx sz vlen fdup f0> if  fdup sx fswap f/ way-x f!  sz fswap f/ way-z f!  else  fdrop 0e way-x f!  0e way-z f!  then
+        \ a light tilt still counts as moving; only a dead stick is "let go"
+        sx sz vlen 0.12e f< dup if  1 her-still +!  her-still @ 6 min her-still !  else  0 her-still !  then  drop
+        \ looking around does not turn her body: she faces the way she walks (moving.fs's
+        \ turn-to-stick). A story having her turns her by her animation, the view turning with her
+        \ (story-turned, fiona.fs's frame after her doing)
+        vr-aim dir!
+        camera-relative her-turn-mode !
+        0 her-cut !
+        sx her-stick v.x sf!  0e her-stick v.y sf!  sz her-stick v.z sf!
+        steer-yaw her-cam-yaw f!
+        nx her-last v.x sf!  0e her-last v.y sf!  nz her-last v.z sf!
+        run-held? her-run? !
+    then
+    vr-teleport-step ;
 \ the headset: a story having her turns her by her own animation, and the view turns with her (by
 \ the turn she took since the frame's start: her-yaw-was) - she crawls in where the motion takes her
 : story-turned ( -- )

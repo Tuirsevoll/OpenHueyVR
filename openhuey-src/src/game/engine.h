@@ -85,6 +85,12 @@ float doorway_faded(const Engine *e, const Actor *a);
 void engine_sound_at(uint32_t id, int bank, Vec3 at);
 /* the scripts' 2D drawing for this frame (the on-draw hooks) */
 void engine_draw_2d(Engine *e);
+/* the cutscene's 4:3 bars: drawn into the 2D picture, so a picture that is not 4:3 (her eyes
+ * through a scene, on a headset) turns them off for its own drawing */
+void engine_letterbox_off(int off);
+/* the running scene's picture is its movie (scripts/scenes.fs scene-picture!): a film over the
+ * room, which a headset shows on its screen rather than from her eyes */
+int engine_scene_picture(void);
 /* a debugging aid: OPENHUEY_SKIP=loot,props,refl,... switches one draw pass off, to find which one
  * draws something bad (a name is matched as a substring of the comma-separated list); with the
  * variable unset, DEL in the game steps through the passes one at a time */

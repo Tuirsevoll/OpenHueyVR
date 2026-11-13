@@ -626,6 +626,14 @@ as they sit on that anchor.
   stalkers). The diagnostic `VR_STEP_LOG` DRAW line prints the blended `pos`, only for the draws
   that find her, its cap 400 lines, and goes with this test.
 
+**The VR turn options** (`scripts/vr-options.fs`, docs/subsystems/comfort.md): the right stick
+turns her by the same three writes (`fiona/controls.fs` `turn-view`) - smooth, as above, or with
+`vr.turn-snap` a snap a push of the stick, `vr.snap-degrees` at a time. A snap's push is read every
+headset frame (`vr.c` `sync_stick`), so a flick that begins and ends between two ticks is not lost,
+and it waits for the tick that turns her; the arms' stops are dropped with it
+(`hand-stops-clear`). Under 60 degrees (`TURN_SNAP`) the picture blends it over the one tick; 60
+and over counts as a cut and is instant.
+
 
 **Read again, 2026-11 (0.2.42).** Against fiona.c: steering after a camera cut faced the mirrored
 heading (atan2 z x; Hewie's too) - now atan2 x z as she walks; struck or in her panic's fall she is

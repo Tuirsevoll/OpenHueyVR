@@ -2586,6 +2586,14 @@ PRIM(p_cs_in_shot) { PUSH(cutscene_playing_shot() ? -1 : 0); }
 PRIM(p_cs_near_end) { PUSH(cutscene_near_end() ? -1 : 0); }
 PRIM(p_cs_shot_at) { PUSH(cutscene_shot_at((int)POP())); }   /* ( frame -- shot ) -1 none */
 PRIM(p_cs_signals) { PUSH(cutscene_signal_count((int)POP())); }   /* ( bit -- n ) since last frame */
+/* the scene's picture: its movie drawn over the room (keyed, alpha, strip, opaque) rather than the
+ * game's own models being moved. The room that asked for it says (scripts/scenes.fs); a scene so
+ * watched keeps its screen in a headset (main.c first_person_scene, vr.cutscene-first-person) */
+static int sScenePicture;
+
+PRIM(p_scene_picture) { sScenePicture = POP() != 0; }   /* ( flag -- ) */
+
+int engine_scene_picture(void) { return sScenePicture; }
 PRIM(p_music_play) {   /* ( addr len loop paused -- flag ) a track (ADX file) streamed */
     Cell paused = POP(), loop = POP(), n = POP(), a = POP();
     char path[256];
@@ -3670,6 +3678,9 @@ PRIM(p_vr_body) {   /* ( -- ) ( F: -- height scale ) what the session is using *
     FPUSH(h);
     FPUSH(s);
 }
+PRIM(p_vr_tracking) {   /* ( -- flag ) the headset's pose is found: a calibration can measure it */
+    PUSH(vr_tracking() ? -1 : 0);
+}
 PRIM(p_vase_named) {   /* ( xt -- flag ) its name is a vase, not a crate or a box */
     Word *named = (Word *)POP();
 
@@ -3754,6 +3765,10 @@ PRIM(p_vr_turn) {   /* ( -- ) ( F: yaw -- ) add to the view's yaw; her body is t
     vr_add_turn((float)FPOP());
 }
 PRIM(p_vr_turn_view) { vr_add_turn((float)FPOP()); }   /* ( -- ) ( F: radians -- ) the view turned with her, as a stick turn does */
+PRIM(p_vr_settings) { PUSH(&gVrOptions); }   /* ( -- addr ) the VR options (platform/vr.h VrOptions) */
+PRIM(p_vr_snap) { FPUSH(vr_snap_take()); }   /* ( -- ) ( F: -- radians ) the turn stick's snap waiting, taken */
+PRIM(p_hand_stops_clear) { vrhands_forget_stops(); }   /* ( -- ) the arms' stops forgotten (a snap turn) */
+PRIM(p_hands_drop) { vrhands_drop_all(); }   /* ( -- ) both hands let go (a teleport) */
 PRIM(p_vr_petting) {   /* ( side -- flag ) that hand is on Hewie; the touch buzzes it */
     PUSH(vrhands_petting((int)POP()) ? -1 : 0);
 }
@@ -4457,10 +4472,18 @@ static void voice_caption(Engine *e) {
     }
 }
 
+/* a picture that is not the 4:3 one (a scene seen from her eyes) keeps the bars off its own
+ * drawing. The game's own letterbox setting is untouched: this is the picture's, per frame. */
+static int sNoLetterbox;
+
+void engine_letterbox_off(int off) { sNoLetterbox = off != 0; }
+
 void engine_draw_2d(Engine *e) {
     int i;
+    int bars = cutscene_letterbox() && !sNoLetterbox;
 
-    if (cutscene_letterbox()) {   /* (Cutscene_Letterbox: 56 lines of 448 at the top and bottom) */
+    sNoLetterbox = 0;   /* (it is the picture's, once: the next drawing has the game's own bars) */
+    if (bars) {   /* (Cutscene_Letterbox: 56 lines of 448 at the top and bottom) */
         float bar = (float)e->height * 56.0f / 448.0f;
 
         render_rect(0.0f, 0.0f, (float)e->width, bar, 0x000000FFu);
@@ -4527,7 +4550,7 @@ void bind_engine(Forth *f) {
         {"movie-frame", p_movie_frame, "( -- n )"}, {"cutscene-load", p_cs_start, "( addr len -- flag )"}, {"cutscene-run", p_cs_run, "( -- )"}, {"cutscene-go", p_cs_go, "( -- )"},
         {"cutscene-frame!", p_cs_frame_set, "( n -- )"}, {"cutscene-frame", p_cs_frame, "( -- frame )"}, {"cutscene-update", p_cs_update, "( -- )"}, {"cutscene-end", p_cs_end, "( -- )"}, {"cutscene-leave-alone", p_cutscene_leave_alone, "( actor -- )"}, {"cutscene-keep-model", p_cutscene_keep_model, "( actor -- )"}, {"soft-reset", p_soft_reset, "( -- )"}, {"soft-reset?", p_soft_reset_q, "( -- flag )"},
         {"cutscene-status", p_cs_status, "( -- n )"}, {"cutscene-in-shot?", p_cs_in_shot, "( -- flag )"}, {"cutscene-near?", p_cs_near_end, "( -- flag )"}, {"cutscene-shot-at", p_cs_shot_at, "( frame -- shot )"},
-        {"cutscene-signals", p_cs_signals, "( bit -- n )"}, {"cutscene-active?", p_cs_active, "( -- flag )"}, {"pause!", p_pause, "( flag -- )"}, {"still!", p_still, "( flag -- )"}, {"sound-out!", p_sound_out, "( mode -- )"}, {"voice-lr", p_voice_lr, "( v -- l r on? )"}, {"seq-bank", p_seq_bank, "( addr len -- flag )"}, {"seq-load", p_seq_load, "( k addr len -- flag )"}, {"seq-play", p_seq_play, "( k on -- )"},
+        {"cutscene-signals", p_cs_signals, "( bit -- n )"}, {"cutscene-active?", p_cs_active, "( -- flag )"}, {"scene-picture!", p_scene_picture, "( flag -- )"}, {"pause!", p_pause, "( flag -- )"}, {"still!", p_still, "( flag -- )"}, {"sound-out!", p_sound_out, "( mode -- )"}, {"voice-lr", p_voice_lr, "( v -- l r on? )"}, {"seq-bank", p_seq_bank, "( addr len -- flag )"}, {"seq-load", p_seq_load, "( k addr len -- flag )"}, {"seq-play", p_seq_play, "( k on -- )"},
         {"seq-playing?", p_seq_playing, "( k -- flag )"}, {"seq-volume", p_seq_volume, "( k v -- )"}, {"seq-port-volume", p_seq_port_volume, "( k v -- )"},
         {"seq-chan-volume", p_seq_chan_volume, "( k ch v -- )"}, {"seq-midi", p_seq_midi, "( k status d1 d2 -- )"}, {"seq-reset", p_seq_reset, "( -- )"}, {"music-play", p_music_play, "( addr len loop paused -- flag )"}, {"music-stop", p_music_stop, "( -- )"},
         {"music-pause", p_music_pause, "( on -- )"}, {"music-volume!", p_music_volume, "( F: v -- )"}, {"music-playing?", p_music_playing, "( -- flag )"}, {"cutscene-signal-total", p_cs_total, "( bit -- n )"}, {"cutscene-letterbox-off", p_cs_letterbox_off, "( flag -- )"}, {"black-frame", p_black_frame, "( -- )"}, {"cutscene-next", p_cs_next, "( -- )"}, {"movie-close", p_movie_close, "( -- )"}, {"movie-pause", p_movie_pause, "( on -- )"}, {"movie-paused?", p_movie_paused, "( -- flag )"}, {"movie-compose", p_movie_compose, "( compo lo hi -- )"},
@@ -4547,12 +4570,12 @@ void bind_engine(Forth *f) {
         {"motion-table", p_motion_table, "( id addr len -- )"}, {"exe-table", p_exe_table, "( addr len -- addr n | 0 0 )"}, {"root-delta", p_root_delta, "( id -- ) ( F: -- F: turn dx dy dz )"}, {"bone-pos", p_bone_pos, "( id bone -- ) ( F: -- F: x y z )"}, {"bone-point", p_bone_point, "( id bone -- ) ( F: ox oy oz -- F: x y z )"}, {"foot-down?", p_foot_down, "( id foot -- flag )"}, {"dog-legs", p_dog_legs, "( id on -- )"}, {"human-legs", p_human_legs, "( id right left -- )"}, {"legs-fit", p_legs_fit, "( id tri mask plant -- ) ( F: back front -- )"}, {"lorenzo-chair", p_lorenzo_chair, "( id on -- )"}, {"chair-fit", p_chair_fit, "( id tri mask -- ) ( F: front back pitch yaw -- )"}, {"chair-rises", p_chair_rises, "( id -- ) ( F: body front -- )"}, {"head-bones", p_head_bones, "( id head neck -- )"}, {"head-turn", p_head_turn, "( id -- ) ( F: pitch yaw -- )"}, {"legs-height", p_legs_height, "( id -- ) ( F: -- F: y )"}, {"motion-track", p_motion_track, "( id code prev? -- flag ) ( F: -- F: a b c )"}, {"motion-track-by", p_motion_track_by, "( id code prev? -- flag ) ( F: dt -- F: a b c )"}, {"foot-at", p_foot_at, "( id left? -- down? ) ( F: dt -- F: x y z )"}, {"motion-overlay", p_motion_overlay, "( id motion-id -- )"}, {"turns-clear", p_turns_clear, "( id -- )"}, {"turn+", p_turn_add, "( id bone -- ) ( F: pitch yaw -- )"}, {"bone-count", p_bone_count, "( id -- n )"}, {"bone-named", p_bone_named, "( id addr len -- bone )"}, {"bone-parent", p_bone_parent, "( id bone -- parent )"}, {"bone-rest", p_bone_rest, "( id bone -- ) ( F: -- rx ry rz )"}, {"bone-set", p_bone_set, "( id bone -- ) ( F: rx ry rz -- )"}, {"bone-free", p_bone_free, "( id bone -- )"}, {"bones-free", p_bones_free, "( id -- )"}, {"motion@", p_motion_fetch, "( id -- motion-id | -1 )"}, {"motion-done?", p_motion_done, "( id -- flag )"},
         {"motion-frames", p_motion_frames, "( id -- frames )"}, {".motions", p_motions, "( id -- )"},
         {"rumble", p_rumble, "( channel strength frames -- )"}, {"rumble-buzz", p_rumble_buzz, "( channel on frames -- )"}, {"rumble-swell", p_rumble_swell, "( channel from to frames -- )"}, {"rumble-sequence-clear", p_rumble_seq_clear, "( -- )"}, {"rumble-step", p_rumble_seq_add, "( small? from to frames -- )"}, {"rumble-now", p_rumble_now, "( -- small? large )"}, {"rumble-allowed!", p_rumble_allow, "( flag -- )"}, {"game-volume!", p_game_volume, "( F: v -- )"}, {"world-volume!", p_world_volume, "( F: v -- )"}, {"world-volume", p_world_volume_q, "( F: -- v )"}, {"pad-stick", p_pad_stick, "( F: -- x y )"}, {"key-down?", p_key_down, "( key -- flag )"}, {"key-hold", p_key_hold, "( scancode flag -- )"}, {"controls", p_controls, "( -- n )"}, {"control-key", p_control_key, "( i -- scancode )"}, {"control-binding", p_control_binding, "( i which -- scancode )"}, {"control-bind", p_control_bind, "( scancode i which -- )"}, {"controls-reset", p_controls_reset, "( -- )"}, {"control-bind-next", p_control_bind_next, "( i -- )"}, {"control-waiting", p_control_waiting, "( -- i )"}, {"key-name", p_key_name, "( scancode -- addr len )"}, {"mod-camera", p_mod_camera, "( -- addr )"}, {"mod-camera!", p_mod_camera_set, "( on -- )"}, {"mod-camera?", p_mod_camera_has, "( -- flag )"}, {"mouse-capture", p_mouse_capture, "( on -- )"}, {"art-picture", p_art_picture, "( picture group -- h flag )"}, {"thumbnail", p_thumbnail, "( movie group -- flag )"}, {"alone", p_alone, "( id -- )"}, {"cam-keep", p_cam_keep, "( -- )"}, {"cam-kept", p_cam_kept, "( -- )"}, {"key-push", p_key_push, "( scancode -- )"}, {"key-pressed?", p_key_pressed, "( key -- flag )"}, {"mouse-dx", p_mouse_dx, "( F: -- F: dx )"},
-        {"mouse-dy", p_mouse_dy, "( F: -- F: dy )"}, {"freecam?", p_freecam, "( -- flag )"}, {"freecam!", p_freecam_set, "( on -- )"}, {"vr-calibrate", p_vr_calibrate, "( -- )"}, {"vr-height!", p_vr_height, "( F: metres -- )"}, {"vr-scale!", p_vr_scale, "( F: scale -- )"}, {"vr-body", p_vr_body, "( -- ) ( F: -- F: height scale )"}, {"vase-named?", p_vase_named, "( xt -- flag )"}, {"vase-scale", p_vase_scale, "( -- ) ( F: -- F: scale )"}, {"vase-part", p_vase_part, "( group -- ) ( F: x y z scale -- )"}, {"vr-stick", p_vr_stick, "( -- ) ( F: -- F: x y )"}, {"vr-look-yaw", p_vr_look_yaw, "( -- ) ( F: -- F: yaw )"}, {"vr-face", p_vr_face, "( -- ) ( F: -- F: yaw )"}, {"vr-down?", p_vr_down, "( button -- flag )"}, {"vr-pressed?", p_vr_pressed, "( button -- flag )"}, {"vr-run?", p_vr_run, "( -- flag )"}, {"ladder-hands?", p_ladder_hands, "( -- flag )"}, {"ladder-both?", p_ladder_both, "( -- flag )"}, {"ladder-grab", p_ladder_grab, "( -- link side )"}, {"ladder-pull", p_ladder_pull, "( -- ) ( F: -- dy )"}, {"voice-heard", p_voice_heard, "( -- id )"}, {"voice-gen", p_voice_gen, "( -- n )"}, {"voice-text", p_voice_text, "( -- addr len )"}, {"voice-debug", p_voice_debug, "( flag -- )"}, {"voice-debug?", p_voice_debug_q, "( -- flag )"}, {"voice-open-mic", p_voice_open, "( flag -- )"}, {"voice-open-mic?", p_voice_open_q, "( -- flag )"}, {"vr-right", p_vr_right, "( -- ) ( F: -- F: x )"}, {"vr-petting?", p_vr_petting, "( side -- flag )"}, {"hand-blow?", p_hand_blow, "( -- flag )"}, {"hand-swing?", p_hand_swing, "( -- flag )"}, {"hand-shove?", p_hand_shove, "( -- flag )"}, {"hand-shove-take", p_hand_shove_take, "( -- )"}, {"hand-door?", p_hand_door, "( -- exit )"}, {"hand-door-way", p_hand_door_way, "( -- sign )"}, {"hand-door-take", p_hand_door_take, "( -- )"}, {"door-hits", p_door_hits, "( -- bits )"}, {"loot-sparkle", p_loot_sparkle, "( n -- n )"}, {"loot-at", p_loot_at, "( item -- ) ( F: x y z -- )"}, {"loot-move", p_loot_move, "( item -- ) ( F: x y z -- )"}, {"loot-part", p_loot_part, "( item fact fx part -- )"}, {"loot-doll", p_loot_doll, "( item fact fx -- )"}, {"loot-script", p_loot_script, "( xt -- )"}, {"loot-offer", p_loot_offer, "( xt -- )"}, {"loot-spark?", p_loot_spark_q, "( -- fx true | false )"}, {"loot-waiting?", p_loot_waiting, "( -- flag )"}, {"loot-take?", p_loot_take, "( -- item fact fx mode xt true | false )"}, {"loot-idle", p_loot_idle, "( -- )"}, {"loot-fact", p_loot_fact, "( -- fact )"}, {"loot-consume", p_loot_consume, "( -- )"}, {"loot-keep?", p_loot_keep, "( -- fx flag ) ( F: -- x y z )"}, {"loot-got", p_loot_got, "( item -- )"}, {"defense-let", p_defense_let, "( -- n flag ) ( F: -- x y z vx vy vz )"}, {"vr-head", p_vr_head, "( -- flag ) ( F: -- F: x y z )"}, {"vr-turn!", p_vr_turn, "( -- ) ( F: yaw -- )"}, {"vr-turn-view", p_vr_turn_view, "( -- ) ( F: radians -- )"}, {"mouse-down?", p_mouse_down, "( button -- flag )"},
+        {"mouse-dy", p_mouse_dy, "( F: -- F: dy )"}, {"freecam?", p_freecam, "( -- flag )"}, {"freecam!", p_freecam_set, "( on -- )"}, {"vr-calibrate", p_vr_calibrate, "( -- )"}, {"vr-height!", p_vr_height, "( F: metres -- )"}, {"vr-scale!", p_vr_scale, "( F: scale -- )"}, {"vr-body", p_vr_body, "( -- ) ( F: -- F: height scale )"}, {"vr-tracking?", p_vr_tracking, "( -- flag )"}, {"vase-named?", p_vase_named, "( xt -- flag )"}, {"vase-scale", p_vase_scale, "( -- ) ( F: -- F: scale )"}, {"vase-part", p_vase_part, "( group -- ) ( F: x y z scale -- )"}, {"vr-stick", p_vr_stick, "( -- ) ( F: -- F: x y )"}, {"vr-look-yaw", p_vr_look_yaw, "( -- ) ( F: -- F: yaw )"}, {"vr-face", p_vr_face, "( -- ) ( F: -- F: yaw )"}, {"vr-down?", p_vr_down, "( button -- flag )"}, {"vr-pressed?", p_vr_pressed, "( button -- flag )"}, {"vr-run?", p_vr_run, "( -- flag )"}, {"ladder-hands?", p_ladder_hands, "( -- flag )"}, {"ladder-both?", p_ladder_both, "( -- flag )"}, {"ladder-grab", p_ladder_grab, "( -- link side )"}, {"ladder-pull", p_ladder_pull, "( -- ) ( F: -- dy )"}, {"voice-heard", p_voice_heard, "( -- id )"}, {"voice-gen", p_voice_gen, "( -- n )"}, {"voice-text", p_voice_text, "( -- addr len )"}, {"voice-debug", p_voice_debug, "( flag -- )"}, {"voice-debug?", p_voice_debug_q, "( -- flag )"}, {"voice-open-mic", p_voice_open, "( flag -- )"}, {"voice-open-mic?", p_voice_open_q, "( -- flag )"}, {"vr-right", p_vr_right, "( -- ) ( F: -- F: x )"}, {"vr-snap", p_vr_snap, "( -- ) ( F: -- radians )"}, {"hand-stops-clear", p_hand_stops_clear, "( -- )"}, {"hands-drop", p_hands_drop, "( -- )"}, {"vr-petting?", p_vr_petting, "( side -- flag )"}, {"hand-blow?", p_hand_blow, "( -- flag )"}, {"hand-swing?", p_hand_swing, "( -- flag )"}, {"hand-shove?", p_hand_shove, "( -- flag )"}, {"hand-shove-take", p_hand_shove_take, "( -- )"}, {"hand-door?", p_hand_door, "( -- exit )"}, {"hand-door-way", p_hand_door_way, "( -- sign )"}, {"hand-door-take", p_hand_door_take, "( -- )"}, {"door-hits", p_door_hits, "( -- bits )"}, {"loot-sparkle", p_loot_sparkle, "( n -- n )"}, {"loot-at", p_loot_at, "( item -- ) ( F: x y z -- )"}, {"loot-move", p_loot_move, "( item -- ) ( F: x y z -- )"}, {"loot-part", p_loot_part, "( item fact fx part -- )"}, {"loot-doll", p_loot_doll, "( item fact fx -- )"}, {"loot-script", p_loot_script, "( xt -- )"}, {"loot-offer", p_loot_offer, "( xt -- )"}, {"loot-spark?", p_loot_spark_q, "( -- fx true | false )"}, {"loot-waiting?", p_loot_waiting, "( -- flag )"}, {"loot-take?", p_loot_take, "( -- item fact fx mode xt true | false )"}, {"loot-idle", p_loot_idle, "( -- )"}, {"loot-fact", p_loot_fact, "( -- fact )"}, {"loot-consume", p_loot_consume, "( -- )"}, {"loot-keep?", p_loot_keep, "( -- fx flag ) ( F: -- x y z )"}, {"loot-got", p_loot_got, "( item -- )"}, {"defense-let", p_defense_let, "( -- n flag ) ( F: -- x y z vx vy vz )"}, {"vr-head", p_vr_head, "( -- flag ) ( F: -- F: x y z )"}, {"vr-turn!", p_vr_turn, "( -- ) ( F: yaw -- )"}, {"vr-turn-view", p_vr_turn_view, "( -- ) ( F: radians -- )"}, {"mouse-down?", p_mouse_down, "( button -- flag )"},
         {"on-tick", p_on_tick, "( xt -- )"}, {"off-tick", p_off_tick, "( xt -- )"}, {"ticks", p_ticks, "( -- ticks )"}, {"dt", p_dt, "( F: -- F: seconds )"},
         {"on-draw", p_on_draw, "( xt -- )"}, {"off-draw", p_off_draw, "( xt -- )"}, {"pen-color", p_pen_color, "( rgba -- )"},
         {"pen-scale", p_pen_scale, "( n -- )"}, {"draw-text", p_draw_text, "( addr len x y -- )"}, {"draw-rect", p_draw_rect, "( x y w h -- )"},
         {"screen-size", p_screen_size, "( -- w h )"}, {"char-size", p_char_size, "( -- w h )"}, {"n>s", p_n_to_s, "( n -- addr len )"}, {"h>s", p_h_to_s, "( n -- addr len )"}, {"f>s$", p_f_to_s, "( places -- addr len ) ( F: x -- )"},
-        {"gfx", p_gfx, "( -- addr )"}, {"room-look", p_look, "( -- addr )"}, {"room-look-reset", p_look_reset, "( -- )"}, {"look-set", p_look_set, "( slot addr n -- )"}, {"look-keep", p_look_keep, "( -- )"}, {"look-kept", p_look_kept, "( -- )"}, {"look-plain", p_look_plain, "( -- )"}, {"look@", p_look_get, "( slot addr -- n )"}, {"user-dir", p_user_dir, "( -- addr len )"}, {"testing?", p_testing, "( -- flag )"}, {"hga-version", p_hga_version, "( -- addr len )"}, {"actor-part-show", p_actor_part_show, "( model part on -- )"}, {"actor-settle", p_actor_settle, "( model -- )"}, {"doorway-faded", p_doorway_faded, "( model -- ) ( F: -- F: f )"}, {"file-exists?", p_file_exists, "( addr len -- flag )"}, {"to-file", p_to_file, "( addr len -- )"}, {"append-file", p_append_file, "( addr len -- )"}, {"make-dir", p_make_dir, "( addr len -- flag )"}, {"zip-files", p_zip_files, "( names len dir len zip len -- flag )"}, {"zip-has?", p_zip_has, "( name len zip len -- flag )"}, {"date-time", p_date_time, "( -- addr len )"},
+        {"gfx", p_gfx, "( -- addr )"}, {"vr-settings", p_vr_settings, "( -- addr )"}, {"room-look", p_look, "( -- addr )"}, {"room-look-reset", p_look_reset, "( -- )"}, {"look-set", p_look_set, "( slot addr n -- )"}, {"look-keep", p_look_keep, "( -- )"}, {"look-kept", p_look_kept, "( -- )"}, {"look-plain", p_look_plain, "( -- )"}, {"look@", p_look_get, "( slot addr -- n )"}, {"user-dir", p_user_dir, "( -- addr len )"}, {"testing?", p_testing, "( -- flag )"}, {"hga-version", p_hga_version, "( -- addr len )"}, {"actor-part-show", p_actor_part_show, "( model part on -- )"}, {"actor-settle", p_actor_settle, "( model -- )"}, {"doorway-faded", p_doorway_faded, "( model -- ) ( F: -- F: f )"}, {"file-exists?", p_file_exists, "( addr len -- flag )"}, {"to-file", p_to_file, "( addr len -- )"}, {"append-file", p_append_file, "( addr len -- )"}, {"make-dir", p_make_dir, "( addr len -- flag )"}, {"zip-files", p_zip_files, "( names len dir len zip len -- flag )"}, {"zip-has?", p_zip_has, "( name len zip len -- flag )"}, {"date-time", p_date_time, "( -- addr len )"},
         {"end-file", p_end_file, "( -- )"}, {"xt>name", p_xt_to_name, "( xt -- addr len )"},
         {"clear-color", p_clear_color, "( F: r g b -- )"}, {"out-of-view?", p_out_of_view, "( -- flag ) ( F: x y z -- )"}, {"screenshot", p_screenshot, "( addr len -- )"}, {"screenshot-pending?", p_screenshot_pending, "( -- flag )"}, {"console!", p_console, "( flag -- )"}, {"console-type", p_console_type, "( addr len -- )"}, {"console-log", p_console_log, "( n -- )"},
 
@@ -4667,6 +4690,24 @@ void bind_engine(Forth *f) {
     field(f, "gfx.room-bloom", offsetof(RenderSettings, room_bloom));
     field(f, "gfx.game-font", offsetof(RenderSettings, game_font));
     field(f, "gfx.fullscreen", offsetof(RenderSettings, fullscreen));
+    /* the comfort and accessibility options (platform/vr.h VrOptions): flags and counts are 32-bit
+     * (l@ l!), the rest floats (sf@ sf!) - scripts/vr-options.fs keeps the player's */
+    field(f, "vr.turn-snap", offsetof(VrOptions, turn_snap));
+    field(f, "vr.snap-degrees", offsetof(VrOptions, snap_degrees));
+    field(f, "vr.comfort", offsetof(VrOptions, comfort));
+    field(f, "vr.comfort-strength", offsetof(VrOptions, comfort_strength));
+    field(f, "vr.teleport", offsetof(VrOptions, teleport));
+    field(f, "vr.teleport-mode", offsetof(VrOptions, teleport_mode));
+    field(f, "vr.teleport-reach", offsetof(VrOptions, teleport_reach));
+    field(f, "vr.seated", offsetof(VrOptions, seated));
+    field(f, "vr.seated-height", offsetof(VrOptions, seated_height));
+    field(f, "vr.seated-offset", offsetof(VrOptions, seated_offset));
+    field(f, "vr.left-handed", offsetof(VrOptions, left_handed));
+    field(f, "vr.calibrate-start", offsetof(VrOptions, calibrate_start));
+    field(f, "vr.cutscene-first-person", offsetof(VrOptions, cutscene_first_person));
+    field(f, "vr.eye-height", offsetof(VrOptions, eye_height));
+    field(f, "vr.body-scale", offsetof(VrOptions, body_scale));
+    field(f, "vr.calibrated", offsetof(VrOptions, calibrated));
     forth_set_current(f, saved);
 }
 

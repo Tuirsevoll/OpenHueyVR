@@ -12,4 +12,5 @@ notes, and is updated whenever the subsystem changes. Every page has these secti
 - **Design notes**: decisions, alternatives, open questions.
 - **Status**: spec / built / checked, and what is left.
 
-The pages: [hands.md](hands.md) records the VR hands.
+The pages: [hands.md](hands.md) records the VR hands, [comfort.md](comfort.md) the VR comfort and
+accessibility options.

@@ -1727,6 +1727,31 @@ void vrhands_forget_poses(void) {
     sPoseRoom = -2;
 }
 
+void vrhands_forget_stops(void) {
+    sHandStopHave[0] = sHandStopHave[1] = 0;
+}
+
+/* Both hands let go of what they hold (a teleport: a door, a prop, a leaf or loot is not dragged
+ * to the new place). The arm stops and ladder holds go with them, as when a room changes. */
+void vrhands_drop_all(void) {
+    int side;
+
+    for (side = 0; side < 2; side++) {
+        if (sHold[side] == HOLD_LOOT) {
+            loot_let_go(sHoldId[side], side);
+        } else if (sHold[side] != HOLD_NONE) {
+            release_hand(&gEngine.room, side);
+        }
+        sHold[side] = HOLD_NONE;
+        sLadderHold[side] = -1;
+        sLadderFresh[side] = 0;
+        sLadderAnchorHave[side] = 0;
+        sHandStopHave[side] = 0;
+        sWallNear[side] = 0;
+    }
+    sLadderPull = 0.0f;
+}
+
 /* the angle last seen on this door, on whichever side of it was loaded */
 static void poses_restore(Engine *e) {
     int room = e->room.id;

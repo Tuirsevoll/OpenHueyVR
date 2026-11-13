@@ -51,8 +51,10 @@ T{ under-cursor  mode@ -> feather-boots 1 }T
 key: X tap  2 run-frames
 T{ 0 equipped  mode@ -> feather-boots 0 }T
 
-testing the pages round (the original's order): L1 from the first list the options, then the files, the map
+testing the pages round (the original's order, then hga's VR options): L1 from the first list the VR page, the options, the files, the map
 key: Q tap  key: Q tap
+T{ [: page @ ;] menu@ -> 6 }T
+key: Q tap
 T{ [: page @ ;] menu@ -> 5 }T
 key: Q tap
 T{ [: page @ ;] menu@ -> 3 }T

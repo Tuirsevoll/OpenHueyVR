@@ -23,6 +23,8 @@ USING: engine actors ;
 \ the pages, in the order L1 / R1 turn them: the three item lists, the map, the files, the options
 0 constant pg-special   1 constant pg-items   2 constant pg-other
 3 constant pg-files     4 constant pg-map     5 constant pg-options
+\ hga's own: the VR comfort options (docs/subsystems/comfort.md)
+6 constant pg-vr
 
 state: subscreen-state
   cell field stage        \ shut, opening, up, closing

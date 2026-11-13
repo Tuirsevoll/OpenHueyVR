@@ -5,7 +5,7 @@
 \ file opens and closes it, gives the keys to what is showing and draws it. Also the tab that
 \ slides in when the story hands her an item (the scripts' 0xBE, SubScreen_DrawTab).
 IN: subscreen
-USING: engine game-state actors messages keys facts flag-names items items.tables ps2-screen subscreen.state subscreen.art subscreen.input subscreen.box subscreen.lists subscreen.map subscreen.options subscreen.plate subscreen.slots subscreen.saving subscreen.costumes subscreen.extras subscreen.galleries ;
+USING: engine game-state actors messages keys facts flag-names items items.tables ps2-screen subscreen.state subscreen.art subscreen.input subscreen.box subscreen.lists subscreen.map subscreen.options subscreen.vr subscreen.plate subscreen.slots subscreen.saving subscreen.costumes subscreen.extras subscreen.galleries ;
 
 <PRIVATE
 \ ---- which art is in the background group: the menu's, the plate's, the slot machine's ----
@@ -32,6 +32,7 @@ USING: engine game-state actors messages keys facts flag-names items items.table
 : open-saving ( -- )  false open-screen  on-saving mode !  start-saving ;
 : open-costumes ( -- )  false open-screen  on-costumes mode !  start-costumes ;
 : open-options ( -- )  true open-screen  pg-options page !  -1 options-only ! ;   \ (the title's: SceneTitle_SeqOptions)
+: open-vr-options ( -- )  true open-screen  pg-vr page !  -1 options-only ! ;   \ (the title's VR OPTIONS: hga's own page)
 : open-extras ( -- )  false open-screen  3 s" SUBSCR/SUBMG" background  on-extras mode !  start-extras ;   \ (the mini-game's menu: mode $A)
 : open-clear-save ( -- )  false open-screen  on-clear-save mode !  start-clear-save ;   \ (the ending's: mode 9)
 : open-results ( -- )  false open-screen  on-results mode !  start-results ;   \ (its results: mode $C)
@@ -45,6 +46,7 @@ USING: engine game-state actors messages keys facts flag-names items items.table
         $A of  open-extras  endof
         $C of  open-results  endof
         5 of  open-options  endof
+        6 of  open-vr-options  endof
         7 of  open-costumes  endof
         2 of  open-plate  endof
         3 of  open-slots  endof
@@ -78,6 +80,7 @@ USING: engine game-state actors messages keys facts flag-names items items.table
         on-gallery of  gallery-keys  endof
         on-page of
             page @ case  pg-files of  files-keys  endof  pg-map of  map-keys  endof
+                         pg-vr of  vr-options-keys  endof
                          pg-options of  options-keys  endof  >r list-keys r>  endcase  endof
     endcase ;
 \ the machines' pages are the whole screen (nothing of the world behind): beyond the 4:3 frame
@@ -93,6 +96,7 @@ USING: engine game-state actors messages keys facts flag-names items items.table
     mode @ on-clear-save = if  clear-view exit  then
     mode @ on-box = if  art-layer page-words !  then   \ (the page under the box's shade)
     page @ case  pg-files of  files-view  endof  pg-map of  map-view  endof
+                 pg-vr of  vr-options-view  endof
                  pg-options of  options-view  endof  >r list-view r>  endcase
     word-layer page-words !
     mode @ on-actions = if  actions-view  then
@@ -106,6 +110,10 @@ USING: engine game-state actors messages keys facts flag-names items items.table
     endcase ;
 : draw ( -- )
     frame!  art-layer ui-clear  word-layer ui-clear
+
+    \ layer 3 is the options page's own (its "Page Up: set height", options.fs): cleared here, every
+    \ frame, so a line it drew cannot outlive the page - nothing else draws on it
+    3 ui-clear
     stage @ shut <> if  draw-page exit  then
     tab @ if  $80 openness !  draw-tab  0 openness !  then ;
 

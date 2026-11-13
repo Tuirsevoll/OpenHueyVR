@@ -995,6 +995,15 @@ static void tv_copy(void) {
     fullscreen(sTvFbo, w, h, sGreyProg);
 }
 
+/* The comfort vignette's share of the picture this frame (0 .. 1), on top of the picture's own
+ * (VR: main.c sets it from how fast she is being moved or turned). Never a setting of its own
+ * here: the room's look and the player's gfx.vignette are untouched. */
+static float sComfort;
+
+void post_comfort(float amount) {
+    sComfort = amount < 0.0f ? 0.0f : amount > 1.0f ? 1.0f : amount;
+}
+
 void post_finish(const PostCamera *cam, const RenderSettings *s, int x, int y, int w, int h, float time) {
     const float *P = cam->proj.m;
     int i;
@@ -1087,7 +1096,15 @@ void post_finish(const PostCamera *cam, const RenderSettings *s, int x, int y, i
     glProgramUniform1i(sCompositeProg, 7, s->tonemap);
     glProgramUniform1f(sCompositeProg, 8, s->saturation);
     glProgramUniform1f(sCompositeProg, 9, s->contrast);
-    glProgramUniform1f(sCompositeProg, 10, s->vignette);
+    {   /* the comfort vignette adds to the picture's own, never replaces it: the two darken the
+         * corners, so what is left multiplies */
+        float vignette = s->vignette;
+
+        if (sComfort > 0.0f) {
+            vignette = 1.0f - (1.0f - vignette) * (1.0f - sComfort);
+        }
+        glProgramUniform1f(sCompositeProg, 10, vignette);
+    }
     glProgramUniform1f(sCompositeProg, 11, s->grain);
     glProgramUniform1f(sCompositeProg, 12, time);
     glProgramUniform1i(sCompositeProg, 13, s->debug);

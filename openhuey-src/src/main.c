@@ -869,15 +869,24 @@ static int sRecenter;
 static Camera sBlendCam;
 static int sBlendCamHave;
 
+/* a scene watched from her own eyes: the option on, a headset to stand in it with, a scene that has
+ * the camera (a film has no place to stand in) - and one the game's own models play. A scene whose
+ * picture is its movie (keyed, alpha, strip, opaque: an SFD over the room) keeps its screen: there
+ * would be nothing of it to watch from her eyes. */
+static int first_person_scene(void) {
+    return gVrOptions.cutscene_first_person && vr_active() && gCamDir.scene && !engine_scene_picture();
+}
+
 /* her eyes. the headset's own orientation is applied on top of sAlign, so looking around does not
- * go through her body yaw. a cutscene and the free camera keep the game's camera. */
+ * go through her body yaw. a cutscene and the free camera keep the game's camera (a cutscene, if
+ * the options watch it from her eyes: then she is turned by her own animation, and so is the view). */
 static int fiona_view(Engine *e, Camera *out) {
     int i;
     Actor *pick = NULL;
 
     sFp = NULL;
     vr_anchor_set(0, vec3(0.0f, 0.0f, 0.0f), 0.0f);
-    if (gCamDir.scene || freecam_active()) {
+    if ((gCamDir.scene && !first_person_scene()) || freecam_active()) {
         sRecenter = 1;
         return 0;
     }
@@ -897,7 +906,14 @@ static int fiona_view(Engine *e, Camera *out) {
         sRecenter = 1;
     }
     sAlign -= vr_take_turn();
-    if (!sAlignSet || sRecenter) {
+    if (gCamDir.scene) {
+        /* her eyes through a scene: her own animation turns her, so the view turns with her body
+         * (what the headset's look adds goes on top). a recentre has nothing to add: she is the
+         * one turning, and the view is already along her facing. */
+        sAlign = 3.14159265f - pick->yaw;
+        sAlignSet = 1;
+        sRecenter = 0;
+    } else if (!sAlignSet || sRecenter) {
         /* upright neutral already faces her. The headset's tilt at this moment is not stored. */
         sAlign = 3.14159265f - pick->yaw;
         sAlignSet = 1;
@@ -913,7 +929,7 @@ static int fiona_view(Engine *e, Camera *out) {
 
         /* height from the head, but not its walk-cycle sway: that yaw is the old camera's fight */
         out->pos.x = pick->pos.x + sinf(sAlign);
-        out->pos.y = bone.y + 1.5f;
+        out->pos.y = bone.y + 1.5f + vr_seat_lift();   /* (seated: the view within her body) */
         out->pos.z = pick->pos.z - cosf(sAlign);
     }
     vr_anchor_set(1, out->pos, out->yaw);
@@ -1024,6 +1040,68 @@ static void fiona_pose_after(Engine *e) {
     sPose.have = 1;
 }
 
+/* ---- the comfort vignette (scripts/subscreen/vr.fs: vr.comfort, vr.comfort-strength) ----
+ * How much of the picture's corners darken while she is moved or turned: her movement as the last
+ * tick left it - the step across, up or ahead and the turn of her body and the camera - so a walk,
+ * a run, a ladder and a script's step all count, and a still one counts nothing. Measured once a
+ * tick (a frame between two ticks sees the same figure; measuring it a frame would read 0 on most
+ * of them and never grow), then eased in quickly and out slowly, a frame at a time. Nothing while
+ * the world is held or a scene has the camera. */
+#define COMFORT_SPEED_START 14.0f   /* room units a second: under it, a slow walk */
+#define COMFORT_SPEED_FULL 45.0f    /* over it, a run */
+#define COMFORT_TURN_START 0.8f     /* radians a second */
+#define COMFORT_TURN_FULL 3.0f
+#define COMFORT_IN 0.12f            /* seconds to darken the corners */
+#define COMFORT_OUT 0.45f           /* ... and to let them go again */
+static float sComfort;       /* what is drawn now */
+static float sComfortWant;   /* what the last tick asked for */
+static Uint64 sComfortAt;
+
+/* after a tick: how hard she was moved and turned in that one */
+static void comfort_measure(Engine *e) {
+    float target = 0.0f, k;
+
+    sComfortWant = 0.0f;
+    if (!gVrOptions.comfort || !sPose.have || e->paused || cutscene_on_screen() ||
+        freecam_active() || gCamDir.scene) {
+        return;
+    }
+    {
+        float dx = sPose.cur.x - sPose.prev.x;
+        float dy = sPose.cur.y - sPose.prev.y;
+        float dz = sPose.cur.z - sPose.prev.z;
+        float step = sqrtf(dx * dx + dy * dy + dz * dz) * (float)TICKS_PER_SECOND;
+        float turn = (fabsf(angle_delta(sPose.cur_align, sPose.prev_align)) +
+                      fabsf(angle_delta(sPose.cur_yaw, sPose.prev_yaw))) * (float)TICKS_PER_SECOND;
+
+        target = (step - COMFORT_SPEED_START) / (COMFORT_SPEED_FULL - COMFORT_SPEED_START);
+        k = (turn - COMFORT_TURN_START) / (COMFORT_TURN_FULL - COMFORT_TURN_START);
+        if (k > target) {
+            target = k;
+        }
+        sComfortWant = target < 0.0f ? 0.0f : target > 1.0f ? 1.0f : target;
+    }
+}
+
+/* a frame: the last tick's want, eased, and given to the picture */
+static void comfort_tick(Engine *e) {
+    Uint64 now = SDL_GetTicksNS();
+    float dt = sComfortAt != 0 ? (float)(now - sComfortAt) / 1.0e9f : 0.0f;
+    float k;
+
+    (void)e;
+    sComfortAt = now;
+    if (dt > 0.1f) {
+        dt = 0.1f;   /* (a stall is not movement) */
+    }
+    k = dt / (sComfortWant > sComfort ? COMFORT_IN : COMFORT_OUT);
+    if (k > 1.0f) {
+        k = 1.0f;
+    }
+    sComfort += (sComfortWant - sComfort) * k;
+    post_comfort(sComfort * gVrOptions.comfort_strength);
+}
+
 static void hear_from_her(Engine *e) {
     Camera cam;
     Mat4 body;
@@ -1123,6 +1201,7 @@ static void draw_frame(Engine *e) {
         int32_t aspect = gRender.aspect;
         int i, n = vr_eye_count();
         int screen = cutscene_on_screen();
+        int fp_scene = first_person_scene();   /* (a cutscene from her eyes: no screen is put up) */
 
         {
             static int menu_was, screen_was;
@@ -1134,7 +1213,7 @@ static void draw_frame(Engine *e) {
             menu_was = menu;
             screen_was = screen;
         }
-        if (screen) {
+        if (screen && !fp_scene) {
             vr_screen_loose(0);
             sFp = NULL;   /* the scene shows her; the picture is the projected screen */
             /* the cutscene is drawn once, then put on a screen in front of the player. The
@@ -1190,10 +1269,11 @@ static void draw_frame(Engine *e) {
             e->width = UI_W;
             e->height = UI_H;
             render_overlay_begin(UI_W, UI_H, ui);
+            engine_letterbox_off(fp_scene);   /* (her eyes' picture: no 4:3 bars on the panel) */
             draw_flat(e);
             vr_cutscene_screen(1, corners);
             gRender.aspect = 0;   /* an eye is the whole picture; the headset's field of view replaces the window's */
-            vr_lock_pose(gCamDir.event);
+            vr_lock_pose(fp_scene ? 0 : gCamDir.event);
             {
                 Camera played;
                 Mat4 body;
@@ -1267,6 +1347,7 @@ static void draw_frame(Engine *e) {
 static void draw(Engine *e) {
     Actor *p = fiona_pick(e);
 
+    comfort_tick(e);   /* (the corners darken with how she is moved: before anything is drawn) */
     sBlendCamHave = 0;   /* (only a blend sets it: otherwise draw_frame looks for itself) */
     if (vr_active() && sPose.have && p != NULL && p == sPose.who && p->drive == NULL &&
         !cutscene_on_screen() && !freecam_active() && !gCamDir.scene) {
@@ -1538,6 +1619,7 @@ int main(int argc, char **argv) {
             fiona_pose_before(e);   /* (her place, for the headset to draw her between the two ticks) */
             engine_tick(e);
             fiona_pose_after(e);
+            comfort_measure(e);   /* (the vignette's want: one tick's movement, not a frame's) */
             memset(e->input.pressed, 0, sizeof(e->input.pressed));   /* presses count once */
             vr_pad_clear();
             e->input.mouse_dx = e->input.mouse_dy = 0;

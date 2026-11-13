@@ -19,6 +19,36 @@
 #define VR_MAX_EYES 2
 #define VR_MAX_IMAGES 16
 
+/* the options as the game was before there was a choice (scripts/vr-options.fs: the player's on
+ * top, read back at start-up) */
+VrOptions gVrOptions = {
+    0,        /* turn_snap: smooth turning */
+    45.0f,    /* snap_degrees */
+    0,        /* comfort */
+    0.5f,     /* comfort_strength: the page's Med, off until it is chosen */
+    0,        /* teleport */
+    0,        /* teleport_mode: fixed */
+    2.5f,     /* teleport_reach: metres */
+    0,        /* seated */
+    1.6f,     /* seated_height: as standing */
+    0.0f,     /* seated_offset */
+    0,        /* left_handed */
+    1,        /* calibrate_start: a first run is asked (the title's step, once) */
+    0,        /* cutscene_first_person */
+    1.6f,     /* eye_height: her eyes, before anything measures them */
+    1.0f,     /* body_scale: a metre of head motion, as it is */
+    0         /* calibrated: nothing kept yet */
+};
+
+/* seated (vr.seated): how far the view rides above (positive) or below her own eyes, in room units -
+ * the camera and the hands' anchor together, so the first-person rig stays one piece */
+float vr_seat_lift(void) {
+    if (!gVrOptions.seated || gVrOptions.seated_offset == 0.0f) {
+        return 0.0f;
+    }
+    return gVrOptions.seated_offset * VR_UNITS_PER_METER;
+}
+
 #if !defined(_WIN32)
 
 int vr_open(void) {
@@ -59,6 +89,7 @@ float vr_right_stick(void) { return 0.0f; }
 void vr_add_turn(float yaw) { (void)yaw; }
 float vr_take_turn(void) { return 0.0f; }
 float vr_peek_turn(void) { return 0.0f; }
+float vr_snap_take(void) { return 0.0f; }
 void vr_request_recenter(void) {}
 int vr_take_recenter(void) { return 0; }
 void vr_anchor_set(int on, Vec3 eye, float yaw) { (void)on; (void)eye; (void)yaw; }
@@ -162,6 +193,10 @@ static PFN_xrApplyHapticFeedback xrApplyHapticFeedback;
 static XrActionSet sActions;
 static XrAction sMove, sRunClick, sInteract, sMenu, sKick, sTurnStick, sRightClick;
 static XrAction sIndexL, sCancel, sPause;
+/* the same parts of the other hand, for left-handed play: OpenXR will not re-bind a live session,
+ * so both hands' actions are bound once and the options pick which the game reads */
+static XrAction sMoveR, sRunClickR, sTurnStickL, sResetClickL;
+static XrAction sInteractL, sCancelL, sPauseR, sMenuR;
 typedef struct VrHandSlot {
     XrAction pose, squeeze, thumb, haptic;
     XrSpace space;
@@ -176,6 +211,13 @@ static float sAnchorYaw;
 static float sStickX, sStickY, sRightX;
 static float sMoveYaw, sFaceYaw, sTurn;
 static int sDown[8], sPressed[8], sRun, sClickWas, sBothWas, sRecenterReq, sAlignRecenter, sTalk;
+/* the options' snap turning: the turn stick's pull that snaps (1 at the stick's edge), the pull it
+ * must fall back under before another, and the stick's centred state */
+#define SNAP_AT 0.70f
+#define SNAP_REARM 0.35f
+static int sSnapArmed = 1;
+static float sSnapTurn;   /* a snap waiting for the tick, radians */
+static XrTime sSnapAt;    /* when it was pushed: a tick takes it at once, or it is dropped */
 static PFN_xrCreateReferenceSpace xrCreateReferenceSpace;
 static PFN_xrDestroySpace xrDestroySpace;
 static PFN_xrEnumerateSwapchainFormats xrEnumerateSwapchainFormats;
@@ -392,11 +434,15 @@ static XrPosef head_pose(void) {
     return h;
 }
 
-/* Fiona is about 1.6 m. The scale makes a measured player that tall in the world. */
-static float sEyeHeight = 1.6f;
-static float sBodyScale = 1.0f;
+/* Fiona is about 1.6 m. The scale makes a measured player that tall in the world. Both live in
+ * the options (vr.eye-height, vr.body-scale), so a calibration kept is a calibration the next run
+ * has (scripts/vr-options.fs). */
 static int sEyeSet;      /* a calibration, or the first pose, chose the eye height */
 static int sEyeManual;   /* the console set it; the first pose must not replace it */
+
+/* a metre of head motion in the world's units: 1 when nothing sensible is set (defined below,
+ * after clamp_scale) */
+static float body_scale(void);
 
 static int floor_height(float *out) {
     XrPosef head;
@@ -424,6 +470,18 @@ static float clamp_scale(float s) {
     return s < 0.4f ? 0.4f : s > 2.0f ? 2.0f : s;
 }
 
+/* a metre of head motion in the world's units. Seated (vr.seated) the world is sized to the seated
+ * height - the floor's measurement is the standing one and is left alone - so the virtual floor
+ * stays at the player's own; otherwise what a calibration measured, or 1 with nothing measured. */
+static float body_scale(void) {
+    if (gVrOptions.seated) {
+        float h = gVrOptions.seated_height;
+
+        return (h >= 0.8f && h <= 2.3f) ? clamp_scale(1.6f / h) : 1.0f;
+    }
+    return gVrOptions.body_scale > 0.001f ? gVrOptions.body_scale : 1.0f;
+}
+
 static XrPosef pose_from_head(XrPosef pose);
 
 /* headset since the neutral pose: its look, and a lean or a duck. A long walk is clamped. */
@@ -440,13 +498,13 @@ int vr_body_view(Mat4 *view) {
     if (view == NULL || !sHaveOrigin || sViewCount <= 0 || !floor_height(&h)) {
         return 0;
     }
-    if (!sEyeSet && !sEyeManual) {
-        sEyeHeight = h;   /* standing as the session started: her eyes, no crouch yet */
+    if (!sEyeSet && !sEyeManual && !gVrOptions.calibrated) {
+        gVrOptions.eye_height = h;   /* standing as the session started: her eyes, no crouch yet */
         sEyeSet = 1;
     }
     {
         XrPosef d = head_look();
-        float s = sBodyScale > 0.001f ? sBodyScale : 1.0f;
+        float s = body_scale();
 
         /* the same scale as the eye separation, so a lean and the stereo agree */
         d.position.x /= s;
@@ -466,7 +524,7 @@ int vr_eye_body(int eye, Mat4 *view) {
         return 0;
     }
     local = pose_from_head(sViews[eye].pose);
-    s = sBodyScale > 0.001f ? sBodyScale : 1.0f;
+    s = body_scale();
     /* a taller player (scale below 1) needs the eyes further apart, or the world feels huge up close */
     local.position.x /= s;
     local.position.y /= s;
@@ -482,37 +540,38 @@ int vr_calibrate(float *height_m, float *scale) {
     if (!floor_height(&h)) {
         return 0;
     }
-    sEyeHeight = h;
+    gVrOptions.eye_height = h;
     sEyeSet = 1;
     sEyeManual = 1;
     /* a real floor height sizes the world to her. Anything else (a seated origin) keeps scale 1. */
-    sBodyScale = (h >= 0.8f && h <= 2.3f) ? clamp_scale(1.6f / h) : 1.0f;
+    gVrOptions.body_scale = (h >= 0.8f && h <= 2.3f) ? clamp_scale(1.6f / h) : 1.0f;
+    gVrOptions.calibrated = 1;
     if (height_m != NULL) {
-        *height_m = sEyeHeight;
+        *height_m = gVrOptions.eye_height;
     }
     if (scale != NULL) {
-        *scale = sBodyScale;
+        *scale = gVrOptions.body_scale;
     }
     return 1;
 }
 
 void vr_set_height(float height_m) {
-    sEyeHeight = height_m;
+    gVrOptions.eye_height = height_m;
     sEyeSet = 1;
     sEyeManual = 1;
 }
 
 void vr_set_scale(float scale) {
-    sBodyScale = clamp_scale(scale);
+    gVrOptions.body_scale = clamp_scale(scale);
     sEyeManual = 1;
 }
 
 void vr_body(float *height_m, float *scale) {
     if (height_m != NULL) {
-        *height_m = sEyeHeight;
+        *height_m = gVrOptions.seated ? gVrOptions.seated_height : gVrOptions.eye_height;
     }
     if (scale != NULL) {
-        *scale = sBodyScale;
+        *scale = body_scale();   /* the one in use: seated's, or the calibration's */
     }
 }
 
@@ -594,7 +653,7 @@ static float read_float(XrAction action) {
 /* grip poses live in the same recentered space as the head, so a hand stays put relative to it */
 static void sync_hands(void) {
     int i;
-    float s = sBodyScale > 0.001f ? sBodyScale : 1.0f;
+    float s = body_scale();
 
     for (i = 0; i < 2; i++) {
         XrActionSpaceCreateInfo space = {XR_TYPE_ACTION_SPACE_CREATE_INFO};
@@ -643,12 +702,23 @@ static void sync_stick(void) {
     XrActionStateGetInfo get = {XR_TYPE_ACTION_STATE_GET_INFO};
     XrActionStateVector2f state = {XR_TYPE_ACTION_STATE_VECTOR2F};
     XrActionStateFloat kick = {XR_TYPE_ACTION_STATE_FLOAT};
+    /* the hand each part belongs to: the usual one, or its twin for left-handed play. The hands
+     * themselves (grips, triggers, the arms) never move: only what the sticks and buttons mean. */
+    int leftie = gVrOptions.left_handed;
+    XrAction move = leftie ? sMoveR : sMove;
+    XrAction runClick = leftie ? sRunClickR : sRunClick;
+    XrAction turnStick = leftie ? sTurnStickL : sTurnStick;
+    XrAction resetClick = leftie ? sResetClickL : sRightClick;
+    XrAction interact = leftie ? sInteractL : sInteract;
+    XrAction cancel = leftie ? sCancelL : sCancel;
+    XrAction menu = leftie ? sMenuR : sMenu;
+    XrAction pause = leftie ? sPauseR : sPause;
     float x, y, len;
     int click;
 
     sStickX = sStickY = sRightX = 0.0f;
     sTalk = 0;
-    if (sMove == XR_NULL_HANDLE || xrSyncActions == NULL) {
+    if (move == XR_NULL_HANDLE || xrSyncActions == NULL) {
         return;
     }
     active.actionSet = sActions;
@@ -660,7 +730,7 @@ static void sync_stick(void) {
     }
     get.subactionPath = XR_NULL_PATH;
     if (xrGetActionStateVector2f != NULL) {
-        get.action = sMove;
+        get.action = move;
         if (XR_SUCCEEDED(xrGetActionStateVector2f(sSession, &get, &state)) && state.isActive) {
             x = state.currentState.x;
             y = -state.currentState.y;   /* stick up is forward: the game's stick z grows downward */
@@ -674,9 +744,9 @@ static void sync_stick(void) {
             }
         }
     }
-    click = read_bool(sRunClick);
+    click = read_bool(runClick);
     {
-        int right = read_bool(sRightClick);
+        int right = read_bool(resetClick);
 
         if (click && right) {
             if (!sBothWas) {
@@ -692,8 +762,8 @@ static void sync_stick(void) {
         }
     }
     sClickWas = click;
-    if (sTurnStick != XR_NULL_HANDLE && xrGetActionStateVector2f != NULL) {
-        get.action = sTurnStick;
+    if (turnStick != XR_NULL_HANDLE && xrGetActionStateVector2f != NULL) {
+        get.action = turnStick;
         if (XR_SUCCEEDED(xrGetActionStateVector2f(sSession, &get, &state)) && state.isActive) {
             float rx = state.currentState.x;
 
@@ -703,11 +773,46 @@ static void sync_stick(void) {
             }
         }
     }
-    note_button(0, read_bool(sInteract));                 /* A: use, and accept in a menu */
-    note_button(5, read_bool(sInteract));
-    note_button(3, read_bool(sCancel));                   /* B: back */
-    note_button(7, read_bool(sMenu));                     /* Y: the status menu */
-    note_button(6, read_bool(sPause));                    /* X: pause */
+    /* the options' snap turning: one turn a push of the turn stick, its angle chosen. Read here,
+     * every headset frame, so a flick that begins and ends between two ticks is still seen: the
+     * turn waits for the tick (vr_snap_take) - the scripts turn her by it. */
+    if (gVrOptions.turn_snap) {
+        float pull = fabsf(sRightX);
+        float deg = gVrOptions.snap_degrees;
+
+        if (deg < 15.0f) {
+            deg = 15.0f;
+        }
+        if (deg > 90.0f) {
+            deg = 90.0f;
+        }
+        if (!sSnapArmed && pull < SNAP_REARM) {
+            sSnapArmed = 1;   /* (centred again: the next push snaps) */
+        }
+        if (sSnapArmed && pull > SNAP_AT) {
+            float snap = deg * 3.14159265f / 180.0f;
+
+            /* sRightX is negative for the stick right: her yaw grows to the left */
+            sSnapTurn += (sRightX < 0.0f ? -1.0f : 1.0f) * snap;
+            /* two pushes at most: pushes with no tick to take them (a script has her) must not add up */
+            if (sSnapTurn > 2.0f * snap) {
+                sSnapTurn = 2.0f * snap;
+            }
+            if (sSnapTurn < -2.0f * snap) {
+                sSnapTurn = -2.0f * snap;
+            }
+            sSnapAt = sFrame.predictedDisplayTime;
+            sSnapArmed = 0;
+        }
+    } else {
+        sSnapTurn = 0.0f;   /* (turned off with a push waiting: it is not taken) */
+        sSnapArmed = 1;
+    }
+    note_button(0, read_bool(interact));                  /* A (left X): use, and accept in a menu */
+    note_button(5, read_bool(interact));
+    note_button(3, read_bool(cancel));                    /* B (left Y): back */
+    note_button(7, read_bool(menu));                      /* Y (right A): the status menu */
+    note_button(6, read_bool(pause));                     /* X (right B): pause */
     if (sKick != XR_NULL_HANDLE && xrGetActionStateFloat != NULL) {
         get.action = sKick;
         if (XR_SUCCEEDED(xrGetActionStateFloat(sSession, &get, &kick)) && kick.isActive) {
@@ -761,6 +866,19 @@ float vr_peek_turn(void) {
     return sTurn;
 }
 
+/* a snap the turn stick gave this frame (sync_stick), taken by the tick that turns her */
+float vr_snap_take(void) {
+    float t = sSnapTurn;
+
+    sSnapTurn = 0.0f;
+    /* a menu up, no tick with her: a snap not taken at once is not wanted any more (half a second) */
+    if (t != 0.0f && sFrame.predictedDisplayTime != 0 && sSnapAt != 0 &&
+        sFrame.predictedDisplayTime - sSnapAt > 500000000) {
+        t = 0.0f;
+    }
+    return t;
+}
+
 void vr_request_recenter(void) { sRecenterReq = 1; }
 
 int vr_take_recenter(void) {
@@ -797,7 +915,7 @@ int vr_head_local(Vec3 *out) {
         return 0;
     }
     h = head_pose();
-    s = sBodyScale > 0.001f ? sBodyScale : 1.0f;
+    s = body_scale();
     *out = vec3(h.position.x * VR_UNITS_PER_METER / s, h.position.y * VR_UNITS_PER_METER / s,
                 h.position.z * VR_UNITS_PER_METER / s);
     return 1;
@@ -831,7 +949,7 @@ int vr_head_at(Vec3 *out) {
         return 0;
     }
     d = head_look();
-    s = sBodyScale > 0.001f ? sBodyScale : 1.0f;
+    s = body_scale();
     p = vec3(d.position.x * VR_UNITS_PER_METER / s, d.position.y * VR_UNITS_PER_METER / s,
              d.position.z * VR_UNITS_PER_METER / s);
     sy = sinf(yaw);
@@ -946,6 +1064,15 @@ static void bind_stick(void) {
     make_action(&sKick, XR_ACTION_TYPE_FLOAT_INPUT, "kick", "Kick");
     make_action(&sTurnStick, XR_ACTION_TYPE_VECTOR2F_INPUT, "turn", "Turn");
     make_action(&sRightClick, XR_ACTION_TYPE_BOOLEAN_INPUT, "reset", "Reset");
+    /* the other hand's, for left-handed play: never read at once with the first set */
+    make_action(&sMoveR, XR_ACTION_TYPE_VECTOR2F_INPUT, "move_r", "Move (right hand)");
+    make_action(&sRunClickR, XR_ACTION_TYPE_BOOLEAN_INPUT, "run_r", "Run (right hand)");
+    make_action(&sTurnStickL, XR_ACTION_TYPE_VECTOR2F_INPUT, "turn_l", "Turn (left hand)");
+    make_action(&sResetClickL, XR_ACTION_TYPE_BOOLEAN_INPUT, "reset_l", "Reset (left hand)");
+    make_action(&sInteractL, XR_ACTION_TYPE_BOOLEAN_INPUT, "interact_l", "Interact (left hand)");
+    make_action(&sCancelL, XR_ACTION_TYPE_BOOLEAN_INPUT, "cancel_l", "Back (left hand)");
+    make_action(&sPauseR, XR_ACTION_TYPE_BOOLEAN_INPUT, "pause_r", "Pause (right hand)");
+    make_action(&sMenuR, XR_ACTION_TYPE_BOOLEAN_INPUT, "menu_r", "Menu (right hand)");
     make_action(&sHand[0].pose, XR_ACTION_TYPE_POSE_INPUT, "grip_l", "Left hand");
     make_action(&sHand[1].pose, XR_ACTION_TYPE_POSE_INPUT, "grip_r", "Right hand");
     make_action(&sHand[0].squeeze, XR_ACTION_TYPE_FLOAT_INPUT, "squeeze_l", "Left grip");
@@ -959,12 +1086,25 @@ static void bind_stick(void) {
         if (bind_path(sMove, "/user/hand/left/input/thumbstick", &one)) {
             suggest(sticks[i], &one, 1);
         }
+        /* the two sticks' parts the other way round, for left-handed play */
+        if (bind_path(sMoveR, "/user/hand/right/input/thumbstick", &one)) {
+            suggest(sticks[i], &one, 1);
+        }
+        if (bind_path(sRunClickR, "/user/hand/right/input/thumbstick/click", &one)) {
+            suggest(sticks[i], &one, 1);
+        }
+        if (bind_path(sTurnStickL, "/user/hand/left/input/thumbstick", &one)) {
+            suggest(sticks[i], &one, 1);
+        }
+        if (bind_path(sResetClickL, "/user/hand/left/input/thumbstick/click", &one)) {
+            suggest(sticks[i], &one, 1);
+        }
     }
     if (bind_path(sMove, "/user/hand/left/input/trackpad", &one)) {
         suggest("/interaction_profiles/htc/vive_controller", &one, 1);
     }
     {
-        XrActionSuggestedBinding quest[20];
+        XrActionSuggestedBinding quest[28];
         uint32_t n = 0;
         static const char *const quest_profiles[] = {
             "/interaction_profiles/oculus/touch_controller",
@@ -980,6 +1120,16 @@ static void bind_stick(void) {
         n += bind_path(sKick, "/user/hand/right/input/trigger/value", &quest[n]);
         n += bind_path(sTurnStick, "/user/hand/right/input/thumbstick", &quest[n]);
         n += bind_path(sRightClick, "/user/hand/right/input/thumbstick/click", &quest[n]);
+        /* left-handed: the face buttons and sticks of the other hand. On a Touch controller the
+         * left hand has X (where the right has A), Y (B), the left stick and its click */
+        n += bind_path(sInteractL, "/user/hand/left/input/x/click", &quest[n]);
+        n += bind_path(sCancelL, "/user/hand/left/input/y/click", &quest[n]);
+        n += bind_path(sPauseR, "/user/hand/right/input/b/click", &quest[n]);
+        n += bind_path(sMenuR, "/user/hand/right/input/a/click", &quest[n]);
+        n += bind_path(sMoveR, "/user/hand/right/input/thumbstick", &quest[n]);
+        n += bind_path(sRunClickR, "/user/hand/right/input/thumbstick/click", &quest[n]);
+        n += bind_path(sTurnStickL, "/user/hand/left/input/thumbstick", &quest[n]);
+        n += bind_path(sResetClickL, "/user/hand/left/input/thumbstick/click", &quest[n]);
         n += bind_path(sHand[0].pose, "/user/hand/left/input/grip/pose", &quest[n]);
         n += bind_path(sHand[1].pose, "/user/hand/right/input/grip/pose", &quest[n]);
         n += bind_path(sHand[0].squeeze, "/user/hand/left/input/squeeze/value", &quest[n]);
@@ -1016,7 +1166,7 @@ static Mat4 proj_fov(XrFovf fov, float znear, float zfar) {
     float l = tanf(fov.angleLeft), r = tanf(fov.angleRight);
     float b = tanf(fov.angleDown), t = tanf(fov.angleUp);
     float iw = r - l, ih = t - b;
-    float s = sBodyScale > 0.001f ? sBodyScale : 1.0f;
+    float s = body_scale();
     Mat4 m = {{0}};
 
     /* the same scale as the eye separation, on the focal length. Near and far stay in world

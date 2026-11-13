@@ -40,6 +40,13 @@ Vec3 path_stop(const struct Room *r, Vec3 from, Vec3 to, float keep);
  * in still stops dead. The result is always free of the surface, like path_stop's. */
 Vec3 path_slide(const struct Room *r, Vec3 from, Vec3 to, float keep);
 void vrhands_forget_poses(void);
+/* The arm stops forgotten: the next posed hand takes the controller's place as it is. A snap turn
+ * or a teleport moves the hand's place in the room a long way in one tick, and a stop left behind
+ * would drag the arm (or hold it inside a wall) for a frame. */
+void vrhands_forget_stops(void);
+/* Both hands let go of what they hold, their arm stops and ladder holds with them (a teleport:
+ * nothing a hand had is dragged to the new place). */
+void vrhands_drop_all(void);
 /* 1 when that controller is on Hewie. A touch also gives that hand a mild buzz. */
 int vrhands_petting(int side);
 /* a hard swing that met the room or a placed mesh. The point is Fiona's blow for one script frame. */

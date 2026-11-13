@@ -5,8 +5,40 @@
 
 #include "../core/mathx.h"
 
+#include <stdint.h>
+
+/* The VR options (scripts/vr-options.fs: the player's, kept in <user>/vr-options.fs). Each one is a
+ * choice the game had no choice about before: it is as the game was until the player picks
+ * otherwise. C reads them as it runs; the VR options menu writes them through the `vr.` field
+ * words (forth/bind_engine.c). */
+typedef struct VrOptions {
+    int32_t turn_snap;        /* 0: smooth turning (as before), 1: a snap a push of the turn stick */
+    float snap_degrees;       /* a snap's angle: 15 .. 90 */
+    int32_t comfort;          /* the comfort vignette while she is moving: 0 off, 1 on */
+    float comfort_strength;   /* how dark its corners go: the page's 0.25 low, 0.5 med, 0.75 high */
+    int32_t teleport;         /* 0: the stick walks her (as before), 1: a stick flick teleports */
+    int32_t teleport_mode;    /* 0: the flick always goes `teleport_reach`; 1: it starts near and
+                               * grows the longer the stick is held (up to teleport_reach) */
+    float teleport_reach;     /* how far a teleport goes, or the furthest it grows to, metres */
+    int32_t seated;           /* seated: her eye height is the seated one, never the floor's */
+    float seated_height;      /* the eye height seated play is sized to, metres (1.6: as standing) */
+    float seated_offset;      /* the view raised or lowered within her body, metres */
+    int32_t left_handed;      /* the sticks and the face buttons swapped between the hands */
+    int32_t calibrate_start;  /* the start-up height calibration: a first run, or asked for */
+    int32_t cutscene_first_person;   /* an in-game scene watched from her eyes */
+    /* what a height calibration left (no row of its own: the page's calibrate row and the title's
+     * first-run step set it, vr-options.fs keeps it) */
+    float eye_height;         /* her eyes above the floor, metres */
+    float body_scale;         /* a metre of head motion in the world's units (1: as measured) */
+    int32_t calibrated;       /* 1 once a calibration has been kept */
+} VrOptions;
+extern VrOptions gVrOptions;
+
 int vr_open(void);          /* the session, ready to draw; 0 on failure */
 void vr_close(void);
+/* seated (vr.seated): how far the view rides above (positive) or below her own eyes, in room
+ * units - the camera and the hands' anchor together (0: none) */
+float vr_seat_lift(void);
 int vr_active(void);
 
 /* one headset frame. 0: the session ended (do not draw, do not vr_end_frame) */
@@ -58,6 +90,9 @@ float vr_right_stick(void);
 void vr_add_turn(float yaw);
 float vr_take_turn(void);
 float vr_peek_turn(void);   /* the turn waiting, taken or not (the picture blends towards it) */
+/* the right stick's snap turn waiting, in radians (0: none): a push of the turn stick past its
+ * threshold, once, the angle the options' snap has. The scripts take it (vr-snap). */
+float vr_snap_take(void);
 void vr_request_recenter(void);
 int vr_take_recenter(void);
 /* her eyes in the world, and the yaw the headset's neutral look uses. Hands and grabs sit on this. */

@@ -2,7 +2,7 @@
 \ controls, standing, walking, running and turning, her footsteps, going out by exits; F4: struck
 \ and caught (fiona/hurt.fs).
 IN: fiona
-USING: engine vectors game-state facts actors messages common paths doors saves fiona.companion fiona.state fiona.anims fiona.model fiona.controls fiona.moving fiona.spots fiona.doors fiona.slam fiona.ladder fiona.push fiona.fear fiona.looks fiona.commands fiona.moves fiona.hurt fiona.seized fiona.defend fiona.voice fiona.letgo flag-names ;
+USING: engine vectors game-state facts actors messages common paths doors saves fiona.companion fiona.state fiona.anims fiona.model fiona.controls fiona.moving fiona.spots fiona.doors fiona.slam fiona.ladder fiona.push fiona.fear fiona.looks fiona.commands fiona.moves fiona.hurt fiona.seized fiona.defend fiona.voice fiona.letgo effects flag-names ;
 
 
 \ ---- her own request here, for the story's prompt (Progress_CharRequests): an exit's door area she
@@ -89,6 +89,115 @@ variable past-best   variable past-dist
 : idle ( -- )   \ Fiona_ToIdle: free, standing, the stick by the camera now (+0x1AD588 0)
     camera-relative her-turn-mode !  stand-free ;
 ' idle is to-idle
+\ ---- teleport (vr.teleport, docs/subsystems/comfort.md): the stick flicked aims a place and letting
+\ go takes her there, facing the way she went. The distance is the reach - or, growing, from a short
+\ step out to the reach the longer the stick is held, so a nudge is possible in a tight room. The
+\ marker is a glow on the floor where she would stand (white), or red where she cannot: off her
+\ floor, or no straight walk to it. A place she cannot stand is not taken; the stick let go there
+\ leaves her where she is. ----
+12.5e fconstant room-metre        \ (a metre of the room, in its units)
+15e fconstant teleport-near       \ (1.2 m: where a growing flick starts)
+27 constant teleport-grow         \ (ticks from it to the full reach: about 0.9 s)
+variable tp-fx    -1 tp-fx !
+variable tp-aiming  0 tp-aiming !
+variable tp-ok   0 tp-ok !
+variable tp-col  0 tp-col !
+variable tp-tri  -1 tp-tri !
+variable tp-held  0 tp-held !
+fvariable tp-dist
+create tp-at /vec allot
+create tp-try /vec allot   \ (a step of the walk-out, before it is known good)
+create tp-dir /vec allot
+variable tp-go   -1 tp-go !
+
+\ how far this flick goes: the reach, or - growing - from off her to the reach, by how long it is held
+: tp-set-distance ( -- )
+    vr-settings vr.teleport-reach sf@ room-metre f*  tp-dist f!
+    vr-settings vr.teleport-mode l@ if
+        tp-dist f@ teleport-near f>= if
+            teleport-near
+            tp-dist f@ teleport-near f-
+            tp-held @ teleport-grow min s>f  teleport-grow s>f  f/   ( near far-near t )
+            f* f+  tp-dist f!
+        then
+    then ;
+
+\ the aim: the stick turned by where she looks (vr-aim). It walks out from her a step at a time, as
+\ far as the flick goes, and stops at the last place she may stand - a wall, a drop off her floor,
+\ a place with no straight way to it: the marker rests against what stopped it, and letting go puts
+\ her as near as she may go (her own feet if the very first step is stopped).
+2e fconstant teleport-stride   \ (a step of the walk-out: about 16 cm)
+: tp-target ( -- )
+    {: | F: x y z out :}
+    vr-aim tp-dir v.z sf!  tp-dir v.x sf!
+    her-at vec@ tp-at vec!          \ (at once at her feet: a walk stopped at the first step)
+    0 tp-ok !  -1 tp-go !
+    her-tri @ 0< if  exit  then
+    0e to out
+    begin  tp-go @  out teleport-stride f+ tp-dist f@ f<=  and  while
+        out teleport-stride f+ to out
+        her-at vec@ to z to y to x
+        x tp-dir v.x sf@ out f* f+  tp-try v.x sf!
+        y tp-try v.y sf!
+        z tp-dir v.z sf@ out f* f+  tp-try v.z sf!
+        tp-try blocked-floor v-tri-in dup 0< if
+            drop 0 tp-go !            \ (off her floor: the last place she may stand is behind)
+        else
+            tp-tri !
+            her-tri @ her-at tp-try blocked-floor v-walk tp-tri @ = if
+                tp-try v.x sf@ tp-try v.z sf@ tp-tri @ tri-floor  tp-try v.y sf!
+                tp-try vec@ tp-at vec!   \ (it stands: the aim so far)
+                -1 tp-ok !
+            else
+                0 tp-go !            \ (no straight way to it: stopped here too)
+            then
+        then
+    repeat ;
+\ the marker: one glow, moved as the aim moves; a new one where the answer changes (white to red)
+: tp-marker! ( -- )
+    tp-fx @ 0>= tp-ok @ tp-col @ = and if
+        tp-at vec@ xyz>cells  tp-fx @ send effect-place
+    else
+        tp-fx @ 0>= if  tp-fx @ kill  then
+        tp-ok @ if  $90A0C080  else  $A0404080  then
+        tp-at vec@  10e  glow  tp-fx !
+        tp-ok @ tp-col !
+    then ;
+: tp-clear ( -- )
+    tp-fx @ 0>= if  tp-fx @ kill  then
+    -1 tp-fx !  0 tp-aiming !  0 tp-held ! ;
+\ there: her feet on the floor of the aim, facing the way it went; what her hands held let go
+: tp-land ( -- )
+    hands-drop
+    tp-at vec@  tp-dir v.x sf@ tp-dir v.z sf@ fatan2  put
+    show-her
+    stand
+    0 her-still !  0 her-run-t !  1e her-stick-k f!
+    0e 0e dir! ;
+\ each tick the option is on: the stick pushed aims (growing while it is held), let go lands
+: teleport-step ( -- )
+    vr-settings vr.teleport l@ 0= if  tp-clear  exit  then
+    hands-off? her-mode @ own-mode <> or  her-doing @ free-doing <> or if  tp-clear  exit  then
+    sx sz vlen {: F: len :}
+    tp-aiming @ if
+        len 0.3e f< if
+            0 tp-aiming !
+            tp-ok @ if  tp-land  then
+            tp-clear
+        else
+            1 tp-held +!
+            tp-set-distance
+            tp-target  tp-marker!
+        then
+    else
+        len 0.6e f> if
+            1 tp-aiming !
+            0 tp-held !
+            tp-set-distance
+            tp-target  tp-marker!
+        then
+    then ;
+' teleport-step is vr-teleport-step
 ' fiona.ladder:knocked-off is fiona.hurt:knocked-off
 ' fiona.doors:scripted-door is fiona.moves:door-use
 ' fiona.doors:drop-door is fiona.hurt:drop-door
