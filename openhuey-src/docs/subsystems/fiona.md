@@ -340,8 +340,16 @@ castle-1f-2 (two), room 3 (two), 29, 37, 40, 47, 48, 84. Checked by
 from it nothing; on from the foot and up, off on the floor above; the stalker at its foot - she
 holds on; struck on it, knocked off (`knocked-off`, Fiona_StateCaughtCrawling); panicking on it,
 let go. Not yet: the
-region's slot bits for Hewie. Her hands in the headset can now grab a ladder in the air beside her
-while she climbs - a buzz only, nothing moves her yet (docs/subsystems/hands.md, "Ladder grab").
+region's slot bits for Hewie.
+
+**In the headset** (`vr-climb`, with docs/subsystems/hands.md "Pull to climb") she climbs by her
+hands: a hand holding the ladder is pulled down and she goes up, the pull measured in play space so
+that her own move cannot feed back into it. On a ladder in VR the stick does nothing at all
+(`stick-climb` is not read and `climb-move`'s root motion is not used), and she keeps
+`ladder-hold-anim` while she hangs there. A pull moves her; the ends are the same get-off moves as
+the keyboard's - `off-ladder-top-anim` / `off-ladder-foot-anim`, then `ladder-off` - taken when her
+height has reached the end's (`end-y 0` at the foot; `end-y 1` within 3 at the top) and the stalker
+is not on that side, whose rules are unchanged. With no hand on it she hangs: no stick, no fall.
 
 Also fixed with it: `walk-anim` (Fiona_StateCmdWalkAnim) read the animation's key events for
 `MOTION_EVENTS` $20; it is the motion's come-round flag (`ended?`).

@@ -11,6 +11,9 @@
 \ getting off there, at its top (within his height above her) from going up. Off: at the move's
 \ event $20 she is put by that end and free. Her moves on it are her animations' own,
 \ up and down too.
+\ In the headset (docs/subsystems/hands.md, "Pull to climb") the stick does nothing on a ladder and
+\ her root motion is not used: her hands' pull moves her up, and an end is taken when her height has
+\ reached it - the get-off moves below are then the same ones.
 IN: fiona.ladder
 USING: engine vectors game-state actors messages common keys facts flag-names rumble fiona.state fiona.anims fiona.sounds fiona.model fiona.moving fiona.spots fiona.controls fiona.slam fiona.fear fiona.voice ;
 
@@ -140,9 +143,27 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
 : nearer-end ( -- side )  anim@ dup off-ladder-foot-anim = swap on-ladder-foot-anim = or 0 1 ? ;   \ (after a move: the foot's for getting off or on there)
 \ in the panic she lets go - fallen off as if knocked (Fiona_StateCaughtCrawling: mode 4, sub 8)
 : panicked-off ( -- )  thrown-doing her-doing !  thrown-mode her-mode !  off-ladder-r her-sub !  knocked-off ;
+\ ---- in the headset she climbs by her hands (docs/subsystems/hands.md, "Pull to climb"): the stick
+\ does nothing there and her root motion is not used - the hands' pull moves her up (down the hand is
+\ up her, the game's y running down), and an end is taken when her height has reached it ----
+: hold-still ( -- )   \ (the hold animation kept: any other is replaced by the first hold)
+    anim@ {: anim :}
+    anim ladder-hold-anim = anim ladder-hold-2-anim = or 0= if  ladder-hold-anim play-own  then ;
+: vr-climb ( -- )
+    hold-still
+    ladder-hands? 0= if  exit  then                            \ (no hand on it: she hangs)
+    ladder-pull {: F: pull :}                                  \ (this tick's pull: down the hand is up her)
+    pull her-at v.y sf@ f+ her-at v.y sf!
+    pull 0e f>  her-at v.y sf@ 0 end-y f>= and  0 stalker-on 0= and if    \ (down this tick, at the foot)
+        off-ladder-foot-anim play-own  ['] ladder-off her-act !  exit
+    then
+    pull 0e f<  her-at v.y sf@ 1 end-y f- 3e f<= and  0 stalker-on 0= and if   \ (up this tick, at the top)
+        off-ladder-top-anim play-own  ['] ladder-off her-act !  exit
+    then ;
 : on-ladder ( -- )   \ (Fiona_StateOnLadder; until the move has faded in: still)
     settled? 0= if  exit  then
     her-fear-bits @ 2 and if  panicked-off exit  then
+    vr? if  vr-climb exit  then
     anim@ {: anim :}
     anim move-done? if  anim stick-move if  nearer-end end-tri  then  then
     climb-move ;

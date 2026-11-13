@@ -65,7 +65,17 @@ int vrhands_defense_take(int *kind, float *x, float *y, float *z, float *vx, flo
  * is handed in, so hands_sweep_check can ask it with ladders of its own. */
 int vrhands_ladder_link(const NavMesh *nav, Vec3 at);
 /* the ladder that hand holds (the link index), or -1. A grab of the air beside a ladder while
- * Fiona climbs: nothing moves her yet. */
+ * Fiona climbs; the hand's pull from there is what climbs her. */
 int vrhands_ladder_hold(int side);
+/* 1 when either hand holds a ladder. */
+int vrhands_ladder_hands(void);
+/* the pull the hands have given since the scripts last took it, in the game's y (which runs down,
+ * so up is negative), both hands together; the call takes it (clears it). */
+float vrhands_ladder_pull(void);
+/* The body's move for one hand's pull: `anchor` its play-space place at the last tick (an offset
+ * from her eyes), `play` where it is now. Down the hand is up her, so a hand pulled down 2 gives
+ * -2. The anchor is moved on to `play`, so the same motion is never counted twice. Pure, so
+ * hands_sweep_check can ask it. */
+float ladder_pull_step(Vec3 *anchor, Vec3 play);
 
 #endif

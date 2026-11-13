@@ -53,7 +53,7 @@
 #include <string.h>
 
 /* temporary, for the headset smoothing test; remove later */
-#define VR_STEP_LOG 1
+#define VR_STEP_LOG 0
 
 #define MAX_EVALS 16
 
