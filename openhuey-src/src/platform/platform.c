@@ -295,7 +295,7 @@ void platform_poll(Input *in) {
                 if (!e.key.repeat) {
                     in->fullscreen_toggle = 1;
                 }
-            } else if (e.key.scancode == SDL_SCANCODE_F9) {   /* (a debug aid: the next draw pass off) */
+            } else if (e.key.scancode == SDL_SCANCODE_DELETE) {   /* (a debug aid: the next draw pass off - F9 is the game's quickload) */
                 if (!e.key.repeat) {
                     in->debug_skip_cycle = 1;
                 }

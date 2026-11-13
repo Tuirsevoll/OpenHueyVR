@@ -13,7 +13,7 @@ typedef struct Input {
     int quit;                    /* the window was closed */
     float stick_x, stick_y;      /* a gamepad's left stick (-1..1, right / down; 0 within its dead zone) */
     int fullscreen_toggle;       /* F11 or Alt+Return this frame */
-    int debug_skip_cycle;        /* F9 this frame: try the next draw pass switched off (a debug aid) */
+    int debug_skip_cycle;        /* DEL this frame: try the next draw pass switched off (a debug aid) */
     bool typed[SDL_SCANCODE_COUNT];   /* the keys themselves pressed this frame, whatever they're bound to (the console) */
 } Input;
 

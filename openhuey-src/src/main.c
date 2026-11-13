@@ -703,7 +703,7 @@ static Vec3 view_forward(const Mat4 *v) {
     return vec3(-v->m[2], -v->m[6], -v->m[10]);
 }
 
-/* the passes F9 tries in turn: each one switched off, then all of them ('' = none off) */
+/* the passes DEL tries in turn: each one switched off, then all of them ('' = none off) */
 static const char *const kSkipModes[] = {"",        "things",  "props", "vrhands", "sprites",
                                          "glow",    "shine",   "refl",  "loot",
                                          "things,props,vrhands,sprites,glow,shine,refl,loot"};
@@ -751,7 +751,7 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
         if (layer == 6) {
             draw_door_shades(e, &rv);
         }
-        draw_layer(e, &vp, &view, layer);
+        draw_layer(e, &vp, view, layer);
     }
     for (i = 0; i < MAX_ACTORS && !(e->actors[i].used && e->actors[i].layer == 0x1C); i++) {
     }
@@ -771,7 +771,7 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
         draw_reflections(e, proj, view, &vp);
     }
     for (layer = 0x1E; layer < LAST_LAYER; layer++) {   /* (the later layers: in front of a reflection over everything) */
-        draw_layer(e, &vp, &view, layer);
+        draw_layer(e, &vp, view, layer);
     }
     render_fog_after(0);
     if (!engine_skip("things")) {
