@@ -703,6 +703,12 @@ static Vec3 view_forward(const Mat4 *v) {
     return vec3(-v->m[2], -v->m[6], -v->m[10]);
 }
 
+int engine_skip(const char *what) {
+    const char *list = getenv("OPENHUEY_SKIP");
+
+    return list != NULL && what != NULL && strstr(list, what) != NULL;
+}
+
 /* one picture: the window, or one eye. Shadows were already drawn. */
 static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, Vec3 forward) {
     Mat4 vp = mat4_mul(*proj, *view);
@@ -741,20 +747,30 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
         }
         post_soft_end();
     }
-    draw_reflections(e, proj, view, &vp);
+    if (!engine_skip("refl")) {
+        draw_reflections(e, proj, view, &vp);
+    }
     for (layer = 0x1E; layer < LAST_LAYER; layer++) {   /* (the later layers: in front of a reflection over everything) */
         draw_layer(e, &vp, &view, layer);
     }
     render_fog_after(0);
-    things_draw(e->room.id, &vp);   /* the things lying about (their sprites written for the next) */
-    draw_props(e, &vp);   /* a mod's own models (props.h) */
-    vrhands_defense_draw(&vp);      /* an equipped magnesia or antimony, still in the hand */
-    sprites_draw(&vp, view);   /* the effects (after the opaque scene: they don't write depth) */
-    if (sprites_glowing() && post_glow_begin()) {   /* the glow pass: the glowing ones again */
+    if (!engine_skip("things")) {
+        things_draw(e->room.id, &vp);   /* the things lying about (their sprites written for the next) */
+    }
+    if (!engine_skip("props")) {
+        draw_props(e, &vp);   /* a mod's own models (props.h) */
+    }
+    if (!engine_skip("vrhands")) {
+        vrhands_defense_draw(&vp);      /* an equipped magnesia or antimony, still in the hand */
+    }
+    if (!engine_skip("sprites")) {
+        sprites_draw(&vp, view);   /* the effects (after the opaque scene: they don't write depth) */
+    }
+    if (!engine_skip("glow") && sprites_glowing() && post_glow_begin()) {   /* the glow pass: the glowing ones again */
         sprites_draw_glow(&vp);
         post_glow_end();
     }
-    if (post_shine_begin()) {   /* layer $14 again, for its shine */
+    if (!engine_skip("shine") && post_shine_begin()) {   /* layer $14 again, for its shine */
         for (i = 0; i < MAX_ACTORS; i++) {
             if (e->actors[i].used && e->actors[i].layer == 0x14) {
                 use_lights(e, &e->actors[i]);

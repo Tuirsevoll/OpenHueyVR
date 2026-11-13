@@ -1020,7 +1020,9 @@ void room_draw_layer(Room *r, const Mat4 *view_proj, int layer) {
         }
     }
     placed_draw(&r->placed, view_proj, r->textures, r->ntextures, layer);
-    loot_draw(view_proj, layer);
+    if (!engine_skip("loot")) {
+        loot_draw(view_proj, layer);   /* the VR collectibles lying about (loot.c) */
+    }
     render_mesh_ps2_clip(0);
 }
 
