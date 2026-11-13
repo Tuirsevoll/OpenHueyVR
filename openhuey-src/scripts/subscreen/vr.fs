@@ -1,13 +1,13 @@
 \ subscreen/vr.fs - the VR options page (docs/subsystems/comfort.md): the comfort and accessibility
 \ choices C keeps (vr.h VrOptions) - the turning, the vignette, teleporting, which hand does what,
-\ the scene's view, and her height - thirteen rows. hga's own page, in the sub screen's pages after
-\ the first list (one R1 from the menu); the title's VR OPTIONS opens it too.
+\ and her height - seven rows. hga's own page, in the sub screen's pages after the first list (one
+\ R1 from the menu); the title's VR OPTIONS opens it too.
 \ A row each: the stick picks, left / right (or the cross) changes it, the triangle - or Select -
 \ leaves. Written as it changes (vr-options.fs), read back at start-up.
 IN: subscreen.vr
 USING: engine ps2-screen subscreen.state subscreen.art subscreen.input vr-options ;
 
-enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cinema vr-cal vr-seated vr-offset ;
+enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-offset ;
 : #vr-rows ( -- n )  vr-offset 1+ ;
 
 variable vr-at   0 vr-at !
@@ -49,7 +49,6 @@ variable vr-at   0 vr-at !
           vr-hand of  s" Left-handed"  endof
           vr-comfort of  s" Comfort vignette"  endof
           vr-teleport of  s" Teleport movement"  endof
-          vr-cinema of  s" First-person scenes"  endof
           vr-cal of  s" Calibrate height"  endof
           vr-seated of  s" Seated mode"  endof
           vr-offset of  s" View height offset"  endof
@@ -60,7 +59,6 @@ variable vr-at   0 vr-at !
         vr-hand of  vr-settings vr.left-handed l@ on-off$  endof
         vr-comfort of  comfort$  endof
         vr-teleport of  teleport$  endof
-        vr-cinema of  vr-settings vr.cutscene-first-person l@ on-off$  endof
         vr-cal of  vr-settings vr.calibrated l@ if  vr-settings vr.eye-height sf@ 2 f>s$  else  s" Not set"  then  endof
         vr-seated of  vr-settings vr.seated l@ on-off$  endof
         vr-offset of  vr-settings vr.seated-offset sf@ 2 f>s$  endof
@@ -85,9 +83,6 @@ variable vr-step
             se-decide  save-vr-options endof
         vr-teleport of
             teleport-level vr-step @ + 3 + 3 mod teleport-set
-            se-decide  save-vr-options endof
-        vr-cinema of
-            vr-settings vr.cutscene-first-person l@ 0= 1 and vr-settings vr.cutscene-first-person l!
             se-decide  save-vr-options endof
         vr-cal of
             vr-tracking? if
@@ -119,7 +114,7 @@ variable vr-step
     \ the strip's last tab says VR on this page: the art's own word covered with the paper it sits
     \ on, and VR drawn in its place (a tab of its own would need art the game has not)
     art-layer  by-alpha 0 ui-blend
-    art-layer  $176 sx  $11 sy  $3E sw  $1B sy  $736856FF ui-rect
+    art-layer  $176 sx  $11 sy  $3B sw  $1B sy  $736856FF ui-rect
     word-layer  s" VR"  $18C sx  $17 sy  menu-ink  3  glyphs
     s" VIRTUAL REALITY"  256 $34 centred
     #vr-rows 0 do

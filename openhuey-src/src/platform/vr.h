@@ -25,7 +25,8 @@ typedef struct VrOptions {
     float seated_offset;      /* the view raised or lowered within her body, metres */
     int32_t left_handed;      /* the sticks and the face buttons swapped between the hands */
     int32_t calibrate_start;  /* the start-up height calibration: a first run, or asked for */
-    int32_t cutscene_first_person;   /* an in-game scene watched from her eyes */
+    int32_t cutscene_first_person;   /* retired: kept so an older options file still loads; nothing
+                                      * reads it and no row writes it (a cutscene keeps its screen) */
     /* what a height calibration left (no row of its own: the page's calibrate row and the title's
      * first-run step set it, vr-options.fs keeps it) */
     float eye_height;         /* her eyes above the floor, metres */

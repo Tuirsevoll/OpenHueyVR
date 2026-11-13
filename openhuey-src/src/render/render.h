@@ -117,6 +117,10 @@ float render_aspect(void);
 void render_camera(const Mat4 *proj, const Mat4 *view, Vec3 eye, float znear, float zfar);
 /* finish the 3D scene: post effects onto the window */
 void render_post(void);
+/* the comfort vignette's share of the picture (0 .. 1, 0 none): a black ring drawn over the
+ * finished scene, before the menus, the same for the window and each eye. main.c sets it from how
+ * fast she is being moved or turned (docs/subsystems/comfort.md) */
+void render_comfort(float amount);
 void render_end(void);
 
 GpuTexture render_texture(const uint8_t *rgba, int w, int h);

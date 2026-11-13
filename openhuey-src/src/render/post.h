@@ -19,9 +19,6 @@ void post_begin(int w, int h, int msaa, Vec3 clear_linear);
  * post_trail_off (a fresh game) */
 void post_trail(float a);
 void post_trail_off(void);
-/* the comfort vignette's share this frame (0 .. 1, 0 none): added to the picture's own vignette,
- * never in place of it. main.c sets it from how fast she is moved or turned (docs/subsystems/comfort.md) */
-void post_comfort(float amount);
 /* the panic's screens this frame (ScreenFade_Frame, layer 0x2A; hg's glr_negative / glr_zoom_blur /
  * glr_panic): the negative (0x80 less each channel, as the frame holds them), the frame drawn back
  * 16 pixels bigger each side over itself at half, and the threshold tint - each pixel black whose

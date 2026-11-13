@@ -780,10 +780,93 @@ void render_shade_end(void) {
     post_shade_end();
 }
 
+/* ---- the comfort vignette (docs/subsystems/comfort.md): a black ring over the finished picture,
+ * its alpha a ramp from the middle out, the amount the strength chosen. Drawn here rather than in
+ * the post composite so the eyes and the window get it the same way, and so nothing about the
+ * picture's own look is touched. ---- */
+static float sComfort;
+static GLuint sComfortProg, sComfortVao, sComfortTex;
+
+void render_comfort(float amount) {
+    sComfort = amount < 0.0f ? 0.0f : amount > 1.0f ? 1.0f : amount;
+}
+
+static const char *kComfortVs =
+    "#version 460 core\n"
+    "out vec2 v_uv;\n"
+    "void main() {\n"
+    "    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
+    "    v_uv = p;\n"
+    "    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n";
+
+static const char *kComfortFs =
+    "#version 460 core\n"
+    "in vec2 v_uv;\n"
+    "layout(binding = 0) uniform sampler2D u_ramp;\n"
+    "layout(location = 0) uniform float u_amount;\n"
+    "out vec4 o_color;\n"
+    "void main() { o_color = vec4(0.0, 0.0, 0.0, texture(u_ramp, v_uv).a * u_amount); }\n";
+
+/* the ramp: clear in the middle, opaque at the corners - wider than the picture's own vignette
+ * (whose shader is left alone) so the option can be felt at Low as well as at High */
+static void make_comfort(void) {
+    enum { N = 128 };
+    static uint8_t px[N * N * 4];
+    int x, y;
+
+    for (y = 0; y < N; y++) {
+        for (x = 0; x < N; x++) {
+            float u = ((float)x + 0.5f) / (float)N - 0.5f;
+            float v = ((float)y + 0.5f) / (float)N - 0.5f;
+            float r = sqrtf(u * 1.25f * (u * 1.25f) + v * v);
+            float t = (r - 0.28f) / (0.88f - 0.28f);
+            uint8_t *p = &px[(y * N + x) * 4];
+
+            t = t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
+            t = t * t * (3.0f - 2.0f * t);
+            p[0] = p[1] = p[2] = 0;
+            p[3] = (uint8_t)(t * 255.0f + 0.5f);
+        }
+    }
+    sComfortTex = render_texture(px, N, N);
+    sComfortProg = gl_program(kComfortVs, kComfortFs, "comfort vignette");
+    glCreateVertexArrays(1, &sComfortVao);
+}
+
+static void draw_comfort(void) {
+    if (sComfort <= 0.0f) {
+        return;
+    }
+    if (sComfortProg == 0) {
+        make_comfort();
+    }
+    if (sComfortProg == 0 || sComfortVao == 0 || sComfortTex == 0) {
+        return;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, R.present);
+    glViewport(R.px, R.py, R.pw, R.ph);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(sComfortProg);
+    glProgramUniform1f(sComfortProg, 0, sComfort);
+    glBindTextureUnit(0, sComfortTex);
+    glBindVertexArray(sComfortVao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+    glBindTextureUnit(0, 0);
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+}
+
 void render_post(void) {
     PostCamera cam = {R.proj, R.znear, R.zfar};
 
     post_finish(&cam, &gRender, R.px, R.py, R.pw, R.ph, (float)(SDL_GetTicks() % 100000) / 1000.0f);
+    draw_comfort();   /* (the comfort vignette: over the picture, before the menus go on top) */
     glViewport(0, 0, R.w, R.h);
 }
 

@@ -2586,14 +2586,6 @@ PRIM(p_cs_in_shot) { PUSH(cutscene_playing_shot() ? -1 : 0); }
 PRIM(p_cs_near_end) { PUSH(cutscene_near_end() ? -1 : 0); }
 PRIM(p_cs_shot_at) { PUSH(cutscene_shot_at((int)POP())); }   /* ( frame -- shot ) -1 none */
 PRIM(p_cs_signals) { PUSH(cutscene_signal_count((int)POP())); }   /* ( bit -- n ) since last frame */
-/* the scene's picture: its movie drawn over the room (keyed, alpha, strip, opaque) rather than the
- * game's own models being moved. The room that asked for it says (scripts/scenes.fs); a scene so
- * watched keeps its screen in a headset (main.c first_person_scene, vr.cutscene-first-person) */
-static int sScenePicture;
-
-PRIM(p_scene_picture) { sScenePicture = POP() != 0; }   /* ( flag -- ) */
-
-int engine_scene_picture(void) { return sScenePicture; }
 PRIM(p_music_play) {   /* ( addr len loop paused -- flag ) a track (ADX file) streamed */
     Cell paused = POP(), loop = POP(), n = POP(), a = POP();
     char path[256];
@@ -4472,18 +4464,10 @@ static void voice_caption(Engine *e) {
     }
 }
 
-/* a picture that is not the 4:3 one (a scene seen from her eyes) keeps the bars off its own
- * drawing. The game's own letterbox setting is untouched: this is the picture's, per frame. */
-static int sNoLetterbox;
-
-void engine_letterbox_off(int off) { sNoLetterbox = off != 0; }
-
 void engine_draw_2d(Engine *e) {
     int i;
-    int bars = cutscene_letterbox() && !sNoLetterbox;
 
-    sNoLetterbox = 0;   /* (it is the picture's, once: the next drawing has the game's own bars) */
-    if (bars) {   /* (Cutscene_Letterbox: 56 lines of 448 at the top and bottom) */
+    if (cutscene_letterbox()) {   /* (Cutscene_Letterbox: 56 lines of 448 at the top and bottom) */
         float bar = (float)e->height * 56.0f / 448.0f;
 
         render_rect(0.0f, 0.0f, (float)e->width, bar, 0x000000FFu);
@@ -4550,7 +4534,7 @@ void bind_engine(Forth *f) {
         {"movie-frame", p_movie_frame, "( -- n )"}, {"cutscene-load", p_cs_start, "( addr len -- flag )"}, {"cutscene-run", p_cs_run, "( -- )"}, {"cutscene-go", p_cs_go, "( -- )"},
         {"cutscene-frame!", p_cs_frame_set, "( n -- )"}, {"cutscene-frame", p_cs_frame, "( -- frame )"}, {"cutscene-update", p_cs_update, "( -- )"}, {"cutscene-end", p_cs_end, "( -- )"}, {"cutscene-leave-alone", p_cutscene_leave_alone, "( actor -- )"}, {"cutscene-keep-model", p_cutscene_keep_model, "( actor -- )"}, {"soft-reset", p_soft_reset, "( -- )"}, {"soft-reset?", p_soft_reset_q, "( -- flag )"},
         {"cutscene-status", p_cs_status, "( -- n )"}, {"cutscene-in-shot?", p_cs_in_shot, "( -- flag )"}, {"cutscene-near?", p_cs_near_end, "( -- flag )"}, {"cutscene-shot-at", p_cs_shot_at, "( frame -- shot )"},
-        {"cutscene-signals", p_cs_signals, "( bit -- n )"}, {"cutscene-active?", p_cs_active, "( -- flag )"}, {"scene-picture!", p_scene_picture, "( flag -- )"}, {"pause!", p_pause, "( flag -- )"}, {"still!", p_still, "( flag -- )"}, {"sound-out!", p_sound_out, "( mode -- )"}, {"voice-lr", p_voice_lr, "( v -- l r on? )"}, {"seq-bank", p_seq_bank, "( addr len -- flag )"}, {"seq-load", p_seq_load, "( k addr len -- flag )"}, {"seq-play", p_seq_play, "( k on -- )"},
+        {"cutscene-signals", p_cs_signals, "( bit -- n )"}, {"cutscene-active?", p_cs_active, "( -- flag )"}, {"pause!", p_pause, "( flag -- )"}, {"still!", p_still, "( flag -- )"}, {"sound-out!", p_sound_out, "( mode -- )"}, {"voice-lr", p_voice_lr, "( v -- l r on? )"}, {"seq-bank", p_seq_bank, "( addr len -- flag )"}, {"seq-load", p_seq_load, "( k addr len -- flag )"}, {"seq-play", p_seq_play, "( k on -- )"},
         {"seq-playing?", p_seq_playing, "( k -- flag )"}, {"seq-volume", p_seq_volume, "( k v -- )"}, {"seq-port-volume", p_seq_port_volume, "( k v -- )"},
         {"seq-chan-volume", p_seq_chan_volume, "( k ch v -- )"}, {"seq-midi", p_seq_midi, "( k status d1 d2 -- )"}, {"seq-reset", p_seq_reset, "( -- )"}, {"music-play", p_music_play, "( addr len loop paused -- flag )"}, {"music-stop", p_music_stop, "( -- )"},
         {"music-pause", p_music_pause, "( on -- )"}, {"music-volume!", p_music_volume, "( F: v -- )"}, {"music-playing?", p_music_playing, "( -- flag )"}, {"cutscene-signal-total", p_cs_total, "( bit -- n )"}, {"cutscene-letterbox-off", p_cs_letterbox_off, "( flag -- )"}, {"black-frame", p_black_frame, "( -- )"}, {"cutscene-next", p_cs_next, "( -- )"}, {"movie-close", p_movie_close, "( -- )"}, {"movie-pause", p_movie_pause, "( on -- )"}, {"movie-paused?", p_movie_paused, "( -- flag )"}, {"movie-compose", p_movie_compose, "( compo lo hi -- )"},

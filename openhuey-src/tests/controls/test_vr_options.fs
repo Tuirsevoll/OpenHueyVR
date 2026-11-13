@@ -8,7 +8,7 @@ USING: tester engine game-state game actors messages keys facts flag-names subsc
 testing the options a fresh game has: smooth turning, a 45 degree snap, the rest as the game was
 T{ vr-settings vr.turn-snap l@  vr-settings vr.snap-degrees sf@ f>s -> 0 45 }T
 T{ vr-settings vr.comfort l@  vr-settings vr.comfort-strength sf@ 1000e f* fround f>s -> 0 500 }T
-T{ vr-settings vr.teleport l@  vr-settings vr.seated l@  vr-settings vr.left-handed l@  vr-settings vr.cutscene-first-person l@ -> 0 0 0 0 }T
+T{ vr-settings vr.teleport l@  vr-settings vr.seated l@  vr-settings vr.left-handed l@ -> 0 0 0 }T
 T{ vr-settings vr.calibrate-start l@ -> 1 }T
 
 testing vr-defaults puts them back after a change
@@ -119,10 +119,6 @@ key: Right tap
 T{ vr-settings vr.teleport l@ -> 0 }T
 key: Left tap
 T{ vr-settings vr.teleport l@  vr-settings vr.teleport-mode l@ -> 1 1 }T
-testing down to the scenes: the cross watches them from her own eyes
-key: Down tap
-key: X tap
-T{ vr-settings vr.cutscene-first-person l@ -> 1 }T
 testing down to the calibration: without a headset it measures nothing
 key: Down tap
 key: X tap

@@ -34,11 +34,6 @@ end-state
 \ ---- the movie ----
 : movie-state ( -- n )  movie-status movie-running <> if  -1  else  movie-paused? if  2  else  1  then  then ;   \ (-1 none, 1 running, 2 paused)
 : fade-to ( kind -- )  -1 fading !  scene-fade swap screen-id send fade ;
-\ the scene's picture is its movie: keyed, cut by its own alpha, a strip, or the whole screen - the
-\ game's models would not be it then, so a headset keeps its screen (main.c first_person_scene)
-: picture-movie? ( -- flag )
-    class @ dup unseen-movie = swap unseen-4-movie = or 0= ;
-
 \ ---- the steps ----
 : asker ( -- id | -1 )  asked-by @ dup alive? 0= if  drop -1  then ;   \ (the place that asked, still there: else none - gone with its room)
 : tell ( -- )   \ (the place told of each new shot)
@@ -69,7 +64,7 @@ end-state
     black-frame  movie-close  0 movie-up !  world-held state-flag-set
     pause-wanted state-flag-set
     false cam-scene!  cutscene-end  movie-opaque state-flag-clear  0 broadcast scene
-    no-scene step !  0 scene-picture!
+    no-scene step !
     asker dup 0< if  drop  else  send scene-over  then ;
 : through-ends ( -- )   \ (played through: its subtitles gone, the movie and the director left as they are)
     $FFFF window-id send close-text  -1 subtitles !  0 through !
@@ -78,8 +73,7 @@ end-state
     movie-up @ if  movie-close  0 movie-up !  then
     cutscene-active? if  false cam-scene!  cutscene-end  movie-opaque state-flag-clear  then
     0 broadcast scene   \ (marked in it as it loaded, whether or not it reached play)
-    -1 subtitles !  no-scene step !
-    0 scene-picture! ;   \ (no scene: no screen kept for one)
+    -1 subtitles !  no-scene step ! ;
 
 \ ---- drawing: the movie on layer 0, the subtitles' page on layer 4 ----
 4 constant subtitle-layer
@@ -110,7 +104,7 @@ variable sw  variable sh  variable lh
     loop ;
 
 : run-from ( subtitles through? -- )   \ faded in, a frame at a time until the movie or the director ends (or it is skipped)
-    picture-movie? scene-picture!   \ (a film over the room: its screen kept in a headset)
+    through !  dup $FFFF = if  drop -1  then  subtitles !  -1 page !
     through !  dup $FFFF = if  drop -1  then  subtitles !  -1 page !
     -1 cue-was !  -1 cue !  cutscene-go  cutscene-run
     1e movie-volume!  screen:from-black fade-to  world-held state-flag-clear  0 movie-pause   \ (coming in: the world let go - it may be paused, and skipped)

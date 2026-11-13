@@ -61,13 +61,14 @@ in, reachable without a keyboard:
   (`read-arrows`), so every page of the sub screen - the lists, the map, the files, the options -
   and this one are worked with the controllers: the left stick moves, the cross answers, the
   triangle backs out.
-- **Its rows**, eight of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
+- **Its rows**, seven of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
   Comfort vignette (Off, Low, Med, High), Teleport movement (Off, Fixed, Dynamic),
-  First-person scenes (Off, On), Calibrate height (the measurement, or Not set), Seated mode
-  (Off, On) and View height offset (5 cm a step). A label on the left, its value on the right, the
-  row chosen drawn in a lit bar: up / down choose, left / right step the row (a choice round its
-  words, a number by its step), and the cross steps it too - on Calibrate height the cross is the
-  measurement itself (`vr-calibrate`; without a headset the buzzer says so, and the row reads
+  Calibrate height (the measurement, or Not set), Seated mode (Off, On) and View height offset
+  (5 cm a step). A label on the left, its value on the right, the row chosen drawn in a lit bar:
+  up / down choose, left / right step the row (a choice round its words, a number by its step),
+  and the cross steps it too - on Calibrate height the cross is the measurement itself
+  (`vr-calibrate`; without a headset the buzzer says so, and the row reads Not set). A change is
+  heard (a cursor sound) and kept (`save-vr-options`).
   Not set). A change is heard (a cursor sound) and kept (`save-vr-options`).
 - It draws with the sub screen's own art and font (`subscreen/art.fs`: `page-art`, `centred`,
   `text`), so it reads as the game's menu - no other effect, as the PS2 look asks. The strip's
@@ -90,20 +91,21 @@ in, reachable without a keyboard:
   take the controller as it is (as a room change does).
 - **The picture blends a snap if it is under `TURN_SNAP`** (`main.c`, 1.05 radians = 60 degrees),
   as it blends any turn; 60 degrees and more counts as a cut and is instant.
-- **The comfort vignette** (`main.c` `comfort_measure`, `comfort_tick`; `render/post.c` `post_comfort`,
-  its own `u_comfort` curve in the composite shader): how much her drawn movement darkens the
-  corners - the step she took and the turn of her body and the camera as the last tick left them
-  (`sPose`), so a walk, a run, a ladder and a script step all count and standing still counts
-  nothing. Measured once a tick (a frame between two ticks would read 0 on most of them and never
-  grow - the bug the first version had), eased a frame at a time. A walk is about 13 room units a
-  second: `COMFORT_SPEED_START` 4 (a crawl, under it) to `COMFORT_SPEED_FULL` 15 (a walk is nearly
-  all of it, a run past it), the turn 0.4 to 1.6 radians a second (a smooth turn at full stick is
-  about 1.8; a 45 degree snap is a spike). It darkens over 0.12 s and lets go over 0.45 s, and it
-  is nothing while the world is held, a scene has the camera or the free camera does. The share is
-  `sComfort x vr.comfort-strength`, drawn per eye on the scene only (the UI is drawn after the post
-  pass, so menus stay bright) with a curve wider and deeper than the picture's own, which is left
-  exactly as it was: the page's Low, Med and High are 0.25, 0.5 and 0.75 of it, the corners half
-  dark at High on a walk, and off is off.
+- **The comfort vignette** (`main.c` `comfort_measure`, `comfort_tick`; `render.c` `render_comfort`,
+  its own ramp texture and shader): how much her drawn movement darkens the corners - the step she
+  took and the turn of her body and the camera as the last tick left them (`sPose`), so a walk, a
+  run, a ladder and a script step all count and standing still counts nothing. Measured once a
+  tick (a frame between two ticks would read 0 on most of them and never grow), eased a frame at
+  a time. A walk is about 13 room units a second: `COMFORT_SPEED_START` 4 (a crawl, under it) to
+  `COMFORT_SPEED_FULL` 15 (a walk is nearly all of it, a run past it), the turn 0.4 to 1.6 radians
+  a second (a smooth turn at full stick is about 1.8; a 45 degree snap is a spike). It darkens
+  over 0.12 s and lets go over 0.45 s, and it is nothing while the world is held, a scene has the
+  camera or the free camera does. The share is `sComfort x vr.comfort-strength`. The ring is drawn
+  by the renderer over the finished picture - `render_post`, window or eye the same, before the
+  menus, so the UI stays bright - from a small radial ramp (clear to 0.28 of the half-width, opaque
+  by 0.88, the wide axis stretched 1.25) times the share; the picture's own vignette setting and
+  shader are untouched. The page's Low, Med and High are 0.25, 0.5 and 0.75 of it - the corners
+  about half at High on a walk - and off is off.
 - **The height calibration, one action** (`vr_calibrate`; `scripts/opening.fs` `calibrate-*`; the
   page's row; nothing else reaches it - the stick clicks are the run's and the talk's): she stands
   straight, the headset height above the floor becomes her eye height, the world is sized to her
@@ -157,18 +159,11 @@ in, reachable without a keyboard:
   opens (`move_r`, `turn_l`, `interact_l`, ...) and `sync_stick` reads the pair the option names; a
   change is in effect on the next frame. Nothing else is on the sticks: the both-clicks recentre
   is gone, so the calibration is the menu's one way and a scene is not interrupted by it.
-- **A scene from her eyes** (`vr.cutscene-first-person`; `main.c` `first_person_scene`,
-  `fiona_view`; `scripts/scenes.fs` `picture-movie?`, `scene-picture!`): a cutscene is watched from
-  her head instead of on the projected screen - no screen is put up and the story's camera is not
-  used at all. `gCamDir.scene` is what says a cutscene is running (the director's, set when it
-  starts and given back when it ends); an FMV on its own is not one and keeps its screen, having
-  no place to stand in. Her own animation turns her, and the view with her (her yaw is the view's,
-  every frame), the headset's look on top; the player takes no part, she is the scene's. The 4:3
-  bars are left out of that picture (`engine_letterbox_off`, the panel keeps the text). A scene
-  whose picture is its movie (keyed, alpha, strip, opaque - an SFD drawn over the room, 59 of the
-  game's 150) shows that film on the panel while the room is watched from her eyes: the models
-  are not what is being acted there, so the room alone would be missing them. `scene-picture!`
-  tells the engine which kind a scene is, for anything that wants it.
+- **A cutscene keeps its screen** (`main.c` `cutscene_on_screen`, `fiona_view`): the scene is
+  drawn once, at 4:3, and put on a screen in front of the player, her model hidden; her eyes are
+  not used and the story's camera stays the picture's. (An option to watch the game's scenes from
+  her head was tried and taken out: `vr.cutscene-first-person` is still a field, kept so an older
+  options file loads, but nothing reads it and no row writes it.)
 - **The defaults are the game as it was**: smooth turning, no vignette, the stick walking her,
   neither seated nor left-handed, her eyes as the first pose found them, a scene on its screen.
   `vr.calibrate-start` is 1: a first run is asked to calibrate once (with no calibration kept, the
@@ -178,15 +173,16 @@ in, reachable without a keyboard:
 
 Built: the options' store (`VrOptions`, the `vr.` fields, `scripts/vr-options.fs`, read at start-up,
 written on change), **turning** (Smooth, Snap 45, Snap 90), **the comfort vignette** (Off, Low,
-Med, High - 25, 50, 75 per cent of the corners), **the height calibration** (kept in the options, a
-first run's screen on the title, the page's row for later), **seated play** (`vr.seated`, with
-`vr.seated-offset` for the view's height in the body), **teleporting** (`vr.teleport`: Off, Fixed,
-Dynamic - the stick flick, its aim walking out until something stops it, facing the way it went, a
-glow for the landing), **left-handed play** (`vr.left-handed`: the sticks and face buttons over,
-the hands as they are), **a scene from her eyes** (`vr.cutscene-first-person`: no screen, her head
-and her turning) and **the VR options page** (`scripts/subscreen/vr.fs`, eight rows): the title's
-`VR OPTIONS` row and, in a game, the sub screen's page after the options - both worked with the
-controllers, the sub screen's arrows read from the VR stick in a headset.
+Med, High - 25, 50, 75 per cent of the corners, its own ring over the picture), **the height
+calibration** (kept in the options, a first run's screen on the title, the page's row for later,
+one action: the height, the world's size and the view's origin together), **seated play**
+(`vr.seated`, with `vr.seated-offset` for the view's height in the body), **teleporting**
+(`vr.teleport`: Off, Fixed, Dynamic - the stick flick, its aim walking out until something stops
+it, facing the way it went, a glow for the landing), **left-handed play** (`vr.left-handed`: the
+sticks and face buttons over, the hands as they are), and **the VR options page**
+(`scripts/subscreen/vr.fs`, seven rows): the title's `VR OPTIONS` row and, in a game, the sub
+screen's page after the options - both worked with the controllers, the sub screen's arrows read
+from the VR stick in a headset.
 
 The options the game had are the defaults, so a run with none of them picked plays as it always did.
 Each row that is a choice steps round its words (Smooth, Snap 45, Snap 90; Off, Low, Med, High;
@@ -195,5 +191,5 @@ Off, Fixed, Dynamic; On, Off) and the row's value is capitalised as the other me
 rows - the reach is what a Dynamic flick grows to, and seated play sizes the world itself.
 The F1 settings menu (`scripts/graphics.fs`) is still the keyboard's: arrow keys only.
 A headset session prints one line to the console as it opens - `vr: comfort 1 (0.75), scenes from
-her eyes 1, world scale 0.894 (eye 1.79 m), seated 0` - so a setting that never reached the
+her eyes 0, world scale 0.894 (eye 1.79 m), seated 0` - so a setting that never reached the
 engine can be told from one that did nothing (vr.c, the first frame).

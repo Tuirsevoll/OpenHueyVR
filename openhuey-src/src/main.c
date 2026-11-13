@@ -869,24 +869,15 @@ static int sRecenter;
 static Camera sBlendCam;
 static int sBlendCamHave;
 
-/* a scene watched from her own eyes: the option on, a headset to stand in it with, and a scene that
- * has the camera. No screen is put up and the story's camera is not used at all: the eyes are hers
- * and the head's look is free on top. (A film on its own - an FMV, which has no place to stand in -
- * is not a scene: gCamDir.scene is only the director's cutscenes.) */
-static int first_person_scene(void) {
-    return gVrOptions.cutscene_first_person && vr_active() && gCamDir.scene;
-}
-
 /* her eyes. the headset's own orientation is applied on top of sAlign, so looking around does not
- * go through her body yaw. a cutscene and the free camera keep the game's camera (a cutscene, if
- * the options watch it from her eyes: then she is turned by her own animation, and so is the view). */
+ * go through her body yaw. a cutscene and the free camera keep the game's camera. */
 static int fiona_view(Engine *e, Camera *out) {
     int i;
     Actor *pick = NULL;
 
     sFp = NULL;
     vr_anchor_set(0, vec3(0.0f, 0.0f, 0.0f), 0.0f);
-    if ((gCamDir.scene && !first_person_scene()) || freecam_active()) {
+    if (gCamDir.scene || freecam_active()) {
         sRecenter = 1;
         return 0;
     }
@@ -906,14 +897,7 @@ static int fiona_view(Engine *e, Camera *out) {
         sRecenter = 1;
     }
     sAlign -= vr_take_turn();
-    if (gCamDir.scene) {
-        /* her eyes through a scene: her own animation turns her, so the view turns with her body
-         * (what the headset's look adds goes on top). a recentre has nothing to add: she is the
-         * one turning, and the view is already along her facing. */
-        sAlign = 3.14159265f - pick->yaw;
-        sAlignSet = 1;
-        sRecenter = 0;
-    } else if (!sAlignSet || sRecenter) {
+    if (!sAlignSet || sRecenter) {
         /* upright neutral already faces her. The headset's tilt at this moment is not stored. */
         sAlign = 3.14159265f - pick->yaw;
         sAlignSet = 1;
@@ -1099,7 +1083,7 @@ static void comfort_tick(Engine *e) {
         k = 1.0f;
     }
     sComfort += (sComfortWant - sComfort) * k;
-    post_comfort(sComfort * gVrOptions.comfort_strength);
+    render_comfort(sComfort * gVrOptions.comfort_strength);
 }
 
 static void hear_from_her(Engine *e) {
@@ -1201,7 +1185,6 @@ static void draw_frame(Engine *e) {
         int32_t aspect = gRender.aspect;
         int i, n = vr_eye_count();
         int screen = cutscene_on_screen();
-        int fp_scene = first_person_scene();   /* (a cutscene from her eyes: no screen is put up) */
 
         {
             static int menu_was, screen_was;
@@ -1213,7 +1196,7 @@ static void draw_frame(Engine *e) {
             menu_was = menu;
             screen_was = screen;
         }
-        if (screen && !fp_scene) {
+        if (screen) {
             vr_screen_loose(0);
             sFp = NULL;   /* the scene shows her; the picture is the projected screen */
             /* the cutscene is drawn once, then put on a screen in front of the player. The
@@ -1269,11 +1252,10 @@ static void draw_frame(Engine *e) {
             e->width = UI_W;
             e->height = UI_H;
             render_overlay_begin(UI_W, UI_H, ui);
-            engine_letterbox_off(fp_scene);   /* (her eyes' picture: no 4:3 bars on the panel) */
             draw_flat(e);
             vr_cutscene_screen(1, corners);
             gRender.aspect = 0;   /* an eye is the whole picture; the headset's field of view replaces the window's */
-            vr_lock_pose(fp_scene ? 0 : gCamDir.event);
+            vr_lock_pose(gCamDir.event);
             {
                 Camera played;
                 Mat4 body;

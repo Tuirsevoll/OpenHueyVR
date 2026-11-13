@@ -50,7 +50,6 @@ PRIVATE>
     vr-settings vr.seated-offset sf@ 6 f>s$ type     ."  vr-settings vr.seated-offset sf!" cr
     vr-settings vr.left-handed l@ n>s type           ."  vr-settings vr.left-handed l!" cr
     vr-settings vr.calibrate-start l@ n>s type       ."  vr-settings vr.calibrate-start l!" cr
-    vr-settings vr.cutscene-first-person l@ n>s type ."  vr-settings vr.cutscene-first-person l!" cr
     vr-settings vr.eye-height sf@ 6 f>s$ type        ."  vr-settings vr.eye-height sf!" cr
     vr-settings vr.body-scale sf@ 6 f>s$ type        ."  vr-settings vr.body-scale sf!" cr
     vr-settings vr.calibrated l@ n>s type            ."  vr-settings vr.calibrated l!" cr
