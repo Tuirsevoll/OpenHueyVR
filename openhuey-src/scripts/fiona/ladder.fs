@@ -229,8 +229,8 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     her-ladder @ 0 nav-link-spot  {: F: x0 F: y0 F: z0 :}        \ (the top spot)
     her-ladder @ 1 nav-link-spot  {: F: x1 F: y1 F: z1 :}        \ (the bottom spot: its height is only the drop's way)
     her-drop-at her-at vec-copy                                  \ (dst src: her place, where the steps start)
-    x0  x1 x0 f- 0.8e f* f+  her-drop-at v.x sf!                 \ (8/10 of the way to the bottom spot: on the rung side, past the edge)
-    z0  z1 z0 f- 0.8e f* f+  her-drop-at v.z sf!
+    x0  x1 x0 f- 1.2e f* f+  her-drop-at v.x sf!                 \ (1.2 of the way to the bottom spot: about 2 units past it toward the rungs, on the rung side)
+    z0  z1 z0 f- 1.2e f* f+  her-drop-at v.z sf!
     y0  y1 y0 f- fdup fabs f/ lower-drop f* f+  her-drop-at v.y sf!   \ (the top's height, the drop toward the bottom's)
     her-ladder @ 0 nav-link-yaw pi f+ her-heading f!             \ (the rung side's facing: the nav yaw turned round)
     her-drop-at 0 v-tri-in  dup 0< if  drop her-tri @  then  her-drop-tri !   \ (the triangle there; hers kept if there is none)
