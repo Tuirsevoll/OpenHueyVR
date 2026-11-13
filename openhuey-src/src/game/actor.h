@@ -49,14 +49,15 @@ typedef struct Actor {
     int32_t prev_variant;
     float prev_vframe, prev_vweight;
     int32_t prev_frozen;    /* the motion fading out held still (the new one has flag 8) */
-    int32_t prev_held;      /* ... or come to its end, not looping: its pose kept at its last frame
-                             * (its time and root go on as before) */
+    int32_t prev_held;      /* ... or come to its end, not looping: its pose kept at its last frame */
     int32_t prev_old_flags, prev_old_frames;   /* the motion before's flags, length and time as */
     float prev_old_frame;                      /* this one started (its variant's phase) */
     const uint8_t *table;   /* the model's motion table (6 bytes a motion, in bank order: its fade
                              * frames s16, its pose u8, -, its flags u16), NULL none */
     int ntable;
     int32_t visible;
+    int32_t character;      /* a character's or a creature's model: not drawn while the world is frozen
+                             * (progress state flag $17 without $24: Progress_DrawChars, Creatures_Draw) */
     float shadow_size;      /* the contact shadow's radius (room units; 0: none) */
     int32_t shadow_off;     /* casts no shadow and has no contact shadow (the scripts' 0x8F) */
     float alpha;            /* drawn faded (1 as it is; 0 unseen) */
@@ -86,12 +87,15 @@ typedef struct Actor {
      * channels): a body motion with data for a part plays it there too, else the part goes back
      * to its own motion (a motion with no body: Hewie's ears, tail and jaw overlays) */
     struct ActorPart {
-        int32_t motion, own, prev, flags, pending;
+        int32_t motion, own, prev, flags, prev_flags, pending;
         float frame, prev_frame, fade, fade_len;
     } parts[3];
     /* bones turned where it looks (Hewie's neck: DogModel_AdjustBone) */
     ModelTurn turns[8];
     int nturns;
+    /* bones' turns a mod set (bone-set), over the motions' - its scenes' too */
+    ModelSet sets[MODEL_MAX_SETS];
+    int nsets;
     DogLegs legs;           /* a dog's feet planted and its legs fitted to them (Hewie) */
     Chair chair;            /* Lorenzo in his chair: tilted by the floor, his head turned (chair.c) */
     HumanHead head;         /* a human model's head where it looks (humanlegs.c humanhead_adjust) */
@@ -129,6 +133,9 @@ void actor_free(Actor *a);
 void actor_advance(Actor *a);
 void actor_tick(Actor *a);
 /* pose and skin it for this frame (before shadows and drawing) */
+/* drawn this frame: in use and shown - and, a character or a creature, not while the world is
+ * frozen (actor.character) */
+int actor_shown(const Actor *a);
 void actor_prepare(Actor *a);
 /* drop the head, face and hair from the posed mesh. The body and hands stay. */
 void actor_hide_head(Actor *a);

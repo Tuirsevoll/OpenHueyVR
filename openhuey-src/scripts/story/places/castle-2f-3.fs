@@ -37,7 +37,6 @@ $3C constant hall-door   $3D constant west-door   \ (its doors)
 1 constant clothes-part   \ (its part: the clothes laid out)
 15 constant whine-sound
 
-: daylight-tint ( -- )  $84 $60 $3C $50  $24 $2A $2A $46  room-tint ;   \ (the afternoon's light: until she has the castle sketch)
 
 \ ---- entering ----
 : came-in ( exit -- )
@@ -129,7 +128,7 @@ $602 constant tv-switch-anim   \ (his reach to the TV's switch)
     stalker $6A 135 -4e 13e walk-to
     stalker tv-switch-anim start-anim  18 frames
     tv-off-sound room-bank stalker sound-by  tv-static-sound room-bank stop-sound
-    0 s" acoustics" actor-named send noise-setting  c2f-3-tv-examined fact-off  5 var@ 1+ 5 var!
+    0 acoustics-id send noise-setting  c2f-3-tv-examined fact-off  5 var@ 1+ 5 var!
     3 stalker-order  stalker stalker.anims:stand-anim play  16 frames ;
 : search-or-not ( -- )   \ (as he comes in while she hides: whether he'll find her)
     {: | finds :}
@@ -163,31 +162,31 @@ $A5 constant evasion-doc
 : or-sheets ( xt -- xt' )  clothed? 0= if  drop ['] remark-sheets  then ;   \ (in the sheet: that, not this)
 : night? ( -- flag )  c2f-3-flag1 fact?  hewie-found-in-wire fact? 0= and ;   \ (the dog heard, not yet found)
 : by-the-bed ( -- )
-    bed-area 180 60 facing? 0= if  exit  then
+    bed-area 180 60 fiona-faces? 0= if  exit  then
     c2f-2-flag1 fact? 0= if  ['] bed unhurried offer exit  then
-    stalker-in? if  no-time-msg offer-remark-now  else  ['] hides calm-only offer  then ;
+    stalker-in? if  no-time-msg offer-remark-now  else  ['] hides hiding-spot offer  then ;
 : spots ( -- )
-    tv-area 180 90 facing? if  ['] tv or-sheets unhurried offer  then
+    tv-area 180 90 fiona-faces? if  ['] tv or-sheets unhurried offer  then
     clothed? 0= if
-        found-file-201 fact?  clothes-area 180 50 facing? and if  ['] change-clothes unhurried offer  then
+        found-file-201 fact?  clothes-area 180 50 fiona-faces? and if  ['] change-clothes unhurried offer  then
         8 locked-request? if  ['] remark-sheets any-time offer  then
     else night? if
         8 locked-request? if  ['] remark-dog any-time offer  then
-        bed-area 180 60 facing? if  ['] remark-sleep unhurried offer  then
-        window-area 44 60 facing? if  ['] window-dog unhurried offer  then
+        bed-area 180 60 fiona-faces? if  ['] remark-sleep unhurried offer  then
+        window-area 44 60 fiona-faces? if  ['] window-dog unhurried offer  then
     else  by-the-bed  then then
-    fire-area -134 60 facing? if  ['] remark-fire unhurried offer  then
-    portrait-1-area 90 60 facing? if  ['] portrait-1 or-sheets unhurried offer  then
-    portrait-2-area 0 60 facing? if  ['] portrait-2 or-sheets unhurried offer  then
-    portrait-3-area -90 60 facing? if  ['] portrait-3 or-sheets unhurried offer  then
-    doll-area 0 50 facing? if  ['] doll or-sheets unhurried offer  then
+    fire-area -134 60 fiona-faces? if  ['] remark-fire unhurried offer  then
+    portrait-1-area 90 60 fiona-faces? if  ['] portrait-1 or-sheets unhurried offer  then
+    portrait-2-area 0 60 fiona-faces? if  ['] portrait-2 or-sheets unhurried offer  then
+    portrait-3-area -90 60 fiona-faces? if  ['] portrait-3 or-sheets unhurried offer  then
+    doll-area 0 50 fiona-faces? if  ['] doll or-sheets unhurried offer  then
     fiona birdcage-area 50 faces-area? if  ['] birdcage or-sheets unhurried offer  then
-    scales-area -90 50 facing? if  ['] scales or-sheets unhurried offer  then
-    chest-area 180 50 facing? if  fg-3-flag3 fact? if  ['] chest-costumes  else  ['] chest  then  or-sheets unhurried offer  then
-    window-area 44 60 facing?  window-2-area 44 60 facing? or if
+    scales-area -90 50 fiona-faces? if  ['] scales or-sheets unhurried offer  then
+    chest-area 180 50 fiona-faces? if  fg-3-flag3 fact? if  ['] chest-costumes  else  ['] chest  then  or-sheets unhurried offer  then
+    window-area 44 60 fiona-faces?  window-2-area 44 60 fiona-faces? or if
         c2f-3-flag1 fact? if  ['] window-night  else  ['] window-day  then  or-sheets unhurried offer
     then
-    found-file-201 fact?  clock-area -90 50 facing? and if  ['] save-clock or-sheets calm-hewie-up offer  then
+    found-file-201 fact?  clock-area -90 50 fiona-faces? and if  ['] save-clock or-sheets calm-hewie-up offer  then
     hiding-offered @  8 locked-request? and if  ['] remark-hide any-time offer  then
     c2f-3-medallion-found fact?  c2f-3-medallion fact? 0= and  fiona -9e 1e -11e 5e 5e touches? and if
         ['] medallion calm-only offer
@@ -258,12 +257,12 @@ own: stalker-gone             \ he has run out (the tutorial's end)
 : hewie-saved ( -- )
     15 screen:to-black-2 with-music or fade
     saved-movie scenes:opaque-when-movie saved-cutscene load-scene  wait-fade
-    hewie let-go  stalker let-go
-    fiona 0 idle  fiona wait-anim  west-door door-shut  doors-redone  1 knock  0 true no-shadow  panic-eased
+    hewie let-go  stalker let-go  0 summon-take
+    fiona 0 idle  fiona wait-anim  west-door door-shut  doors-redone  1 door-tried  0 true no-shadow  panic-eased
     if  saved-msg run-scene  then
     world-held state!  0 false no-shadow
     hewie activate  hewie well  hewie full-health  this-room @ 33 0 hewie-to  hewie $21 145 place-on-tri
-    hewie-commandable state!  $29 0 hewie-do  hewie-hold-still  hewie-freed fact!
+    hewie-commandable state!  $29 0 hewie-do  true hewie-stays-low  hewie-freed fact!
     fiona $13 -8 -16.325e -66.999e place-at  fiona 0 idle  fiona wait-anim
     0 prepare-exit  stalkers-blind state-off  stalker let-go  1 summon-take
     camera-restart  world-held state-off  traps-off state-off
@@ -271,7 +270,7 @@ own: stalker-gone             \ he has run out (the tutorial's end)
     15 screen:to-dim fade wait-fade  dog-commands-msg say  15 screen:from-dim fade wait-fade
     dog-commands-doc filed
     items-40-as-70 fact? if  15 screen:to-dim fade wait-fade  hard-warning-msg say  15 screen:from-dim fade wait-fade  then
-    hewie-file-2 give-file ;
+    false hewie-stays-low  hewie-file-2 give-file ;
 : told-to-attack ( frames -- )   \ (the tip shown until she gestures the attack, or the time is up)
     0 ?do  attack-tip-msg show  fiona-cmd-now @ attack-gesture = if  unloop exit  then  yield  loop ;
 : attack-tutorial ( -- )
@@ -289,7 +288,7 @@ own: stalker-gone             \ he has run out (the tutorial's end)
     fiona lying-low play  force-calm state-off  5 0 0 stage-music
     15 screen:from-black music-cut or fade  wait-fade
     240 told-to-attack
-    fiona rising start-anim  16 frames  attack-call room-bank fiona sound-by
+    fiona rising start-anim  16 frames  attack-call common-bank fiona sound-by
     hewie-no-attack state-off  $20 0 hewie-do  attack-tip-msg window send close-text  -1 shown-msg !
     fiona wait-anim  fiona stalker look-at
     fiona lying-low play
@@ -323,7 +322,7 @@ own: stalker-gone             \ he has run out (the tutorial's end)
     replay-var var@ case
         0 of  ['] replay-maid  endof   1 of  ['] replay-dressing  endof
         $F of  ['] replay-trapped  endof   $10 of  ['] replay-saved  endof  >r 0 r>
-    endcase  ?dup if  start drop  then ;
+    endcase  ?dup if  fiona start-holding drop  then ;
 
 
 \ ---- she comes in: which way decides what happens ----
@@ -365,3 +364,4 @@ forced-exit 1 or constant from-the-wire   \ (sent from the front garden, Hewie f
 : went ( -- )  keep-open ;
 
 ' came-in ' person-in ' each-frame ' went castle-2f-3 place!
+here  medallion-item , ' medallion , sparkle-fx ,  -1 ,  castle-2f-3 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

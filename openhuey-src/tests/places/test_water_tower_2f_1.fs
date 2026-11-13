@@ -2,7 +2,8 @@
 \ (on again as she leaves); the walkway half way on its turn (eased: 45 degrees); the lever pulled - the
 \ walkway across, then back; the crate broken - a creature let out; the Medallion and the Refined
 \ Antimony taken; the Medallion Hewie sniffs out; his bark at the walkway's far end; Riccardo heard
-\ prowling, then come for her by her way up, and back 1800 frames after he left; his side of the room.
+\ prowling, then come for her by her way up, and back 1800 frames after he left; his side of the room;
+\ her exit set by the walkway's side (the summoner's half of the room for her).
 \ Headless:
 \   build/openhuey --test tests/places/test_water_tower_2f_1.fs
 IN: test-water-tower-2f-1
@@ -51,7 +52,7 @@ fvariable ax  fvariable ay  fvariable az  fvariable bx  fvariable bz   \ (a gate
 : hewie-across ( area F: d -- )  {: a F: d :}  a gate!  d hewie-to-side  d fnegate hewie-to-side ;
 : lever-done ( -- flag )  [: turning @ 0= ;] in-place  doing-busy? 0= and ;
 free-play  10 run-frames  0 game:fiona send costume  stalkers-blind state-flag-set  summoner-on state-flag-set
-wt2f-1-flag2 story-flag-clear  wt2f-1-flag4 story-flag-clear  wt2f-1-breakable-broken story-flag-clear
+riccardo-come story-flag-clear  wt2f-1-flag4 story-flag-clear  wt2f-1-breakable-broken story-flag-clear
 wt2f-1-medallion-found story-flag-set  wt2f-1-medallion story-flag-clear  wt2f-1-refined-antimony story-flag-clear
 0 by-exit
 testing coming in by exit 0: the walkway home, its parts and floors so; the sparkles; the summoner off
@@ -59,6 +60,15 @@ T{ wt2f-1-flag3 story-flag?  walkway-angle 0e ~=  [: home-part part?  across-par
 T{ [: medallion-fx effect @ 0<>  antimony-fx effect @ 0<>  summoner-was-on @ ;] in-place  summoner-on state-flag? -> -1 -1 -1 0 }T
 testing the walkway half way on its turn: 45 degrees
 T{ [: 60 turn-step !  eased ;] in-place  45e ~= -> -1 }T
+testing her exit set by its side (room $C2's command 1): across exit 1, home 0 - at the pull and as it stops
+: her-exit-held ( -- exit )  game:summoner enter  summoner:her-exit @  leave-actor ;
+T{ [: -1 turning-back !  story.places.walkway:exit-follows  0 turning-back ! ;] in-place  deliver  her-exit-held -> 0 }T
+T{ [: 0 turning-back !  story.places.walkway:exit-follows ;] in-place  deliver  her-exit-held -> 1 }T
+T{ [: 0 turning-back !  story.places.walkway:exit-follows  -1 turning-back !  story.places.walkway:exit-follows  0 turning-back ! ;] in-place  deliver  her-exit-held -> 0 }T
+testing the Medallion's offer: zone 0 on its sparkle (105, height 5 - zone-at-effect), her feet 4.5 above it still in it
+: hers-at ( F: x y z -- )  game:fiona enter  body-place-at  leave-actor ;
+T{ 4.12e 109.5e -18.51e hers-at  [: 0 offer-xt !  spots  offer-xt @ ;] in-place -> ' pick-medallion }T
+T{ 4.12e 110.5e -18.51e hers-at  [: 0 offer-xt !  spots  offer-xt @ ;] in-place -> 0 }T
 full-suite   \ (on: waits, scenes, walks - the full run's)
 testing the lever pulled: the walkway across (its parts, the flags)
 T{ lever-area -90 at  circle press  [: lever-done ;] 900 soon -> -1 }T
@@ -99,7 +109,7 @@ lever-area -90 at  circle press  [: lever-done ;] 900 soon drop  [: hewie 200 0 
 T{ 0 0 at  [: room-id water-tower-2f-1 <> ;] 300 soon  [: self body-tri ;] his -> -1 874 }T
 game:hewie send part-from-fiona  60 run-frames
 testing Riccardo: heard prowling once she leaves the landing; stopped at the top; come for her by her way up
-wt2f-1-flag2 story-flag-set  wt2f-1-flag1 story-flag-clear  c7-second-event story-flag-clear
+riccardo-come story-flag-set  wt2f-1-flag1 story-flag-clear  c7-second-event story-flag-clear
 4 story.base:partner-load  5 run-frames  0 by-exit
 landing-area 5e across
 T{ [: ['] prowls running?  prowl-begun @ ;] in-place -> -1 -1 }T
@@ -111,7 +121,7 @@ T{ [: return-due @  return-wait @ 1700 1800 within ;] in-place -> -1 -1 }T
 [: 1 return-wait ! ;] in-place
 T{ [: [: stalker-in? ;] in-place ;] 120 soon  [: stalker body-tri ;] in-place -> -1 473 }T
 testing Hewie's side of the room: 1 in area , 0 out of it
-[: stalker let-go  1 summon-take ;] in-place  30 run-frames  wt2f-1-flag2 story-flag-clear  0 by-exit  game:hewie send join-fiona  60 run-frames
+[: stalker let-go  1 summon-take ;] in-place  30 run-frames  riccardo-come story-flag-clear  0 by-exit  game:hewie send join-fiona  60 run-frames
 T{ hewie-far-area 5e hewie-across  [: his-way @ ;] his -> 1 }T
 T{ hewie-far-area -5e hewie-across  [: his-way @ ;] his -> 0 }T
 test-summary

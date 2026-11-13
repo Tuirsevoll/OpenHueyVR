@@ -66,13 +66,16 @@ typedef struct CamDirector {
     /* who it follows and the characters' setups (the progress' +0x1130; Character +0xE8 / +0xEC) */
     int followed;       /* an actor, -1 nobody */
     int player;         /* Fiona: whom it falls back on */
-    int setups[HACTOR_MAX][2];
+    int setups[HACTOR_MAX][3];   /* by the actor's slot (forth_actor_slot): its id, its set, its path */
 } CamDirector;
 
 extern CamDirector gCamDir;
 
 /* no set, no path, no target (CamDirector_NewRoom: the start of play) */
 void camdir_new_room(CamDirector *d);
+/* the room's data is going (another room loading): its sets and paths let go - nothing of them
+ * is read until camdir_room_start takes the next room's */
+void camdir_room_gone(CamDirector *d);
 /* the room's camera sets (section 5) and paths (section 6, NULL: none) taken and the camera put
  * at the current set / path (CamDirector_RoomStart: each room) */
 void camdir_room_start(CamDirector *d, const float *sets, int nsets, const int32_t *paths);
@@ -84,6 +87,8 @@ void camdir_follow(CamDirector *d, int target, Vec3 offset);
 void camdir_char_setup(CamDirector *d, int who, int set, int path);
 /* every character's setup gone (a room change) */
 void camdir_forget_setups(CamDirector *d);
+/* actor who's setup: its set and path (-1 -1: none - or the slot another's now) */
+void camdir_setup_of(const CamDirector *d, int who, int *set, int *path);
 /* whom it follows, checked (Progress_CameraFollow): nobody stays nobody; someone gone, elsewhere
  * or - not Fiona - without a setup: Fiona (and followed) */
 int camdir_follow_check(CamDirector *d, int who);

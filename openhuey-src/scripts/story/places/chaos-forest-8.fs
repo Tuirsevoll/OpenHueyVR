@@ -62,7 +62,7 @@ create crates  ' crate-1 , ' crate-2 , ' crate-3 , ' crate-4 , ' crate-5 , ' cra
 : pick-jerky ( -- )  chicken-jerky cf-8-chicken-jerky jerky-fx -275.5e -96e picks-up ;
 : spots ( -- )
     fiona sundial-area 50 faces-area? if
-        sundial-examined fact? if  ['] save-clock calm-hewie-up offer  else  ['] the-sundial unhurried offer  then
+        sundial-examined fact? if  ['] another-clock calm-hewie-up offer  else  ['] the-sundial unhurried offer  then
     then
     crate-1 broken? if
         cf-8-medallion fact? 0=  fiona -367e 1e -118.7e 5e 5e touches? and if  ['] pick-medallion calm-only offer  then
@@ -89,9 +89,10 @@ create entries  0 , 0 ,  1 , 1 ,   \ (by exit 0, 1: the camera)
 : each-frame ( -- )  ways  maze-frame  spots ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     entries 2 ways-in
     found-file-247 fact? 0= if  ['] hewie-found start drop  then ;
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went chaos-forest-8 place!
+here  medallion , ' pick-medallion , medallion-fx ,  chicken-jerky , ' pick-jerky , jerky-fx ,  -1 ,  chaos-forest-8 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

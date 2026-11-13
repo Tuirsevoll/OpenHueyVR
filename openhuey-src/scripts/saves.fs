@@ -66,6 +66,7 @@ variable was-costume   fvariable was-x  fvariable was-y  fvariable was-z  fvaria
 variable was-hewie     fvariable hw-x   fvariable hw-y   fvariable hw-z   fvariable hw-yaw
 variable was-trust  variable was-points  variable was-hp
 variable hw-room  variable hw-tri  variable hw-side  create hw-mood 7 cells allot   \ (a save without them: her room, calm)
+variable hw-cond  variable hw-door   \ (his condition, the exit he came in by - Hewie_SaveState's +0xC4, +0x838; a save without them: well, none)
 create was-skills  6 cells allot   \ (a save without them: 16 each, as he starts)
 create was-met  4 cells allot      \ (a save without them: none)
 variable was-stalker   \ his kind (-1: none loaded)
@@ -73,6 +74,7 @@ variable sw-in  variable sw-room  variable sw-tri  variable sw-hp  variable sw-m
 create sw-more 8 cells allot   variable sw-more?   \ (a save without them: as he was)
 create sm-was 7 cells allot   variable sm-was?        \ the summoner's record (progress +0x764)
 variable was-map-page                                \ the map's page she was on (the save's +0x18F0; -1 none)
+variable was-spare                                   \ the room loaded ahead (-1 none: a save without it)
 create pn-was 7 cells allot   variable pn-was?        \ her panic (progress +0x7B0)
 
 : progress-clear ( -- )  progress progress-size 0 fill ;
@@ -81,16 +83,17 @@ create pn-was 7 cells allot   variable pn-was?        \ her panic (progress +0x7
     parse-name 2dup fact-named dup 0< if  drop ." save: no fact named " type cr exit  then  nip nip story-flag-set ;
 : fact-number ( n -- )  story-flag-set ;   \ (one not named yet)
 : in-room ( room -- )
-    dup was-room !  hw-room !  -1 hw-tri !  2 hw-side !  hw-mood 7 cells 0 fill
+    dup was-room !  hw-room !  -1 hw-tri !  2 hw-side !  hw-mood 7 cells 0 fill  0 hw-cond !  -1 hw-door !
     false was-hewie !  -1 was-stalker !  6 0 do  16 i cells was-skills + !  loop  was-met 4 cells 0 fill
-    false sm-was? !  -1 was-map-page !  false pn-was? ! ;
+    false sm-was? !  -1 was-map-page !  false pn-was? !  -1 was-spare ! ;
 : fiona-was ( costume -- ) ( F: x y z yaw -- )  was-yaw f!  was-z f!  was-y f!  was-x f!  was-costume ! ;
 : hewie-was ( trust points hp -- ) ( F: x y z yaw -- )
     hw-yaw f!  hw-z f!  hw-y f!  hw-x f!  was-hp !  was-points !  was-trust !  true was-hewie ! ;
 
 : hewie-skills ( s0 s1 s2 s3 s4 s5 -- )  0 5 do  i cells was-skills + !  -1 +loop ;
 : hewie-met ( m0 m1 m2 m3 -- )  0 3 do  i cells was-met + !  -1 +loop ;
-: fiona-camera ( set path -- )  s" fiona" actor-named -rot cam-char-setup ;   \ (her camera setup: the save's +0x1A0)
+: hewie-cond ( cond door -- )  hw-door !  hw-cond ! ;
+: fiona-camera ( set path -- )  fiona-id -rot cam-char-setup ;   \ (her camera setup: the save's +0x1A0)
 : hewie-state ( room tri side mood time hide f0 f1 f2 f3 -- )
     0 6 do  i cells hw-mood + !  -1 +loop  hw-side !  hw-tri !  hw-room ! ;
 
@@ -98,6 +101,7 @@ create pn-was 7 cells allot   variable pn-was?        \ her panic (progress +0x7
 : stalker-more ( cond hp-max rage temper hits mode-t down-t yaw -- )  0 7 do  i cells sw-more + !  -1 +loop  true sw-more? ! ;
 : summoner-was ( away called cooldown room waited mode kind -- )  0 6 do  i cells sm-was + !  -1 +loop  true sm-was? ! ;
 : map-page-was ( page -- )  was-map-page ! ;
+: spare-was ( room -- )  was-spare ! ;
 : panic-was ( stage left hold beat level passing lasting -- )  0 6 do  i cells pn-was + !  -1 +loop  true pn-was? ! ;
 
 \ ---- writing ----
@@ -134,17 +138,18 @@ create pn-was 7 cells allot   variable pn-was?        \ her panic (progress +0x7
 \ ---- loading: the progress back, the room played, then everyone put where they were ----
 : place-msg ( F: x y z yaw -- ) ( -- x y z yaw )  {: F: x y z yaw :}  x f>cell y f>cell z f>cell yaw f>cell ;
 : panic-back ( -- )   \ (her panic as the save had it; a save without it: calm, as a new game)
-    pn-was? @ 0= if  s" panic" actor-named send panic-reset exit  then
-    7 0 do  i cells pn-was + @  loop  s" panic" actor-named send panic-restore ;
+    pn-was? @ 0= if  panic-id send panic-reset exit  then
+    7 0 do  i cells pn-was + @  loop  panic-id send panic-restore ;
 : summoner-back ( -- )   \ (its record, as the save's progress keeps it; a save without it: its time away rolled anew)
     sm-was? @ 0= if  summoner-timing state-flag-clear exit  then
-    7 0 do  i cells sm-was + @  loop  s" summoner" actor-named send summoner-restore ;
+    7 0 do  i cells sm-was + @  loop  summoner-id send summoner-restore ;
 \ he is in the game, out of her room, and down or held off: the summoner takes him (SceneGame_EnterRoom)
 : takes-him? ( -- flag )
     was-stalker @ 0< sw-in @ 0= or  sw-room @ was-room @ = or if  false exit  then
     sw-mode @ held-off =  sw-more? @ sw-more @ down-cond = and  or ;
 : put-back ( -- )
-    was-map-page @ 0< 0= if  was-map-page @ s" subscreen" actor-named send map-turn-to  then   \ (SceneGame_RoomIn: Map_TurnTo)
+    was-spare @ dup 0< if  drop  else  rooms-id send room-preload  then   \ (its forced ways lead back)
+    was-map-page @ 0< 0= if  was-map-page @ subscreen-id send map-turn-to  then   \ (SceneGame_RoomIn: Map_TurnTo)
     was-costume @ fiona-id send costume
     was-x f@ was-y f@ was-z f@ was-yaw f@ place-msg fiona-id send place
     was-hewie @ if
@@ -156,6 +161,7 @@ create pn-was 7 cells allot   variable pn-was?        \ her panic (progress +0x7
         was-trust @ was-points @ was-hp @ hewie-id send hewie-restore
         6 0 do  i cells was-skills + @  loop  hewie-id send hewie-skills
         4 0 do  i cells was-met + @  loop  hewie-id send hewie-met
+        hw-cond @ hewie-id send set-cond  hw-door @ hewie-id send hewie-came-by
     else  hewie-id send part-from-fiona  then
     was-stalker @ 0< if  slot-unload summoner-back exit  then   \ (the stalker's slot: as it was)
     was-stalker @ partner-load   \ (the summoner afresh, then as it was)
@@ -170,6 +176,7 @@ state: saves-state
   cell field step
   cell field wait-t     \ frames left
   cell field sender-asked   \ who asked for the save (told `game-saved` once it is written; -1 none)
+  cell field system-held    \ the system data not written as it changes (the ending's: `hold-system`)
 end-state
 
 : write-save-file ( -- )
@@ -182,6 +189,7 @@ end-state
 : saved ( -- )  end-file  ." saved " save-path type cr  not-saving step !  sender-asked @ dup 0< if  drop  else  send game-saved  then ;
 : quick-save ( -- )  -1 save-path-n !  -1 sender-asked !  write-save-file ;
 : save-slot ( n place -- )   \ (a save point's: into slot n, made at that place)
+    stalkers-stay state-flag-clear   \ (SceneGame_Save: flag $18 cleared as the game is saved - in play too)
     over save-path-n !  progress pr.play-frames l@  slot-was  write-index  write-save-file ;
 \ the resident flags are the system data's (the unlocks), not the save's: a load leaves them be
 create unlocks resident-flags 8 / allot
@@ -209,8 +217,14 @@ create records-written 36 allot          \ (and the mini-game's best times)
     progress pr.resident resident-flags 8 / written over compare 0<>
     run-records 36 records-written 36 compare 0<> or
     options #options cells options-written over compare 0<> or ;
+\ as it changes, unless held (the ending: its unlocks kept only if the clear data is saved - memcard.c's
+\ BootCard_StateSave with the card hidden writes the system data alone; not saved, they are the game's
+\ till the system data is next written, as the original's till its next save)
+: system-frame ( -- )  system-held @ 0=  unlocks-changed? and if  write-system  then ;
+: system-kept ( keep? -- )
+    0 system-held !  if  write-system  sender send game-saved  else  system-written  then ;
 : options-out ( -- )   \ (to the sub screen's options page)
-    options? @ 0= if  exit  then  options>stack  s" subscreen" actor-named send options-restore ;
+    options? @ 0= if  exit  then  options>stack  subscreen-id send options-restore ;
 : read-system ( -- )
     system-path file-exists?  testing? 0= and if  system-path included  then
     system-written  options-out ;
@@ -231,22 +245,24 @@ create records-written 36 allot          \ (and the mini-game's best times)
     subscreen-wanted state-flag-clear   \ (a save point's save was made with the save screen up: not again)
     new-game-sounds state-flag? 1 and sound-set!   \ (SceneGame_StateEntry: bank 4's set by the flag - bare feet or boots)
     broadcast game-loaded
-    was-room @ -1 s" rooms" actor-named send go-to-room  entering step ! ;
+    was-room @ -1 rooms-id send go-to-room  entering step ! ;
 : quick-load ( -- )  -1 save-path-n !  load-file ;
 : load-slot ( n -- )  save-path-n !  load-file ;
 
 behaviour saving
   on spawned ( -- )  not-saving step !  -1 sender-asked !  self subscribe tick  self subscribe held-tick  self subscribe entered-room  read-system  read-index ;
   on held-tick ( -- )   \ (the world held - the ending's results, a menu: the unlocks kept all the same; a save point's save written)
-      unlocks-changed? if  write-system  then
+      system-frame
       step @ writing = if  saved  then ;
   on save-to-slot ( n place -- )  sender sender-asked !  save-slot ;
   on load-from-slot ( n -- )  load-slot ;
   on save-to-file ( addr len -- )  path-named  sender sender-asked !  write-save-file ;
   on load-from-file ( addr len -- )  path-named  load-file ;
   on options-changed ( vib out vol x y layout -- )  options-were ;   \ (written with the unlocks, below)
+  on hold-system ( -- )  -1 system-held ! ;
+  on keep-system ( keep? -- )  system-kept ;
   on tick ( -- )
-      unlocks-changed? if  write-system  then
+      system-frame
       step @ case
           not-saving of
               key: F5 key-pressed? if  quick-save exit  then
@@ -256,7 +272,7 @@ behaviour saving
                   put-back  ." loaded " save-path type cr  not-saving step !
                   takes-him? if  2 wait-t !  taking step !  then   \ (once he has told the summoner he is in)
               then  endof
-          taking of  -1 wait-t +!  wait-t @ 0> 0= if  0 s" summoner" actor-named send summoner-take  not-saving step !  then  endof
+          taking of  -1 wait-t +!  wait-t @ 0> 0= if  0 summoner-id send summoner-take  not-saving step !  then  endof
       endcase ;
   on entered-room ( room exit -- )   \ (a couple of frames for the room's own entry, then ours)
       2drop  step @ entering = if  2 wait-t !  settling step !  then ;

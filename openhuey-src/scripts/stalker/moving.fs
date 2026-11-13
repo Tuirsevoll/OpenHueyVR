@@ -5,6 +5,8 @@
 IN: stalker.moving
 USING: engine game-state actors messages common facts flag-names paths vectors stalker-names stalker.state stalker.senses stalker.tables stalker.anims floor-flags ;
 
+: debilitas-class? ( -- flag )   \ (the Debilitas classes - Debilitas, Debilitas2 / 3: their own ChaseTarget, HeadingStep)
+    my-kind @  dup debilitas-kind =  over debilitas-6-kind = or  over debilitas-7-kind = or  swap debilitas-27-kind = or ;
 : model ( -- a )  my-model @ actor ;
 $40 constant motion-frozen   \ (his motion's flag: held still - a blow of his struck home)
 : unfrozen ( -- )  model act.mflags dup l@ motion-frozen invert and swap l! ;
@@ -91,7 +93,7 @@ create left-at /vec allot  create right-at /vec allot
     dup grass-floor and if  wood-floor and if  $14 6  else  8 7  then
     else  metal-floor and case  metal-floor of  6  endof  stone-floor of  4  endof  wood-floor of  2  endof  >r 0 r>  endcase  7  then
     swap step-foot @ 1 and +  swap  1 step-foot +! ;
-: step-pace ( F: -- 0..1 )  stride 0.6e f- 0.8e f/  0e fmax 1e fmin ;
+: step-pace ( F: -- pace )  stride 0.6e f- 0.8e f/  0e fmax 1e fmin ;   \ (0 to 1)
 : floor-under ( v -- flags )  v-tri dup 0< if  drop self body-tri  then  nav-flags ;
 \ on a ladder the rungs' sound (10) - but getting on or off at its foot with the foot over the
 \ floor out from it, the floor's (off there: under the foot from the foot's spot); off at its
@@ -107,7 +109,7 @@ create lf-at /vec allot
     {: v :}
     at-ladder @ 0  3 ladder-offset nav-link-front  dup 0< if  drop fdrop fdrop fdrop false exit  then
     lf-at vec!  lf-at v 0 v-walk 0< 0= ;
-: ladder-floor ( v -- flags | -1 | rungs )
+: ladder-floor ( v -- flags )   \ (-1: the floor under the foot; rungs)
     anim @ case
         on-top-anim of  drop settled? if  rungs  else  -1  then  endof
         rung-down-anim of  drop rungs  endof   rung-down-2-anim of  drop rungs  endof
@@ -132,7 +134,7 @@ create lf-at /vec allot
     flooded? if  1 over water-step  then
     step-sound
     world-held state-flag? hushed @ or if  2drop  else  0  step-pace 2e f* f>s $7F and  my-at vec@ sound-at  then
-    step-pace 0.5e f< if  step-noise  else  stride-noise  then  room-id self body-tri -1 stalker-noise s" acoustics" actor-named send noise ;
+    step-pace 0.5e f< if  step-noise  else  stride-noise  then  room-id self body-tri -1 stalker-noise acoustics-id send noise ;
 
 \ ---- turning (Npc_TurnTowardPos: toward a point by at most `step`; how far is left) ----
 : heading-to ( v -- ) ( F: -- a )  self swap body-heading-to ;
@@ -176,6 +178,28 @@ create sp-at /vec allot
     sp-at put-at
     my-path path-i!
     my-path path-left? 0= ;
+
+\ Npc_Senses' modes 2 / 3 (his walks to a goal - a search's stop, a door): each frame, is the way
+\ ahead still his to walk (Npc_PathClear: the point 30 on along it on floor his mask allows - a
+\ door shut on it meanwhile, a box pushed there, a floor the story barred)? If not, his way to his
+\ goal is planned again (vtable +0xD8); none: false - his walk there is given up
+: way-blocked? ( -- flag )
+    my-path path-left? 0= if  false exit  then
+    30e my-path my-at path-ahead drop  ahead self body-mask v-tri-in 0< ;
+: keep-way ( -- ok? )
+    way-blocked? 0= if  true exit  then
+    goal-tri @ dup 0< if  drop false exit  then  goal-at plan 0> ;
+
+\ Pursuer_KeepOnWalkable (each frame in the room played): his triangle barred to him meanwhile - a
+\ door shut on it, a floor the story barred - and he not through anything (+0x2B): onto the middle
+\ of the nearest triangle he may stand on; none, false (his owner puts him anywhere: Actor_TeleportRandom)
+create kw-at /vec allot
+: keep-on-floor ( -- ok? )
+    noclipped @ apart @ or if  true exit  then
+    self body-tri dup 0< if  drop true exit  then
+    nav-flags self body-mask and 0= if  true exit  then
+    self body-tri my-at kw-at self body-mask walkable  dup 0< if  drop false exit  then
+    room-id swap dup tri-center body-place  my-path path-clear  true ;
 
 \ Npc_StepToward: turned toward a point (past 45 degrees only turning, twice as fast); a stride
 \ at it - onto it when it is within the stride

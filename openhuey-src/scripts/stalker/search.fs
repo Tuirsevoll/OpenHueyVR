@@ -13,8 +13,7 @@ enum: search-phase#  no-search to-stop at-the-stop ;
 \ ---- his route (8 stops: a triangle, and whether it was picked at random) ----
 : stop ( k -- addr )  2* cells stops + ;
 : route-clear ( -- )   \ Pursuer_ClearRoute
-    8 0 do  -1 i stop !  0 i stop cell+ !  loop  0 route-next !  0 route-end ! ;
-: stops-left ( -- n )  route-end @ route-next @ - ;
+    8 0 do  -1 i stop !  0 i stop cell+ !  loop  0 route-next !  0 route-end !  0 search-cap ! ;
 : route-add ( tri random? -- )   \ Npc_RouteAdd (full, or no triangle: not added)
     over 0<  route-end @ 8 < 0= or if  2drop exit  then
     route-end @ stop  tuck cell+ !  !  1 route-end +! ;
@@ -66,11 +65,11 @@ enum: search-phase#  no-search to-stop at-the-stop ;
 \ Pursuer_CloseInGoal: along his way; slowed to a stand within 10 of the goal; over once the
 \ stand has faded in (a stop picked at random: at most 150 frames' walk)
 : walking ( -- )
+    keep-way 0= if  my-path path-clear  -1 step-done !  exit  then   \ (no way on to it: this stop given up - Pursuer_StopSkipped)
     walk-stride drop
     way-left 10e f<  anim @ walk-slow = and if  still-anim play  then
     anim @ still-anim = settled? and  my-path path-left? 0= or if  -1 step-done !  then ;
 \ the turn on the spot: turned by it until it ends or he faces the way, then his walk
-create to-at /vec allot
 : turning ( -- )
     root-move
     settled? 0= if  exit  then
@@ -87,7 +86,20 @@ create to-at /vec allot
 \ the look about at a stop (Pursuer_StateWalkGesture: Debilitas_AttackTable's gestures) to its
 \ end; or standing a moment (Pursuer_WalkAside)
 : gesturing ( -- )   root-move  ended? if  -1 step-done !  then ;
-: standing ( -- )   1 step-t +!  settled? step-t @ 30 > and if  -1 step-done !  then ;
+\ (Pursuer_WalkAside, then Pursuer_LookAround: his look about him - his head swept by a cosine for his look's
+\ frames and half again (60: Debilitas_LookFrames), a full swing (0.12: LookSwing) in its middle half, half one
+\ at its ends - his sight with it -, then eased back straight by a swing a frame; done once it is)
+60 constant look-frames   0.12e fconstant look-swing
+: swing-now ( t -- ) ( F: -- a )   \ (this frame's turn)
+    {: t :}  t look-frames 2/ look-frames within if  look-swing  else  look-swing f2/  then
+    t look-frames 4 / + s>f  2e pi f* look-frames s>f f/ f*  angle-wrap fcos f* ;
+: standing ( -- )
+    as-was-look look-mode !   \ (his head his look's: not eased back by his head look)
+    ended? 0= if  root-move  then   \ (his stance's motion till it runs out)
+    step-t @ look-frames 3 * 2/ < if
+        step-t @ swing-now  head-yaw f@ f+ angle-wrap head-yaw f!  1 step-t +!  exit
+    then
+    head-yaw 0e look-swing ease  head-yaw f@ f0= if  0 step-t !  -1 step-done !  then ;
 : searched ( -- )   \ (50 walk on, 20, 20 and 10 a look about)
     rnd 100e f*
     fdup 50e f< if  fdrop -1 gesture !  still-anim play  ['] standing step!  exit  then
@@ -126,6 +138,13 @@ create to-at /vec allot
         endof
     endcase ;
 : search-start ( -- )  0 route-done !  to-next-stop ;
+\ his search of her room given 30 seconds (Pursuer_ModesSearching, Pursuer_SearchRouteIn, Pursuer_SearchOffscreen:
+\ +0x1794 1800 with stops to make); out (Stalker_ThinkTimers), the stop he is making for is his last
+1800 constant search-frames
+: capped ( -- )  search-frames search-cap ! ;
+: cap-down ( -- )
+    search-cap @ 0= if  exit  then  -1 search-cap +!
+    search-cap @ 0=  route-next @ route-end @ < and if  route-next @ 1+ route-end !  then ;
 
 \ ---- to where she is (Pursuer_ChaseFiona: after her but not seeing her): toward her on foot,
 \ his way re-planned every 30 frames; standing facing her within 15. Seeing her, his chase
@@ -138,9 +157,14 @@ defer out-cancelled ( -- )   ' noop is out-cancelled      \ (his way out given u
 : toward-her ( -- )
     -1 step-t +!  step-t @ 0> if  exit  then  30 step-t !
     round-to-her if  exit  then
-    fiona body-tri dup 0< if  drop exit  then  fiona body-at plan 0> 0= if  out-of-reach drop exit  then   \ (none: round by a ladder -
-    \ Pursuer_WalkToGoal)
-    d-fiona f@ 15e f< d-fiona f@ f0< 0= and if  still-anim play  my-path path-clear  else  mode-walk play  then
+    fiona body-tri dup 0< if  drop exit  then
+    fiona body-at plan 0> 0= if   \ (none: round by a ladder - Pursuer_WalkToGoal; else he stands, not walking on the spot)
+        out-of-reach 0= if  still-anim play  then  exit
+    then
+    \ (there by his way left - the walkable point nearest her, Debilitas_HeadForFiona's Npc_NearestWalkable: within
+    \ 10 of it he stands, Pursuer_BehaviourRun's +0x1590 - not by how far she is: hidden under a bed there is no
+    \ way to her at all, and he walked on against it)
+    way-left 10e f<  d-fiona f@ 15e f< d-fiona f@ f0< 0= and  or if  still-anim play  my-path path-clear  else  mode-walk play  then
     her-unseen @  d-fiona f@ 10e f<  d-fiona f@ f0< 0= and and  my-mode @ after-her = and if  0 mode-t !  then ;   \ (there, and she's not: Pursuer_BehaviourRun)
 : chase-step ( -- )   \ (the step while after her)
     my-path path-left? if  walk-stride drop  else  fiona body-at turn-rate turn-to fdrop  then
@@ -162,38 +186,48 @@ defer after-her-elsewhere ( -- went? )   ' false is after-her-elsewhere   \ (the
 defer lead-taken? ( -- flag )   ' false is lead-taken?   \ (a lead he heard: stalker/leads.fs)
 defer starting? ( -- flag )   ' false is starting?      \ (starting at one)
 defer leads-forgotten ( -- )   ' noop is leads-forgotten
-: search-again ( -- )  leads-forgotten  -1 drawn-tri !  searching mode!  route-clear  search-stops add-stops  search-start ;
+: search-again ( -- )  leads-forgotten  -1 drawn-tri !  searching mode!  route-clear  search-stops add-stops  capped  search-start ;
+\ his lead as he loses her (Pursuer_StanceStep / ModesSearching's mode 0): searching her room 3, alarm 4;
+\ out of her sight - his clock out there, no way to her, she gone by a door - 2, alarm 3 (Hewie's
+\ pull, 1, no longer draws him; the original forgets it only at what it led to: Pursuer_PlanToGoal)
+: lead-searching ( -- )  3 lead !  4 lead-alarm ! ;
+: lead-trailing ( -- )  2 lead !  3 lead-alarm ! ;
+: gave-her-up ( -- )  search-again  lead-searching ;   \ (his clock out in her room)
 \ met in a room he was searching out of her sight (Pursuer_SearchOffscreen): on with the stops his
 \ time left there would take (150 frames each); none, he is waiting about
 : search-left ( frames -- )
-    150 / dup 0> if  leads-forgotten  -1 drawn-tri !  searching mode!  route-clear  add-stops  search-start exit  then
+    150 / dup 0> if  leads-forgotten  -1 drawn-tri !  searching mode!  route-clear  add-stops  capped  search-start exit  then
     drop  waiting-about mode!  route-clear  -1 route-done ! ;
-\ the doll (Thing03_StalkerCheck): searching the room being played, he sees it and has a way
-\ there - it is his one stop, his search going on from it
+\ the doll (Thing03_StalkerCheck, stalker.fs `doll-check`): he goes for it - his one stop, his
+\ search going on from it
 create drawn-at /vec allot
 : go-for-doll ( tri -- )
-    here-played? 0=  my-mode @ heading-for-her held-off within 0= or  over drawn-tri @ = or if  drop exit  then
-    dup tri-center drawn-at vec!
-    drawn-at in-view? 0= if  drop exit  then
-    dup drawn-at plan 0> 0= if  drop exit  then
+    dup drawn-tri @ = if  drop exit  then
     dup drawn-tri !  searching mode!  route-clear  0 route-add  search-start ;
-\ down (+0xC4 2): waiting about, nothing else (Pursuer_ModesSearching - in the room or out of it)
+\ down (+0xC4 2): waiting about, his leads forgotten, nothing else (Pursuer_ModesSearching - in the room or out of it)
 : down-waits? ( -- flag )
-    cond @ down-cond = dup if  my-mode @ waiting-about <> if  waiting-about mode!  then  then ;
+    cond @ down-cond = dup if  my-mode @ waiting-about <> if  waiting-about mode!  leads-forgotten  then  then ;
+: no-way-search? ( -- flag )  my-mode @ searching =  search-phase @ no-search <> and  d-fiona f@ f0< and ;
 : modes ( -- )
     here-played? 0= if  exit  then
     down-waits? if  exit  then
     at-a-ladder? if  exit  then   \ (to a ladder or on it: over first)
     reeling @ at-dog @ or if  exit  then   \ (struck: his reaction first; after Hewie)
     entering @ if  exit  then   \ (coming in by a shut door: in first - opened, or barged open: action $C)
+    door-script @ if  exit  then   \ (a door he is about - the story's, or the one he came in by: that first)
     out-going @ if   \ (on his way out by a door: that first - unless he's only wandering off, when the
         wandering-out @ 0=  sees-fiona @ did-hear @ or 0=  or if  exit  then   \ sight of her or a noise
         out-cancelled  0 wandering-out !                                     \ turns him back: Pursuer_PickTarget)
     then
     start-t @ 0> if  starting? if  exit  then  0 start-t !  then   \ (starting at something he heard or saw: that
     \ first - unless something else has him now)
-    sees-fiona @  my-mode @ held-off <> and if   \ (held off: going away, not after her)
-        my-mode @ after-her <> if  after-her mode!  route-clear  then
+    \ (seen with no way to her on foot, his chase gave her up for a search of the room - Pursuer_ChaseFionaHere:
+    \ that goes on, stop by stop, while there is still none; the original's search turns back to the
+    \ chase only between its steps - Pursuer_BehaviourSearch - never each frame)
+    sees-fiona @  my-mode @ held-off <> and  no-way-search? 0= and if   \ (held off: going away, not after her)
+        \ (after her already, the sight of her is no news: no start at it - the original's comes only out
+        \ of his search, Pursuer_BehaviourSearch's action $1C; his lead is 6 / 7 while he is after her)
+        my-mode @ after-her <> if  after-her mode!  route-clear  else  7 lead-alarm @ max lead-alarm !  then
         chasing? 0= if  chase-begin  then  after-t exit
     then
     chasing? if  lost-her  then   \ (lost sight of her: to where she is)
@@ -203,11 +237,13 @@ create drawn-at /vec allot
     then
     my-mode @ held-off <> if  lead-taken? if  exit  then  then   \ (held off a lead moves him no more than the sight of her: no mode of Pursuer_ModesSearching's follows it)
     my-mode @ case
-        after-her of  tick-down if  search-again  then  endof
+        after-her of  tick-down if  gave-her-up  then  endof
         heading-for-her of  search-again  endof
         searching of  route-done @ if  0 route-done !  waiting-about mode!  leave-at-random  then  endof   \ (his route over:
         \ Pursuer_GoAfterFiona - Pursuer_PlanWhere's mode 3 - out of the room by an exit at random)
-        waiting-about of  route-done @ if  0 route-done !  leave-at-random  then  endof   \ (no clock here: a lead or
+        \ (waiting about with nothing under way - put so by the story or come to a stand - he doesn't stay
+        \ standing in her room: Pursuer_PickStep's mode 3 with his route used up is Pursuer_GoAfterFiona)
+        waiting-about of  route-done @  search-phase @ no-search = or if  0 route-done !  leave-at-random  then  endof   \ (no clock here: a lead or
         \ the sight of her moves him on; his route over, out as above)
         held-off of  endof   \ (held off he keeps to it, on his way home - no clock: Pursuer_ModesSearching's
     endcase ;              \ mode 4 waits for his clock to be emptied, by Debilitas_CarryOn finding no way home)

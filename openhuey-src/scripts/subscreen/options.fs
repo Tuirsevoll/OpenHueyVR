@@ -3,8 +3,8 @@
 \ here), vibration, the sound out, the volume, the screen's position. The cross edits a row and
 \ the arrows change it; the square asks to put them all back. Kept in the system data
 \ (saves.fs, as the original's +0x30: told each change, given them back as the game starts); the
-\ vibration and the volume take effect at once (SubScreen_ApplyOptions) - the sound out and the
-\ screen's position have nothing here to change.
+\ vibration, the sound out and the volume take effect at once (SubScreen_ApplyOptions) - the screen's
+\ position has nothing here to change.
 IN: subscreen.options
 USING: engine actors messages keys facts subscreen.state subscreen.art subscreen.input subscreen.box ;
 
@@ -21,11 +21,12 @@ create run-layouts
     $61 , $4B , $4C , $4D , $71 , $4E , $4F ,   $62 , $4D , $4C , $4B , $71 , $4E , $4F ,
     $63 , $4B , $4E , $4D , $4C , $71 , $4F ,   $64 , $4C , $4F , $4B , $4D , $71 , $4E ,
 : action-name ( i -- msg )  layout @ 7 * + cells  hewie-played? if  run-layouts  else  layouts  then  + @ ;
-: apply ( -- )   \ (SubScreen_ApplyOptions: the vibration on or off, everything heard at the volume)
-    vibration @ 0<> rumble-allowed!  volume @ s>f 128e f/ game-volume! ;
+: apply ( -- )   \ (SubScreen_ApplyOptions: the vibration on or off, the sound out - SndDriver_SetOutputMode:
+    \ how a placed sound's sides combine, mono at 0 - everything heard at the volume)
+    vibration @ 0<> rumble-allowed!  sound-out @ sound-out!  volume @ s>f 128e f/ game-volume! ;
 : defaults ( -- )  1 vibration !  1 sound-out !  128 volume !  0 pos-x !  0 pos-y !  0 layout !  apply ;
 : kept ( -- )   \ (to the system data)
-    vibration @ sound-out @ volume @ pos-x @ pos-y @ layout @  s" saves" actor-named send options-changed ;
+    vibration @ sound-out @ volume @ pos-x @ pos-y @ layout @  saves-id send options-changed ;
 : restore ( vib out vol x y layout -- )  layout !  pos-y !  pos-x !  volume !  sound-out !  vibration !  apply ;
 
 : say ( msg x y -- )  {: msg x y :}  msg menu-line x y false text ;
@@ -59,28 +60,40 @@ variable line-y
     $82 menu-line $46 $186 false text
     vr? if  3 s" Page Up: set height"  $30  $1B8  $D8D0C8FF 2 ui-text  then ;
 
+: put-back ( answer -- )  0= if  defaults kept  then  back-to-page ;
+\ ---- a row edited (Options_StateVibration / Sound / Volume / Position): each change heard or seen at
+\ once; the cross keeps it, the triangle - or Select - puts back what it was (opt_cancelled) ----
+create was 5 cells allot   \ (the settings as the edit began: vibration, sound out, volume, x, y)
+: snapshot ( -- )  vibration @ was !  sound-out @ was cell+ !  volume @ was 2 cells + !  pos-x @ was 3 cells + !  pos-y @ was 4 cells + ! ;
+: undo ( -- )  was @ vibration !  was cell+ @ sound-out !  was 2 cells + @ volume !  was 3 cells + @ pos-x !  was 4 cells + @ pos-y !  apply ;
+: toggled ( -- )   \ (turned on: the pad buzzes)
+    vibration @ 0= 1 and vibration !  apply  vibration @ if  0 true 4 rumble-buzz  0 $80 4 rumble  then  se-cursor ;
+: sound-round ( d -- )  sound-out @ + 3 + 3 mod sound-out !  apply  se-cursor ;   \ (0 mono, 1 stereo, 2 surround, round)
+2 constant volume-step   \ (1/64 of full: 128 here)
+: volume-by ( d -- )   \ (down from 0 its sound still; up at full none)
+    dup 0< volume @ 128 < or if  se-cursor  then
+    volume-step * volume @ + 0 max 128 min volume !  apply ;
+: nudge ( d addr -- )   \ (the screen's position, -32..32: a sound each step it takes)
+    {: d a :}  a @ d + dup -32 32 1+ within if  a !  se-cursor  else  drop  then ;
 : change ( d -- )   \ the row's setting changed (left / right)
     opt-row @ case
-        1 of  drop  vibration @ 0= 1 and vibration !  apply
-              vibration @ if  0 true 4 rumble-buzz  0 $80 4 rumble  then  endof   \ (turned on: the pad buzzes)
-        2 of  sound-out @ + 0 max 2 min sound-out !  endof
-        3 of  16 * volume @ + 0 max 128 min volume !  apply  endof
-        4 of  pos-x @ + -32 max 32 min pos-x !  endof
+        1 of  drop toggled  endof
+        2 of  sound-round  endof
+        3 of  volume-by  endof
+        4 of  pos-x nudge  endof
         >r drop r>
-    endcase  kept ;
-: put-back ( answer -- )  0= if  defaults kept  then  back-to-page ;
+    endcase ;
+: cancelled? ( -- flag )  back?  select-button button-pressed? or ;
 : editing-keys ( -- )
-    left? if  -1 change  se-cursor  then
-    right? if  1 change  se-cursor  then
+    left? if  -1 change  else  right? if  1 change  then  then
     opt-row @ 4 = if   \ (the position: up / down too)
-        up? if  pos-y @ 1- -32 max pos-y !  kept  then
-        down? if  pos-y @ 1+ 32 min pos-y !  kept  then
+        up? if  -1 pos-y nudge  else  down? if  1 pos-y nudge  then  then
     then
-    confirm? if  0 opt-editing !  se-decide  then
-    back? if  0 opt-editing !  se-cancel  then ;
+    confirm? if  kept  0 opt-editing !  se-decide exit  then
+    cancelled? if  undo  0 opt-editing !  se-cancel  then ;
 : options-keys ( -- )
     opt-editing @ if  editing-keys exit  then
-    confirm? if  -1 opt-editing !  se-decide exit  then
+    confirm? if  snapshot  -1 opt-editing !  se-decide exit  then
     up? if  opt-row @ 1- 5 wrap opt-row !  se-cursor  then
     down? if  opt-row @ 1+ 5 wrap opt-row !  se-cursor  then
     square button-pressed? if  se-decide  $4084 ['] put-back ask exit  then

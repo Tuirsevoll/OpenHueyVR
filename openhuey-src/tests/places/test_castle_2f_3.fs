@@ -120,11 +120,11 @@ debilitas-out  600 play-on
 testing the evasion tip: Debilitas about the castle, she comes in by the hall door - told to hide, the doors locked
 c2f-3-flag3 story-flag-clear  golem-done story-flag-clear
 castle-1f-1 debilitas-hunt  castle-2f-3 0 rooms send go-to-room  5 run-frames
-: held? ( -- flag )  game:debilitas enter  stalker.state:still-held @  leave-actor ;
-T{ held? -> -1 }T   \ (OpenHuey's: the others held still while the tip is read)
-T{ [: window-shown evasion-doc-msg = ;] 300 soon  held? -> -1 -1 }T
+: he-held? ( -- flag )  game:debilitas enter  stalker.state:still-held @  leave-actor ;
+T{ he-held? -> -1 }T   \ (OpenHuey's: the others held still while the tip is read)
+T{ [: window-shown evasion-doc-msg = ;] 300 soon  he-held? -> -1 -1 }T
 400 play-on
-T{ held? -> 0 }T
+T{ he-held? -> 0 }T
 T{ c2f-3-flag3 story-flag?  $A5 items:items-of 0>  free? -> -1 -1 -1 }T   \ (the document among her items)
 T{ [: hiding-offered @ ;] in-place -> -1 }T
 testing ... she hides under the bed, he comes in: no search (she was told to), the chase over
@@ -147,15 +147,16 @@ castle-2f-3 $81 rooms send go-to-room  5 run-frames
 T{ c2f-3-flag2 story-flag?  doing-busy? -> -1 -1 }T
 : tip? ( -- flag )  window-shown attack-tip-msg = ;
 ' tip? 900 soon drop  key: I true key-hold  game-tick  key: I false key-hold   \ (the stick up: attack - #78 locked here)
+T{ [: tip? 0= ;] 60 soon -> -1 }T   \ (her gesture read though the lesson has her: the tip gone at once, not when its 240 frames are up)
 1500 play-on
 T{ hewie-freed story-flag?  $207 filed?  doing-busy?  free? -> -1 -1 0 -1 }T
+T{ game:hewie enter  hewie.state:his-stay @  leave-actor -> 0 }T   \ (the lesson's 0xBB let up again before the file)
 testing ... once
 castle-2f-3 $81 rooms send go-to-room  60 run-frames
 T{ doing-busy? -> 0 }T
 
 testing Hewie by the wall, scrambling about (a later visit, he with her): he finds the medallion - barks, sits, looks to her; it sparkles
 game:hewie send join-fiona  room-afresh  0 -9e -14e by
-game:hewie send activate   \ (afresh - Hewie_Activate: the lesson's stay, 0xBB, let go)
 -9e 0e -16e on-floor  f>cell f>cell f>cell swap rot  0 game:hewie send place  2 run-frames  $13 0 game:hewie send do-action
 T{ ' doing-busy? 300 soon -> -1 }T
 600 run-frames

@@ -44,6 +44,8 @@ testing the remarks: the gate shut, the doll in turn
 T{ gate-area -90 at  said -> gate-msg }T
 full-suite   \ (on: waits, scenes, walks - the full run's)
 T{ $A -90 at  said  $B 180 at  said  $E 0 at  said -> doll-msg doll-2-msg doll-3-msg }T
+testing ... the doll's turn the room's own (variable 7): afresh each visit
+T{ [: 1 doll-looks ! ;] in-place  room-afresh  [: doll-looks @ ;] in-place -> 0 }T
 
 testing the door (exit 0, 9) locked: tried, it won't open
 breaker-door s" doors" actor-named send lock  room-afresh
@@ -67,6 +69,18 @@ breaker-lowered story-flag-clear  c1f-7-flag1 story-flag-clear  hewie-freed stor
 room-afresh  game:hewie send join-fiona  castle-1f-7 room!  60 run-frames
 T{ [: c1f-7-flag1 story-flag? ;] 900 soon -> -1 }T
 300 run-frames
+
+testing Hewie told to stay on castle-1f-4's plate as she goes through: the gate held up from her first frame in here, till his wait is out
+$D constant plate-area   2 constant stay-act
+: plate-middle ( F: -- x y z )  plate-area area-middle drop ;
+breaker-lowered story-flag-set  castle-1f-4 room!  60 run-frames
+castle-1f-4 plate-middle nav-tri 0 game:hewie send hewie-place  30 run-frames
+plate-middle f>cell f>cell f>cell swap rot 0 game:hewie send place  5 run-frames
+stay-act 0 game:hewie send do-action  60 run-frames
+T{ floor-plate-pressed story-flag? -> -1 }T
+castle-1f-7 1 rooms send go-to-room  100 run-frames
+T{ floor-plate-pressed story-flag?  gate-y f0=  gate-floor barred? -> -1 -1 0 }T
+T{ [: gate-y -25.3e f- fabs 0.01e f< ;] 900 soon  gate-floor barred? -> -1 -1 }T
 
 testing brought back in by the forced way: the gate rattling shut, and back to castle-1f-4
 castle-1f-7 forced-exit rooms send go-to-room

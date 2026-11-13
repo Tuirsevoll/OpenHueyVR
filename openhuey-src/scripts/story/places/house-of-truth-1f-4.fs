@@ -75,7 +75,7 @@ create belt-cues  $F , $12 , $13 , $14 , $17 , $28 , $29 , $2A , $2B , $2C , $31
     21 0 do  belt-cues i cells + @  begin  cutscene-frame over < while  yield  repeat  drop
         i 1 and if  belt-part hide-part  else  belt-part show-part  then  loop ;
 : let-in-scene ( -- )
-    let-in-movie scenes:unseen-movie let-in-cutscene load-scene drop  ['] let-in-cues start drop
+    let-in-movie scenes:unseen-movie let-in-cutscene load-scene drop  ['] let-in-cues along-scene
     panic-eased  -1 run-scene  ['] let-in-cues stop-doing ;
 : lets-in ( -- )
     force-followed state-off  scene-locked state!  stalkers-stay state!  fiona hold  under-gone  yield
@@ -195,7 +195,7 @@ create machine-look  44.93e 0e -26.49e  27e 10e 10e look,
     events-held state? if
         hewie send part-from-fiona
         replay-act case  $B of  ['] replay-let-in  endof  $C of  ['] replay-caught  endof  >r ['] replay-crushed r>  endcase
-        start drop exit
+        fiona start-holding drop exit
     then
     0 0 0 way-in  1 3 3 way-in ;
 : went ( -- )  force-followed state-off ;

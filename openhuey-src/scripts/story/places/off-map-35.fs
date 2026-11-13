@@ -36,7 +36,7 @@ $E constant come-on-room   $36 constant hewie-room
     begin  $12 scene-shot? 0= while  yield  repeat  0 false no-shadow ;
 : hewie-scene ( -- )
     debilitas-kind figure-slot figure-in  yield
-    hewie-movie scenes:unseen-movie hewie-cutscene load-scene  wait-fade  ['] her-shadow start drop
+    hewie-movie scenes:unseen-movie hewie-cutscene load-scene  wait-fade  ['] her-shadow along-scene
     panic-eased  if  hewie-msg run-scene  then
     hewie-room preload  0 false no-shadow ;
 : hewie-in ( -- )
@@ -66,7 +66,7 @@ $E constant come-on-room   $36 constant hewie-room
             4 of  ['] hewie-replayed  endof
             5 of  ['] wait-up-replayed  endof
             >r ['] come-on-replayed r>
-        endcase  start drop exit
+        endcase  fiona start-holding drop exit
     then
     came-by @ forced-exit = if  ['] come-on fiona start-holding drop  then
     came-by @ second-way = if

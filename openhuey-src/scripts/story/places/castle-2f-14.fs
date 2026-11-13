@@ -26,7 +26,7 @@ create cameras  2 , 2 , 2 ,   3 , 1 , 1 ,   $B , 0 , 0 ,   $C , 2 , 2 ,   \ (are
 : each-frame ( -- )
     0 exit-out  cameras 4 cameras-at
     fiona 2 entered? if  3 map-page  then   fiona 3 entered? if  4 map-page  then
-    hewie-by-the-gap  medallion-notice  medallion-look 1 hewie-looks-at  climb-spot  bridge-spots ;
+    hewie-by-the-gap  medallion-notice  medallion-look 1 hewie-looks-at  climb-spot  45 bridge-spots ;
 : person-in ( i -- )
     case
         fiona-p of
@@ -40,3 +40,5 @@ create cameras  2 , 2 , 2 ,   3 , 1 , 1 ,   $B , 0 , 0 ,   $C , 2 , 2 ,   \ (are
 : went ( -- )  hewie-as-she-goes ;
 
 ' came-in ' person-in ' each-frame ' went castle-2f-14 place!
+here  medallion , 0 , medallion-fx ,  -1 ,  castle-2f-14 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)
+   \ (the Medallion across the gap: Hewie's to fetch - bridge.fs)

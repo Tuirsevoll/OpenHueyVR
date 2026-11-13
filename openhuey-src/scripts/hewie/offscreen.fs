@@ -20,11 +20,9 @@ defer when-idle ( -- )   ' noop is when-idle     \ Hewie_WhenIdle (hewie.mind)
     his-way @ dup -1 <> if  0 exit  then  drop
     his-door @ dup 0< if  drop -1  else  his-room swap 1 exit-way  then  hewie-kind ;
 : route-to ( to -- n )  {: dest :}  his-start {: way kind :}  his-room way dest -1 kind -1 his-avoid route-sides ;
-: door-tri ( door room -- tri )   \ (Rooms_DoorTri: its triangle on that room's side, -1 none)
-    {: room :}  door-sides {: r0 e0 t0 r1 e1 t1 :}
-    r1 room = if  t1  else  r0 room = if  t0  else  -1  then then ;
 : door-from-path ( -- )  0 route-door dup his-route-door !  his-room door-tri s>f his-left f! ;
-: door-usable? ( door -- flag )  door-open? ;   \ (open or a doorway, not locked)
+: door-usable? ( door -- flag )   \ (open or a doorway, not locked - nor against him: Progress_ExitPassable, slot 1)
+    dup door-open?  swap hewie-kind doors:locked-against? 0= and ;
 
 \ Hewie_ThroughExit: into the room beyond exit `exit` of his (out of play there); -1 none
 : through-exit ( exit -- 0 | -1 )
@@ -49,8 +47,9 @@ create in-at /vec allot  create out-at /vec allot
     trot-anim play
     his-action @ to-her-cry-act = panic5-chance by-chance and if  answer-call-act  else  dash-act  then  0 want
     arrived ;
+: between-speed ( F: -- s )  his-cond @ hurt-cond = if  0.38e  else  1.6e  then ;   \ (her cry's 10 only to his first door)
 : st-between ( -- )   \ Hewie_State1920: across the room he came into, toward the next door
-    his-left f@ travel-speed f- fdup his-left f!  f0< 0= if  exit  then
+    his-left f@ between-speed f- fdup his-left f!  f0< 0= if  exit  then
     his-action @ case
         to-noise-act of  his-room his-noise-room @ = if  when-idle  else  to-noise-act start  then  endof
         to-her-room-act of  to-her-room-act start  endof  back-to-her-act of  back-to-her-act start  endof
@@ -59,10 +58,30 @@ create in-at /vec allot  create out-at /vec allot
     endcase ;
 : lost-way ( -- )
     0 his-at-door !  -1 body-tri!  his-action @ out-random-away-act = if  out-random-away-act 0 want  else  when-idle  then ;
+\ with his way planned as she left (+0xF3590: Character_FollowWaypoints) he walks it off screen too - point
+\ to point as it was planned, its room's floor not at hand - so that coming back she finds him along it
+create step-at /vec allot
+: walk-off ( -- )
+    {: | p F: d seg :}  travel-speed to d
+    step-at his-at vec-copy
+    begin  his-path path-left?  d f0> and while
+        his-path dup path-i path-point to p
+        step-at p vec-dist to seg
+        seg d f<= if
+            step-at p vec-copy  d seg f- to d  his-path dup path-i 1+ swap path-i!
+        else
+            p vec@ step-at vec@ {: F: px F: py F: pz F: x F: y F: z :}  d seg f/ {: F: t :}
+            x px x f- t f* f+  y py y f- t f* f+  z pz z f- t f* f+  step-at vec!  0e to d
+        then
+    repeat
+    his-room -1 step-at vec@ body-place ;
 : st-to-door ( -- )
+    his-at-door @ if  walk-off  then
     his-left f@ travel-speed f- fdup his-left f!  f0< 0= if  exit  then  0e his-left f!
     his-route-door @ his-room door-exit-in dup his-door !
     0< if  lost-way exit  then
+    his-route-door @ doors:door-held? if  exit  then   \ (someone holds it: he waits, trying again each frame -
+    \ before 0.2.42 it let him down, and he went another way or none)
     his-route-door @ door-usable? 0= if  his-route-door @ avoid-door  lost-way exit  then   \ it let him down
     0 his-at-door !
     his-door @ through-exit drop
@@ -103,7 +122,8 @@ create in-at /vec allot  create out-at /vec allot
 \ stays; at the stalker then, he waits off to the side; by her or lying by her he first waits a
 \ while. Down, he is up again (hurt) in a hard game, or where he may not lie ----
 create ex-at /vec allot
-: exit-reachable? ( exit -- flag )   \ a way to its far point
+: exit-reachable? ( exit -- flag )   \ on his half of the room (or he is on both), and a way to its far point
+    his-way @ 2 <> if  dup his-room swap 0 exit-way his-way @ <> if  drop false exit  then  then   \ (exit_reachable)
     2 exit-spot dup 0< if  drop fdrop fdrop fdrop false exit  then  ex-at vec!  ex-at plan-to ;
 : floor-free? ( -- flag )   \ (Actor_TriFreeFor: a floor he may stand on, not at a door - within 20 of
     \ where it stands - nor by a ladder: Progress_WhoIsWhere's door and link bits)
@@ -121,6 +141,9 @@ create ex-at /vec allot
     over sit-then-stay-act = or  over lie-then-stay-act = or  over stand-then-stay-act = or
     swap drop ;
 : fiona-left ( exit -- )
+    \ (a script that has him lets go first - Hewie_FullStop, vtable +0x90 - so he decides to follow her;
+    \ before 0.2.42 he stayed held, and as the script let go his default wiped the decision: left behind)
+    his-busy @ if  0 his-busy !  0 his-was-busy !  full-stop  then
     his-room room-id <> if  drop exit  then
     his-hp @ 0=  hard-mode? floor-free? 0= or and if  1 hp!  hurt-cond cond!  then
     0 his-2b !  hewie-floor body-mask!
@@ -181,10 +204,10 @@ create ex-at /vec allot
 \ cry running) - on his triangle, else anywhere
 : on-way-anim ( -- anim )
     his-action @ to-her-cry-act = if  run-anim exit  then  his-cond @ hurt-cond = if  limp-anim  else  trot-anim  then ;
-: keep-on-way ( -- )   \ (his-at-door: his way to it in the room)
+: keep-on-way ( -- )   \ (his-at-door: his way to it in the room - where he walked it to, on its floor now at hand)
     on-way-anim play
-    his-tri dup 0< if  drop exit  then
-    dup nav-flags self body-mask and if  drop place-anywhere  else  tri-center his-place  then ;
+    his-tri dup 0< if  drop his-at v-tri  then  dup 0< if  drop exit  then
+    dup nav-flags self body-mask and if  drop place-anywhere  else  drop his-at vec@ his-place  then ;
 \ at the stalker when she left (at him, at a flank): letting go of him
 : let-go-anim-of ( grip -- anim | -1 )
     case  near-grip of  let-go-near-anim  endof  far-grip of  let-go-far-anim  endof
@@ -195,6 +218,11 @@ create ex-at /vec allot
 : on-way? ( -- flag )   \ (to her, back to her, to her cry - on his way to the door in the room)
     his-at-door @ 0= if  false exit  then
     his-action @ dup to-her-room-act back-to-her-act 1+ within  swap to-her-cry-act = or ;
+\ where he was, if his triangle is open floor - its middle if his place isn't on it (Hewie_PlaceAt with no point)
+: on-his-tri ( -- placed? )
+    his-tri dup 0< if  drop false exit  then
+    nav-flags self body-mask and if  false exit  then
+    his-tri his-at his-at 0 v-walk his-tri = if  his-at vec@  else  his-tri tri-center  then  his-place  true ;   \ (on it: walked to itself there)
 : arrive ( -- arrived? )
     {: | placed held own-anim :}
     his-action @ through-act = if  come-through  true exit  then
@@ -212,14 +240,13 @@ create ex-at /vec allot
         after-attack-act of  letting-go? dup to held  to own-anim  endof
     endcase
     on-way? if  true to own-anim  keep-on-way  his-tri 0< 0= to placed  then
-    \ where he was, if that is open floor; else by the door he came through, facing anywhere
-    placed 0= his-tri 0< 0= and if
-        his-tri nav-flags self body-mask and 0= if  his-at vec@ his-place  true to placed  then
-    then
+    \ where he was (on-his-tri); else by the door he came through, facing anywhere; else anywhere on his half
+    \ (Actor_TeleportRandom)
+    placed 0= if  on-his-tri to placed  then
     placed 0= if
         own-anim 0= if  arrive-anim  then
         his-door @ 0 max 2 exit-spot dup 0< if
-            drop fdrop fdrop fdrop  fiona-at vec@ his-place
+            drop fdrop fdrop fdrop  place-anywhere
         else  drop his-place  then
         rnd 2e f* 1e f- pi f* his-yaw!
     then

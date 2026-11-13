@@ -2,7 +2,7 @@
 \ (docs/subsystems/hewie.md). Headless:
 \   build/openhuey-src/openhuey --test openhuey-src/tests/hewie/test_hewie.fs
 IN: test-hewie
-USING: hewie.anims tester engine game-state actors messages common room-names game hewie.state hewie.body hewie.model hewie.states fiona.state debug ;
+USING: hewie.anims tester engine game-state actors messages common room-names game hewie.state hewie.body hewie.model hewie.states hewie.scripted fiona.state debug ;
 
 : his@ ( xt -- x )  hewie enter  execute  leave-actor ;
 : his! ( xt -- )  hewie enter  execute  leave-actor ;
@@ -25,6 +25,8 @@ testing placed: his default animation by his state, not the walk he was in (Hewi
 T{ [: walk-anim play ;] his!  placed-here  [: anim@ ;] his@ -> stand-anim }T
 T{ [: 1 cond!  walk-anim play ;] his!  placed-here  [: anim@ ;] his@  [: 0 cond! ;] his! -> stand-hurt-anim }T
 
+testing his mood's behaviour with no danger told yet (his-danger -1): nothing done, his caller's stack left be
+T{ [: his-danger @ >r  -1 his-danger !  11 hewie.mind:st-calm  r> his-danger ! ;] his@ -> 11 }T
 full-suite   \ (on: waits, scenes, walks - the full run's)
 
 testing left to himself he does one thing after another, on the floor
@@ -75,6 +77,17 @@ variable took
 3000 arrives-in dup took !  .( took ) . cr
 T{ took @ 0< -> 0 }T
 T{ hewie body-tri 0< -> 0 }T
+
+testing a script takes him (the story's action - request 5: Hewie_Interrupted): standing under it, his way dropped
+\ (action 0 held: the scripted idle) - and given back, himself
+[: $20 his-action ! ;] his!   \ (as if after the stalker)
+true hewie send scripted  deliver  2 run-frames
+T{ [: his-action @  his-busy @ 0<>  his-act @ ['] st-scripted-idle = ;] his@ -> 0 -1 -1 }T
+false hewie send scripted  deliver  5 run-frames
+T{ [: his-busy @ ;] his@ -> 0 }T
+testing she taken by a script mid-meeting (Fiona_Interrupted: held, $C): his default (Hewie_BackToIdle), not under a script
+[: $48 his-action ! ;] his!  hewie send partner-interrupted  deliver
+T{ [: his-action @ $48 <> ;] his@ -> -1 }T
 
 testing parted, he is gone
 hewie send part-from-fiona  2 run-frames

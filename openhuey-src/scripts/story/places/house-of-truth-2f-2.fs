@@ -40,7 +40,7 @@ $43 constant study-seen   $28 constant gasp-sound   $4B constant fortis-bit
     begin  cutscene-frame cutscene-shot-at 3 <> while  yield  repeat  0 false no-shadow ;
 : study-scene ( -- )
     study-movie scenes:unseen-movie study-cutscene load-scene drop  3 figure-on
-    ['] no-shadow-cues start drop  panic-eased  lorenzo-msg run-scene  ['] no-shadow-cues stop-doing ;
+    ['] no-shadow-cues along-scene  panic-eased  lorenzo-msg run-scene  0 false no-shadow ;   \ (her shadow back, the scene skipped or not)
 : lorenzo-there ( -- )
     fiona hold  stalker let-go  0 summon-take
     scene-figure 3 figure-in  lorenzo-kind stalker-ready  lorenzo-part hide-part
@@ -108,7 +108,7 @@ create cameras  1 , 0 , -1 ,  2 , 1 , 0 ,   \ (area, set, path)
     spots ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     0 0 -1 way-in
     came-by @ forced-exit = if
         fiona brought-tri 0 place-on-tri  house-of-truth-2f-1 -1 1 hewie-to  world-held state!
@@ -117,3 +117,4 @@ create cameras  1 , 0 , -1 ,  2 , 1 , 0 ,   \ (area, set, path)
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went house-of-truth-2f-2 place!
+here  viride-medallion , ' pick-viride , viride-fx ,  -1 ,  house-of-truth-2f-2 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

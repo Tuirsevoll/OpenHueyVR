@@ -39,12 +39,11 @@ $9004 $9005 lash-sound hop-sound  -3e 0e 43e -45e  hopper: the-figure
 
 \ ---- the hiding place (the kit's); the stalker's search ----
 : hides ( -- )  her-motions $106 180 2 -4.6e -231.1e hides-in ;
-: her-looker? ( -- flag )  st-kind-now @ dup daniella-kind = swap kind34-kind = or ;
 : looks-in ( -- )
     stalker hold  stalker wait-move  0 door-for-him  far-exit door-for-him
-    her-looker? if  stalker daniella-motions motions-for  then
+    daniella-here? if  stalker daniella-motions motions-for  then
     stalker $106 180 -4.6e -222e walk-to
-    her-looker? if  stalker use-motions  1 her-back  stalker room-motion play  0 her-back
+    daniella-here? if  stalker use-motions  1 her-back  stalker room-motion play  0 her-back
     else  stalker stalker.anims:there-anim play  then
     -1 found-her !  stalker 10 idle  begin  fiona held? while  yield  repeat  0 stalker-order ;
 : stalker-came ( -- )
@@ -69,12 +68,12 @@ create looks  -2.18e 0e 42.94e  32e 11e 11e look,
     looks 1 danger-now @ followed = hewie-looks-if
     om2f-5-viride-medallion-found fact? 0=  scrambling? and  hewie 7.38e 0e 20.58e 10e 5e touches? and if  ['] viride-sniffed start-only  then
     fiona hide-area in-area?  fiona 180 60 heading? and if
-        stalker-in? if  no-time-message offer-remark-now  else  ['] hides calm-only offer  then
+        stalker-in? if  no-time-message offer-remark-now  else  ['] hides hiding-spot offer  then
     then
     near-vase broken? if
-        om2f-5-medallion fact? 0=  fiona 10.5e 0e -28e 5e 5e touches? and if  ['] take-medallion calm-only offer  then
+        om2f-5-medallion fact? 0=  fiona 10.5e 1e -28e 5e 5e touches? and if  ['] take-medallion calm-only offer  then
     else  near-vase breaks? if  medallion-shows  then  then
-    om2f-5-viride-medallion-found fact?  om2f-5-viride-medallion fact? 0= and  fiona 7.38e 0e 20.58e 5e 5e touches? and if
+    om2f-5-viride-medallion-found fact?  om2f-5-viride-medallion fact? 0= and  fiona 7.38e 1e 20.58e 5e 5e touches? and if
         ['] take-viride calm-only offer
     then ;
 : person-in ( i -- )
@@ -85,3 +84,4 @@ create looks  -2.18e 0e 42.94e  32e 11e 11e look,
 : went ( -- )  hopper-gone ;
 
 ' came-in ' person-in ' each-frame ' went old-mansion-2f-5 place!
+here  medallion , ' take-medallion , medallion-fx ,  viride-medallion , ' take-viride , viride-fx ,  -1 ,  old-mansion-2f-5 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

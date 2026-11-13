@@ -66,7 +66,7 @@ vase-1 0 $80505050 $111 vase   vase-2 2 $80404040 $122 vase   vase-3 1 $80404040
     stalker $13C 90 -1 walk-path-move -45.739e -73.201e go-to
     stalker room-motion his-shove + 5 start-blend8
     0  begin
-        stalker fiona 0 close-to? if  stalker throws-her  then
+        stalker fiona self-touching? if  stalker throws-her  then
         dup 89 = if  5e 115e -70e dust  5e 115e -76e dust  thud-sound room-bank stalker sound-by  then
         1+  stalker went-round? 0= while  yield
     repeat  drop
@@ -79,8 +79,8 @@ vase-1 0 $80505050 $111 vase   vase-2 2 $80404040 $122 vase   vase-3 1 $80404040
     bridge-movie scenes:keyed-movie bridge-cutscene load-scene  $10 $FF movie-key  panic-eased
     if  -1 run-scene  then
     world-held state!  fiona 0 idle  fiona $8C -161 1.471e -112.581e place-at  0 0 player-camera  yield  camera-restart
-    bridge-lies  c1f-11-flag1 fact!  far-door near-door door-as  far-door closed-off  exits-redone
-    hewie body?  hewie body-room hewie-far-room = and if  $30 0 -1 hewie-to  then
+    bridge-lies  c1f-11-flag1 fact!  near-door far-door door-as  far-door closed-off  exits-redone
+    room-of-hewie hewie-far-room = if  $30 0 -1 hewie-to  then
     stalker activate  castle-1f-11 153 stalker-to  his-own-time
     stalker -1 -1 camera-set  stalker false shown  stalker true hush  ['] shoves start drop
     hall-track 1e background  15 fade-in  bridge-file give-file  stalkers-stay state-off
@@ -96,7 +96,7 @@ vase-1 0 $80505050 $111 vase   vase-2 2 $80404040 $122 vase   vase-3 1 $80404040
     lever-back
     -11e 113e -87e 5e 12e her-blow-in? 0= if  exit  then
     lever-jolts  1 $FF 4 rumble-pad
-    hits @ 2 = if  1 hits +!  ['] struck-off start drop  else  ['] struck-again start drop  then ;
+    hits @ 2 = if  1 hits +!  ['] struck-off start-only  else  ['] struck-again start-only  then ;   \ (each on its track: not again while it runs)
 
 \ ---- the Medallion across the gap: her "go for it" toward it - Hewie fetches it ----
 : fetches ( -- )
@@ -166,10 +166,11 @@ create cameras  7 , 2 , 2 ,   8 , 3 , 3 ,   9 , 0 , 0 ,   $A , 3 , 3 ,        \ 
     ways  clamp  medallion-way  medallion-look 1 hewie-looks-at  spots  walls-shade ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     0 2 2 way-in ;
 : went ( -- )
     hewie-back
     stalker held?  his-scene @ and if  stalker $8F 90 2.4e -76.445e place-at  0 his-scene !  then ;
 
 ' came-in ' person-in ' each-frame ' went castle-1f-11 place!
+here  medallion , 0 , medallion-fx ,  beef-jerky , ' pick-jerky , jerky-fx ,  magnesia , ' pick-magnesia , magnesia-fx ,  -1 ,  castle-1f-11 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

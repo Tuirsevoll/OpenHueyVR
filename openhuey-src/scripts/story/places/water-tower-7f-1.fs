@@ -50,7 +50,7 @@ create runs  $D8 , 89 ,  4 , 89 ,  $6A , -44 ,  $3F , -151 ,  $1B , 111 ,  $FA ,
     drop  room-sounds  hunted state!  hall-track 1e background
     8 gear !  8 glow-on
     stalker let-go  1 summon-take
-    wt7f-1-flag1 fact? 0= if  wt7f-1-flag1 fact!  1 s" creatures" actor-named send creatures-clear  then
+    wt7f-1-flag1 fact? 0= if  wt7f-1-flag1 fact!  1 creatures-id send creatures-clear  then
     1 $2300 reverb ;
 
 \ ---- the plates: who stands where; each one stepped onto rings ----
@@ -75,13 +75,13 @@ create runs  $D8 , 89 ,  4 , 89 ,  $6A , -44 ,  $3F , -151 ,  $1B , 111 ,  $FA ,
 : solved ( -- )
     stalkers-stay state!  fiona wait-move  no-track 1e background
     15 screen:to-black-2 with-music or fade  solved-scene  wait-fade
-    things-clear  fiona -1 idle  water-tower-7f-2 preload  $10 $FF movie-key
-    ['] glows-out start drop  panic-eased  -1 run-scene
+    things-id send clear-things  fiona -1 idle  water-tower-7f-2 preload  $10 $FF movie-key
+    ['] glows-out along-scene  panic-eased  -1 run-scene
     50 trust+  world-held state!
     way-on-door reopened  behind-door closed-off  exits-redone
     water-tower-7f-2 -1 0 hewie-to  solved-seen resident-flag-set  forced-exit take-exit ;
 : replayed ( -- )
-    fiona hold  true all-glows  solved-scene  $10 $FF movie-key  ['] glows-out start drop  panic-eased  -1 run-scene
+    fiona hold  true all-glows  solved-scene  $10 $FF movie-key  ['] glows-out along-scene  panic-eased  -1 run-scene
     hewie let-go  replay-over ;
 
 \ ---- the next one lit while the one before is stood on; the last lit left: dark down to the
@@ -104,10 +104,11 @@ create runs  $D8 , 89 ,  4 , 89 ,  $6A , -44 ,  $3F , -151 ,  $1B , 111 ,  $FA ,
     hewie hold  hewie wait-move  hewie-bark  hewie wait-move
     gear @ {: k :}  hewie  k runs pair@  hewie-walk-anim walk-move  k plate@  go-to
     hewie still-anim-move 0 10  0e 0e 0e 0e  move  10 frames ;
-: sends-him ( -- )   \ (she told him to go there, facing the plate to light next - not standing on it)
+: sends-him ( -- )   \ (she told him to go there, facing the plate to light next - not standing on it, but for
+    \ the middle; not while he's held: act01 started with mode 0)
     started-now @ go-there-cmd = 0= if  exit  then
-    her-plate @ gear @ = if  exit  then
-    gear @ aims pair@ s>f s>f fswap  fiona 50 faces-point?  hewie-breakable-now @ and if  ['] runs-to start drop  then ;
+    her-plate @ gear @ =  gear @ 1 <> and if  exit  then
+    gear @ aims pair@ s>f s>f fswap  fiona 50 faces-point?  hewie-breakable-now @ and  hewie held? 0= and  ['] runs-to running? 0= and if  ['] runs-to start drop  then ;
 : sits ( -- )   \ (on a plate - not chased, at her command - he sits; past its wider zone he has left it)
     hewie-in?  hewie-cond-now @ well-cond = and 0= if  exit  then
     9 1 do
@@ -142,7 +143,7 @@ create cameras  4 , 0 , -1 ,  5 , 1 , -1 ,  6 , 1 , -1 ,   \ (area, set, path)
     spots ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     1 0 -1 way-in ;
 : went ( -- )  hunted state-off ;
 

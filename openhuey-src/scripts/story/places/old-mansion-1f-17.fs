@@ -96,18 +96,19 @@ create mummy-look  68.2e 0e 31.14e  20e 12e 12e look,
     om2f-8-flag1 fact? 0=  fiona $E in-area? and  fiona -90 50 heading? and if  ['] the-picture unhurried offer  then
     fiona $10 in-area?  fiona 90 60 heading? and if  ['] the-mummy unhurried offer  then
     om1f-17-chicken-jerky fact? 0=  fiona -137.37e -41e -14.57e 5e 5e touches? and if  ['] take-jerky calm-only offer  then
-    om1f-17-medallion-found fact?  om1f-17-medallion fact? 0= and  fiona 68.99e 0e 19.99e 5e 5e touches? and if
+    om1f-17-medallion-found fact?  om1f-17-medallion fact? 0= and  fiona 68.99e 1e 19.99e 5e 5e touches? and if
         ['] take-medallion calm-only offer
     then
     the-vase broken? if
-        om1f-17-magnesia fact? 0=  fiona 43e 0e -40e 5e 5e touches? and if  ['] take-magnesia calm-only offer  then
+        om1f-17-magnesia fact? 0=  fiona 43e 1e -40e 5e 5e touches? and if  ['] take-magnesia calm-only offer  then
     else  the-vase breaks? if  magnesia-shows  then  then ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop  exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop  exit  then
     0 2 2 way-in  1 0 0 way-in  3 1 1 way-in   \ (by exit 2 no camera of its own)
     came-by @ forced-exit = if  fiona $12C put-on-tri  1 -1 player-camera  ['] the-way-behind start drop  then
     lever-by-way  came-by @ 2 < if  2 map-page  then ;
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went old-mansion-1f-17 place!
+here  chicken-jerky , ' take-jerky , jerky-fx ,  magnesia , ' take-magnesia , magnesia-fx ,  medallion , ' take-medallion , medallion-fx ,  -1 ,  old-mansion-1f-17 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

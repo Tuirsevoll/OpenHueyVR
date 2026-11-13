@@ -41,16 +41,15 @@ own: frames-in  own: hewie-away  own: perfume-step
 : garden-scene ( -- )
     garden-movie scenes:unseen-4-movie garden-cutscene load-scene
     0 true no-shadow  panic-eased  if  -1 run-scene  then  0 false no-shadow ;
-: hewie-held ( -- )  hewie hold  hewie false shown  begin  yield  again ;   \ (down: hidden away till it's over)
 : the-garden ( -- )
-    om1f-13-flag2 fact!  stalker let-go  summoner-on state-off  stalkers-stay state!  fiona hold
+    om1f-13-flag2 fact!  stalker let-go  0 summon-take  summoner-on state-off  stalkers-stay state!  fiona hold
     15 screen:to-black-2 with-music or fade  no-track 1e background  wait-fade
     hewie-in?  hewie-way-now @ 0= and dup 0= hewie-away !  if
-        hewie-cond-now @ down-cond = if  ['] hewie-held start drop  else  hewie let-go  then
+        hewie-cond-now @ down-cond = if  ['] hewie-kept-hidden start drop  else  hewie let-go  then
     then
     garden-scene  world-held state!  revealed
     hewie-away @ 0= if
-        hewie-cond-now @ down-cond = if  ['] hewie-held stop-doing  hewie true shown  hewie let-go
+        hewie-cond-now @ down-cond = if  ['] hewie-kept-hidden stop-doing  hewie true shown  hewie let-go
         else  hewie activate  old-mansion-1f-13 182 0 hewie-to  hewie $B6 99 35.67e -1.81e place-at  then
     then
     fiona $1C -43 54.36e -8.26e place-at  0 0 player-camera  yield  camera-restart  om1f-13-flag1 fact!
@@ -125,7 +124,7 @@ create looks  -48.85e 0e -48.91e  33e 11e 11e look,   48.42e -6e 28e  26e 11e 11
     fiona $D in-area?  fiona -180 60 heading? and  fiona $E in-area?  fiona -180 60 heading? and or if  ['] the-flower-bed unhurried offer  then ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop  exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop  exit  then
     entries 3 ways-in  came-by @ dup 1 =  swap 2 = or if  2 map-page  then ;
 : went ( -- ) ;
 

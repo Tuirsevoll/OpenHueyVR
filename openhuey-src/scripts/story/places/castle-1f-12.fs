@@ -87,7 +87,7 @@ the-vase 0 frees-floor  the-vase $1E3 noise-from
     begin  cutscene-frame $64 < while  yield  repeat
     begin  cutscene-near? 0= while  lens-fx $60 0 cast-model  s" lens" 640e -560e 1000e object-mirror  yield  repeat ;
 : lens-scene ( -- )
-    lens-movie scenes:keyed-movie lens-cutscene load-scene  ['] lens-reflects start drop  $1E $C8 movie-key
+    lens-movie scenes:keyed-movie lens-cutscene load-scene  ['] lens-reflects along-scene  $1E $C8 movie-key
     panic-eased  if  -1 run-scene  then  lens-fx effect-off ;
 : refractor-set ( -- )
     fiona hold  stalkers-stay state!  15 screen:to-black-2 with-music or fade  fiona wait-move  wait-fade
@@ -104,12 +104,12 @@ the-vase 0 frees-floor  the-vase $1E3 noise-from
 \ dial unset there - the moon door unlocked and these doors open ----
 : moon-scene ( -- movie? )  moon-movie scenes:keyed-movie moon-cutscene load-scene  $10 $FF movie-key ;
 : moon-comes ( -- )
-    fiona hold  stalker-in? if  stalker hold  yield  then  world-frozen state!
-    moon-scene  came-by @ forced-exit = if  castle-2f-1 preload  else  castle-1f-7 preload  then  wait-fade
+    fiona hold  stalker-in? if  ['] stalker-kept start drop  yield  then  world-frozen state!   \ (held the rest of the visit: act07)
+    moon-scene  came-by @ forced-exit = if  castle-2f-1 preload  else  castle-b1-4 preload  then  wait-fade   \ (room 7, as the original has it)
     panic-eased  if  -1 run-scene  then
     came-by @ forced-exit = if  world-held state!  world-frozen state-off  forced-exit 1 or take-exit exit  then
     moon-door unlock  c1f-12-flag1 fact!  dial-2 dial-base dial-set  dial-1 dial-base dial-set  doors-open
-    doors-floor barred-floor floor-off  creatures-on state!  5 0 s" creatures" actor-named send creature-count
+    doors-floor barred-floor floor-off  creatures-on state!  5 0 creatures-id send creature-count
     camera-restart  force-calm state-off  stalkers-stay state-off  world-frozen state-off  15 fade-in ;
 
 \ ---- what she may do or say here ----
@@ -150,7 +150,7 @@ create looks  52.29e -103e 49.3e 30e 12e 12e look,   30.64e -103e -51.68e 30e 12
 : person-in ( i -- )
     fiona-p <> if  exit  then
     events-held state? if
-        hewie send part-from-fiona  replay-act $B = if  ['] replay-moon  else  ['] replay-lens  then  start drop exit
+        hewie send part-from-fiona  replay-act $B = if  ['] replay-moon  else  ['] replay-lens  then  fiona start-holding drop exit
     then
     entries 3 ways-in
     came-by @ dup forced-exit =  swap forced-exit 1 or = or if   \ (by either forced way: $80, $81)
@@ -160,3 +160,4 @@ create looks  52.29e -103e 49.3e 30e 12e 12e look,   30.64e -103e -51.68e 30e 12
 
 ' came-in ' person-in ' each-frame ' went castle-1f-12 place!
 ' items-used castle-1f-12 items-here
+here  medallion , ' pick-medallion , medallion-fx ,  -1 ,  castle-1f-12 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

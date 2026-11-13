@@ -47,6 +47,7 @@ state: homunculus-state
   cell field grab-spot            \ which of the four spots round her next
   1 floats field her-dist  1 floats field hewie-dist
   cell field her-mode  cell field her-sub  cell field her-doing  cell field her-unseen
+  cell field her-reach            \ (fiona-plight's: 4 her +0x2D, 8 a script has her)
   cell field blow-n  cell field blow-damage  cell field blow-pending  cell field striker   \ (+0x14F0: who struck - her, Hewie; -1 a thing)
   1 floats field blow-yaw         \ (+0x14FC) a thing's blow: the heading it faces
   cell field fade
@@ -98,7 +99,8 @@ fvariable rm-turn  fvariable rm-x  fvariable rm-y  fvariable rm-z
 : coin ( a b -- n )  2 random if  nip  else  drop  then ;
 
 \ ---- seeing her ----
-: hidden-or-busy? ( -- flag )  fiona-hidden? her-doing @ 0<> or ;
+: scripted? ( -- flag )  her-reach @ 8 and 0<> ;   \ (a script has her: +0xE0)
+: kept-or-scripted? ( -- flag )  her-reach @ 12 and 0<> ;   \ (her +0x2D - stepping back, at a door, struck, aside - or a script's)
 : reaches? ( v tri mask -- flag )   \ straight from it onto that triangle, kept off the mask's floor (Actor_TriTo)
     {: v tri m :}  self body-tri my-at v m v-walk  tri = ;
 : straight-to-her? ( -- flag )  her-at her-tri path-mask reaches? ;   \ (its paths' mask)
@@ -134,7 +136,6 @@ fvariable rm-turn  fvariable rm-x  fvariable rm-y  fvariable rm-z
 \ there, turned to it, walking there, then turned to her ----
 enum: approach#  setting-off seeking-spot turning-to-spot walking-to-spot turning-to-her ;
 fvariable try-turn
-: turn-of ( k -- ) ( F: -- a )  dup 8 > if  8 - negate  then  s>f 0.3925e f* ;   \ (D_0042C650)
 : spot-try ( i -- found? )   \ before or behind her, turned by the last try's turn, reachable
     2 mod if  -1e  else  1e  then  target-d f@ 16 random s>f f+ f*  0e fswap try-turn f@ rotate-by   ( F: dx dz )
     her-at v.z sf@ f+  target v.z sf!  her-at v.x sf@ f+  target v.x sf!  her-at v.y sf@ target v.y sf!
@@ -192,14 +193,14 @@ fvariable try-turn
     walk-anim first
     fiona-hidden? if  hanging-back creature-about switch-move exit  then
     her-unseen @ if  circling creature-about switch-move exit  then
-    hidden-or-busy? half-hidden? 0= and if  biding switch-to exit  then
+    kept-or-scripted? half-hidden? 0= and if  biding switch-to exit  then
     stalker-at-my-door? if  stalker-at-door switch-to exit  then
     divided? if  across-divider switch-to exit  then
     her-at turn-to
     on-ladder-or-thrown? if  true held-off !  closing-in switch-to exit  then
     1 frames +!
     gave-up @ if  -1  else  straight-at-her  then  {: t :}
-    cutscene-active? in-play? 0= her-doing @ 0<> or and if  hanging-back creature-about switch-move exit  then
+    stalkers-stay state-flag?  in-play? 0= scripted? or and if  hanging-back creature-about switch-move exit  then   \ (flag $18: kept where they are)
     t 0< 0= her-dist f@ 10e f<= and may-grab? and if  t her-tri = if  grabbing switch-to  then  exit  then
     t 0< if
         my-path path-left? 0= if
@@ -231,7 +232,7 @@ fvariable try-turn
 : bide ( -- )   \ she's hidden or busy
     rest-anim first
     fiona-hidden? if  hanging-back creature-about switch-move exit  then
-    half-hidden? hidden-or-busy? 0= or if  chasing switch-to  then ;
+    half-hidden? kept-or-scripted? 0= or if  chasing switch-to  then ;
 : seek-her ( -- )
     walk-anim first
     sees-her? if  watching switch-to exit  then
@@ -322,8 +323,8 @@ $80 constant grab-noise
             1 frames +!  frames @ 35 mod 0= if  hold-chatter sound  then  frames @ 70 mod 0= if  giggle sound  then
             her-held? if  exit  then
             creature-struck move-mode !  let-go-anim play-now
-            grab-threat s>f f>cell s" panic" actor-named send threat
-            grab-noise my-room @ self body-tri -1 world-noise  s" acoustics" actor-named send noise
+            grab-threat s>f f>cell panic-id send threat
+            grab-noise my-room @ self body-tri -1 world-noise  acoustics-id send noise
             letting-go step !
         endof
         letting-go of  root-move  ended? if  true untouchable !  go-away  then  endof
@@ -331,7 +332,7 @@ $80 constant grab-noise
 
 : gone ( -- )   \ its model let go, its slot free (the bubbles: `going`'s welling)
     model @ actor-free  -1 model !
-    slot @ s" creatures" actor-named send creature-gone  self kill ;
+    slot @ creatures-id send creature-gone  self kill ;
 
 : going ( -- )   \ leaving - sinking, fading, bubbles welling up where it sinks; at its end gone
     step @ 0= if
@@ -387,7 +388,7 @@ $80 constant grab-noise
 
 \ ---- waking (CreatureB_Distances, _Notices): her on a triangle it reaches within its sight,
 \ Hewie in its room on his within 30, a blow, or no sight at all ----
-: hewie ( -- id )  s" hewie" actor-named ;
+: hewie ( -- id )  hewie-id ;
 : measure ( -- )
     in-play? 0= if  exit  then
     my-at her-at vec-dist-xz her-dist f!
@@ -438,7 +439,7 @@ $80 constant grab-noise
     model @ 0< if  exit  then
     in-play? self body? and 0= if  0 actor@ act.visible l!  exit  then
     my-at v.x sf@ actor@ act.x sf!  my-at v.y sf@ fall f@ f+ actor@ act.y sf!  my-at v.z sf@ actor@ act.z sf!
-    self body-yaw actor@ act.yaw sf!  1 actor@ act.visible l!
+    self body-yaw actor@ act.yaw sf!  1 actor@ act.visible l!  1 actor@ act.character l!   \ (not drawn while the world is frozen: Creatures_Draw)
     running @ leaving = if  fade @ $80 min s>f 128e f/  else  1e  then  actor@ act.alpha sf!   \ (leaving: fading)
     slot @ my-room @ move-mode @ awake @ 0<> broadcast creature-doing ;
 : frame ( -- )
@@ -475,11 +476,7 @@ $80 constant grab-noise
 \ ---- she leaves by `exit` (CreatureB_FionaLeft): it makes for the exit's far spot along a path
 \ it walks off screen (`walk-on`, at 0.35), through its door at the end. No way there (not across
 \ the divider): if another open exit has one, a way there anyhow; none - its trip from here.
-\ Nearer her exit than she is, it walks there but keeps the door it last made for (through that
-\ one at the end, if it is on this side). Already as near the door as the far spot, and straight
-\ to it: through at once ----
-create far /vec allot   create door-at /vec allot
-: far-spot ( exit -- tri )  2 exit-spot far vec! ;
+\ Nearer her exit than she is, it walks there but keeps the door it last made for (creatures/trip.fs) ----
 : way-to-far? ( exit -- ok? )   \ (CreatureB_Path)
     far-spot dup 0< if  drop false exit  then
     dup self body-tri across-divider? if  drop false exit  then  far plan ;
@@ -489,32 +486,24 @@ create far /vec allot   create door-at /vec allot
     room ex room-exit-door dup 0< if  drop false exit  then
     dup door-flags $20 and if  drop false exit  then  door-open? ;
 : another-way? ( -- flag )  8 0 do  i leads-open? if  i way-to-far? if  true unloop exit  then  then  loop  false ;
-: door-spot ( exit -- )  1 exit-spot drop door-at vec! ;   \ (the exit's near spot: Rooms_ExitPointIn)
-: nearer-than-her? ( exit -- flag )   \ (Actor_NearerRoom)
-    door-spot  my-at door-at vec-dist  her-at door-at vec-dist f< ;
 : head-out ( exit -- )
     {: ex :}
-    trip t.closed 13 cells 0 fill  0 trip t.n !  0 trip t.i !  -1 trip t.exit !
-    my-path trip t.path !  0 trip t.walking !  my-path path-clear
+    trip trip-out  my-path trip t.path !  my-path path-clear
     ex 0< 0= if  ex way-to-far? trip t.walking !  then
     trip t.walking @ 0= if  another-way? 0= if  exit  then  then
     ex 0< if  exit  then
-    ex nearer-than-her? if  exit  then
+    ex her-at nearer-than? if  exit  then
     trip t.walking @ 0= if   \ (a way to hers anyhow)
         ex far-spot dup 0< if  drop exit  then  far plan 0= if  exit  then  true trip t.walking !
     then
-    my-room @ ex room-exit-door trip t.last !
-    ex far-spot drop  ex door-spot
-    my-at door-at vec-dist  far door-at vec-dist f<= if
-        self body-tri my-at door-at path-mask v-walk 0< 0= if  my-path path-end  then
-    then ;
+    trip ex path-mask straight-out ;
 
 behaviour homunculus
   on spawned ( -- )
-      -1 model !  trip trip-reset  body-off  0e fall f!  0e fall-v f!
+      -1 model !  trip trip-reset  -1 trip t.locks !  body-off  0e fall f!  0e fall-v f!
       self subscribe tick  self subscribe arrived  self subscribe leaving-room
       self subscribe fiona-doing  self subscribe fiona-unseen  self subscribe fiona-blow
-      self subscribe stalker-doing  -1 stalker !  100 stalker-age ! ;
+      self subscribe stalker-doing  self subscribe fiona-plight  -1 stalker !  100 stalker-age ! ;
   on stalker-doing ( room mode sub cond hp hp-max kind alert came -- )
       2drop 2drop 2drop 2drop drop  sender stalker !  0 stalker-age ! ;
   on homunculus-setup ( slot room level tri kind sight yaw height -- )
@@ -532,9 +521,12 @@ behaviour homunculus
       running @ reeling = if  watching switch-to  then
       awake @ 0= fall f@ f0> and if  dropped want !  dropped running !  then
       yaw body-turn  store-record ;
-  on tick ( -- )  model @ 0< if  exit  then  frame ;
+  \ (the world frozen - a room's close look - or a cutscene with the camera: not updated, Creatures_Update;
+  \ not drawn either - its model a character's, actor.character; before 0.2.42 it went on)
+  on tick ( -- )  model @ 0< if  exit  then  world-frozen state-flag? cam-scene? or  panic-starting state-flag? or if  exit  then  frame ;
   on fiona-doing ( mode sub cond cmd doing -- )  her-doing !  drop drop  her-sub !  her-mode ! ;
   on fiona-unseen ( on -- )  her-unseen ! ;
+  on fiona-plight ( state ladder reach -- )  her-reach !  2drop ;
   on fiona-blow ( n damage x y z reach -- )   \ (Fiona_BlowCreatures) once a blow, if it reaches it
       {: n damage x y z reach :}
       n blow-n @ = untouchable @ or  in-play? 0= or if  exit  then

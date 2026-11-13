@@ -72,7 +72,6 @@ free-play  10 run-frames  0 game:fiona send costume  stalkers-blind state-flag-s
 : one-of ( item -- )  dup has 0= if  1 game:items send give-item  5 run-frames  else  drop  then ;
 : ev ( ev -- )  0 swap -1 0 broadcast item-event  5 run-frames ;
 : word-is ( item -- )  1 swap broadcast item-var ;   \ (the word plate's: what it gives - items.fs)
-variable before
 testing in by its way, the costumes unlocked: placed, the world let go; the document filed, once
 fg-3-flag3 story-flag-clear  x-37-flag2 story-flag-set  got-doc-action story-flag-clear  world-held state-flag-set
 antimony-powder none-of  magnesia one-of
@@ -117,4 +116,12 @@ T{ no-medallion-ev ev  [: window-shown nothing-happened-msg = ;] 600 soon -> -1 
 testing out by its way ($FE): faded, the world held - back to the room she came from (kept loaded ahead)
 front-garden-3 0 room-by!  60 run-frames  in
 T{ way-out-area 90 at  circle press  [: room-id off-map-27 <> ;] 400 soon  room-id  world-held state-flag? -> -1 front-garden-3 -1 }T
+testing ... in by a hole, saved in here, loaded elsewhere: out by its way to the hole's room still (the save keeps
+testing ... the room loaded ahead - before 0.2.42 a load left its way leading nowhere, no way out)
+: quick ( xt -- )  game:saves enter  execute  leave-actor  deliver  2 run-frames ;
+old-mansion-2f-8 0 room-by!  60 run-frames  in
+' saves:quick-save quick  front-garden-3 0 room-by!  60 run-frames
+' saves:quick-load quick  300 read-on
+T{ room-id spare@ -> off-map-27 old-mansion-2f-8 }T
+T{ way-out-area 90 at  circle press  [: room-id off-map-27 <> ;] 400 soon  room-id -> -1 old-mansion-2f-8 }T
 test-summary

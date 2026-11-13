@@ -41,29 +41,27 @@ own: device-remarked  own: cabinet-remarked
     from-forest @ 0=  om2f-6-lavender fact? 0= and if  lavender-fx 4.58e 9e 14.22e flicker-at  then ;
 
 \ ---- Hewie through a scene: down, hidden away till it's over; else let go ----
-: hewie-held ( -- )  hewie hold  hewie false shown  begin  yield  again ;
 : hewie-for-scene ( -- )
     hewie-in? 0= dup hewie-away !  if  exit  then
-    hewie-cond-now @ down-cond = if  ['] hewie-held start drop  else  hewie let-go  then ;
+    hewie-cond-now @ down-cond = if  ['] hewie-kept-hidden start drop  else  hewie let-go  then ;
 : hewie-after ( tri F: x z deg -- )   \ (down: shown, his own again; else back in by her)
     {: tri F: x z deg :}  hewie-away @ if  exit  then
-    hewie-cond-now @ down-cond = if  ['] hewie-held stop-doing  hewie true shown  hewie let-go  exit  then
+    hewie-cond-now @ down-cond = if  ['] hewie-kept-hidden stop-doing  hewie true shown  hewie let-go  exit  then
     hewie activate  old-mansion-2f-6 tri 0 hewie-to  hewie tri deg f>s x z place-at ;
 
 \ ---- hiding in a locker from Daniella or Riccardo ----
-: hers? ( -- flag )  partner-kind dup daniella-kind = swap kind34-kind = or ;   \ (Daniella, else Riccardo)
 : may-hide? ( -- flag )   \ (one of them after her - chased, not in a panic, him not down)
-    hers?  partner-kind riccardo-kind = or  chased? and  in-panic? 0= and  st-cond-now @ down-cond <> and ;
+    daniella-loaded?  partner-kind riccardo-kind = or  chased? and  in-panic? 0= and  st-cond-now @ down-cond <> and ;
 : knocks ( -- )  0 exit-open? 0= if  15 frames  0 knock  then ;   \ (him at the door)
 : locker-scene ( movie cutscene kept -- movie? )
     {: m c kept :}  15 screen:to-black-2 with-music or fade
     m scenes:keyed-movie c load-scene  kept cutscene-keep-model  wait-fade  hewie-for-scene ;
 : near-locker-hides ( -- )   \ (he comes and goes)
     stalkers-stay state!  fiona hold
-    hers? if  3 2 4  else  7 6 5  then  locker-scene  $10 $FF movie-key  ['] knocks start drop
+    daniella-loaded? if  3 2 4  else  7 6 5  then  locker-scene  $10 $FF movie-key  ['] knocks start drop
     panic-eased  if  -1 run-scene  then  wait-fade
     near-locker object-hide  fiona 0 idle
-    hers? if
+    daniella-loaded? if
         fiona $4A 90 -7.575e 18.619e place-at  old-mansion-2f-6 16 stalker-to  stalker 2 2 camera-set
         stalker $10 -90 place-on-tri  0 stalker-order  $35 resident-flag-set
     else
@@ -74,11 +72,11 @@ own: device-remarked  own: cabinet-remarked
     om2f-6-flag2 fact!  15 fade-in  stalkers-stay state-off ;
 : far-locker-hides ( -- )   \ (Daniella knocked down, she slips out; Riccardo taken off)
     stalkers-stay state!  fiona hold
-    hers? if  1 0 4  else  5 4 5  then  locker-scene  $10 $FF movie-key
+    daniella-loaded? if  1 0 4  else  5 4 5  then  locker-scene  $10 $FF movie-key
     force-followed state!  yield  force-followed state-off  ['] knocks start drop
     panic-eased  if  -1 run-scene  then  wait-fade  world-held state!
     far-locker object-hide  fiona 0 idle  $38 -4.97e 35.12e -145e hewie-after  om2f-6-flag1 fact!
-    hers? if
+    daniella-loaded? if
         fiona $4A 180 place-on-tri  old-mansion-2f-6 16 stalker-to  stalker $10 -30 23.591e 11.878e place-at
         stalker activate  stalker send stalker-knock-out  $34 resident-flag-set  $80 false open-mark  forced-exit take-exit
     else
@@ -132,7 +130,7 @@ create cameras  1 , 0 , 0 ,   2 , 1 , 1 ,   3 , 1 , 1 ,   4 , 2 , 2 ,   5 , 1 , 
 : a-locker ( fact area deg hide-xt remark-xt -- )   \ (open still: hide in it when one of them's after her - else its shelf)
     {: f area deg hide remark :}
     f fact?  fiona area in-area? 0= or  fiona deg 50 heading? 0= or if  exit  then
-    may-hide? if  stalker-in? if  no-time-message offer-remark-now  else  hide calm-only offer  then
+    may-hide? if  stalker-in? if  no-time-message offer-remark-now  else  hide hiding-spot offer  then
     else  remark unhurried offer  then ;
 : each-frame ( -- )
     0 exit-out  cameras 6 cameras-at
@@ -155,10 +153,11 @@ create cameras  1 , 0 , 0 ,   2 , 1 , 1 ,   3 , 1 , 1 ,   4 , 2 , 2 ,   5 , 1 , 
             $10 of  [: riccardo-kind 5 4 5 far-locker replay-locker ;]  endof
             $11 of  [: riccardo-kind 7 6 5 near-locker replay-locker ;]  endof
             >r ['] replay-days r>
-        endcase  start drop  exit
+        endcase  fiona start-holding drop  exit
     then
     0 0 0 way-in
     from-forest @ if  fiona $4B 0 place-on-tri  world-held state!  0e sounds-scaled  panic-eased  ['] back-from-forest start drop  then ;
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went old-mansion-2f-6 place!
+here  lavender , ' take-lavender , lavender-fx ,  -1 ,  old-mansion-2f-6 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

@@ -5,6 +5,16 @@ IN: fiona
 USING: engine vectors game-state facts actors messages common paths doors saves fiona.companion fiona.state fiona.anims fiona.model fiona.controls fiona.moving fiona.spots fiona.doors fiona.slam fiona.ladder fiona.push fiona.fear fiona.looks fiona.commands fiona.moves fiona.hurt fiona.seized fiona.defend fiona.voice fiona.letgo flag-names ;
 
 
+\ ---- her own request here, for the story's prompt (Progress_CharRequests): an exit's door area she
+\ stands in, else - not panicking - a ladder she faces, else straining at what won't move ----
+: straining? ( -- flag )  her-doing @ push-doing =  anim@ strain-anim = and ;
+: could ( -- what )
+    usable dup 0< 0= if  exit  then  drop
+    her-panic-stage @ panicking < if
+        ladder-here dup 0< 0= if  drop ladder-could +  exit  then  drop   \ (the side: one door region)
+    then
+    straining? if  strain-could  else  -1  then ;
+
 \ ---- arriving (by an exit: on its outside spot - Rooms_ExitPointOut - her heading kept from
 \ going through, as the original's: Fiona_Vt34 saves it, the scripts' 0x04 places without
 \ turning) ----
@@ -65,15 +75,17 @@ variable past-best   variable past-dist
         then
     then
     past-x f@ past-y f@ past-z f@  past-best @ ;
-: arrive-at ( exit -- )   \ (the room scripts' char-to-exit: its outside spot, her heading kept.
-    dup 0 exit-spot dup 0< if   \ no outside stand: further into the room than the leaf, clear of the exit area)
-        drop fdrop fdrop fdrop  stand-past
+: arrive-at ( exit -- )   \ (the room scripts' char-to-exit: 4 inside its door, her heading kept;
+    \ no such spot, Fiona_Vt38's: 12 inside)
+    dup 0 exit-spot  dup 0< if
+        drop fdrop fdrop fdrop  2 exit-spot  dup 0< if  drop fdrop fdrop fdrop  arrive-anywhere exit  then
     else  nip  then
-    dup 0< if  drop fdrop fdrop fdrop  arrive-anywhere
-    else  her-yaw f@ put  dup her-tri !  her-was-tri !  then ;   \ (on the exit's own triangle: over a storey, the search finds the one below)
+    {: tri :}  her-yaw f@ put  tri her-tri !  tri her-was-tri ! ;   \ (on the exit's own triangle: over a storey, the search finds the one below)
 : stand-free ( -- )   \ (Fiona_ToIdle but for the turn mode: free, standing, her moves her own)
-    free-doing her-doing !  own-mode her-mode !  her-yaw f@ her-heading f!  0 her-rest !  0 her-out-of-reach !
-    -1 idle-anim  ['] idle-move her-act ! ;
+    free-doing her-doing !  own-mode her-mode !  her-yaw f@ her-heading f!  0 her-rest !
+    fiona-occupied state-flag-clear   \ (flag $2B: free again)
+    her-scripted @ if  ['] idle-step her-act !  exit  then   \ (a script's: her idle step - standing, the move done)
+    0 her-out-of-reach !  -1 idle-anim  ['] idle-move her-act ! ;
 : idle ( -- )   \ Fiona_ToIdle: free, standing, the stick by the camera now (+0x1AD588 0)
     camera-relative her-turn-mode !  stand-free ;
 ' idle is to-idle
@@ -86,10 +98,10 @@ variable past-best   variable past-dist
 \ steering in the next room while the stick stays (turn mode 3: controls.fs after-cut)
 : through-door ( -- )
     her-scripted @ if  exit  then
-    her-stick v.x sf@ her-stick v.z sf@  {: F: x z :}
+    camera-relative her-turn-mode !                                         \ (the old steering over)
+    her-last v.x sf@ her-last v.z sf@  {: F: x z :}                          \ (the stick's direction last frame)
     x fabs 0.5e f> z fabs 0.5e f> or 0= if  exit  then
-    x z vlen {: F: l :}  l f0= if  exit  then
-    cam-yaw  x l f/  z l f/  turned  fatan2                                  ( F: heading )
+    cam-yaw  x z  turned  fatan2                                             ( F: heading )
     fdup her-yaw f@ f- angle-wrap pi f2/ f< if
         fdup her-yaw f!  her-heading f!  door-steered her-turn-mode !
     else  fdrop  then ;
@@ -126,9 +138,8 @@ create goal /vec allot
 \ (and not the stalker) as the frame began (Fiona_Update) ----
 create ap-at /vec allot
 variable stalker-apart   \ (the stalker out of contact, as he tells it - his +0x2A: through a door, on a ladder)
-: overlaps? ( id -- flag )  dup 0< if  drop false exit  then  self swap 0e 0e bodies-touching? ;
 : touching ( -- n )   \ (Fiona_Touching: 2 the stalker, 1 Hewie, 0 neither)
-    stalker-in-room overlaps? if  2 exit  then  dog-in-room overlaps? 1 and ;
+    stalker-in-room touching? if  2 exit  then  dog-in-room touching? 1 and ;
 : push-from ( id -- )
     {: him :}
     her-at v.x sf@ him body-at v.x sf@ f-  her-at v.z sf@ him body-at v.z sf@ f-  {: F: dx dz :}   \ (from him to her)
@@ -149,9 +160,9 @@ variable stalker-apart   \ (the stalker out of contact, as he tells it - his +0x
 : keep-apart ( touched-hewie? -- )   \ (in the run, not out of Hewie)
     her-mode @ own-mode <>  her-scripted @ or if  drop exit  then
     her-apart @ or if  touching 0= if  0 her-apart !  then  exit  then   \ (clear of both: in contact again)
-    stalker-in-room dup overlaps?  stalker-apart @ 0= and if  push-from exit  then  drop
+    stalker-in-room dup touching?  stalker-apart @ 0= and if  push-from exit  then  drop
     hewie-played? if  exit  then
-    dog-in-room overlaps? if  out-of-hewie  then ;
+    dog-in-room touching? if  out-of-hewie  then ;
 
 \ ---- her feet on the floor (Fiona_AnimUpdate: her model's +0x40 and +0x4C, the engine's legs-fit
 \ - humanlegs.c): each frame she is on her feet (+0x1AD5BC) but in the states that clear it -
@@ -169,6 +180,8 @@ create feet-off-acts   \ (the states that clear +0x1AD5BC)
     ' fiona.seized:dragged ,   ' fiona.seized:dragged-off ,                             \ Dragged, DraggedOff
     ' fiona.ladder:crawl-drop ,   ' fiona.ladder:crawl-fall ,   ' fiona.ladder:crawl-down ,   \ CrawlDrop, CrawlFall, CrawlDown
     ' fiona.ladder:crawl-up ,   ' fiona.ladder:ladder-off ,   ' fiona.ladder:on-ladder ,     \ CrawlPull, LadderOff, OnLadder
+    ' fiona.ladder:walk-off-top ,                  \ the step off the top of a ladder: her height is her own, not the floor's (the floor under her feet is still the ladder's bottom)
+    ' fiona.ladder:lower-on ,                    \ the lowering onto the first rung from the top: her height is her own, not the floor's
     0 ,
 : feet-off-act? ( xt -- flag )
     {: xt :}  feet-off-acts  begin  dup @ while  dup @ xt = if  drop true exit  then  cell+  repeat  drop false ;
@@ -194,8 +207,12 @@ create feet-off-acts   \ (the states that clear +0x1AD5BC)
     companion-frame
     her-mode @ own-mode = if  panic-controls  else  false  then  0= hands-off? 0= and if  control-command  then
     -1 her-cmd !
+    \ (her point of interest before her state runs: the original's room scripts test it - phases 1 to 3 - ahead
+    \ of Progress_CharsThink, so a kick that lands on a wall still shows its point that frame; told after, the
+    \ wall's end had already changed her motion and the point was never seen - a wall's or a board's kick lost)
+    tell-point
     touching 1 =  feet-set  her-act @ execute  keep-apart
-    looks  tell-point
+    looks
     hand-strike
     command-sounds  motion-sounds
     footsteps
@@ -210,12 +227,18 @@ create feet-off-acts   \ (the states that clear +0x1AD5BC)
     her-offered @ offer-stood !  0 her-offered !
     her-at her-was-at /vec move  her-tri @ her-was-tri !  her-yaw f@ her-yaw-was f!
     look-cleared
-    feel-the-panic
-    read-controls
-    her-mode @ own-mode = if  panic-controls  else  false  then  0=  hands-off? 0= and if  control-command  then
-    hands-off? if  -1 her-cmd !  else  read-command  try-backstep  try-defend  try-doors  try-ladders  try-let-go  then
+    her-scripted @ 0= if   \ (a script's hold: Fiona_Think - no panic, no stick, no control command)
+        feel-the-panic
+        read-controls
+        her-mode @ own-mode = if  panic-controls  else  false  then  0=  hands-off? 0= and if  control-command  then
+    then
+    hands-off? if  her-scripted @ if  read-command-scripted  else  -1 her-cmd !  then  else  read-command  try-backstep  try-defend  try-doors  try-ladders  try-ladder-grab  try-let-go  then
+    \ (her point of interest before her state runs: the original's room scripts test it - phases 1 to 3 - ahead
+    \ of Progress_CharsThink, so a kick that lands on a wall still shows its point that frame; told after, the
+    \ wall's end had already changed her motion and the point was never seen - a wall's or a board's kick lost)
+    tell-point
     touching 1 =  feet-set  her-act @ execute  story-turned  keep-apart
-    looks  tell-point
+    looks
     hand-strike
     command-sounds  motion-sounds
     footsteps
@@ -230,9 +253,9 @@ create clothes-necks     3 , 4 ,   5 , -1 ,   22 , -1 ,   6 , 7 ,   23 , 24 ,
 create fih-earrings      43 , 47 , 48 , 44 ,
 create fih-necks         1 , 2 ,   3 , -1 ,   40 , -1 ,   4 , 5 ,   41 , 42 ,
 : equipped-in ( slot -- id )  4 * progress pr.equipped + sl@ ;
-: earrings-worn ( -- 0..4 )   \ (0 none)
+: earrings-worn ( -- n )   \ (0 .. 4; 0 none)
     1 equipped-in  dup $86 $8A within if  $85 -  else  drop 0  then ;
-: choker-worn ( -- 0..4 )   \ (0 none: the bare neck)
+: choker-worn ( -- n )   \ (0 .. 4; 0 none: the bare neck)
     3 equipped-in  dup $8A $8E within if  $89 -  else  drop 0  then ;
 : costume-looks ( -- earrings necks | 0 0 )
     her-costume @ case  0 of  clothes-earrings clothes-necks  endof  2 of  fih-earrings fih-necks  endof  >r 0 0 r>  endcase ;
@@ -280,9 +303,11 @@ create model-name 32 allot  create tex-name 32 allot  create marker-name 32 allo
     show-equipment
     self body? 0<> 1 and her act.visible l!  0 -1 play-table ;   \ (shown once she is in a room)
 
-\ out of sight (Fiona_Frame's area fade, +0x1AD630): wearing item $89 in the equipment's slot 1 and
-\ standing still, after 60 frames she can't be seen - the homunculi only circle her; any move, and
-\ she can be seen again (told when it changes: fiona-unseen). On screen (Fiona_LightChange) she
+\ out of sight (+0x1AD630): wearing item $89 in the equipment's slot 1 and still, after 60 frames she
+\ can't be seen - the homunculi only circle her; any move, and she can be seen again (told when it
+\ changes: fiona-unseen). Still: free and standing (Fiona_Panic's, from Fiona_Update), or held by a
+\ script while crouched in a hiding place (Fiona_AreaFade, from Fiona_Think - a character held runs
+\ its Think, not its Update: held otherwise, she is seen). On screen (Fiona_LightChange) she
 \ fades out as she goes unseen, and once gone she shows softened (layer $1C: drawn at half size) -
 \ only while she wears it; else her layer is the story's.
 : unseen! ( flag -- )  dup her-unseen @ = if  drop exit  then  dup her-unseen !  broadcast fiona-unseen ;
@@ -302,10 +327,12 @@ $1C constant softened-layer
     stalker-in-room dup 0< if  drop exit  then
     self over 1e 0e bodies-touching? 0= if  drop exit  then
     0 her-still-t !  false unseen!  6 3 rot 0e struck drop ;
+: still-for-it? ( -- flag )   \ (held: crouched - fiona-half-hidden, the hiding script's; free: standing)
+    her-scripted @ if  fiona-half-hidden state-flag? exit  then  her-mode @ 0=  her-sub @ 0= and ;
 : unseen-frame ( -- )
     fade-frame
     her-carried-t @ 0> if  -1 her-carried-t +!  then
-    progress pr.equipped 4 + l@ $89 =  her-mode @ 0= and  her-sub @ 0= and 0= if  0 her-still-t !  false unseen! exit  then
+    camouflaged?  still-for-it? and 0= if  0 her-still-t !  false unseen! exit  then
     her-unseen @ if  bumped exit  then
     1 her-still-t +!  her-still-t @ 60 >= if  true unseen!  then ;
 
@@ -313,19 +340,29 @@ $1C constant softened-layer
 \ was hiding (Fiona_FullStop: its flags 9 and $A cleared; only the crouch sets $A)
 : crouch-over ( -- )  fiona-half-hidden state-flag-clear ;
 \ ... and the camera back on her, the story's shot over (Fiona_FullStop: Progress_CameraOn 0,
-\ CamDirector_HoldEffect1C 0)
-: script-over ( -- )  crouch-over  hewie-played? 0= if  self cam-on  then  0 0 0 0 0 camera-id send event-shot ;   \ (in the run the camera his)
+\ CamDirector_HoldEffect1C 0), the world no longer frozen (its flag $17 cleared - a close look that
+\ didn't clear it itself leaves no one hidden)
+: script-over ( -- )
+    crouch-over  world-frozen state-flag-clear
+    hewie-played? 0= if  self cam-on  then  0 0 0 0 0 camera-id send event-shot ;   \ (in the run the camera his)
 
+\ a script takes her (Fiona_Interrupted): met with Hewie - held ($C) - or in a command with him (rouse,
+\ pat, tend, scold close by): he goes back to his default (Hewie_BackToIdle), unless a script has him
+: with-him-interrupted ( -- )
+    her-mode @ held-mode =
+    her-mode @ command-mode =  her-sub @ dup rouse-cmd = over pat-cmd = or over tend-cmd = or swap scold-near-cmd = or  and  or
+    if  hewie-id send partner-interrupted  then ;
 behaviour free
   on spawned ( -- )  self cam-player!
       -1 her-model !  -1 her-hit-who !  -1 her-shake-count !  her-creatures #creatures cells -1 fill  progress pr.vars $26 + c@ wear  2e 15e body-size
       self subscribe tick  self subscribe leaving-room  self subscribe arrived  self subscribe camera-cut  self subscribe write-save  self subscribe creature-doing
       self subscribe danger  self subscribe panic  self subscribe hewie-doing  self subscribe frame-end  self subscribe text-shown  self subscribe scene  self subscribe stalker-doing  self subscribe stalker-stride  self subscribe stalker-ties
-      self subscribe equipment ;
+      self subscribe equipment  self subscribe exit-chosen ;
   on leaving-room ( room exit -- )  hewie-played? if  nip fiona.companion:he-left exit  then  2drop  through-door ;
   on arrived ( room exit -- )   \ (the story's scripts place her too; in the run, she comes with him or not)
       hewie-played? if  fiona.companion:room-came exit  then  nip arrive  1 her act.visible l! ;
-  on to-exit ( exit -- )  hewie-played? if  mate-door ! exit  then  arrive ;   \ (in the run: Character_ChooseExit - the exit she came in by)
+  on to-exit ( exit -- )  hewie-played? if  mate-door ! exit  then  arrive ;
+  on exit-chosen ( exit -- )  mate-door ! ;   \ (her exit set by a room - Character_ChooseExit: the one she makes for with him)   \ (in the run: Character_ChooseExit - the exit she came in by)
   on hewie-told ( what arg -- )  fiona.companion:told ;
   \ examining (Progress_PlayerButtons): an action offered here, taken with the action button
   \ while she is free; a script of the room has her, or lets go; a message on screen
@@ -333,14 +370,14 @@ behaviour free
       -1 her-offered !
       her-mode @ 0= her-doing @ 0= and  hands-off? 0= and  action-button? and
       sender alive? and  if  sender send take-offer  else  2drop  then ;   \ (its room gone meanwhile: nobody to answer)
-  on scripted ( on -- )  idle  dup 0= her-scripted @ 0<> and if  script-over  then  her-scripted ! ;
+  on scripted ( on -- )  dup if  with-him-interrupted  then  dup 0= her-scripted @ 0<> and if  script-over  then  her-scripted !  idle ;   \ (idle as she now is: a script's idle step, or free)
   on noclip ( on -- )  her-noclip ! ;   \ (the story's 0x20)
   on aside ( on -- )  her-aside ! ;     \ (0x21: out of reach of attacks)
   on activate ( -- )  0 her-noclip !  0 her-aside !  idle ;   \ (the story's 0x15, Fiona_Activate: afresh, standing)
   on costume ( n -- )  wear  show-her  weapon-shown ;
   on fiona-request ( kind x y z threat -- )   \ (a creature's, Progress_Noise: $D a spirit - she falls; 3 a red one
-      >r cells>xyz from-pt vec!   \ going - grabbed; $C homunculi - held down)
-      dup broadcast fiona-requested  0 -1 r> cell>f struck drop ;   \ (its threat her fright: Fiona_React)
+      {: kind x y z threat :}  x y z cells>xyz from-pt vec!   \ going - grabbed; $C homunculi - held down)
+      kind broadcast fiona-requested  kind 0 -1 threat cell>f struck drop ;   \ (its threat her fright: Fiona_React)
   on throw-down ( who recover -- )  thrown-down ;   \ (the story's 0xB2)
   on look-hold ( who frames -- )  her-look-hold !  her-look-who !  1 her-look-on ! ;   \ (the story's 0x96: Fiona_SetTarget)
   on creature-doing ( slot room mode up -- )   \ (a homunculus in her room holding her; each creature remembered)
@@ -359,12 +396,12 @@ behaviour free
   on scene ( on -- )  her-in-scene ! ;   \ (a cutscene has her)
   on go-to ( x y z -- )  cells>xyz  go-to-point ;
   on on-triangle ( tri -- )  dup her-tri !  her-was-tri ! ;
-  on place ( x y z yaw -- )  cells>xyzw  put  fresh ;   \ (the story puts her)   \ (the room's scripts: Rooms_ExitPointOut, facing in)
+  on place ( x y z yaw -- )  cells>xyzw  put  her-scripted @ {: kept :}  fresh  kept her-scripted ! ;   \ (the story puts her - its hold on her kept; the room's scripts: Rooms_ExitPointOut, facing in)
   on camera-cut ( -- )  vr? if  exit  then  -1 her-cut ! ;
   on meters? ( -- )  her-fear f@ f>s  her-fear-bits @ 1 and  her-panic-t @  sender send her-meters ;   \ (the debug overlay)
   \ struck or caught (F4: fiona.hurt)
   on hit ( kind how fright -- )
-      cell>f  over >r  sender struck if  r> sender send hit-taken  else  r> drop  then ;
+      {: kind how fright :}  fright cell>f  kind how sender struck if  kind sender send hit-taken  then ;
   on seize ( type -- )  sender swap seized if  sender send seize-taken  else  sender send seize-refused  then ;
   on unhand ( -- )  0 her-led ! ;
   on flinch ( -- )  flinch ;   \ (a room's command)
@@ -378,16 +415,18 @@ behaviour free
   on tick ( -- )   \ (a scene having her - Character_Disable - her frame waits: where the scene moves her
       \ her place - Fiona_FollowAnim; her heading kept)
       self body? 0= if  exit  then
+      panic-starting state-flag? if  exit  then   \ (her panic's start: the world held still - Progress_CharsThink skipped)
       her-model @ scene-has? if  followed  else  frame  then ;
   on frame-end ( -- )   \ what she is doing, as the frame left her; her move
       self body? 0= if  exit  then
       unseen-frame
       her-mode @ her-sub @ her-cond @ her-cmd @ her-doing @ broadcast fiona-doing
       her-hit-who @ broadcast fiona-struck-by
-      her-doing @ push-doing =  anim@ strain-anim = and  broadcast fiona-straining
+      straining? broadcast fiona-straining
+      could broadcast fiona-could
       shook-from-rest broadcast fiona-shaking
       her-shake-count @ 0< 0= if  shakes-now her-shake-count +!  her-shake-count @ broadcast fiona-shakes  then   \ (a story counting them)
-      plight  her-mode @ 3 = if  her-ladder @  else  -1  then  broadcast fiona-plight
+      plight  her-mode @ 3 = if  her-ladder @  else  -1  then  reach  broadcast fiona-plight
       tell-head
       her-move-done @  ended?  her-model @ 0 0 1 motion-events  broadcast moving ;
   \ the story's moves (fiona.moves)
@@ -412,10 +451,11 @@ behaviour free
   on hewie-doing ( here action mode sub cond mood group commandable near reachable breakable way trust -- )
       drop dog-way !  2drop 2drop  dog-group !  dog-mood !  dog-cond !  dog-sub !  dog-mode !  dog-action !  dog-here ! ;
   on meet-at ( tri x y z face -- )
-      asked? 0= if  2drop 2drop drop  hewie-id send meet-off exit  then
-      >r >r >r cell>f  r> cell>f  r> cell>f  r> cell>f  meet-placed ;
+      {: tri x y z face :}  asked? 0= if  hewie-id send meet-off exit  then
+      tri  x cell>f y cell>f z cell>f face cell>f  meet-placed ;
   on meet-on ( -- )  her-act @ ['] meet-waiting = if  meet-started  else  hewie-id send meet-off  then ;
   on meet-refused ( -- )  her-act @ ['] meet-waiting = if  meet-failed  then ;
 end-behaviour
 
 : fiona-spawn ( -- id )  free fiona-state s" fiona" spawn ;
+

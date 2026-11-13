@@ -38,9 +38,8 @@ $187 constant far-tri   $11F constant near-tri   $195 constant back-tri   $30 co
     room-sounds  specks-about  1 $2300 reverb ;
 
 \ ---- Hewie through a scene: down, hidden away till it's over ----
-: hewie-held ( -- )  hewie hold  hewie false shown  begin  yield  again ;
-: hewie-hidden-if-down ( -- )  hewie-in?  hewie-cond-now @ down-cond = and if  ['] hewie-held start drop  then ;
-: hewie-back ( -- )  hewie-in?  hewie-cond-now @ down-cond = and if  ['] hewie-held stop-doing  hewie true shown  hewie let-go  then ;
+: hewie-hidden-if-down ( -- )  hewie-in?  hewie-cond-now @ down-cond = and if  ['] hewie-kept-hidden start drop  then ;
+: hewie-back ( -- )  hewie-in?  hewie-cond-now @ down-cond = and if  ['] hewie-kept-hidden stop-doing  hewie true shown  hewie let-go  then ;
 
 \ ---- the first time in: its scene ----
 : intro-scene ( -- )  intro-movie scenes:unseen-movie intro-cutscene load-scene  0 hide-part  panic-eased  if  -1 run-scene  then ;
@@ -153,7 +152,7 @@ create looks  0e 0e -68.2e  18e 19e 19e look,
 : person-in ( i -- )
     fiona-p <> if  exit  then
     events-held state? if
-        hewie send part-from-fiona  replay-act $A = if  ['] replay-intro  else  ['] replay-plates  then  start drop  exit
+        hewie send part-from-fiona  replay-act $A = if  ['] replay-intro  else  ['] replay-plates  then  fiona start-holding drop  exit
     then
     entries 2 ways-in
     om3f-2-flag1 fact? 0= if  panic-eased  ['] first-in start drop  then ;

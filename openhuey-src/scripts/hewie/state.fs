@@ -11,8 +11,8 @@ state: hewie-state
   \ behaviour that carries it out, run each frame (an xt: the original's PTMF +0xF35D0)
   cell field his-action   cell field his-last-action
   cell field his-next           \ the argument / the action after (+0xF3570)
-  cell field his-act            \ the behaviour (an xt)
-  cell field his-mood-act       \ his mode's behaviour: calm / wary / tense (an xt)
+  cell field his-act  holds: ( -- )   \ the behaviour (an xt)
+  cell field his-mood-act  holds: ( -- )   \ his mode's behaviour: calm / wary / tense (an xt)
   cell field his-wait           \ frames before he moves on (+0xF355C)
   cell field his-target   cell field his-target2   \ whom: an actor id (-1 none)
   cell field his-cmd            \ what may break in on his action (the on-.. bits below) (+0xF356C)
@@ -59,7 +59,7 @@ state: hewie-state
   cell field his-heard-src  cell field his-heard-room  cell field his-signals  cell field her-struck-by
   cell field his-held           \ Fiona was held
   cell field his-panic-seen     \ her panic's stages seen (1: 4, 2: 5)
-  cell field his-scene-req
+  cell field his-dodge-req
   cell field his-call           \ who called him (no-call; 0 Fiona; whoever struck him while angry)
   cell field his-hits  cell field his-hit-t   \ how often Fiona hit him lately
   cell field his-hold-call   \ (+0xF35B0) 900 frames after a call while waiting, or a scuffle: no 0x4F / 0x50, no scuffle

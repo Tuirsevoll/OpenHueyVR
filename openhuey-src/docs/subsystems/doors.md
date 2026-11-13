@@ -17,13 +17,15 @@ Declared in `scripts/messages.fs`. Kinds of character (for locks): `fiona-kind` 
 | `lock` / `unlock` | `( door -- )` | doors | For everyone (the story, keys). |
 | `lock-for` | `( door kind on -- )` | doors | Locked against a kind of character, or not (`Progress_LockDoorFor`). |
 | `close-off` | `( door -- )` | doors | Gone for good: no route goes through it. |
+| `game-loaded` | `( -- )` | doors (broadcast by saves) | The exits made anew from the loaded progress' closed-off doors (Rooms_SetState). Before 0.2.38 a load left them as the session had them: begun afresh, an exit kept a closed-off door - the mansion's front door, front-garden-2's exit 0, was the locked door 1 instead of door $3C. A reset to the title rebuilds them too (`soft_reset`: Rooms_SetState with no save). |
 | `hold-door` | `( room exit kind -- )` | doors | Take hold of a door before going through (any room). Answered `door-held` or `door-refused` `( room exit -- )`. |
 | `let-go-open` / `let-go-shut` | `( room exit source -- )` | doors | Let it go open or shut (off-screen: heard). |
+| `open-from-afar` / `shut-from-afar` | `( room exit kind source -- )` | doors | Taken hold of and let go open / shut at once, out of sight (DoorHold_Take then DoorHold_Open / DoorHold_Shut): a stalker going through it off-screen as his kind leaves doors (NPC_ExitArg and its kin), Fiona following Hewie in the run. |
 | `use-door` | `( exit anim source -- )` | doors | The played room's door swings along the user's animation; at rest it is let go. |
 | `swing-door` | `( exit open source -- )` | doors | Swung open / shut by 5 degrees a frame. |
 | `set-door-opened` | `( exit open -- )` | doors | A room's script sets it swinging (`Doors_SetOpened`): open with a loud creak (0x91, heard 0x5F from Fiona's source) or shut, by 15 degrees a frame; its passage moves over at once; its state isn't changed (nobody holds it). |
-| `slam` | `( exit source -- )` | doors | Slammed shut (15 a frame, a loud latch); taken hold of first, let go at rest. |
-| `barge` | `( exit source -- )` | doors | Burst open (15 a frame); taken hold of first, let go at rest (Fiona_SlamDoor). |
+| `slam` | `( exit source -- )` | doors | Slammed shut (15 a frame, a loud latch); taken hold of first, set shut (Doors_SetOpened how 1: its passage changed sides at once), let go at rest. |
+| `barge` | `( exit source -- )` | doors | Burst open (15 a frame) with its bang (sound 0x91, loud, at the door - silent before 0.2.37); taken hold of first, set opened (Doors_SetOpened how 0: its passage open at once, so she runs on through as it swings - since 0.2.39; before, only once it had come to rest), let go at rest (Fiona_SlamDoor). |
 | `pull-shut` | `( exit source -- )` | doors | Taken hold of and swung shut by 5 degrees a frame, let go shut at rest: a stalker's door behind him (his DoorBreak: DoorHold_Take, DoorHold_Shut). |
 | `door-changed` | `( door -- )` | broadcast | Its state changed. |
 | `noise` | | acoustics | The doors are heard. |
@@ -44,7 +46,13 @@ kinds it is locked against). The played room's doors: who uses / holds each.
 From `doors.c` (`Doors_*`), `progress.c` (`Progress_*Door*`), `room_map.c` (closed off).
 
 1. A shut door blocks its passage: the nav triangles on its two sides are cut off from each
-   other (`Doors_Passage`). Open, they join. A doorway is always open.
+   other (`Doors_Passage`). Open, they join. A doorway is always open. The passage follows the door
+   where it stands - set as the room comes in (`Doors_RoomIn`), as its user lets it go, as a room's
+   script swings it - never the state alone: a change of the state (the story's locks and marks, a
+   door let go) puts only its locks on the floor (`Doors_Refresh`: $5000000, Hewie and the stalkers
+   barred; Fiona never). Before 0.2.42 the passage followed the state too: a door drawn open but
+   marked shut (castle-1f-5's, castle-1f-8's in their scenes) barred her, one drawn shut but marked
+   open let a stalker walk through it.
 2. A door is passable for a kind unless locked against it (`door_passable`: 0 Fiona, 1 Hewie,
    2-5 stalkers each a bit).
 3. Using a door: the door swings along the user's animation (the door records in
@@ -60,6 +68,9 @@ From `doors.c` (`Doors_*`), `progress.c` (`Progress_*Door*`), `room_map.c` (clos
 7. Letting go (`DoorHold_Open` / `DoorHold_Shut`): only a held, unlocked, non-doorway door;
    open also fails if it's stuck (bit 2). Either way it's no longer held. Off-screen, the door is
    heard (0xF at the door, from the user's source); in the played room its own sounds are.
+   When the played room is left, each door still held there - its swing not come to rest, its
+   user struck or gone - is let go as it was going, open or shut (`Doors_SaveAll`): a door left
+   held could be used by nobody again.
 8. In the played room a door model swings (`Door_Swing`): along its user's animation, by 5
    degrees a frame, or slammed by 15. The creak (0x27) as it starts to open along an animation
    and the latch (0x28) as it shuts past -6 degrees are heard at 0xF. A slam's latch is heard at
@@ -88,10 +99,10 @@ From `doors.c` (`Doors_*`), `progress.c` (`Progress_*Door*`), `room_map.c` (clos
 ## Status
 
 **Built** (`scripts/doors.fs`; the swing in C `room.c` now follows `Door_Swing`'s three modes and
-reports each frame's sound and rest). Checked by `tests/doors/test_doors.fs` (39 tests: locking;
+reports each frame's sound and rest). Checked by `tests/doors/test_doors.fs` (53 tests: locking;
 the locked-door quirk; holding once; letting go open / shut / not held; locked against a kind; a
 doorway; a door used off-screen heard at 0xF from its user's source; a held door swung open in
-the played room settles open; a slam's latch heard at 0x5F and the door left shut; set opened by
+the played room settles open; one still held when the room is left let go, open or shut; a slam's latch heard at 0x5F and the door left shut; set opened by
 a room's script - 15 a frame, the passage at once, the creak and latch heard at 0x5F; a door
 without a nav triangle not swung).
 

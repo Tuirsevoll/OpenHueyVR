@@ -1,3 +1,4 @@
+#include <math.h>
 #include "platform.h"
 
 #include "gl.h"
@@ -116,6 +117,7 @@ static const struct { SDL_GamepadButton button; SDL_Scancode key; } kPadKeys[] =
     {SDL_GAMEPAD_BUTTON_DPAD_DOWN, SDL_SCANCODE_DOWN},
     {SDL_GAMEPAD_BUTTON_DPAD_LEFT, SDL_SCANCODE_LEFT},
     {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, SDL_SCANCODE_RIGHT},
+    {SDL_GAMEPAD_BUTTON_RIGHT_STICK, SDL_SCANCODE_F},   /* R3: Hewie's command (the stick's gesture 2) */
 };
 #define STICK_DEAD 0.25f   /* (the stick's dead zone) */
 #define STICK_KEY 0.5f     /* (past this, it holds a key) */
@@ -136,6 +138,8 @@ static float stick_axis(SDL_GamepadAxis a) {
 
     return v > -STICK_DEAD && v < STICK_DEAD ? 0.0f : v < -1.0f ? -1.0f : v;
 }
+
+static void pad_gestures(Input *in);
 
 /* the pad's held keys this frame; a stick key newly held counts as pressed */
 static void pad_poll(Input *in) {
@@ -161,6 +165,55 @@ static void pad_poll(Input *in) {
         sPadHeld[kStickKeys[i].key] = v > STICK_KEY;
         if (sPadHeld[kStickKeys[i].key] && !was) {
             in->pressed[kStickKeys[i].key] = true;
+        }
+    }
+    pad_gestures(in);
+}
+
+/* the right stick's gestures (Gesture_Update: Hewie's commands) as the keys that stand for them -
+ * I up, K down, L right, J left: a direction's arms once the stick is centred (under 0.4) and
+ * fires, a key press, when it is then pushed right over (the original's 0.99 of a PS2 stick's
+ * full throw; 0.9 here, as not every pad's stick reaches its corner values) within 0.6 radians
+ * of it. Once fired it must be centred again (gesture_step): more praise is the stick pushed
+ * right again, as the original's, not held. In the original's order - back (up), forward (down),
+ * R3, right, left - the first to fire resets those after it, and R3 counts only with the stick
+ * centred (Gesture_R3); before 0.2.42 a swing from one direction to another fired both, and R3
+ * counted wherever the stick was */
+static void pad_gestures(Input *in) {
+    static const struct { SDL_Scancode key; float at; } kWays[4] = {
+        {SDL_SCANCODE_I, 3.1415927f}, {SDL_SCANCODE_K, 0.0f}, {SDL_SCANCODE_L, 1.5707964f}, {SDL_SCANCODE_J, -1.5707964f},
+    };
+    static int sArmed[4];
+    float x = (float)SDL_GetGamepadAxis(sPad, SDL_GAMEPAD_AXIS_RIGHTX) / 32767.0f;
+    float y = (float)SDL_GetGamepadAxis(sPad, SDL_GAMEPAD_AXIS_RIGHTY) / 32767.0f;
+    float len = sqrtf(x * x + y * y), ang = atan2f(x, y);   /* (0 the stick down - forward - as the original's) */
+    int i, fired = 0;
+
+    for (i = 0; i < 4; i++) {
+        float off = fabsf(ang - kWays[i].at);
+        int aimed;
+
+        if (i == 2 && in->pressed[SDL_SCANCODE_F] && SDL_GetGamepadButton(sPad, SDL_GAMEPAD_BUTTON_RIGHT_STICK)) {
+            if (len < 0.4f) {
+                fired = 1;   /* (R3, between forward and right) */
+            } else {
+                in->pressed[SDL_SCANCODE_F] = false;
+            }
+        }
+        if (fired) {
+            sArmed[i] = 0;
+            continue;
+        }
+        if (off > 3.1415927f) {
+            off = 6.2831855f - off;
+        }
+        aimed = len > 0.9f && off < 0.6f;
+        if (len < 0.4f) {
+            sArmed[i] = 1;
+        } else if (sArmed[i] && aimed) {
+            sArmed[i] = 0;
+            in->pressed[kWays[i].key] = true;
+            fired = 1;
         }
     }
 }
@@ -224,6 +277,7 @@ void platform_poll(Input *in) {
      * tick, and a press then must not be lost) */
     in->text[0] = 0;
     in->fullscreen_toggle = 0;
+    in->debug_skip_cycle = 0;
     memset(in->typed, 0, sizeof(in->typed));
     while (SDL_PollEvent(&e)) {
         switch (e.type) {
@@ -240,6 +294,10 @@ void platform_poll(Input *in) {
                        e.key.scancode == SDL_SCANCODE_F11) {
                 if (!e.key.repeat) {
                     in->fullscreen_toggle = 1;
+                }
+            } else if (e.key.scancode == SDL_SCANCODE_DELETE) {   /* (a debug aid: the next draw pass off - F9 is the game's quickload) */
+                if (!e.key.repeat) {
+                    in->debug_skip_cycle = 1;
                 }
             } else if (!e.key.repeat || e.key.scancode == SDL_SCANCODE_BACKSPACE) {
                 key_pressed(in, e.key.scancode);
@@ -300,6 +358,12 @@ void platform_mouse_capture(int on) {
 void platform_fullscreen(int on) {
     if (sWindow != NULL) {
         SDL_SetWindowFullscreen(sWindow, on != 0);   /* (no mode set: the desktop's, borderless) */
+    }
+}
+
+void platform_title(const char *text) {
+    if (sWindow != NULL) {
+        SDL_SetWindowTitle(sWindow, text);
     }
 }
 

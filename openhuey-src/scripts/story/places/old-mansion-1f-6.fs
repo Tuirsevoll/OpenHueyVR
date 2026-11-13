@@ -50,13 +50,12 @@ $9006 $9007 lash-sound hop-sound  20e 0e -105e 0e  hopper: the-figure
 
 \ ---- the hiding place (the kit's); the stalker's search - once while she hides ----
 : hides ( -- )  0 searched !  fiona -1 look-at  her-motions $92 -90 4 -110.16e 146.09e hides-in ;
-: her-looker? ( -- flag )  st-kind-now @ dup daniella-kind = swap kind34-kind = or ;
 : looks-in ( -- )
     stalker hold  stalker wait-move
     search-started @ 0=  stalker 0 exit-area in-area? or if  0 door-for-him  then  0 search-started !
-    her-looker? if  stalker daniella-motions motions-for  then
+    daniella-here? if  stalker daniella-motions motions-for  then
     stalker $20 -90 -100e 146.09e walk-to
-    her-looker? if  stalker use-motions  1 her-back  stalker room-motion play  0 her-back
+    daniella-here? if  stalker use-motions  1 her-back  stalker room-motion play  0 her-back
     else  stalker stalker.anims:there-anim play  then
     -1 found-her !  stalker 10 idle  begin  fiona held? while  yield  repeat  0 stalker-order ;
 : he-searches ( -- )
@@ -84,9 +83,8 @@ create entries  0 , -1 ,   3 , -1 ,   \ (by exit 0, 1: the camera)
 create ahead  2 , 0 ,   3 , 1 ,   \ (area, exit loaded ahead)
 create looks  20.8e 0e -104.26e  30e 15e 15e look,
 : the-walker ( -- )
-    walker-due? 0= if  exit  then
-    fiona $B entered? if  -1 in-further !  then
-    fiona $A entered? if
+    walker-due? if  fiona $B entered? if  -1 in-further !  then  then
+    fiona $A entered?  om1f-6-flag1 fact? 0= and if   \ (dropped once, whether or not it walked)
         walker-slot figure-out  old-mansion-1f-6 0 82 $80 8 $B4 0e creature-dropped  om1f-6-flag1 fact!
     then ;
 : each-frame ( -- )
@@ -99,7 +97,7 @@ create looks  20.8e 0e -104.26e  30e 15e 15e look,
     flame-fx -122.2e 13.1e 139e 8e -4e flame-stirred  flame-2-fx -120.5e 12.8e 140.35e 8e -4e flame-stirred
     om1f-6-medallion fact? 0=  fiona -119.67e 9e 151.64e 5e 5e touches? and if  ['] take-medallion calm-only offer  then
     fiona hide-area in-area?  fiona -90 60 heading? and if
-        stalker-busy? if  no-time-message offer-remark-now  else  ['] hides calm-only offer  then
+        stalker-busy? if  no-time-message offer-remark-now  else  ['] hides hiding-spot offer  then
     then
     fiona $C 60 faces-area? if  ['] the-sheet unhurried offer  then
     fiona $D in-area?  fiona 90 60 heading? and if  ['] the-cage unhurried offer  then
@@ -117,3 +115,4 @@ create looks  20.8e 0e -104.26e  30e 15e 15e look,
 : went ( -- )  hopper-gone ;
 
 ' came-in ' person-in ' each-frame ' went old-mansion-1f-6 place!
+here  medallion , ' take-medallion , medallion-fx ,  -1 ,  old-mansion-1f-6 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

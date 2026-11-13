@@ -46,7 +46,6 @@ own: solved-here           \ the dials set right here, this visit: down to castl
     moon-movie scenes:keyed-movie moon-cutscene load-scene  castle-1f-12 preload  wait-fade
     world-frozen state!  $10 $FF movie-key  panic-eased  if  -1 run-scene  then
     world-held state!  world-frozen state-off ;
-: stalker-kept ( -- )  stalker hold  begin  yield  again ;
 : moon-comes ( -- )   \ (up from castle-1f-12)
     fiona hold  stalker-in? if  ['] stalker-kept start drop  yield  then  world-frozen state!
     moon-scene  solved-here @ if  forced-exit  else  forced-exit 1 or  then  take-exit ;
@@ -54,7 +53,7 @@ own: solved-here           \ the dials set right here, this visit: down to castl
     -1 solved-here !  force-calm state!  15 screen:to-black-2 with-music or fade
     fiona hold  moon-scene  forced-exit take-exit ;
 : moon-door-open ( -- )   \ (back up from castle-1f-12, set right: the moon door unlocked, the creatures loose)
-    fiona hold  moon-door unlock  c1f-12-flag1 fact!  5 0 s" creatures" actor-named send creature-count
+    fiona hold  moon-door unlock  c1f-12-flag1 fact!  5 0 creatures-id send creature-count
     force-calm state-off  stalkers-stay state-off  fiona let-go  camera-restart  0 prepare-exit
     15 screen:from-black with-music or fade ;
 
@@ -119,7 +118,7 @@ create entries  1 , 1 ,   0 , 0 ,   \ (by exit 0, 1: the camera)
     2 exits-out  cameras 4 cameras-at  ahead 2 ways-out  hewie-sniffs  looks 2 hewie-looks-at  spots  walls-shade ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     entries 2 ways-in
     $81 forced-way? if
         fiona $EB 50 -41.573e -3.787e place-at  1 1 player-camera
@@ -128,3 +127,4 @@ create entries  1 , 1 ,   0 , 0 ,   \ (by exit 0, 1: the camera)
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went castle-2f-1 place!
+here  refined-magnesia , ' pick-magnesia , magnesia-fx ,  lavender , ' pick-lavender , lavender-fx ,  -1 ,  castle-2f-1 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

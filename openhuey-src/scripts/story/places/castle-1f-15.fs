@@ -191,9 +191,9 @@ create ahead  4 , 0 ,   5 , 2 ,   7 , 2 ,   6 , 3 ,   8 , 3 ,   9 , 4 ,   \ (are
     events-held state? if
         hewie send part-from-fiona
         replay-act case
-            $C of  [: saved-movie saved-cutscene false replay ;] start drop  endof
-            $D of  [: failed-movie failed-cutscene false replay ;] start drop  endof
-            $E of  [: caught-movie caught-cutscene true replay ;] start drop  endof
+            $C of  [: saved-movie saved-cutscene false replay ;] fiona start-holding drop  endof
+            $D of  [: failed-movie failed-cutscene false replay ;] fiona start-holding drop  endof
+            $E of  [: caught-movie caught-cutscene true replay ;] fiona start-holding drop  endof
         endcase  exit
     then
     0 0 0 way-in  2 0 0 way-in  3 0 0 way-in  4 1 1 way-in
@@ -202,3 +202,4 @@ create ahead  4 , 0 ,   5 , 2 ,   7 , 2 ,   6 , 3 ,   8 , 3 ,   9 , 4 ,   \ (are
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went castle-1f-15 place!
+here  camomile , ' pick-camomile , camomile-fx ,  medallion , ' pick-medallion , medallion-fx ,  -1 ,  castle-1f-15 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

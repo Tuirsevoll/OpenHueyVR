@@ -290,12 +290,12 @@ variable wardrobe-in-noclip   2 wardrobe-in-noclip !
     has-room if  sparkle-fx 0e 3e -39e flicker-at  then
     glint-sound room-bank fiona sound-by  30 0 do  0.075e lid-by  yield  loop  16 frames
     has-room if
-        inquisitor-earrings items:items-of 0= if
+        inquisitor-earrings items:items-of 0= dup if   \ (the earrings first: a moment before the choker)
             inquisitor-earrings item-named  inquisitor-earrings 1 give-item  inquisitor-earrings show-item-tab  fanfare  obtained-2-msg say
         then
         jade-choker items:items-of 0= if
-            16 frames  jade-choker item-named  jade-choker 1 give-item  jade-choker show-item-tab  fanfare  obtained-2-msg say
-        then
+            if  16 frames  then  jade-choker item-named  jade-choker 1 give-item  jade-choker show-item-tab  fanfare  obtained-2-msg say
+        else  drop  then
         sparkle-fx effect-off
     else  empty-msg say  then
     got-jade-choker fact!  4 frames  world-frozen state-off  stalkers-stay state-off  shot-off ;
@@ -323,7 +323,7 @@ variable wardrobe-in-noclip   2 wardrobe-in-noclip !
 : pick-medallion ( -- )  medallion c2f-12-medallion medallion-fx -17.5e 47e picks-up ;
 : spots ( -- )
     fiona wardrobe-area in-area?  fiona 44 60 heading? and if
-        stalker-in? if  no-time-message offer-remark-now  else  vr? 0= if  ['] hides calm-only offer  then  then
+        stalker-in? if  no-time-message offer-remark-now  else  vr? 0= if  ['] hides hiding-spot offer  then  then
     then
     fiona cage-area 60 faces-area? if  ['] caged-doll unhurried offer  then
     fiona horse-area in-area?  fiona 150 50 heading? and if  ['] horse unhurried offer  then
@@ -373,3 +373,5 @@ create entries  1 , -1 ,   1 , -1 ,   \ (by exit 0, 1: the camera)
 
 ' came-in ' person-in ' each-frame ' went castle-2f-12 place!
 ' items-used castle-2f-12 items-here
+here  refined-antimony , ' pick-antimony , antimony-fx ,  medallion , ' pick-medallion , medallion-fx ,  -1 ,  castle-2f-12 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)
+

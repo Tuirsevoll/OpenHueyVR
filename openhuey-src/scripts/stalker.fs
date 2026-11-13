@@ -29,7 +29,7 @@ USING: engine game-state actors messages common facts flag-names room-names path
     figure? self body? and if  self body-room room-id =  else  false  then ;
 : pose ( -- )
     my-at v.x sf@ him act.x sf!  my-at v.y sf@ him act.y sf!  my-at v.z sf@ him act.z sf!
-    self body-yaw him act.yaw sf!
+    self body-yaw him act.yaw sf!  1 him act.character l!   \ (not drawn while the world is frozen: Progress_DrawChars)
     played-here? under-t @ 0= and unseen @ 0= and hidden @ 0= and 0<> 1 and him act.visible l! ;   \ (under the floor: Lorenzo's other class;
     \ hidden by the story: its 0x1F - the original's +0x29)
 
@@ -127,6 +127,7 @@ create figure-pck 32 allot   create figure-tex 32 allot
     -1 came-by !  -1 to-shut !  -1 at-ladder !  -1 making-for !  0 doors-n !  0 door-i !  0 away-search !  0 knock-t !  avoid-clear
     door-passed  -1 combo !  0 combo-step !  0 chase-t !  0 in-attack !   \ (Pursuer_Reset's)
     unheld  0 apart !  0 link-t !  out-over  -1 held-door !  0 entering !  0 barging !  -1 push-exit !  0 hunting-dog !  0 stun-t !  0 raging !  0 bitten !  held-by-dog bite-how !  0 dog-t !  0 at-dog !
+    my-kind @ kind39-kind = if  -1 raging !  then   \ (Kind39_Activate: in a rage from its start - its stance and walk; before 0.2.42 never)
     away? 0= if  search-start  then ;
 : go-out ( -- )  let-her-go  let-door-go  out-over  forget-leads  0 in-game !  body-off  0 him act.visible l! ;
 
@@ -135,7 +136,7 @@ create figure-pck 32 allot   create figure-tex 32 allot
 \ heading for her, without one off by an exit at random ----
 : status ( -- )
     in-game @ if  my-room  else  -1  then  my-mode @  in-game @ 0<>  in-game @ if  own-room?  else  false  then
-    away-base @  cool-secs @  cond @ down-cond =  s" summoner" actor-named send stalker-status ;   \ (down now: +0xC4 2)
+    away-base @  cool-secs @  cond @ down-cond =  summoner-id send stalker-status ;   \ (down now: +0xC4 2)
 : summoned ( room exit found plan -- )
     {: room e found plan :}
     room -1 come-in  e came-by !  hp-max @ hp !   \ (a stalk afresh: his health full - beaten or worn, he was out a while)
@@ -187,11 +188,12 @@ $1300 constant gesture-anims
     take-asked @ 0= if  exit  then  0 take-asked !
     played? script-held @ 0= and if  taken  then ;
 : frame ( -- )
-    take?
+    take?  cap-down
     posed @ if  posed-frame  tell-danger exit  then
     script-held @ if  held-frame exit  then
     away? if  away  pose  tell-danger  exit  then
-    thaw  hurt-down  senses  modes  dog-temper  shut-behind  ladder-watch
+    thaw  hurt-down  senses  door-watch  modes  dog-temper  shut-behind  ladder-watch
+    played? if  keep-on-floor 0= if  placed-anywhere  then  then
     step @ ?dup if  execute  then   \ (his search waits while he reels - struck, down: the original's behaviour is
     reeling @ 0= if  search  then  played? looking   \ only picked at a step's end; then Pursuer_Think's head)
     played? growls @ and if  growl  then
@@ -229,16 +231,35 @@ $1300 constant gesture-anims
     tell-ties ;
 \ the family's setup (Pursuer_Setup): his sight 150 ahead, 60 degrees either side; Fiona and
 \ Hewie known; listening for noises above his threshold (not his own)
+: frights ( F: begun again look -- )  look-threat f!  taunt-fright f!  hold-fright f! ;   \ (vtable +0x300 / +0x304 / +0x308)
 : family-setup ( -- )
-    -1 her-came !  0 temper !
+    -1 her-came !  0 temper !  10e 5e 20e frights
     150e view-range f!  60e deg>rad view-half f!  -1e d-fiona f!  -1e d-hewie f!
-    s" fiona" actor-named fiona-cached !  s" hewie" actor-named hewie-cached !
-    hear-threshold @ stalker-noise s" acoustics" actor-named send listen
+    fiona-id fiona-cached !  hewie-id hewie-cached !
+    hear-threshold @ stalker-noise acoustics-id send listen
     pursuer-ladder ladder-offsets !  -1 her-ladder-on !  -1 at-ladder !
     self subscribe zone-target  self subscribe zone-targets-off  self subscribe fiona-unseen
     self subscribe hewie-doing  self subscribe scene  0 script-held !  0 in-scene !  well-cond dog-cond !
     my-kind @ head-bones!  ahead-look look-mode ! ;
 
+\ the doll (Thing03_StalkerCheck - his part): come upon away from her, he takes it unless she is
+\ his lead (+0x16C9 under 5); in her room, searching (+0x16C8 1..3), he sees it and has a way
+\ there: not following a noise (4), it makes its noise ($1F, every frame - he may take it up);
+\ following one, not after Hewie, he goes for it and takes it within 10 of it, or of his way's end
+$1F constant doll-noise
+: doll-heard ( tri -- )  doll-noise room-id rot -1 world-noise  acoustics-id send noise ;
+: take-doll ( i -- )  things-id send thing-taken ;
+: doll-check ( tri i away? -- )
+    {: tri i away? :}
+    away? if  lead @ pull-fiona < if  i take-doll  then  exit  then
+    here-played? 0=  my-mode @ heading-for-her held-off within 0= or if  exit  then
+    drawn-at i thing-at vec-copy   \ (where it lies)
+    drawn-at in-view? 0= if  exit  then
+    probe-path self body-tri my-at tri drawn-at self body-mask path-plan 0> 0= if  exit  then
+    lead @ pull-noise <> if  tri doll-heard exit  then
+    hunting-dog @ if  exit  then
+    tri go-for-doll
+    drawn-at my-at vec-dist 10e f<  way-left 10e f< or if  i take-doll  then ;
 \ a door slammed off screen, the one he makes for: right behind it (Pursuer_HitOffscreen kind 5) -
 \ not while down or stunned already; its damage (and the damage he's had); health left, stunned
 \ 60, 90 or 120 frames, crying out, after her; none, down there (his cry)
@@ -385,15 +406,16 @@ behaviour stalking
       then ;
   on stalker-restore ( hp mode -- )  mode!  hp ! ;
   on noclip ( on -- )  dup 0<> noclipped !  if  0  else  my-floor @  then  body-mask! ;   \ (the story's 0x20: through blocked floor - at doors)
-  on drawn-to ( tri -- )  in-game @ if  go-for-doll  else  drop  then ;
+  on drawn-to ( tri i away? -- )  in-game @ if  doll-check  else  drop 2drop  then ;
   on stalker-hunt ( -- )  in-game @ if  heading-for-her mode!  away? 0= if  search-again  then  then ;
-  on entered-room ( room exit -- )  0 still-held !  her-came !  room-changed  in-game @ if  pose  then ;
+  on entered-room ( room exit -- )  0 still-held !  0 exit-marked !  her-came !  room-changed  in-game @ if  pose  then ;
+  on exit-chosen ( exit -- )  her-came ! ;   \ (the walkway turned under her: she is on its other side)
   on characters-still ( on -- )  still-held ! ;
   on tick ( -- )   \ (a scene having him - Character_Disable - his frame waits: the scene moves his model;
       \ given back he is shown, as the cast was made active: Cutscene_ReleaseActors' +0x29)
       my-model @ scene-has?  dup 0=  in-cast @ and if  0 hidden !  then  in-cast !
       in-game @ in-cast @ and if  tell-doing  loaded @ if  status  then  exit  then
-      in-game @ still-held @ and if  tell-doing  loaded @ if  status  then  exit  then   \ (held still: OpenHuey's)
+      in-game @ still-held @ panic-starting state-flag? or and if  tell-doing  loaded @ if  status  then  exit  then   \ (held still: OpenHuey's; her panic's start)
       in-game @ if  script-held @ 0= if  swept-by-door  then  frame  script-held @ 0= if  own-frame @ ?dup if  execute  then  then  tell-doing  then   \ (held: his Think, not his own frame)
       figure? self body? and  in-game @ 0= and if  posed @ if  posed-frame  else  pose  then  then   \ (a scene's figure: moved only posed)
       loaded @ if  status  then ;
@@ -414,6 +436,7 @@ behaviour stalking
   on show ( on -- )  0= hidden ! ;
   on hold-anim ( anim flags blend -- )  loaded @ if  pose-in  else  drop 2drop  then ;
   on scene ( on -- )   \ (a cutscene has the characters; given back - Pursuer_Enable: his way forgotten)
+      dup if  left-behind  then
       dup 0<> in-scene !  0= in-cast @ and if  0 in-cast !  my-path path-clear  then ;
   on shaken-off ( -- )  bitten @ bite-how @ held-by-dog = and if  dog-let-go bite-how !  then ;
   on bite ( damage hard -- )  bitten @ if  bitten-by  else  2drop  then ;
@@ -446,12 +469,13 @@ behaviour stalking
   on blow ( kind damage how -- )   \ (her kick or shove; a door she slammed: no answer)
       script-held @ if  2drop drop exit  then
       away? if  blow-away exit  then
-      sender striker !  2 pick door-blow = {: door? :}  struck  door? 0= if  sender send blow-taken  then ;
+      sender striker !  2 pick door-blow = {: door? :}  struck  door? 0= if  sender send blow-taken  then
+      my-kind @ kind12-kind = if  kind12-struck  then ;   \ (Kind12_EventState: struck, he takes her)
   on seize-taken ( -- )   \ (her answers to his taking her; one he isn't waiting for: let go)
       leading @ if  she-came answer !  else  fiona send unhand  then ;
   on seize-refused ( -- )  she-refused answer ! ;
   on broke-free ( -- )  she-broke-free answer ! ;              \ (his blow struck her: his cry)
-  on fiona-plight ( state ladder -- )  her-ladder-on !  her-plight ! ;
+  on fiona-plight ( state ladder reach -- )  her-reach !  her-ladder-on !  her-plight ! ;
   on zone-targets-off ( -- )  target-on #targets cells 0 fill ;
   on zone-target ( zone x y z -- )   \ (its centre: cells of floats)
       {: zone x y z :}  zone #targets u< 0= if  exit  then
@@ -465,7 +489,7 @@ end-behaviour
 \ ---- each one's own: his model, his body ----
 : bodied ( floor -- ) ( F: width height -- )
     body-size  dup my-floor !  body-mask!  body-off  0 in-game !
-    self subscribe tick  self subscribe entered-room  self subscribe write-save  self subscribe fiona-plight  self subscribe panic  self subscribe frame-end
+    self subscribe tick  self subscribe entered-room  self subscribe exit-chosen  self subscribe write-save  self subscribe fiona-plight  self subscribe panic  self subscribe frame-end
     self subscribe characters-still ;
 
 \ ---- Debilitas (debilitas.c Debilitas_Setup, DebilitasModel): 70 health (hard: 110), 5 across,
@@ -505,13 +529,24 @@ $2D constant hand-bone
 : her-cry-mark ( who -- )  drop her-mark ;
 : daniella-model ( addr len -- id )   \ (her model and its sounds' file; her textures by the hard setting)
     2dup file!  hard-mode? if  s" O_DNL/DNL_000H"  else  s" O_DNL/DNL_000"  then  actor-load-textured ;
-: daniella-marks ( -- )  ['] her-frame own-frame !  ['] her-cry-mark own-mark ! ;
+\ her strikes' points (Daniella_HitPoints, the four kinds': $E00, $E02 .. $E08): 3.5 out along her hand
+\ from the move's bone, and her hand - what she strikes with reaches past it
+: her-points ( -- )
+    mv-anim dup $E00 $E09 within swap $E01 <> and 0= if
+        my-model @ mv-bone bone-pos blow-at vec!
+        mv-bone2 0< if  blow-b blow-at vec-copy  else  my-model @ mv-bone2 bone-pos blow-b vec!  then  exit
+    then
+    0e 0e 3.5e my-model @ hand-bone bone-point  my-model @ hand-bone bone-pos  my-model @ mv-bone bone-pos
+    {: F: x y z hx hy hz bx by bz :}
+    x hx f- bx f+  y hy f- by f+  z hz f- bz f+  blow-at vec!  hx hy hz blow-b vec! ;
+: daniella-marks ( -- )  ['] her-frame own-frame !  ['] her-cry-mark own-mark !  ['] her-points own-points ! ;
 behaviour daniella
   extends stalking
   on spawned ( -- )
       4e 12e  daniella-kit true false ways  8e 1.5e 12e 1.5e feet-fit  daniella-marks
       s" O_DNL/DNL_000" daniella-model daniella-motions dressed
       120 100 by-hardness health!  daniella-kind my-kind !  0 growls !  12 hear-threshold !  family-setup
+      5e 5e 15e frights   \ (Daniella_FrightSeen, the Pursuer's FrightAttack, Daniella_ThreatAmount)
       140 100 by-hardness cool-secs !  3600 6000 by-hardness away-base !  no-own-rooms   \ (Daniella_Setup's first)
       450 450 750 300 clocks
       10e 25e fby-hardness  200 80 by-hardness 6000 hewie-temper
@@ -530,6 +565,7 @@ behaviour kind34
       4e 12e  kind34-kit true false ways  8e 1.5e 12e 1.5e feet-fit  daniella-marks
       s" O_DNL/DNL_001" daniella-model daniella-motions dressed
       120 200 by-hardness health!  kind34-kind my-kind !  0 growls !  12 hear-threshold !  family-setup
+      5e 5e 15e frights   \ (Daniella_FrightSeen, the Pursuer's FrightAttack, Daniella_ThreatAmount)
       180 160 by-hardness cool-secs !  4500 6000 by-hardness away-base !  no-own-rooms   \ (Kind34_Setup)
       300 360 900 1350 clocks
       25e 50e fby-hardness  200 65 by-hardness 6000 hewie-temper
@@ -544,6 +580,7 @@ behaviour kind35
       4e 12e  kind35-kit true false ways  8e 1.5e 12e 1.5e feet-fit  daniella-marks
       s" O_DNL/DNL_000" daniella-model daniella-motions dressed
       65 80 by-hardness health!  kind35-kind my-kind !  0 growls !  12 hear-threshold !  family-setup
+      5e 5e 15e frights   \ (Daniella_FrightSeen, the Pursuer's FrightAttack, Daniella_ThreatAmount)
       140 100 by-hardness cool-secs !  3600 6000 by-hardness away-base !  no-own-rooms   \ (Kind35_Setup)
       600 600 450 360 clocks
       15e 10e fby-hardness  120 75 by-hardness 3000 600 by-hardness hewie-temper
@@ -558,6 +595,7 @@ behaviour kind36
       4e 12e  kind36-kit true false ways  8e 1.5e 12e 1.5e feet-fit  daniella-marks
       s" O_DNL/DNL_001" daniella-model daniella-motions dressed
       65 80 by-hardness health!  kind36-kind my-kind !  0 growls !  12 hear-threshold !  family-setup
+      5e 5e 15e frights   \ (Daniella_FrightSeen, the Pursuer's FrightAttack, Daniella_ThreatAmount)
       180 160 by-hardness cool-secs !  4500 6000 by-hardness away-base !  no-own-rooms   \ (Kind36_Setup)
       300 600 900 360 clocks
       25e 10e fby-hardness  120 65 by-hardness 3000 600 by-hardness hewie-temper
@@ -569,12 +607,17 @@ end-behaviour
 \ ---- Riccardo (riccardo.c Riccardo_Setup, RiccardoModel; kind 4): 100 health (hard: 125), 3
 \ across, 17 tall; his model O_RCG/RCG_000, its motion table $41A2C0, his sounds (bank 7); the
 \ Pursuer's floor; his own chase, flurry and lunge (stalker/riccardo.fs), his reach 20 ----
+\ his heavy blow's points (Riccardo_BonePositions: $E05): at her herself - within its reach wherever his arm is
+: his-points ( -- )
+    mv-anim $E05 = if  blow-at fiona body-at vec-copy  blow-b fiona body-at vec-copy  exit  then
+    my-model @ mv-bone bone-pos blow-at vec!
+    mv-bone2 0< if  blow-b blow-at vec-copy  else  my-model @ mv-bone2 bone-pos blow-b vec!  then ;
 : riccardo-chase ( -- )  ['] ric-begin own-chase !  ['] ric-run own-run !  20e attack-range f! ;
 behaviour riccardo
   extends stalking
   on spawned ( -- )
       4e 12e  riccardo-kit false false ways  8e 1.5e 12e 1.5e feet-fit
-      ['] cry-hit own-mark !  riccardo-chase  riccardo-acts own-acts !  ['] riccardo-frame own-frame !
+      ['] cry-hit own-mark !  riccardo-chase  riccardo-acts own-acts !  ['] riccardo-frame own-frame !  ['] his-points own-points !
       s" O_RCG/RCG_000" load-model-file s" motions-riccardo" dressed
       100 125 by-hardness health!  riccardo-kind my-kind !  0 growls !  12 hear-threshold !  family-setup
       90 cool-secs !  9000 away-base !  no-own-rooms   \ (Riccardo_Setup)
@@ -610,6 +653,7 @@ behaviour lorenzo2
       lorenzo2-acts own-acts !  ['] lorenzo2-frame own-frame !  70e attack-range f!
       s" O_LRY/LRY_000" load-model-file s" motions-lorenzo2" dressed
       250 400 by-hardness health!  lorenzo2-kind my-kind !  0 growls !  12 hear-threshold !  family-setup
+      10e 30e fby-hardness  5e 8e fby-hardness  20e 45e fby-hardness  frights   \ (Lorenzo2_FrightSeen / FrightAttack / ThreatAmount)
       150 cool-secs !  9000 away-base !  no-own-rooms   \ (Lorenzo2_Setup)
       900 450 0 0 clocks
       50e 25e fby-hardness  100 600 hewie-temper  leaves-doors door-manner !
@@ -626,6 +670,7 @@ behaviour kind39
       lorenzo2-acts own-acts !  18e attack-range f!
       s" O_LRY/LRY_000" load-model-file s" motions-lorenzo2" dressed
       250 300 by-hardness health!  kind39-kind my-kind !  0 growls !  12 hear-threshold !  family-setup
+      10e 30e fby-hardness  5e 8e fby-hardness  20e 45e fby-hardness  frights   \ (Lorenzo2_FrightSeen / FrightAttack / ThreatAmount)
       150 cool-secs !  9000 away-base !  no-own-rooms   \ (Kind39_Setup)
       900 900 0 0 clocks
       30e 65e fby-hardness  40 75 by-hardness 300 360 by-hardness hewie-temper
@@ -644,6 +689,7 @@ behaviour kind37
       riccardo-chase  24e attack-range f!  ['] kind37-frame own-frame !   \ (its reach the Pursuer's: Pursuer_AttackRange)
       s" O_RCT/RCT_000" load-model-file s" motions-tintstalker" dressed
       100 125 by-hardness health!  kind37-kind my-kind !  0 growls !  12 hear-threshold !  family-setup
+      20e 7e 20e frights   \ (Kind37_FrightSeen / FrightAttack)
       45 cool-secs !  5400 away-base !  no-own-rooms   \ (Kind37_Setup)
       300 360 150 150 clocks
       10e  50 900 hewie-temper  leaves-doors door-manner !  riccardo-ladder ladder-offsets !
@@ -661,6 +707,7 @@ behaviour tintstalker
       ['] tint-frame own-frame !  -1 tint-was !  -1 unseen !
       s" O_RCT/RCT_000" load-model-file s" motions-tintstalker" dressed
       100 125 by-hardness health!  tintstalker-kind my-kind !  0 growls !  12 hear-threshold !  family-setup
+      30e 10e 20e frights   \ (TintStalker_FrightSeen / FrightAttack)
       45 cool-secs !  5400 away-base !  no-own-rooms   \ (TintStalker_Setup)
       300 300 1200 1200 clocks
       15e 10e fby-hardness  50 1800 hewie-temper  shuts-doors door-manner !  riccardo-ladder ladder-offsets !
@@ -684,3 +731,4 @@ behaviour kind12
       3.5e 18e pursuer-floor bodied ;
 end-behaviour
 : kind12-spawn ( -- id )  kind12 stalker-state s" kind12" spawn ;
+

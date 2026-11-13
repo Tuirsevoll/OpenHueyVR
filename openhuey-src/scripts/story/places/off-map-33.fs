@@ -18,11 +18,11 @@ USING: engine game-state actors messages common flag-names facts room-names stor
     yield  begin  part-away-shot scene-shot? if  room-part hide-part  then  scene-near-end? 0= while  yield  repeat ;
 : the-scene ( -- )   \ (her double without its shadow; the movie)
     fiona false shown  tintstalker-kind true no-shadow
-    the-movie scenes:unseen-movie the-cutscene load-scene  ['] part-away start drop
+    the-movie scenes:unseen-movie the-cutscene load-scene  ['] part-away along-scene
     panic-eased  if  -1 run-scene  then ;
 : the-end ( -- )
     seen-flag resident-flag? 0= if  no-pause state!  then
-    stalker let-go  hewie let-go  fiona hold  fiona wait-move
+    stalker let-go  0 summon-take  hewie let-go  fiona hold  fiona wait-move
     the-scene  her-double figure-out  other-slot figure-out
     ending-d ending-var var!  world-held state!  story-over game-over
     tintstalker-kind false no-shadow ;
@@ -35,7 +35,7 @@ USING: engine game-state actors messages common flag-names facts room-names stor
 : each-frame ( -- ) ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     cf-13-flag1 fact?  came-by @ forced-exit = and if
         fiona 0 0 place-on-tri  world-held state!  panic-eased  ['] the-end fiona start-holding drop
     then ;

@@ -153,7 +153,7 @@ variable wardrobe-line-last
     ." shown " window:shown @ . cr
     ." chosen " window:chosen @ . cr
     ." picked " window:picked @ . cr
-    ." prompt-kind " window:prompt-kind @ . cr
+    \ (prompt-kind: gone in 0.2.51 - the action prompt moved to story/kit.fs prompt-out)
     ." page " window:page @ . cr
     ." typed " window:typed @ . cr
     leave-actor
@@ -194,14 +194,19 @@ variable label?  -1 label? !
     label-layer  room-id h>s  screen-size drop 5 char-size drop * -  12  $A09880FF 2 ui-text ;
 
 \ ---- the debug mode (F2, or `debug-on` / `debug-off` at the console), on the same layer:
-\ Fiona's meters top left - her panic (0..100) and its stage, her fear (0..99) and, while she is
-\ out of breath, the running she has left, and hga's version; down the right, the actors alive with their ids
-\ (`<id> enter` at the console works inside one, `leave-actor` back) ----
+\ Fiona's meters top left - her panic (0..100) and its stage; her breath (how tired running has
+\ made her, 0..99: the original's Fiona_ChangeFear meter - at 100 she collapses); her fear (the
+\ running she has left once the panic has her scared); and hga's version. Down the right, the
+\ actors alive with their ids (`<id> enter` at the console works inside one, `leave-actor` back):
+\ F4 hides or shows that list (`actors-off` / `actors-on`) ----
 variable debug?
 : debug-on ( -- )  -1 debug? ! ;
 : debug-off ( -- )  0 debug? ! ;
+variable actors?  -1 actors? !
+: actors-on ( -- )  -1 actors? ! ;
+: actors-off ( -- )  0 actors? ! ;
 $E8E0C8FF constant text-colour   $A09880FF constant dim-colour
-: say-at ( addr len x y colour -- )  >r >r >r  label-layer -rot r> r> r> 2 ui-text ;
+: say-at ( addr len x y colour -- )  {: a n x y c :}  label-layer a n x y c 2 ui-text ;
 360 constant most-run   \ (the longest out-of-breath run: stage 2's 240, and up to 4 x 30)
 200 constant bar-width
 \ a labelled bar at y: `filled` of bar-width in `colour`; after it the value (-1: none) and a note
@@ -211,20 +216,21 @@ $E8E0C8FF constant text-colour   $A09880FF constant dim-colour
     label-layer 110 y bar-width 4 + 20 $000000A0 ui-rect
     label-layer 112 y 2 + filled 0 max bar-width min 16 colour ui-rect
     value 0< 0= if  value n>s 124 bar-width + y text-colour say-at  then ;
-: note ( addr len y -- )  >r  190 bar-width + r> dim-colour say-at ;
+: note ( addr len y -- )  {: a n y :}  a n 190 bar-width + y dim-colour say-at ;
 : of-bar ( n most -- n filled )  over bar-width * swap / ;
 : stage$ ( stage -- addr len )
     case  composed of s" calm" endof  panicking of s" PANIC" endof  calming-down of s" PANIC (calming)" endof
           >r s" uneasy" r>  endcase ;
 \ the panic's (its broadcast) and hers (asked each frame, her answer by the next)
-variable m-stage  variable m-level  variable m-fear  variable m-breathless  variable m-run
+variable m-stage  variable m-level  variable m-tired  variable m-scared  variable m-run
+$D0A040FF constant breath-colour   $40A0D0FF constant fear-colour
 : meters ( -- )
     fiona-id dup 0< if  drop exit  then  dup body? 0= if  drop exit  then  send meters?
     m-level @ 100 of-bar  $D04040FF 40 s" panic" bar   m-stage @ stage$ 40 note
-    m-fear @ 99 of-bar  $D0A040FF 66 s" fear" bar
-    m-breathless @ if
-        m-run @ 0 max most-run of-bar  $40A0D0FF 92 s" breath" bar   s" frames of running left" 92 note
-    else  -1 bar-width $40A0D0FF 92 s" breath" bar   s" full" 92 note  then ;
+    m-tired @ 99 of-bar  breath-colour 66 s" breath" bar   s" spent: 100 and she collapses" 66 note
+    m-scared @ if
+        m-run @ 0 max most-run of-bar  fear-colour 92 s" fear" bar   s" frames of running left" 92 note
+    else  -1 bar-width fear-colour 92 s" fear" bar   s" not scared" 92 note  then ;
 \ the actors alive, two columns down the right from under the room's name
 : actor-line ( id x y -- )
     {: id x y :}  id n>s x y dim-colour say-at  id actor-name x 44 + y text-colour say-at ;
@@ -309,7 +315,7 @@ create bug-text 256 allot   variable bug-text-len   \ (a note waiting for its re
     0 bug-step !
     ." bug report in " bug-dir bug-dir-len @ type cr
     room-id 0< fiona-id 0< or if  zip-report  exit  then
-    s" save.fs" in-bug-dir  s" saves" actor-named send save-to-file ;   \ (zipped once it is written: game-saved)
+    s" save.fs" in-bug-dir  saves-id send save-to-file ;   \ (zipped once it is written: game-saved)
 : bug-steps ( -- )   \ (each frame, held or not)
     bug-step @ 1 = if  bug-capture exit  then
     bug-step @ 2 = screenshot-pending? 0= testing? or and if  bug-save  then ;   \ (a test draws nothing)
@@ -320,7 +326,7 @@ create bug-text 256 allot   variable bug-text-len   \ (a note waiting for its re
     key: F12 key-pressed? 0= if  exit  then
     0 bug-text-len !  1 bug-step !  -1 console!  s" bug-note " console-type ;
 \ a report's save back (the progress, the room, everyone where they were)
-: bug-load ( addr len -- )  s" saves" actor-named send load-from-file ;
+: bug-load ( addr len -- )  saves-id send load-from-file ;
 
 state: label-state  cell field label-unused  end-state
 behaviour labelling
@@ -329,13 +335,23 @@ behaviour labelling
   on game-saved ( -- )  zip-report ;   \ (a bug report's save written)
   on entered-room ( room exit -- )  2drop jump-camera ;
   on panic ( stage level -- )  cell>f f>s m-level !  m-stage ! ;   \ (its level a float, as a cell)
-  on her-meters ( fear breathless run -- )  m-run !  m-breathless !  m-fear ! ;
+  on her-meters ( tired scared run -- )  m-run !  m-scared !  m-tired ! ;
   on frame-end ( -- )
       label-layer ui-clear
       bug-key  bug-steps
       key: F2 key-pressed? if  debug? @ 0= debug? !  then
-      debug? @ if  meters  actors-list  version-line  then   \ (asked for: anywhere)
+      key: F4 key-pressed? if  actors? @ 0= actors? !  then
+      debug? @ if  meters  actors? @ if  actors-list  then  version-line  then   \ (asked for: anywhere)
       room-id 0< in-play state-flag? 0= or if  exit  then   \ (the label: not over the title)
       label? @ if  room-label  then ;
 end-behaviour
 : label-spawn ( -- id )  labelling label-state s" room-label" spawn ;
+
+\ ---- the errors actor (ClankForth's `errors-to`): a handler's failure is said on the console as it
+\ happens and told here; the actor that failed lives on, as it always has in OpenHuey - with no
+\ errors actor named, ClankForth (since 698c24e) has the actor die of it. Counted, for a test ----
+state: failures-state  cell field failures  end-state
+behaviour noting-failures
+  on actor-failed ( record -- )  drop  1 failures +! ;
+end-behaviour
+: failures-spawn ( -- id )  noting-failures failures-state s" failures" spawn ;

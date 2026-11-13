@@ -34,15 +34,14 @@ $1C constant scene-figure   3 constant figure-slot   $FE constant through-hole  
 
 \ ---- the hiding place (the kit's, out of sight); Daniella's search ----
 : hides ( -- )  -1 hide-unseen !  her-motions $31 180 2 82.92e -88.12e hides-in ;
-: her-looker? ( -- flag )  st-kind-now @ dup daniella-kind = swap kind34-kind = or ;
 : looks-in ( -- )
     stalker hold  stalker wait-move  0 door-for-him  stalker $4F 180 83.66e -76.9e walk-to
-    her-looker? if  stalker use-motions  1 her-back  stalker room-motion play  0 her-back
+    daniella-here? if  stalker use-motions  1 her-back  stalker room-motion play  0 her-back
     else  stalker stalker.anims:there-anim play  then
     -1 found-her !  stalker 10 idle  begin  fiona held? while  yield  repeat  0 stalker-order ;
 : stalker-came ( -- )
     came-on-her? 0= if  exit  then
-    her-looker? if  stalker her-look-motions motions-for  then
+    daniella-here? if  stalker her-look-motions motions-for  then
     search-var mansion-odds chance?  2 creature-moving? or if  ['] looks-in start drop  else  120 summoner-sooner  then
     search-var var@ 1+ search-var var! ;
 
@@ -60,7 +59,7 @@ create entries  1 , 1 ,   0 , 0 ,   \ (by exit 0, 1: the camera)
     else  room-sounds-in? if  room-loop-sound 0e 9e -125e room-sound  -1 sounds-on !  then  then
     fiona hole-area in-area?  fiona 180 50 heading? and if  ['] the-hole unhurried offer  then
     fiona hide-area in-area?  fiona 180 60 heading? and if
-        stalker-in? if  no-time-message offer-remark-now  else  ['] hides calm-only offer  then
+        stalker-in? if  no-time-message offer-remark-now  else  ['] hides hiding-spot offer  then
     then ;
 : person-in ( i -- )
     case

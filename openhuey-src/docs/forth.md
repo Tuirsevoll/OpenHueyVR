@@ -12,8 +12,13 @@ This page is OpenHuey's side: its words, its scripts, its tests.
   every script: `seconds`, 30 frames a second), then `game.fs`.
 - **Its warnings** (the scripts load with none): a file's word hiding one of a vocabulary it uses (`x hides
   vocab:x`), a word defined twice in one vocabulary (`x is defined again in v` - a real bug: the later wins from
-  there on), and a word whose code doesn't do what its stack comment says (`its code is ( 2 -- 1 )`: ClankForth's
-  "Stack effects"). Errors print the words that were running; so does a crash.
+  there on), a word whose code doesn't do what its stack comment says (`its code is ( 2 -- 1 )`: ClankForth's
+  "Stack effects"), and a way out of a word that leaves a `>r` on the return stack or an `exit` in a `do` loop
+  without `unloop` (both would return into the cells left there). Errors print the words that were running; so
+  does a crash. An execution token that isn't a word's (`execute`, `catch`, `spawn`, a deferred word) is an error.
+- **The host's side**: a `Forth` is a handle (`external/clankforth/docs/hosts.md`): OpenHuey's C asks through
+  `forth.h`'s functions (`forth_compiling`, `forth_current`, `forth_errors`, `forth_find_vocab` ...), never the
+  system's own struct. A mod's scripts load under a step limit (`forth_set_eval_budget`: mods.c).
 - **The C words' stack effects**: each entry of bind_engine.c's table (and each `forth_prim` elsewhere) carries its
   effect, `{"room", p_room, "( id -- )"}` - the scripts' code is checked with it, so a new word gives its own (NULL:
   none fixed, as `floor-below`'s float only when there is a floor). `.checked` says how much of the scripts' code is
@@ -44,6 +49,7 @@ This page is OpenHuey's side: its words, its scripts, its tests.
 | `hud` | `addr len --` | a line of text at the bottom of the screen (`0 0 hud` clears) |
 | `camera` | `-- addr` | with `cam.x cam.y cam.z cam.yaw cam.pitch cam.fov cam.near cam.far cam.up` (sf@ / sf!) |
 | `actor-load` | `addr len -- id` | `s" O_FIN/FIN_000" actor-load` |
+| `prop-load` ... `prop-free`, `data-file?` | (docs/modding.md "Props") | a mod's own glTF models: placed, turned, scaled, shown |
 | `actor` | `id -- addr` | with `act.x act.y act.z act.yaw act.scale act.frame act.rate` (sf@) and `act.loop act.visible` (l@) |
 | `motion!`, `motion@` | `id motion --`, `id -- motion` | play a motion by the game's number (`fiona @ $200 motion!`) |
 | `motion-done?`, `motion-frames`, `.motions` | | |
@@ -97,7 +103,9 @@ or go through a `defer`).
 Sound effects (the original's sound driver, src/platform/snddrv.c, on the SPU2-like voices of
 spu.c): `bank-sound ( id bank -- )` plays sound `id` of a bank plainly, `sound-at ( id bank vol
 pitch -- ) ( F: x y z -- )` at a point of the room (Actor_PlaySound: placed by the camera with
-the original's distance curves and pan; vol x / 128 louder or softer, pitch semitones up),
+the original's distance curves and pan - the game's own surround tables, its output 2 as
+SndDriver_Start sets it, since 0.2.42: the stereo ones before; vol x / 128 louder or softer, pitch
+semitones up),
 `bank-sound-at ( id bank -- ) ( F: x y z -- )` the same with no offsets, `common-sound ( id -- )`
 from the common bank. Banks: 4 the sound set (`sound-set! ( set -- )`), 5 the common sounds
 (C_0000: Fiona's, Hewie's, the house's), 6 the room's (`sound-load ( k -- )` loads 4 / 5 / 6 now,
@@ -107,8 +115,10 @@ priority, so a new sound takes over an older one on the same voice. `stop-sound 
 releases one, `sound-stop-voices ( core0 core1 -- )` the voices in the masks, `sound-stop-all`.
 `sound-volume! ( F: sound master -- )`, `sound-fade ( 0..255 -- )` (the pause screen's),
 `sound-scale! ( F: v -- )` (the scripts' scale for sounds with id bit 30), `sound-reverb! ( core v
--- )` (core 0 the music's, 1 the effects': 0..0x3FFF; the rooms set it). `.voices` lists the
-effect voices sounding.
+-- )` (core 0 the music's, 1 the effects': 0..0x3FFF; the rooms set it). `sound-out! ( mode -- )`
+the options' sound out (SndDriver_SetOutputMode: 0 mono - a placed sound's two sides alike -, 1
+stereo - both made positive -, 2 as placed). `.voices` lists the effect voices sounding, `voice-lr
+( v -- l r on? )` one's volumes (24..47).
 
 `game-state` (C, `src/game/progress.c`; in the `forth` tool too) holds what the event scripts
 share: `progress` (`pr.story pr.state pr.vars pr.resident pr.visited`: flag words, l@ / c@) and
@@ -142,3 +152,12 @@ the totals and sets the exit status.
   runs everything (`full-tests?` says which, for an `--eval` test). A new test that only checks state
   goes above the marker.
 - Mods' tests: `docs/modding.md`.
+
+**Words kept in slots** (ClankForth 1824b2c): a field or variable that holds a word to run says what it holds -
+`cell field her-act  holds: ( -- )` (Fiona's her-act, the stalker's step / act-xt / start-then / own-*, Hewie's
+his-act / his-mood-act, the cast's act, the menu box's after `( answer -- )`, the story's cue-xt `( shot -- )`,
+the walkway's wk.*) - so `slot @ execute` is followed and a word stored there of another effect is a warning,
+through `step!`-like words too. A deferred word's effect: one stack comment right after its name - floats in, a
+flag out: `defer close-by ( F: rest S: -- done? )`. `.checked` after: 7,567 of 7,839 followed through their code
+(6,819 before 0.2.45).
+

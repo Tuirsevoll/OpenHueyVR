@@ -24,7 +24,23 @@ USING: engine vectors keys game-state actors messages common facts items.names f
     $6F noise-here ;
 :noname ( -- )   \ (Fiona_Exhausted: out of breath from the panic run, 0x207; a new run length)
     3e rnd f* f>s 30 * 120 + her-panic-t !  breathless-doing her-doing !  out-of-breath-anim -1 play-table ; is exhausted
+variable fall-floor            \ the panic bar a fall left, as an integer
+variable fall-hold-ticks       \ ticks left in which the panic bar cannot fall (1.5 s = 45 ticks, from the fall)
+variable fall-drain-ticks      \ ticks left in which the recovery counter drains extra, once she is back on her feet (3 s = 90 ticks)
+variable fall-drain-step       \ the extra the recovery counter drains a tick in those ticks (the fall's slowdown spread over them)
+: fall-after ( -- )            \ (each frame: the panic bar is held at least at the fall's value for 45 ticks - it can still rise; then, once she is back on her feet, the recovery counter drains extra for 90 ticks)
+    fall-hold-ticks @ 0> if
+        -1 fall-hold-ticks +!
+        fall-floor @ panic-id send panic-reach
+    then
+    fall-drain-ticks @ 0> if
+        her-mode @ own-mode = if
+            -1 fall-drain-ticks +!
+            her-recovery @ fall-drain-step @ - 0 max her-recovery !
+        then
+    then ;
 : feel-the-panic ( -- )   \ (each frame: the panic's stage taken up; her fear meter; her timers)
+    fall-after
     her-panic-stage @
     her-fear-bits @ 1 and 0= if
         dup scared >= if
@@ -38,7 +54,7 @@ USING: engine vectors keys game-state actors messages common facts items.names f
     else dup panicking < if
         dup scared < if  1e her-tired-w f!  her-fear-bits @ 3 invert and her-fear-bits !
         else  her-fear-bits @ 2 invert and her-fear-bits !  then
-    else  her-fear-bits @ 2 and 0= if  full-panic  then  then then
+    else  dup panicking =  her-fear-bits @ 2 and 0= and if  full-panic  then  then then   \ (at 4 only: not as it calms)
     drop
     her-mode @ own-mode =  her-fear-bits @ 2 and 0= and  her-recovery @ 0> and if  -1 her-recovery +!  then
     her-fear f@ 100e f< if
@@ -93,7 +109,7 @@ create probe /vec allot  create up-was /vec allot  variable up-tri
 \ down after a hard fall (Fiona_StateFallen, Fiona_StateAfterThrow's floored): on the ground
 \ ($B01), down; her struggle (+0x1AD6C0) and shakes (+0x1AD710 / 714) start over
 : lie-down ( -- )
-    0 her-attack-t !  lying-anim -1 play-table  down-mode her-mode !  down-doing her-doing !
+    0 her-attack-t !  0 her-out-of-reach !  lying-anim -1 play-table  down-mode her-mode !  down-doing her-doing !
     -1 her-shake-rest !  0e her-shake-a f!  ['] getting-up her-act ! ;
 \ in an exit's area (PursuerGroup_Fields' bit 1): no turning along walls there
 : in-exit-area? ( -- flag )
@@ -133,13 +149,13 @@ create next-at /vec allot
             30 her-stumble-t !
             rnd 0.2e f< if
                 1000e f>cell panic-id send fear-set   \ (the original sets the panic's fear to 1000)
-                thrown-mode her-mode !  thrown-doing her-doing !  ['] panic-fall her-act !  true exit
+                -1 her-out-of-reach !  thrown-mode her-mode !  thrown-doing her-doing !  ['] panic-fall her-act !  true exit
             then
         then
         thrown-mode her-mode !  thrown-doing her-doing !  stumble-anim -1 play-table  ['] stumbling her-act !  true exit
     then
     her-fear f@ 100e f< 0= if
-        150 her-attack-t !  75e her-fear f!  attack-doing her-doing !  ['] in-attack her-act !  true exit
+        150 her-attack-t !  75e her-fear f!  0 her-out-of-reach !  attack-doing her-doing !  ['] in-attack her-act !  true exit
     then
     false ;
 
@@ -152,7 +168,7 @@ create next-at /vec allot
 : costume ( -- n )  $26 progress pr.vars + c@ ;
 create behind-pt /vec allot   \ (her radius behind her: a door slammed as she turns from it)
 : backstep ( -- )   \ (Fiona_StateFleeTurn, anim $403: she steps back along her root step, turning to the heading)
-    ended? if  backstep-reaction s" hewie" actor-named send reaction  to-idle exit  then   \ (Hewie told)
+    ended? if  backstep-reaction hewie-id send reaction  to-idle exit  then   \ (Hewie told)
     events-now 2 and if  own-mode her-mode !  0 her-out-of-reach !  costume frog-outfit <> if  10e add-fear  then  then
     events-now $20 and if
         her-yaw f@ pi f+ angle-wrap self body-dims fdrop behind-pt her-at vec-ahead  behind-pt false slam-door drop

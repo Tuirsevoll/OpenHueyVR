@@ -53,13 +53,13 @@ $1B constant glass-fx   5 constant presence-sound   2 constant her-motions
         yield
     repeat ;
 : hall-scene ( -- )
-    hall-movie scenes:unseen-movie hall-cutscene load-scene  ['] hall-shots start drop  4 cutscene-keep-model
+    hall-movie scenes:unseen-movie hall-cutscene load-scene  ['] hall-shots along-scene  4 cutscene-keep-model
     panic-eased  if  -1 run-scene  then ;
 : her-scene ( -- )
     stalkers-stay state!  fiona hold  fiona wait-move
     15 screen:to-black-2 with-music or fade  hall-movie scenes:unseen-movie hall-cutscene load-scene  wait-fade
     hewie full-health  hewie well  old-mansion-1f-1 49 0 hewie-to  $86 0 hewie-do
-    ['] hall-shots start drop  4 cutscene-keep-model  panic-eased  if  -1 run-scene  then
+    ['] hall-shots along-scene  4 cutscene-keep-model  panic-eased  if  -1 run-scene  then
     wait-fade  world-held state!
     fiona 0 idle  fiona $DF -79 1.052e -47.906e place-at  0 0 player-camera  camera-restart
     0 busy-step !  daniella-in  ['] busy start drop
@@ -98,10 +98,10 @@ create looks  -3.91e 90e 3.23e  80e 26e 15e look,
     room-sounds-in?  stalker-in? and if  presence-sound keep-playing or room-bank stalker sound-by  then ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop  exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop  exit  then
     entries 2 ways-in  came-by @ 1 = if  3 map-page  then ;
 : went ( -- )
     force-followed state-off
-    met? if  stalker-no-fear state-off  no-stalker-camera state-off  partner false hush  stalker let-go  then ;
+    met? if  stalker-no-fear state-off  no-stalker-camera state-off  partner false hush  stalker let-go  0 summon-take  then ;
 
 ' came-in ' person-in ' each-frame ' went old-mansion-1f-1 place!

@@ -7,6 +7,7 @@
 #include "../data/exetables.h"
 #include "../data/texbank.h"
 #include "../data/modelgltf.h"
+#include "progress.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -217,6 +218,7 @@ static int step_time(float *t, float speed, int frames, int loop) {
 
     *t += speed;
     if (loop) {
+        *t = time_near(*t, (float)frames);
         while (*t < 0.0f) {
             *t += (float)frames;
         }
@@ -271,7 +273,7 @@ static void part_tick(Actor *a, struct ActorPart *p) {
     }
     if (p->fade > 0.0f) {
         if (p->prev >= 0) {
-            step_time(&p->prev_frame, 1.0f, model_motion_frames(&a->model, p->prev), 1);
+            step_time(&p->prev_frame, 1.0f, model_motion_frames(&a->model, p->prev), p->prev_flags & 1);
         }
         p->fade -= 1.0f;
     }
@@ -458,11 +460,13 @@ static void advance(Actor *a) {
     if (a->fade > 0.0f) {   /* the motion before goes on while it fades out (not with flag 8) */
         keep_in_step(a, a->prev_motion, a->prev_frame, a->prev_variant, &a->prev_vframe);
         step_speeds(a, a->prev_motion, a->prev_variant, a->prev_vweight, &s0, &s1);
+        /* (by its own flags, as the current one - Motion_Advance: one that doesn't loop stops at
+         * its last frame, its root's step there kept; wrapped, it would walk its start again) */
         if (a->prev_motion >= 0 && !a->prev_frozen) {
-            step_time(&a->prev_frame, a->rate * s0, model_motion_frames(&a->model, a->prev_motion), 1);
+            step_time(&a->prev_frame, a->rate * s0, model_motion_frames(&a->model, a->prev_motion), a->prev_old_flags & 1);
         }
         if (a->prev_variant >= 0 && !a->prev_frozen) {
-            step_time(&a->prev_vframe, a->rate * s1, model_motion_frames(&a->model, a->prev_variant), 1);
+            step_time(&a->prev_vframe, a->rate * s1, model_motion_frames(&a->model, a->prev_variant), a->prev_old_flags & 1);
         }
         a->fade -= 1.0f;
     }
@@ -472,6 +476,7 @@ static void part_start(struct ActorPart *p, int index, int flags, float blend) {
     if (p->motion >= 0 && blend > 0.0f) {
         p->prev = p->motion;
         p->prev_frame = p->frame;
+        p->prev_flags = p->flags;
         p->fade = p->fade_len = blend;
     } else {
         p->fade = p->fade_len = 0.0f;
@@ -549,8 +554,7 @@ static int model_motion_entry_flags(const Actor *a, int index) {
 void actor_body_start(Actor *a, int index, int flags, float blend) {
     int frames = model_motion_frames(&a->model, index);
     /* the motion before had come to its end, not looping: it fades out posed at its last frame
-     * (stepped on, it would wrap to its first - a crouch's end back to standing); only its pose:
-     * its root goes on as it did (Hewie's turns while fading rest on it) */
+     * (its time stays there: actor_tick steps it by its own flags) */
     int ended = a->motion >= 0 && !(a->loop || (a->mflags & 1)) && (a->mflags & 0x400);
 
     if (a->motion >= 0 && blend > 0.0f) {
@@ -645,12 +649,12 @@ int actor_event_flags(const Actor *a, int layer, int dt, int loop) {
     t = (int)((float)dt + (layer == 0 ? a->frame : a->vframe));
     len = model_motion_frames(&a->model, index);
     n = rd32le(a->events);
-    if ((size_t)(1 + n + (uint32_t)idx + 1) * 4 > a->events_size) {
+    if (((size_t)n + (size_t)idx + 2) * 4 > a->events_size) {
         return 0;
     }
-    off = rd32le(a->events + 4 + n * 4 + (uint32_t)idx * 4);
+    off = rd32le(a->events + 4 + (size_t)n * 4 + (size_t)idx * 4);
     if (((a->mflags | (a->loop ? 1 : 0)) & (loop & 1)) && len > 0) {
-        float ft = (float)t;
+        float ft = time_near((float)t, (float)len);
 
         while (ft < 0.0f) {
             ft += (float)len;
@@ -794,6 +798,7 @@ static void skin(Actor *a) {
     float c = cosf(a->yaw), s = sinf(a->yaw);
     int i, j;
 
+    model_pose_sets(a->sets, a->nsets);
     if (a->drive != NULL) {   /* a cutscene's motion: placed in the room by its root bone */
         const uint8_t *own = m->motions, *second = m->motions2;
         size_t own_size = m->motions_size;
@@ -873,6 +878,7 @@ static void skin(Actor *a) {
             face_channels(a, m, a->motion, a->frame);
         }
     }
+    model_pose_sets(NULL, 0);
     if (a->shaped != NULL) {
         model_morph(m, &a->face, a->shaped);
     }
@@ -1033,8 +1039,17 @@ void actor_hide_head(Actor *a) {
     render_mesh_update(&a->gpu, a->posed, n);
 }
 
+int actor_shown(const Actor *a) {
+    const uint32_t *s = gProgress.state;
+
+    if (!a->used || !a->visible) {
+        return 0;
+    }
+    return !(a->character && (s[0x17 >> 5] & (1u << (0x17 & 31))) && !(s[0x24 >> 5] & (1u << (0x24 & 31))));
+}
+
 void actor_prepare(Actor *a) {
-    if (!a->used || !a->visible || a->model.nv == 0) {
+    if (!actor_shown(a) || a->model.nv == 0) {
         return;
     }
     skin(a);
@@ -1053,7 +1068,7 @@ float actor_radius(const Actor *a) {
 
 void actor_draw(Actor *a, const Mat4 *view_proj) {
 
-    if (!a->used || !a->visible || a->model.nv == 0) {
+    if (!actor_shown(a) || a->model.nv == 0) {
         return;
     }
     {
@@ -1072,3 +1087,5 @@ void actor_draw(Actor *a, const Mat4 *view_proj) {
         render_mesh_tint(1.0f, 1.0f, 1.0f, 1.0f);
     }
 }
+
+

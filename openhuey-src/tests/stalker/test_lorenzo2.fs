@@ -23,13 +23,20 @@ testing his kit, his own actions, his model's moves under the floor
 T{ [: kit @ lorenzo2-kit =  base-chase @  own-acts @ lorenzo2-acts =  hp @  my-kind @ ;] his -> -1 -1 -1 250 10 }T
 T{ [: my-model @ dup $1303 has-motion?  over $1304 has-motion?  rot $E02 has-motion? ;] his -> -1 -1 -1 }T
 testing his "rage" from the panic's first stage: his reach 18 (else from afar, 70)
-T{ [: 1 her-stage !  0 reeling !  0 raging !  lorenzo2-frame  raging @  attack-range f@ f>s ;] his -> -1 18 }T
+T{ [: 1 her-stage !  0 reeling !  0 raging !  0 in-attack !  -1 held-door !  -1 at-ladder !  lorenzo2-frame  raging @  attack-range f@ f>s ;] his -> -1 18 }T
 T{ [: 0 her-stage !  lorenzo2-frame  raging @  attack-range f@ f>s  reach-k f@ f>s ;] his -> 0 70 60 }T
+testing his own actions held back while she may not be gone for (Pursuer_MayGoForTarget): his taunt
+testing ... instead - action $17, its gesture row 0 (Lorenzo2_StartGrab / StartStalkBelow / StartSink)
+T{ [: 1 her-reach !  stalker.lorenzo2:grab-start  anim @  0 stalker.chase:gesture-anim =  0 her-reach ! ;] his -> -1 }T
 
 room-id game:fiona body-tri ly send stalker-in  3 run-frames
 [: 340e deg>rad body-turn ;] his  1 run-frames
+testing ... and at an exit (PursuerGroup_Find 9: came in onto an exit's spot this visit - till she next changes room)
+T{ [: -1 exit-marked !  stalker.lorenzo2:at-an-exit?  stalker.lorenzo2:below-start  chase-act @ stalker.names:taunt-act =  0 exit-marked !  stalker.lorenzo2:at-an-exit? ;] his -> -1 -1 0 }T
 testing $1001 stalking her from below: he sinks ($1304), out of sight under the floor, comes up by her in his sweep ($E02)
 40e 160 her-ahead  3 run-frames
+: past-start ( -- )  1000 0 do  [: start-t @ 0= ;] his if  leave  then  game-tick  loop ;   \ (his start at the sight of her over)
+past-start  [: 340e deg>rad body-turn ;] his  40e 160 her-ahead  3 run-frames   \ (as they stood: his start turned him to where he saw her)
 [: below-start ;] his
 T{ [: anim @ ;] his -> $1304 }T
 T{ [: shown? 0= ;] 120 soon  [: [: anim @ $E02 = ;] his ;] 60 soon  shown? -> -1 -1 -1 }T
@@ -45,11 +52,15 @@ testing the story's kind 10 is him
 T{ 10 story.base:stalker-actor  ly = -> -1 }T
 ly send stalker-out  3 run-frames
 
-\ ---- kind 39: the same class with its own tables, no "rage" ----
+\ ---- kind 39: the same class with its own tables, in a rage from its start - its stance and walk - its tables not ----
 : k39 ( -- id )  s" kind39" actor-named ;
 testing kind 39: its kit, his own actions, his reach 18 whatever the panic
 T{ k39 enter  kit @ kind39-kit =  own-acts @ lorenzo2-acts =  hp @  my-kind @  attack-range f@ f>s  leave-actor -> -1 -1 250 39 18 }T
 T{ 39 story.base:stalker-actor  k39 = -> -1 }T
+testing ... in her room, in a rage from its start (Kind39_Activate: +0x31C, Pursuer_SetRage): its stance 3; its tables not its rage's
+room-id game:fiona body-tri k39 send stalker-in  3 run-frames
+T{ k39 enter  raging @ 0<>  stalker.moving:still-anim  stalker.tables:rage-tables?  leave-actor -> -1 3 0 }T
+k39 send stalker-out  3 run-frames
 
 testing his swaying points (Lorenzo2Model_SwayPoints): as drawn, each hanging 2.125 from the one before (bones 6 to 7, $16 to $17)
 castle-1f-3 room!  20 run-frames   \ (a room whose camera has him in view: posed as drawn)

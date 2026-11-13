@@ -33,12 +33,11 @@ $FF constant none-chosen   $81 constant run-way   $10 constant secret-room-seen
 : room-track! ( -- )  room-track 1e background ;
 
 \ ---- as she comes in ----
-: fan-turning ( -- )  begin  s" fan" 0.0200713e object-turn  yield  again ;   \ (1.15 degrees a frame)
 : unlocks-follow ( -- )   \ (the unlocks that follow from others: the original's resident flags)
     1 resident-flag? 2 resident-flag? and 3 resident-flag? and 4 resident-flag? and if  $15 resident-flag-set  then
     1 resident-flag? 2 resident-flag? or if  $55 resident-flag-set  then
     $57 resident-flag? $58 resident-flag? or if  $59 resident-flag-set  then ;
-defer the-mini-game
+defer the-mini-game ( -- )
 : came-in ( exit -- )
     drop  -1 label !  room-sounds  hewie-commandable state!  hewie-no-attack state!  unlocks-follow
     mini-game-door lock  out-door lock  1e sounds-scaled  ['] fan-turning start drop  fan-part show-part
@@ -118,7 +117,7 @@ create challenges   \ (each challenge's first room, loaded ahead; its stalker ki
     r 1 slot@ over-music-b flag-as  r 2 slot@ x-37-flag1 flag-as  r 3 slot@ over-music-c flag-as
     r 4 slot@ cf-13-flag1 flag-as  r 5 slot@ x-37-flag2 flag-as  r 6 slot@ over-music-d flag-as
     r 7 slot@ over-music-e flag-as ;
-: to-the-door ( -- )  hewie hold  hewie full-health  0 hewie send set-cond  hewie wait-move  hewie $76 180 -16e -82e walk-to  begin  yield  again ;   \ (Hewie's: by it, held)
+: to-the-door ( -- )  hewie hold  hewie full-health  0 hewie send set-cond  hewie wait-move  hewie $76 180 -1 walk-path-move -16e -82e go-to  begin  yield  again ;   \ (Hewie's: by it, held)
 : mini-game ( -- )
     none-chosen challenge-var var!  fiona wait-move  no-track!  mini-game-menu open-subscreen
     challenge-var var@ dup 4 < if  challenge  else  drop  then
@@ -180,18 +179,17 @@ create challenges   \ (each challenge's first room, loaded ahead; its stalker ki
 : labelled ( on? msg -- )   \ (its label up while on and she is free - a name on the floor, not a message
     {: on m :}  on  fiona held? 0= and if  label @ m <> if  m window send show-text  m label !  then  exit  then   \ she waits on)
     label @ m = if  label-down  then ;
-: facing? ( area deg within -- flag )  {: area deg within :}  fiona area in-area?  fiona deg within heading? and ;
 : corner? ( flag msg xt -- )   \ (labelled; while she faces it, offered)
-    {: on m xt :}  on m labelled  on if  xt any-time offer  then ;
+    {: on m xt :}  on m labelled  on if  xt quiet-any-time offer  then ;
 : corners ( -- )
-    $C 90 60 facing?  play-type-label ['] play-types corner?
-    6 -90 60 facing?  art-label ['] art-gallery corner?
-    $15 180 50 facing?  changing-label ['] changing corner?
-    4 180 60 facing?  music-label ['] music-gallery corner?
+    $C 90 60 fiona-faces?  play-type-label ['] play-types corner?
+    6 -90 60 fiona-faces?  art-label ['] art-gallery corner?
+    $15 180 50 fiona-faces?  changing-label ['] changing corner?
+    4 180 60 fiona-faces?  music-label ['] music-gallery corner?
     fiona $1B 45 faces-area?  movie-label ['] the-theatre corner?
     fiona 0 before-door?  mini-game-label ['] mini-game corner?
     fiona 1 before-door?  exit-label ['] out corner?
-    5 180 60 facing?  character-label ['] models corner? ;
+    5 180 60 fiona-faces?  character-label ['] models corner? ;
 create cameras  $17 , 0 , 0 ,  $18 , 1 , 1 ,  $19 , 0 , 0 ,  $1A , 2 , 2 ,   \ (area, set, path)
 : each-frame ( -- )  cameras 4 cameras-at  corners ;
 : person-in ( i -- )

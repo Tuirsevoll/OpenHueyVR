@@ -56,11 +56,11 @@ $22 constant chase-seen   $29 constant doll-seen   $20 constant chase-door   3 c
     stalker-in? if  stalker body-at vec@ point-unseen?  else  true  then ;
 : his-scene ( -- )
     $29 hewie-slot 1 doors-into  fiona hold
-    $29 116 stalker-to  stalker $74 180 place-on-tri  stalker 0 -1 camera-set  stalker false shown  stalker let-go
+    $29 116 stalker-to  stalker $74 180 place-on-tri  stalker 0 -1 camera-set  stalker false shown  stalker let-go  0 summon-take
     15 screen:to-black-2 with-music or fade
     chase-movie scenes:unseen-movie chase-cutscene load-scene  wait-fade
     hewie-in? if  hewie let-go  -1 hewie-sent-off !  then
-    chase-door true doors-actor send door-opened  doors-redone  panic-eased
+    chase-door true doors-id send door-opened  doors-redone  panic-eased
     if  -1 run-scene  then
     stalker let-go  0 summon-take  world-held state!  0 prepare-exit
     chase-door door-shut  forced-exit hewie-sent-off @ if  0  else  1  then  or take-exit
@@ -100,7 +100,7 @@ $22 constant chase-seen   $29 constant doll-seen   $20 constant chase-door   3 c
 : spots ( -- )
     he-sits? 0=  c1f-10-flag3 fact? 0= and  fiona shelf-area in-area? and  fiona 0 45 heading? and if
         chased?  in-panic? 0= and if
-            hunted-unseen? if  ['] his-scene calm-only offer  else  no-time-message offer-remark-now  then
+            hunted-unseen? if  ['] his-scene hiding-spot offer  else  no-time-message offer-remark-now  then
         else  ['] doll-on-show unhurried offer  then
     then
     c1f-10-beef-jerky fact? 0=  fiona 11e 12e -58.5e 7e 4e touches? and if  ['] reach-jerky calm-only offer  then
@@ -130,9 +130,10 @@ create looks  7.42e 0e 22.15e 15e 9e 9e look,
     flame-fx 24.35e 9e 19.7e 8e -4e flame-stirred
     looks 1 hewie-looks-at  spots ;
 : replaying ( -- )   \ (the extras' list: its rows for the two)
-    hewie send part-from-fiona  replay-act 8 = if  ['] replay-chase  else  ['] replay-doll  then  start drop ;
+    hewie send part-from-fiona  replay-act 8 = if  ['] replay-chase  else  ['] replay-doll  then  fiona start-holding drop ;
 : person-in ( i -- )
     fiona-p = if  events-held state? if  replaying exit  then  0 1 -1 way-in  then ;
 : went ( -- ) ;   \ (Debilitas's figure: taken out by castle-1f-2 as she goes on)
 
 ' came-in ' person-in ' each-frame ' went castle-1f-10 place!
+here  beef-jerky , ' reach-jerky , jerky-fx ,  -1 ,  castle-1f-10 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

@@ -8,7 +8,7 @@
  * by its animation's frame instead: the hand's angle about its hinge is the frame its track gives,
  * and a leaf let go while it was turning keeps that speed to the stop it was heading for. */
 /* temporary, for the headset smoothing test; remove later */
-#define VR_STEP_LOG 1
+#define VR_STEP_LOG 0
 
 #include "vrhands.h"
 #include "loot.h"
@@ -60,6 +60,19 @@ void vrhands_take_times(unsigned *pose, unsigned *stop) {
 #define HOLD_WARD 4
 
 static int sHold[2], sHoldId[2], sDoorAxis[2];
+/* the ladder each hand holds (a nav link of the room, -1 none): the air beside a ladder while
+ * Fiona climbs, and the pull of that hand, which is what climbs her (docs/subsystems/hands.md,
+ * "Pull to climb") */
+static int sLadderHold[2] = {-1, -1};
+static int sLadderFresh[2];      /* 1 from the grab until Fiona has taken it (ladder-grab) */
+static Vec3 sLadderGrabAt[2];    /* where the hand was when it grabbed */
+/* where each hand was in play space - an offset from her eyes, turned by her yaw - which is the
+ * anchor its pull is measured from, and whether that anchor is set yet */
+static Vec3 sLadderAnchor[2];
+static int sLadderAnchorHave[2];
+/* the pull both hands have given since the scripts last took it, in the game's y (which runs down,
+ * so up is negative): the move her body makes */
+static float sLadderPull;
 static float sGripWas[2], sGrabYaw[2];
 static Vec3 sGrabRot[2];
 /* a wardrobe leaf taken by that hand: the angle it took it at, the frame it held, and the span and
@@ -268,14 +281,14 @@ static Vec3 play_to_world(Vec3 eye, float yaw, Vec3 p) {
     return vec3(eye.x + cy * p.x - sy * p.z, eye.y + p.y, eye.z + sy * p.x + cy * p.z);
 }
 
-#if 0   /* (unused now: the stop is stored in world space) */
-/* the other way: a room point as play space sees it, an offset from her eyes */
+/* the other way: a room point as play space sees it, an offset from her eyes. The ladder's pull
+ * reads a hand's place this way, so her own move - the eyes and the yaw the hands sit on - cannot
+ * feed back into the measurement. */
 static Vec3 play_from_world(Vec3 eye, float yaw, Vec3 p) {
     float sy = sinf(yaw), cy = cosf(yaw), dx = p.x - eye.x, dz = p.z - eye.z;
 
     return vec3(cy * dx + sy * dz, p.y - eye.y, -sy * dx + cy * dz);
 }
-#endif
 
 static int hand_world(int side, Vec3 *at, Vec3 *right, Vec3 *up, Vec3 *fwd, float *grip, float *index, float *thumb) {
     VrController c;
@@ -1013,6 +1026,8 @@ static float dist2(Vec3 a, Vec3 b) {
 #define PUSH_GRACE  12      /* frames the throwing hand ignores the leaf */
 #define RATTLE_SOUND 0x71u  /* Fiona's bank: the locked handle */
 #define RATTLE_BANK  5
+#define LADDER_RUNG_SOUND 0x14u   /* the base game's rung sound (scripts/fiona/moving.fs, rungs-sound) */
+#define LADDER_RUNG_BANK 4        /* Fiona's bank for it (moving.fs: rungs-sound 4 0 0) */
 
 static Mat4 door_place_at(const RoomDoor *d, float swing) {
     float y = d->rot.y + swing * 3.14159265f / 180.0f;
@@ -1613,6 +1628,8 @@ static void release_hand(Room *r, int side) {
         ward_release(&r->placed, side, id);   /* (a leaf still turning keeps its speed) */
     }
     sHold[side] = HOLD_NONE;
+    sLadderHold[side] = -1;   /* (a hand let go of its ladder with whatever it held) */
+    sLadderFresh[side] = 0;
 }
 
 static void drive_door(Engine *e, int id, int axis, Vec3 hand) {
@@ -3043,7 +3060,147 @@ int vrhands_petting(int side) {
     return 1;
 }
 
+/* ---- a ladder's grab zone ---- */
+#define LADDER_GRAB_REACH 8.0f   /* world units: how near the line a ladder makes across the floor a hand grabs it */
+#define LADDER_GRAB_RISE 5.0f    /* world units: how far past its top or its foot a hand still reaches it */
+#define LADDER_GRAB_GRIP 0.5f    /* the grip at which a free hand takes a ladder (softer than the door grab's 0.65; the release stays at 0.4) */
+#define LADDER_ANIM_FIRST 0x700  /* her first on-ladder animation: on from the top (scripts/fiona/anims.fs) */
+#define LADDER_ANIM_LAST 0x709   /* her last: holding on, either kind ($708, $709) */
+#define FIONA_MODEL_PREFIX "O_FI"   /* her model's files: O_FIN/FIN_000, O_FIS/FIS_000, ... */
+
+/* how far (x, z) is from the segment a-b, in the horizontal plane */
+static float flat_line_dist(Vec3 p, Vec3 a, Vec3 b) {
+    float ax = b.x - a.x, az = b.z - a.z, len2 = ax * ax + az * az, t, dx, dz;
+
+    if (len2 <= 0.0f) {   /* (a ladder upright on one spot) */
+        dx = p.x - a.x;
+        dz = p.z - a.z;
+        return sqrtf(dx * dx + dz * dz);
+    }
+    t = ((p.x - a.x) * ax + (p.z - a.z) * az) / len2;
+    if (t < 0.0f) {
+        t = 0.0f;
+    } else if (t > 1.0f) {
+        t = 1.0f;
+    }
+    dx = p.x - (a.x + ax * t);
+    dz = p.z - (a.z + az * t);
+    return sqrtf(dx * dx + dz * dz);
+}
+
+int vrhands_ladder_link(const NavMesh *nav, Vec3 at) {
+    int i;
+
+    if (nav == NULL) {
+        return -1;
+    }
+    for (i = 0; i < nav->nlinks; i++) {
+        const NavLink *l = &nav->links[i];
+        float lo = l->spot[0].y, hi = l->spot[1].y;
+
+        if (lo > hi) {   /* (the game's y runs down: the top is the smaller) */
+            float swap = lo;
+
+            lo = hi;
+            hi = swap;
+        }
+        if (at.y < lo - LADDER_GRAB_RISE || at.y > hi + LADDER_GRAB_RISE) {
+            continue;
+        }
+        if (flat_line_dist(at, l->spot[0], l->spot[1]) <= LADDER_GRAB_REACH) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* the current room's ladder a hand at `at` is in the grab zone of, -1 none */
+static int ladder_grab_link(Vec3 at) {
+    return vrhands_ladder_link(&gEngine.room.nav, at);
+}
+
+/* Fiona on a ladder: her model is playing one of the ladder's own animations. Her mode (3,
+ * ladder-mode) is a field of her Forth state, which only her own actor's words may read
+ * (ClankForth's field words give the current actor's), so her model's motion stands in: only her
+ * climbing plays these ids (scripts/fiona/ladder.fs, scripts/fiona/anims.fs) */
+static int ladder_climbing(void) {
+    int i;
+
+    for (i = 0; i < MAX_ACTORS; i++) {
+        const Actor *a = &gEngine.actors[i];
+
+        if (a->used && strncmp(a->name, FIONA_MODEL_PREFIX, sizeof(FIONA_MODEL_PREFIX) - 1) == 0) {
+            int id = a->motion >= 0 ? model_motion_id(&a->model, (int)a->motion) : -1;
+
+            return id >= LADDER_ANIM_FIRST && id <= LADDER_ANIM_LAST;
+        }
+    }
+    return 0;
+}
+
+int vrhands_ladder_hold(int side) {
+    return side >= 0 && side < 2 ? sLadderHold[side] : -1;
+}
+
+int vrhands_ladder_hands(void) {
+    return vrhands_ladder_hold(0) >= 0 || vrhands_ladder_hold(1) >= 0;
+}
+
+int vrhands_ladder_both(void) {   /* true when both hands hold a ladder */
+    return vrhands_ladder_hold(0) >= 0 && vrhands_ladder_hold(1) >= 0;
+}
+
+/* a hand's new ladder grab, taken once: its link and the side nearer the grab (0 the nav foot, 1 the
+ * top); link -1 none */
+void vrhands_ladder_grab(int *link, int *side) {
+    const NavMesh *nav = &gEngine.room.nav;
+    int h;
+
+    *link = -1;
+    *side = -1;
+    for (h = 0; h < 2; h++) {
+        const NavLink *l;
+        Vec3 a, s0, s1;
+        float d0, d1;
+        int at;
+
+        if (!sLadderFresh[h]) {
+            continue;
+        }
+        sLadderFresh[h] = 0;   /* (taken: a grab is never kept for later) */
+        at = sLadderHold[h];
+        if (at < 0 || at >= nav->nlinks) {
+            return;   /* (its ladder is gone: nothing to take) */
+        }
+        l = &nav->links[at];
+        a = sLadderGrabAt[h];
+        s0 = l->spot[0];
+        s1 = l->spot[1];
+        d0 = (a.x - s0.x) * (a.x - s0.x) + (a.y - s0.y) * (a.y - s0.y) + (a.z - s0.z) * (a.z - s0.z);
+        d1 = (a.x - s1.x) * (a.x - s1.x) + (a.y - s1.y) * (a.y - s1.y) + (a.z - s1.z) * (a.z - s1.z);
+        *link = at;
+        *side = d1 < d0 ? 1 : 0;
+        return;
+    }
+}
+
+float vrhands_ladder_pull(void) {
+    float pulled = sLadderPull;
+
+    sLadderPull = 0.0f;
+    return pulled;
+}
+
+float ladder_pull_step(Vec3 *anchor, Vec3 play) {
+    float down = anchor->y - play.y;   /* (the play-space y grows as the hand is pulled down: this is minus that rise) */
+
+    *anchor = play;   /* (moved on with the hand, so the same motion is never counted twice) */
+    return down;      /* (a rise of that y moves her body up: the body's y goes down, the game's y running the other way) */
+}
+
 void vrhands_tick(Engine *e) {
+    Vec3 eye;
+    float yaw;
     int side, i;
 
     if (e == NULL) {
@@ -3053,7 +3210,7 @@ void vrhands_tick(Engine *e) {
     swing_begin();
     pet_settle();
     poses_restore(e);
-    if (!vr_active() || !vr_anchor_get(NULL, NULL)) {
+    if (!vr_active() || !vr_anchor_get(&eye, &yaw)) {
         poses_save(e);
         leaf_scan(e);
         return;
@@ -3064,6 +3221,10 @@ void vrhands_tick(Engine *e) {
         memset(sPushWas, 0, sizeof(sPushWas));
         sHandHave[0] = sHandHave[1] = 0;        /* (another room's doors and walls are not the old's) */
         sHandStopHave[0] = sHandStopHave[1] = 0;
+        sLadderHold[0] = sLadderHold[1] = -1;   /* (another room's links are not these) */
+        sLadderFresh[0] = sLadderFresh[1] = 0;
+        sLadderAnchorHave[0] = sLadderAnchorHave[1] = 0;
+        sLadderPull = 0.0f;
         sPushRoom = e->room.id;
     }
     for (side = 0; side < 2; side++) {
@@ -3080,6 +3241,10 @@ void vrhands_tick(Engine *e) {
             }
             sGripWas[side] = 0.0f;
             sHandHave[side] = 0;
+            sLadderHold[side] = -1;   /* (no hand, no ladder) */
+            sLadderFresh[side] = 0;
+            sLadderAnchorHave[side] = 0;   /* (and no anchor: what was pulled and not taken is dropped) */
+            sLadderPull = 0.0f;
             sHandStopHave[side] = 0;   /* (no hand, no stop: the next one takes the hand as it is) */
 #if 0   /* (temporary: no hand, no leaf in reach) */
             sWardNear[side] = 0;   /* (temporary: no hand, no leaf in reach) */
@@ -3143,6 +3308,8 @@ void vrhands_tick(Engine *e) {
         }
 #endif
         if (grip <= 0.4f) {
+            sLadderHold[side] = -1;   /* (let go: of the ladder too) */
+            sLadderFresh[side] = 0;
             if (sHold[side] == HOLD_LOOT) {
                 loot_let_go(sHoldId[side], side);
                 sHold[side] = HOLD_NONE;
@@ -3215,6 +3382,8 @@ void vrhands_tick(Engine *e) {
 
             if (p == NULL || !p->shown) {
                 sHold[side] = HOLD_NONE;
+                sLadderHold[side] = -1;
+                sLadderFresh[side] = 0;
             } else {
                 p->pos = at;
                 p->rot = sGrabRot[side];
@@ -3225,12 +3394,29 @@ void vrhands_tick(Engine *e) {
 
             if (p == NULL || !p->shown || !ward_leaf(p->name)) {
                 sHold[side] = HOLD_NONE;   /* (gone: a room away from it, or put away) */
+                sLadderHold[side] = -1;
+                sLadderFresh[side] = 0;
             } else {
                 /* (the hiding may have played it since, or left its track to run: the leaf is
                  * taken again where it now stands, and then turned by the hand as before) */
                 if (ward_retake(&e->room.placed, side, sHoldId[side], p, at)) {
                     ward_drive(&e->room.placed, side, sHoldId[side], p, at);
                 }
+            }
+        }
+        /* a ladder, when nothing else took the hand: a free hand held at LADDER_GRAB_GRIP takes it, and
+         * that controller buzzes once. It sets no hold and moves nothing by itself - her climbing is
+         * the scripts' (docs/subsystems/hands.md). The grabs above have already run, so a door, a prop,
+         * a leaf or loot taken in this same frame wins. */
+        if (sHold[side] == HOLD_NONE && sLadderHold[side] < 0 && grip > LADDER_GRAB_GRIP) {
+            int link = ladder_grab_link(at);
+
+            if (link >= 0) {
+                sLadderHold[side] = link;
+                sLadderFresh[side] = 1;   /* (hers to take: ladder-grab) */
+                sLadderGrabAt[side] = at;
+                vr_haptic(side, 0.15f, 0.03f);
+                engine_sound_at(LADDER_RUNG_SOUND, LADDER_RUNG_BANK, at);
             }
         }
         if (sHold[side] == HOLD_NONE && grip <= 0.4f) {
@@ -3266,6 +3452,24 @@ void vrhands_tick(Engine *e) {
                     sSettle[i] = 18;
                 }
             }
+        }
+        /* A hand on a ladder, pulled. Its PLAY-SPACE place is what counts - an offset from her
+         * eyes, turned by her yaw - so her own move cannot feed back into it: a hand held still
+         * cannot move her, and a hand moved the same as her moves her not at all.
+         * `ladder_pull_step` gives the body's move in the game's y (down the hand is up her) and
+         * moves the anchor on with the hand, so no motion is counted twice. */
+        if (sLadderHold[side] >= 0) {
+            Vec3 play = play_from_world(eye, yaw, at);
+
+            if (!sLadderAnchorHave[side]) {
+                sLadderAnchor[side] = play;   /* (the grab: the anchor from here, nothing pulled yet) */
+                sLadderAnchorHave[side] = 1;
+            } else {
+                sLadderPull += ladder_pull_step(&sLadderAnchor[side], play);
+            }
+        } else if (sLadderAnchorHave[side]) {
+            sLadderAnchorHave[side] = 0;   /* (let go: the anchor dropped, and what it had not taken) */
+            sLadderPull = 0.0f;
         }
         if (WALL_BUZZ) {   /* (the buzz is off: no path is swept for it at all) */
             /* the path the hand took this frame through a wall, a door leaf or a placed thing: one

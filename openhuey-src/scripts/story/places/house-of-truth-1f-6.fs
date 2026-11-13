@@ -157,7 +157,7 @@ create ahead  2 , 0 ,  3 , 1 ,   \ (area, exit loaded ahead)
     stages  1 exit-open? if  -1 far-open !  then ;
 : spots ( -- )
     fiona hiding-area in-area?  fiona -90 60 heading? and if
-        stalker-in? if  no-time-message offer-remark-now  else  ['] hides calm-only offer  then
+        stalker-in? if  no-time-message offer-remark-now  else  ['] hides hiding-spot offer  then
     then
     8 locked-request?  fiona 0 before-door? and if  ['] tries-door any-time offer  then
     over-music-e fact? 0=  stage @ no-stage = and  spot-taken @ 0= and
@@ -172,7 +172,7 @@ create ahead  2 , 0 ,  3 , 1 ,   \ (area, exit loaded ahead)
     over-music-e fact? 0= if  ['] taunts start drop  then ;
 : person-in ( i -- )
     fiona-p <> if  exit  then
-    events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then
+    events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then
     0 0 0 way-in
     over-music-e fact? 0= if  fiona $85 180 0e 10e place-at  ['] shut-in start drop  then ;
 : went ( -- ) ;

@@ -9,7 +9,9 @@
  * (path_stop) is checked too: a path into a wall stops 0.40 short of it and asking again from
  * there gives the same stop, while a path clear of the wall - or a hand already at it - is let
  * through. Detection only: nothing is blocked, so only the sweeps are asked; the rooms are built
- * by hand here.
+ * by hand here. A ladder's grab zone is asked too, and the pull to climb (ladder_pull_step): a
+ * hand's play-space motion, pulled down 2 giving the body -2 (up) and the anchor following it,
+ * pushed up 2 giving +2, and a hand held still - or asked again where it already is - giving none.
  *
  *   hands-sweep-check */
 #include <stdio.h>
@@ -433,6 +435,54 @@ int main(void) {
 
         want("a fast hand crossing the wall in one move stays in front of it",
              slide.x <= -0.35f && fabsf(slide.x + 0.40f) <= 0.05f, 1);
+    }
+    /* a ladder's grab zone (vrhands_ladder_link): a link's two spots - its foot at y 20 (the lower
+     * level: the game's y runs down) and its top at y 0, ten across the floor, so the line a hand
+     * is near slants. The link's triangles are not read by the grab. */
+    {
+        static NavMesh ladder;
+
+        memset(&ladder, 0, sizeof(ladder));
+        ladder.nlinks = 1;
+        ladder.links[0].tri[0] = ladder.links[0].tri[1] = -1;
+        ladder.links[0].spot[0] = vec3(0.0f, 20.0f, 0.0f);
+        ladder.links[0].spot[1] = vec3(10.0f, 0.0f, 0.0f);
+        want("a hand beside a ladder's middle is in its grab zone",
+             vrhands_ladder_link(&ladder, vec3(5.0f, 10.0f, 4.0f)), 0);
+        want("a hand 12 units from the ladder's middle is not",
+             vrhands_ladder_link(&ladder, vec3(5.0f, 10.0f, 12.0f)), -1);
+        want("a hand above the top spot's reach is not",
+             vrhands_ladder_link(&ladder, vec3(10.0f, -6.0f, 0.0f)), -1);
+        want("a hand at the foot spot's height is in its grab zone",
+             vrhands_ladder_link(&ladder, vec3(2.0f, 20.0f, 0.0f)), 0);
+    }
+    /* the pull to climb (ladder_pull_step): the play-space y grows as the hand is pulled down, and a
+     * rise of it moves her body up - the body's y going down, the game's y running the other way - so
+     * a hand pulled down 2 (play y 10 -> 12) gives the body -2, and one pushed up 2 gives +2. The
+     * anchor follows the hand, so the same place again moves nothing. */
+    {
+        Vec3 anchor = vec3(0.0f, 10.0f, 0.0f);
+        Vec3 play = vec3(0.0f, 12.0f, 0.0f);   /* (the hand pulled down by 2: the play-space y grows) */
+        float dy = ladder_pull_step(&anchor, play);
+
+        want("a hand pulled down 2 gives a body move of -2 (her up)", fabsf(dy + 2.0f) <= 1e-5f, 1);
+        want("and the anchor has followed the hand", fabsf(anchor.y - 12.0f) <= 1e-5f, 1);
+        want("the same hand place again gives no move", fabsf(ladder_pull_step(&anchor, play)) <= 1e-5f, 1);
+        want("and the anchor is the hand's place still", fabsf(anchor.y - 12.0f) <= 1e-5f, 1);
+    }
+    {
+        Vec3 anchor = vec3(0.0f, 10.0f, 0.0f);
+        Vec3 play = vec3(0.0f, 8.0f, 0.0f);   /* (the hand pushed up by 2) */
+        float dy = ladder_pull_step(&anchor, play);
+
+        want("a hand pushed up 2 gives a body move of +2 (her down)", fabsf(dy - 2.0f) <= 1e-5f, 1);
+        want("and the anchor has followed the hand", fabsf(anchor.y - 8.0f) <= 1e-5f, 1);
+    }
+    {
+        Vec3 anchor = vec3(0.0f, 10.0f, 0.0f);
+        Vec3 play = vec3(0.0f, 10.0f, 0.0f);   /* (held still) */
+
+        want("a hand held still gives no move", fabsf(ladder_pull_step(&anchor, play)) <= 1e-5f, 1);
     }
     printf("hands: faces counted: %d of 2 (the wall), %d of 1 (the floor), %d of 1 (the table top)\n",
            face_tris(&wall), face_tris(&floor), face_tris(&table));

@@ -47,7 +47,7 @@ $18 constant shelf-seen   $19 constant shelf-night-seen   $E constant shelf-door
 : awakened? ( -- flag )  c1f-3-flag1 fact? ;
 : he-hunts-elsewhere? ( -- flag )   \ (Debilitas in the game, not down, not here)
     debilitas?  st-cond-now @ down-cond <> and  st-room-now @ castle-1f-3 <> and ;
-: tinted ( -- )  night? 0= if  $84 $60 $3C $50 $24 $2A $2A $46 room-tint  then ;
+: tinted ( -- )  night? 0= if  daylight-tint  then ;
 : frame-reached? ( frame -- flag )  cutscene-frame swap < 0= ;   \ (the scene's, the original's cue)
 : shot? ( shot -- flag )  cutscene-frame cutscene-shot-at = ;
 
@@ -92,7 +92,7 @@ $18 constant shelf-seen   $19 constant shelf-night-seen   $E constant shelf-door
     103 him-in  partner $67 180 place-on-tri  partner false shown  0 summon-take
     15 screen:to-black-2 with-music or fade
     night? shelf-scene  wait-fade
-    ['] his-fall start drop
+    ['] his-fall along-scene
     hewie-in? if  ['] hewie-aside start drop  c1f-3-flag2 fact!  then
     0 true no-shadow  partner-kind true no-shadow
     panic-eased  if  -1 run-scene  then
@@ -120,14 +120,14 @@ $18 constant shelf-seen   $19 constant shelf-night-seen   $E constant shelf-door
 
 \ ---- the awakening (the first time at the key): the voice, the thing set on the table; else the key ----
 : awakening-cues ( -- )   \ (the scene's own: the music back at frame $64, the table's thing from its fourth shot)
-    begin  $64 frame-reached? 0= while  yield  repeat  music send bgm-resume
+    begin  $64 frame-reached? 0= while  yield  repeat  no-track 1e background
     begin  4 shot? 0= while  yield  repeat  table-part hide-part  thing-part show-part ;
 : awakening ( -- )
-    {: | cues :}  15 screen:to-black-2 with-music or fade
+    15 screen:to-black-2 with-music or fade
     awakened-movie scenes:unseen-4-movie awakened-cutscene load-scene  wait-fade
-    0 true no-shadow  ['] awakening-cues start to cues
+    0 true no-shadow  ['] awakening-cues along-scene
     panic-eased  if  awakened-msg run-scene  then
-    music send bgm-resume  wait-fade  0 false no-shadow  ['] awakening-cues running? if  cues stop-act  then
+    no-track 1e background  wait-fade  0 false no-shadow
     table-part hide-part  thing-part show-part  shelf-object object-show
     fiona 0 idle  fiona $13C -73 23.771e -27.607e place-at  1 1 player-camera  camera-restart
     c1f-3-flag1 fact!  15 screen:from-black with-music or fade  wait-fade ;
@@ -202,13 +202,13 @@ create looks
 : replay-awakening ( -- )
     fiona hold  first-track 1e background  key-part show-part  table-part show-part  tinted
     awakened-movie scenes:unseen-4-movie awakened-cutscene load-scene
-    0 true no-shadow  ['] awakening-cues start drop
+    0 true no-shadow  ['] awakening-cues along-scene
     panic-eased  if  awakened-msg run-scene  then
-    music send bgm-resume  0 false no-shadow  replay-over ;
+    no-track 1e background  0 false no-shadow  replay-over ;
 : replay-shelf ( night? -- )   \ (by day the room's tint too)
     {: at-night :}  fiona hold  thing-part show-part  at-night 0= if  tinted  then
     debilitas-kind figure-slot figure-in  yield
-    at-night shelf-scene  0 true no-shadow  debilitas-kind true no-shadow
+    at-night shelf-scene  ['] his-fall along-scene  0 true no-shadow  debilitas-kind true no-shadow   \ (its cues as played: act03)
     panic-eased  if  -1 run-scene  then
     figure-slot figure-out  replay-over ;
 
@@ -222,12 +222,13 @@ create cameras  1 , 0 , 0 ,   2 , 1 , 1 ,   3 , 0 , 0 ,   4 , 1 , 1 ,   \ (area,
     events-held state? if
         hewie send part-from-fiona
         replay-act case
-            $10 of  ['] replay-awakening start drop  endof
-            $11 of  [: false replay-shelf ;] start drop  endof
-            $12 of  [: true replay-shelf ;] start drop  endof
+            $10 of  ['] replay-awakening fiona start-holding drop  endof
+            $11 of  [: false replay-shelf ;] fiona start-holding drop  endof
+            $12 of  [: true replay-shelf ;] fiona start-holding drop  endof
         endcase  exit
     then
     0 0 0 way-in  ['] hint-on-entering start drop ;
 : went ( -- )  chase-scene @ if  stalkers-stay state-off  force-chased state-off  then ;
 
 ' came-in ' person-in ' each-frame ' went castle-1f-3 place!
+here  camomile , ' reach-camomile , camomile-fx ,  -1 ,  castle-1f-3 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

@@ -4,6 +4,7 @@
 #define VRHANDS_H
 
 #include "../core/mathx.h"
+#include "../data/navmesh.h"
 
 struct Actor;
 struct Engine;
@@ -59,5 +60,27 @@ int vrhands_door_hits(void);
 void vrhands_defense_draw(const Mat4 *view_proj);
 /* a grip release that should become a thing. 1 once, then cleared. */
 int vrhands_defense_take(int *kind, float *x, float *y, float *z, float *vx, float *vy, float *vz);
+/* the ladder a hand at `at` is in the grab zone of in `nav` - its link index, -1 none: near the
+ * line of its two spots across the floor, within its height and a rise past either end. The room
+ * is handed in, so hands_sweep_check can ask it with ladders of its own. */
+int vrhands_ladder_link(const NavMesh *nav, Vec3 at);
+/* the ladder that hand holds (the link index), or -1. A grab of the air beside a ladder while
+ * Fiona climbs; the hand's pull from there is what climbs her. */
+int vrhands_ladder_hold(int side);
+/* 1 when either hand holds a ladder. */
+int vrhands_ladder_hands(void);
+/* 1 when both hands hold a ladder. */
+int vrhands_ladder_both(void);
+/* a hand's new ladder grab, taken once: its link and the side nearer the grab (0 the nav foot, 1 the
+ * top); link -1 none */
+void vrhands_ladder_grab(int *link, int *side);
+/* the pull the hands have given since the scripts last took it, in the game's y (which runs down,
+ * so up is negative), both hands together; the call takes it (clears it). */
+float vrhands_ladder_pull(void);
+/* The body's move for one hand's pull: `anchor` its play-space place at the last tick (an offset
+ * from her eyes), `play` where it is now. Down the hand is up her, so a hand pulled down 2 gives
+ * -2. The anchor is moved on to `play`, so the same motion is never counted twice. Pure, so
+ * hands_sweep_check can ask it. */
+float ladder_pull_step(Vec3 *anchor, Vec3 play);
 
 #endif

@@ -33,7 +33,7 @@ own: press-remarked  own: cage-looked
 5 constant old-man-movie   4 constant old-man-cutscene   2 constant press-screen
 1 constant cue-sound   $225 constant plate-file   $25 constant old-man-seen
 : wander-about ( -- )  wander-fx -39e 6e 31e 3e 3e 0e 0e -60e wanderer-at ;
-: tinted ( -- )  c2f-3-flag1 fact? 0= if  $84 $60 $3C $50 $24 $2A $2A $46 room-tint  then ;
+: tinted ( -- )  c2f-3-flag1 fact? 0= if  daylight-tint  then ;
 
 \ ---- as she comes in ----
 : came-in ( exit -- )  drop  room-sounds  tinted  wander-about  cube-object object-hide ;
@@ -41,12 +41,13 @@ own: press-remarked  own: cage-looked
 \ ---- the press: the plate made (its scene - a sound at its cue - the plate shown her, the file) ----
 : plate-cue ( -- )  begin  cutscene-frame $69 < while  yield  repeat  cue-sound 35e 10e 25e room-sound ;
 : plate-scene ( -- )
-    plate-movie scenes:unseen-movie plate-cutscene load-scene  ['] plate-cue start drop
-    panic-eased  if  -1 run-scene  then ;
+    plate-movie scenes:unseen-movie plate-cutscene load-scene  ['] plate-cue along-scene
+    panic-eased  if  -1 run-scene  then
+    ['] plate-cue stop-doing ;   \ (the scene over - skipped before its cue, or not played: no frame $69 to wait for)
 : plate-shown ( -- )  word-plate-key item-named  word-plate-key show-item-tab  fanfare  obtained-2-msg say ;
-: plate-done ( -- )   \ (back from the scene: by the machine, the plate, its file once the cue is past)
+: plate-done ( -- )   \ (back from the scene: by the machine, the plate, its file)
     fiona $7A 33 31.61e 18.93e place-at  fiona 0 idle  camera-restart  15 screen:from-black fade  wait-fade
-    plate-shown  begin  ['] plate-cue running? while  yield  repeat  plate-file give-file ;
+    plate-shown  plate-file give-file ;
 : presses ( -- )   \ (the press's screen; a plate made: its scene)
     press-screen open-subscreen  yield
     plate-made fact? if
@@ -60,7 +61,7 @@ own: press-remarked  own: cage-looked
     press-screen open-subscreen  yield
     plate-made fact? if  plate-scene  world-held state!  cube-object object-hide  then
     fiona $7A 33 31.61e 18.93e place-at  fiona 0 idle  camera-restart  15 screen:from-black fade  wait-fade
-    plate-made fact? if  plate-shown  begin  ['] plate-cue running? while  yield  repeat  plate-file give-file  then
+    plate-made fact? if  plate-shown  plate-file give-file  then
     stalkers-stay state-off ;
 : nobody-by-the-door? ( -- flag )   \ (nobody in exit 0's area; Debilitas loaded, not in the game)
     fiona 0 exit-area in-area?  hewie 0 exit-area in-area? or  if  false exit  then
@@ -90,7 +91,7 @@ own: press-remarked  own: cage-looked
     begin  cutscene-frame cutscene-shot-at 3 <> while  yield  repeat
     daniella-kind 0 s" O_DNL\DNL_201.TEX" face-on ;
 : old-man-scene ( -- )
-    old-man-movie scenes:unseen-movie old-man-cutscene load-scene  ['] her-face start drop
+    old-man-movie scenes:unseen-movie old-man-cutscene load-scene  ['] her-face along-scene
     panic-eased  if  old-man-msg run-scene  then  world-held state! ;
 : daniella-comes ( -- )
     fiona hold  fiona $7A 33 31.61e 18.93e place-at  fiona false shown
@@ -132,7 +133,7 @@ create cameras  1 , 0 , -1 ,   2 , 1 , -1 ,   \ (area, set, path)
     fiona-p <> if  exit  then
     events-held state? if
         hewie send part-from-fiona
-        replay-act 8 = if  ['] replay-press  else  ['] replay-old-man  then  start drop exit
+        replay-act 8 = if  ['] replay-press  else  ['] replay-old-man  then  fiona start-holding drop exit
     then
     0 0 -1 way-in
     came-by @ forced-exit = if  after-part show-part  before-part hide-part  ['] daniella-comes start drop

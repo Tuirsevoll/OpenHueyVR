@@ -30,7 +30,7 @@ $A constant hewie-far-area   $F constant map-2-area   $10 constant map-3-area
 : first-across ( -- )  wt2f-1-flag4 fact! ;
 wt2f-1-flag3 1 ' edge 4 152e walkway: the-way
 the-way $13A -90 -0.47e 39.8e lever-at   the-way $3B6 120 -22.18e 0.43e hewie-out   the-way $3C3 -160 2.56e 19.55e hewie-home
-the-way $3B6 $3BF 1 hewie-ends   the-way ' first-across when-across
+the-way $3B6 $3BF 1 hewie-ends   the-way ' first-across when-across   the-way her-exit-follows
 
 wt2f-1-breakable-broken crate-part crate-broken-part  -16.5e 152e -47.5e 5e 8e  breakable: crate
 crate $80202020 0 0 shard-look   crate 0.812e 0.687e 0.187e 0.312e shard-uv   crate $2B9 noise-from
@@ -63,7 +63,7 @@ crate $80202020 0 0 shard-look   crate 0.812e 0.687e 0.187e 0.312e shard-uv   cr
     turning @  stalkers-stay state? or if  exit  then
     turned? if  888  else  473  then  sent-in  0 return-due ! ;
 : riccardo-hunts ( -- )
-    wt2f-1-flag2 fact?  c7-second-event fact? 0= and  riccardo? and  stalker-in? 0= and 0= if  exit  then
+    riccardo-come fact?  c7-second-event fact? 0= and  riccardo? and  stalker-in? 0= and 0= if  exit  then
     wt2f-1-flag1 fact? if  comes-back exit  then
     prowl-begun @ 0=  fiona landing-area left? and if  -1 prowl-begun !  ['] prowls start drop  then
     fiona top-area entered? if  ['] prowls stop-doing  then
@@ -77,8 +77,8 @@ crate $80202020 0 0 shard-look   crate 0.812e 0.687e 0.187e 0.312e shard-uv   cr
 : barks-at-end ( -- )  1.97e 152e 46.65e hewie-barks-at ;
 : spots ( -- )
     lever-area -90 lever-offer
-    wt2f-1-medallion-found fact?  wt2f-1-medallion fact? 0= and  fiona 4.12e 104e -18.51e 5e 5e touches? and if  ['] pick-medallion calm-only offer  then
-    wt2f-1-refined-antimony fact? 0=  fiona -19.9e 152e 74.61e 5e 5e touches? and if  ['] pick-antimony calm-only offer  then ;
+    wt2f-1-medallion-found fact?  wt2f-1-medallion fact? 0= and  fiona 4.12e 105e -18.51e 5e 5e touches? and if  ['] pick-medallion calm-only offer  then
+    wt2f-1-refined-antimony fact? 0=  fiona -19.9e 153e 74.61e 5e 5e touches? and if  ['] pick-antimony calm-only offer  then ;
 : hewie-bits ( -- )
     wt2f-1-medallion-found fact? 0=  scrambling? and  hewie 4.12e 104e -18.51e 10e 5e touches? and if  ['] medallion-sniffed start-only  then
     wt2f-1-flag4 fact? 0=  hewie-noticed @ 0= and  hewie-in? and  hewie-cond-now @ well-cond = and  chased? 0= and  hewie-cmdable-now @ and
@@ -108,3 +108,4 @@ create ahead  2 , 0 ,  3 , 1 ,   \ (area, exit loaded ahead)
     summoner-was-on @ if  summoner-on state!  then ;
 
 ' came-in ' person-in ' each-frame ' went water-tower-2f-1 place!
+here  medallion , ' pick-medallion , medallion-fx ,  refined-antimony , ' pick-antimony , antimony-fx ,  -1 ,  water-tower-2f-1 item-spots   \ (its items lying about, at their sparkles: mods told - item-placed)

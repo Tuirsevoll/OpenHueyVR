@@ -28,6 +28,9 @@ int navmesh_build(NavMesh *n, const uint8_t *sec, size_t size) {
             memcpy(c, r + k * 16, 12);
             t->v[k] = vec3(c[0], c[1], c[2]);
             memcpy(&t->next[k], r + 0x30 + k * 4, 4);
+            if (t->next[k] >= (int)count) {   /* (no such neighbour: none) */
+                t->next[k] = -1;
+            }
         }
         memcpy(&t->flags, r + 0x3C, 4);
         memcpy(t->cost, r + 0x40, 12);
@@ -157,6 +160,13 @@ static void onto_plane(const NavTri *t, Vec3 *p) {
     float nx = e1.y * e2.z - e2.y * e1.z, nz = e1.x * e2.y - e2.x * e1.y, ny = e1.z * e2.x - e2.z * e1.x;
 
     p->y = t->v[0].y - ((p->z - t->v[0].z) * nz + (p->x - t->v[0].x) * nx) / ny;
+}
+
+float navmesh_height_on(const NavMesh *n, int tri, float x, float z) {
+    Vec3 p = vec3(x, 0.0f, z);
+
+    onto_plane(&n->tris[tri], &p);
+    return p.y;
 }
 
 /* NavTri_Slide: `to` pulled back over the edge it left by, along its inward normal (1.1 x the overshoot,

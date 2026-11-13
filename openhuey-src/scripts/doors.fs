@@ -51,15 +51,25 @@ $1000000 constant hewie-barred   $4000000 constant stalker-barred   \ (the nav m
     dup locked-bit has? if  drop hewie-barred stalker-barred or exit  then
     0  over hewie-kind locked-against? if  hewie-barred or  then
     swap stalker-kind locked-against? if  stalker-barred or  then ;
-: refresh ( exit -- )   \ its passage: open or shut, and its locks
+: lock-flags ( exit door -- )   \ its locks' flags on its near side (Doors_Refresh: $5000000 off, then as locked)
+    {: ex door :}  ex 0 $5000000 false door-side-flags
+    door locks ?dup if  ex 0 rot true door-side-flags  then ;
+: passage ( exit open? -- )   \ open: $60000 off its near side and on its far one; shut, back (Doors_Passage)
+    {: ex open :}  ex  open 0= 1 and  $60000 false door-side-flags   ex  open 1 and  $60000 true door-side-flags ;
+\ a change of its state (the story's locks and marks, a door let go) puts its locks on the floor - not its
+\ open or shut passage: that follows the door itself, where it stands - as it comes in, as its user lets
+\ it go, as a room's script swings it (Doors_Refresh touches only the locks; before 0.2.42 the passage
+\ followed the state too - a door drawn open and marked shut barred her way, one drawn shut and marked
+\ open let a stalker through)
+: refresh ( exit -- )
     dup door-here? 0= if  drop exit  then
     room-id over door-of  {: ex door :}  door 0< if  exit  then
-    ex  door door-open?  door locks  door-passage ;
-: room-in ( -- )   \ each door stands open or shut as its state says
+    ex door lock-flags ;
+: room-in ( -- )   \ each door stands open or shut as its state says, its passage so (Doors_RoomIn)
     8 0 do
         i door-here?  room-id i door-of 0< 0= and if
-            room-id i door-of door-open? if  -90e  else  0e  then  i true door-swing
-            i refresh
+            room-id i door-of door-open?  dup if  -90e  else  0e  then  i true door-swing
+            i swap passage  i refresh
         then
     loop ;
 : refresh-door ( door -- )   \ its passage, if it is in the played room
@@ -93,8 +103,10 @@ $F constant quiet-door   $5F constant loud-door   \ (its noises' loudness)
     else  door opened-bit clear-bits  then
     door held-bit clear-bits
     door changed
-    \ let go off-screen, it is heard: at the door, from the user's source (door_heard)
-    room room-id <> if  quiet-door room -1 door source acoustics-id send noise  then ;
+    \ let go in the played room, its passage as its user leaves it (the user's let-go, fiona.c's Character door
+    \ release: Doors_Passage by where it stands); off-screen, it is heard: at the door, from the user's source (door_heard)
+    room room-id = if  ex door-here? if  ex open passage  then  exit  then
+    quiet-door room -1 door source acoustics-id send noise ;
 
 \ ---- the played room's door models: who is using each (its noise source) ----
 state: doors-state
@@ -109,8 +121,20 @@ end-state
     settled 0< if  exit  then
     room-id ex  ex user @  settled let-go ;
 
+\ the room left (Doors_SaveAll): a door still held there - its swing not come to rest, its user
+\ struck or gone - is let go as it was going, open or shut; left held, nobody could use it again
+: let-go-all ( room -- )
+    {: room :}
+    8 0 do
+        i door-here?  room i door-of door-held? and if  room i  i user @  i door-closing? 0=  let-go  then
+    loop ;
+
 behaviour keeping
-  on spawned ( -- )  self subscribe tick  self subscribe entered-room  users 8 cells -1 fill ;
+  on spawned ( -- )  self subscribe tick  self subscribe entered-room  self subscribe leaving-room  self subscribe game-loaded  users 8 cells -1 fill ;
+  \ a save loaded (Rooms_SetState): the exits anew through the doors its progress hasn't closed off -
+  \ left as they were, an exit kept a door closed off for good (the mansion's front door, locked)
+  on game-loaded ( -- )  world-exits-rebuild ;
+  on leaving-room ( room exit -- )  drop let-go-all ;
   on entered-room ( room exit -- )  2drop  room-in  users 8 cells -1 fill ;
   on redo-doors ( -- )  room-in ;   \ (Doors_RoomIn, for the story)
   on lock ( door -- )  dup locked-bit set-bits  changed ;
@@ -139,10 +163,12 @@ behaviour keeping
   on swing-door ( exit open source -- )  {: ex open source :}  source ex user !  ex open false door-move ;
   \ (a room's script: no one using it - the creak's noise is Fiona's, the original's opener 0)
   on set-door-opened ( exit open -- )  {: ex open :}  ex open door-set-opened if  fiona-noise ex user !  then ;
-  \ slammed shut or burst open (Fiona_SlamDoor: taken hold of first - DoorHold_Take - then let go
-  \ open or shut at rest by its user, as a swing along an animation is)
-  on slam ( exit source -- )  over user !  dup grab  false true door-move ;
-  on barge ( exit source -- )  over user !  dup grab  true true door-move ;
+  \ slammed shut or burst open (Fiona_SlamDoor: taken hold of first - DoorHold_Take - then set
+  \ opened or shut, Doors_SetOpened: swung fast, its passage changed sides at once - she runs on
+  \ through it - and burst open its bang; let go open or shut at rest by its user, as a swing
+  \ along an animation is)
+  on slam ( exit source -- )  over user !  dup grab  false door-set-opened drop ;
+  on barge ( exit source -- )  over user !  dup grab  true door-set-opened drop ;
   on burst-way ( exit sign source -- )  {: ex sign source :}  source ex user !  ex grab  ex sign 0> door-burst ;
   \ pulled shut behind a stalker come in by it (his DoorBreak): held, swung shut, let go shut at rest
   on pull-shut ( exit source -- )  over user !  dup grab  false false door-move ;
@@ -151,7 +177,9 @@ behaviour keeping
   on let-go-open ( room exit source -- )  true let-go ;
   on open-from-afar ( room exit kind source -- )  {: room ex kind source :}  room ex kind take if  room ex source true let-go  then ;
   on let-go-shut ( room exit source -- )  false let-go ;
+  on shut-from-afar ( room exit kind source -- )  {: room ex kind source :}  room ex kind take if  room ex source false let-go  then ;
   on tick ( -- )  8 0 do  i door-here? if  i swing-events  then  loop ;
 end-behaviour
 
 : doors-spawn ( -- id )  keeping doors-state s" doors" spawn ;
+

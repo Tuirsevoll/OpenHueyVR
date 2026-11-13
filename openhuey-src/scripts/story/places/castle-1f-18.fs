@@ -83,7 +83,7 @@ create at-scene   \ as the scene begins (the single one by the doorway)
 : lays-flowers ( -- )
     fiona hold  stalkers-stay state!  15 screen:to-black-2 with-music or fade  fiona wait-move
     moths-movie scenes:unseen-movie moths-cutscene load-scene  wait-fade
-    flowers-part show-part  ['] moths-to-vase start drop
+    flowers-part show-part  ['] moths-to-vase along-scene
     hewie-in?  hewie-cond-now @ down-cond = and if  hewie hold  hewie false shown  then
     panic-eased  if  -1 run-scene  then
     fiona 0 idle  fiona $10B -177 -33.329e -29.383e place-at  camera-restart
@@ -110,7 +110,7 @@ create at-scene   \ as the scene begins (the single one by the doorway)
 : spots ( -- )
     laid? 0=  fiona vase-area 90 faces-area? and if  ['] empty-vase unhurried offer  then
     fiona-mode-now @ own-mode =  in-panic? 0= and  fiona lamp-x 10e 5e steps-into? and if  ['] sees-moths start drop  then
-    fiona clock-area in-area?  fiona 180 50 heading? and if  ['] save-clock calm-hewie-up offer  then
+    fiona clock-area in-area?  fiona 180 50 heading? and if  ['] another-clock calm-hewie-up offer  then
     fiona picture-area in-area?  fiona 90 50 heading? and if  ['] torn-picture unhurried offer  then ;
 
 \ ---- Hewie wary of them: once a visit, near them, he goes over and stands tense (less likely once laid) ----
@@ -128,7 +128,7 @@ create at-scene   \ as the scene begins (the single one by the doorway)
 : replayed ( -- )
     fiona hold  room-sounds  at-lamp moths-in
     moths-movie scenes:unseen-movie moths-cutscene load-scene
-    flowers-part show-part  ['] replay-track start drop
+    flowers-part show-part  ['] replay-track along-scene
     begin  room-sounds-in? 0= while  yield  repeat
     moths-sound-id 55e 4e -30e room-sound  1 moths-sound-id moths-sound
     panic-eased  if  -1 run-scene  then  replay-over ;
@@ -140,7 +140,7 @@ create entries  1 , 0 ,   0 , -1 ,             \ (by exit 0, 1: the camera)
 : ways ( -- )  2 exits-out  cameras 3 cameras-at  ahead 2 ways-out ;
 : each-frame ( -- )  ways  hewie-moths  moths-heard  spots ;
 : person-in ( i -- )
-    fiona-p = if  events-held state? if  hewie send part-from-fiona  ['] replayed start drop exit  then  entries 2 ways-in  then ;
+    fiona-p = if  events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then  entries 2 ways-in  then ;
 : went ( -- ) ;
 
 ' came-in ' person-in ' each-frame ' went castle-1f-18 place!

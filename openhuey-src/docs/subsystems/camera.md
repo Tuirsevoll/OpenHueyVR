@@ -44,7 +44,8 @@ sub-state and the room change.
 2. Who may be followed (`Progress_CameraFollow`): Fiona always; another character only in the
    played room and with a setup. Otherwise the camera goes back to Fiona.
 3. From room to room the director goes on (its shake, its shot, whom it follows); only the
-   characters' setups go. The room starts it between its first scripts and its phase 3
+   characters' setups go. Its sets and paths lie in the room's data: as another room loads they
+   are let go (`camdir_room_gone`), nothing of them read until that room's start. The room starts it between its first scripts and its phase 3
    (`RoomStart`, then `CameraOn`): the view angle from 0.6 of the set's, out to it over 60
    frames, and the phase 3 scripts see the setup changed. A fresh start (a new game, a load:
    `RoomIn`) resets it and cuts on the first frame; Fiona's setup is the save's.
@@ -74,3 +75,13 @@ sub-state and the room change.
 **Built** (`scripts/camera.fs`, `src/game/camdirector.c`; `tests/camera/test_camera.fs`).
 The director reads the followed actor's body directly. Its random shake isn't the original's
 generator.
+
+**Read again, 2026-11 (0.2.42)** against camdirector / scene_game / the asm: matching but for these,
+left as they are. Progress_CameraSetup (0x1793A0; its decomp's else branch is garbled - read the
+asm) gives anyone but Fiona outside the room being played no setup (-1 -1); ours keeps it, since
+the story's `camera-set` often follows a `stalker-in` message not yet delivered (castle-1f-13),
+where the original placed him at once - a faithful check needs each of the 58 uses ordered first.
+The camera is placed at the frame's end, after everyone moved (the original's before
+Progress_CharsThink: a frame behind her). Area crossings use the body's height, not its floor's
+(EventCond_AreaCross / Events_InArea project onto the floor): differs only on slopes and stairs.
+A window wider than 4:3 shows more at the sides than the original's 512 x 448 framing.

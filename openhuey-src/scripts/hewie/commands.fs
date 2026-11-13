@@ -52,7 +52,7 @@ create reactions  300 , 1 ,  300 , 1 ,  300 , 1 ,  750 , 1 ,  150 , 1 ,  1500 , 
 : act-away ( code -- flag )
     case
         come-back-cmd of
-            his-yelp @ 0> if  -1 his-yelp !  false
+            his-yelp @ 0> if  -1 his-yelp !  1 his-pending !  false   \ (+0xF3559: he picks anew - out to her)
             else  his-action @ back-to-her-act <> if  back-to-her-act 0 want  true  else  false  then  then  endof
         help-cmd of  -1 his-yelp !  to-her-cry-act 0 want  true  endof
         tend-cmd of  10 hp!  false  endof
@@ -194,4 +194,5 @@ $280A0019 constant her-walk-stops   \ (the floors her walk there may not cross)
     his-mode @ meeting-mode = settled? and anim-group in-sitting = and  his-to-yaw f@ his-yaw f- angle-wrap fabs 1e-5 f< and   \ (facing it: his heading is a single float)
     her body-room his-room = and  his-meet @ 0< 0= and
     over 1- his-meet @ = and                                              ( type ok? )
-    dup if  over his-meet !  1 his-meet-part !  swap her-call  else  nip  then ;
+    dup if  over his-meet !  1 his-meet-part !  swap her-call  -1 his-meet !  else  nip  then ;   \ (the joint action begun: the link
+    \ taken up - Progress_RelationChanges resets it as the actions start; till then, Progress_IsLinked)

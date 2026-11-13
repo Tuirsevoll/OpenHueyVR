@@ -15,14 +15,30 @@ defer held-down ( -- )   \ (held by homunculi: fiona.seized)
 defer knocked-off ( -- )   \ (struck on a ladder: fiona.ladder)
 defer drop-door ( -- )   ' noop is drop-door   \ (a door she held let go: fiona.doors)
 
-\ ---- how she stands for a stalker's attack (Pursuer_FionaState): out of reach while struck
-\ (her reactions, mode 4), seized or stepping back; the panic's stages 4 / 5; mode $B; panicking
-\ (fear over 90, or the panic attack) ----
+\ ---- how she stands for a stalker's attack (Pursuer_FionaState): out of reach (stepping back, at
+\ a door, grabbed, aside, the stalkers blind); thrown - at the panic's height or as it
+\ calms that is the calming one's, else out of reach too; the panic's stages 4 / 5; mode $B;
+\ panicking (fear over 90, or the panic attack) ----
+\ not to be gone for (Pursuer_MayGo: +0x2D - stepping back, at a door -, the stalkers blind, grabbed;
+\ aside by the story's 0x21): bit 1; thrown (her mode 4): bit 2; for the creatures: +0x2D (stepping
+\ back, at a door, struck, aside) bit 4, a script has her bit 8, held (led off, grabbed) bit 16
+: reach ( -- bits )
+    her-out-of-reach @ 0<>  her-sub @ grabbed-r = or  stalkers-blind state-flag? or  her-aside @ 0<> or  1 and
+    her-mode @ thrown-mode = 2 and  or
+    her-out-of-reach @ 0<>  her-aside @ 0<> or  4 and  or                       \ (+0x2D itself: the creatures')
+    her-scripted @ 0<>  8 and  or                                               \ (a script has her: +0xE0)
+    her-led @ 0<>  her-mode @ thrown-mode =  her-sub @ grabbed-r = and or  16 and  or ;   \ (held: Character_Held - led, grabbed)
+\ (her mode 4 with moveSub $A / $B: thrown by a blow or a door, or any fall begun by Fiona_StartAction4 -
+\ which leaves $A - with no reaction's kind after it: her panic's fall, her stumble)
+: floored? ( -- flag )
+    her-mode @ thrown-mode <> if  false exit  then
+    her-sub @  dup thrown-r door-thrown-r 1+ within  swap off-ladder-r < or ;
 : plight ( -- n )
     her-out-of-reach @ if  unreachable-plight exit  then   \ (+0x2D: stepping back, at a door)
-    her-mode @ thrown-mode =  her-sub @ grabbed-r = or  stalkers-blind state-flag? or  her-aside @ or if  unreachable-plight exit  then
-    her-panic-stage @ panicking = if  panicking-plight exit  then
+    her-sub @ grabbed-r =  stalkers-blind state-flag? or  her-aside @ or if  unreachable-plight exit  then
+    her-panic-stage @ panicking = if  floored? if  calming-plight  else  panicking-plight  then  exit  then
     her-panic-stage @ calming-down = if  calming-plight exit  then
+    floored? if  unreachable-plight exit  then
     her-mode @ react-mode = if  fleeing-plight exit  then
     her-fear f@ 90e f>  her-doing @ attack-doing = or if  frightened-plight exit  then
     free-plight ;
@@ -138,9 +154,9 @@ $8000018 constant door-hit-floor
             her-fear-bits @ 2 and if  -1 her-fall-turn !  her-fall-yaw f@ her-yaw f!  flung-down-anim  else  thrown-back-anim  then
             -1 play-table
         then
-        her-fear-bits @ 2 and if  panic-scream-sound 0 her-sound  $6F noise-here  1000e f>cell s" panic" actor-named send fear-set
+        her-fear-bits @ 2 and if  panic-scream-sound 0 her-sound  $6F noise-here  1000e f>cell panic-id send fear-set
         else  fall-sound 0 her-sound  $5F noise-here  then
-        ['] after-throw her-act !
+        -1 her-wall-side !  ['] after-throw her-act !   \ (along a wall by whichever side it comes)
     then
     blocked-floor 1 or root-move-within ;
 
@@ -176,7 +192,7 @@ $8000018 constant door-hit-floor
 : at-end? ( -- flag )  her-model @ actor act.mflags l@ $400 and 0<> ;   \ (its last frame: the motion's flag $400)
 : risen ( -- )  ended? if  30 her-stumble-t !  to-idle exit  then  root-move ;
 : after-fall ( -- )
-    at-end? if  75e f>cell s" panic" actor-named send threat  ['] risen her-act !  then
+    at-end? if  75e f>cell panic-id send threat  ['] risen her-act !  then
     root-move ;
 : spirit-fall ( -- )
     settled? if
@@ -196,7 +212,7 @@ create door-pt /vec allot
     her-hit-how @ 1 exit-spot drop  door-pt vec!  door-pt her-at vec-heading      ( F: turn away )
     fover f- angle-wrap fabs pi f2/ f> if  pi f+ angle-wrap  then ;
 : door-thrown ( -- )
-    door-way  0 her-fall-turn !  fdup her-fall-yaw f!   \ (turned to the swing as she slides)
+    door-way  0 her-fall-turn !  -1 her-wall-side !  fdup her-fall-yaw f!   \ (turned to the swing as she slides; along a wall by whichever side)
     her-yaw f@ f- angle-wrap fabs pi f2/ f< if
         0 her-throw-back !  thrown-forward-anim play-cut
     else
@@ -205,7 +221,7 @@ create door-pt /vec allot
     then
     blocked-floor 1 or root-move-within
     her-fear-bits @ 2 and if
-        panic-scream-sound 0 her-sound  $6F noise-here  1000e f>cell s" panic" actor-named send fear-set
+        panic-scream-sound 0 her-sound  $6F noise-here  1000e f>cell panic-id send fear-set
     else  fall-sound 0 her-sound  $5F noise-here  then
     ['] after-throw her-act ! ;
 
@@ -221,7 +237,7 @@ create door-pt /vec allot
     endcase  ?dup if  fiona-jolt  else  drop  then ;
 
 : knocked-or-thrown? ( r -- flag )  dup thrown-r = swap step-knock-r grabbed-r within or ;
-: by-somebody? ( -- flag )  her-hit-who @ dup 0< if  drop false exit  then  s" hewie" actor-named <> ;
+: by-somebody? ( -- flag )  her-hit-who @ dup 0< if  drop false exit  then  hewie-id <> ;
 : room-to-throw? ( -- flag )   \ (Actor_TriFreeFor: not on a floor nothing stands on, nor at a door or a ladder)
     her-tri @ dup 0< 0= if  nav-flags doorway-or-step and if  false exit  then  else  drop  then
     at-a-door? by-a-ladder? or 0= ;
@@ -231,10 +247,11 @@ create door-pt /vec allot
 : struck ( kind how who -- taken? ) ( F: fright -- )
     her-hit-who !  her-hit-how !
     reaction dup 0< if  drop fdrop false exit  then
-    f>cell s" panic" actor-named send fright
+    f>cell panic-id send fright
     dup caught-r = charmed? and if  drop false exit  then   \ (wearing the charm: she can't be caught)
     her-doing @ door-doing = if  drop-door  then
     -1 her-fall-turn !  0 her-busy-t !  fiona.slam:recoil-off   \ (her own blow's hold on her let go)
+    -1 her-out-of-reach !   \ (+0x2D: not to be gone for till she's up or down - held, grabbed, a flinch excepted)
     thrown-mode her-mode !  thrown-doing her-doing !  dup her-sub !
     dup knocked-or-thrown? if   \ (a blow: the danger told only of one by somebody other than Hewie;
         by-somebody? if  fiona-struck danger-id send danger-signal  then   \ a stumble resets her recovery)
@@ -242,15 +259,15 @@ create door-pt /vec allot
     then
     dup door-thrown-r = over off-ladder-r = or if  fiona-struck danger-id send danger-signal  then   \ (Progress_SetCondBit 1: she's been struck)
     dup reaction-jolt
-    dup grabbed-r = if  drop  fiona-occupied state-flag-set  grabbed  true exit  then
-    dup held-down-r = if  drop  held-down  true exit  then
+    dup grabbed-r = if  drop  0 her-out-of-reach !  fiona-occupied state-flag-set  grabbed  true exit  then
+    dup held-down-r = if  drop  0 her-out-of-reach !  held-down  true exit  then
     case
         spirit-fall-r of  ['] spirit-fall her-act !  endof
         caught-r of
             her-hit-how @ by-door = if   \ (the door's hold: thrown where there's room, else knocked down by him)
                 room-to-throw? if  -1 her-hit-who !  $D0 12 fiona-jolt  ['] thrown her-act !
                 else  fiona.slam:stalker-in-room her-hit-who !  $80 8 fiona-jolt  step-knock-r her-sub !  ['] knocked her-act !  then
-            else  react-mode her-mode !  flinch-doing her-doing !  her-hit-how @ grip her-hit-how !  ['] flinching her-act !  then   \ (its rumble as she flinches)
+            else  0 her-out-of-reach !  react-mode her-mode !  flinch-doing her-doing !  her-hit-how @ grip her-hit-how !  ['] flinching her-act !  then   \ (its rumble as she flinches)
         endof
         thrown-r of  ['] thrown her-act !  endof
         door-thrown-r of  her-hit-how @ her-door-hit !  ['] door-thrown her-act !  endof
