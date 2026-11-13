@@ -434,6 +434,26 @@ int main(void) {
         want("a fast hand crossing the wall in one move stays in front of it",
              slide.x <= -0.35f && fabsf(slide.x + 0.40f) <= 0.05f, 1);
     }
+    /* a ladder's grab zone (vrhands_ladder_link): a link's two spots - its foot at y 20 (the lower
+     * level: the game's y runs down) and its top at y 0, ten across the floor, so the line a hand
+     * is near slants. The link's triangles are not read by the grab. */
+    {
+        static NavMesh ladder;
+
+        memset(&ladder, 0, sizeof(ladder));
+        ladder.nlinks = 1;
+        ladder.links[0].tri[0] = ladder.links[0].tri[1] = -1;
+        ladder.links[0].spot[0] = vec3(0.0f, 20.0f, 0.0f);
+        ladder.links[0].spot[1] = vec3(10.0f, 0.0f, 0.0f);
+        want("a hand beside a ladder's middle is in its grab zone",
+             vrhands_ladder_link(&ladder, vec3(5.0f, 10.0f, 4.0f)), 0);
+        want("a hand 12 units from the ladder's middle is not",
+             vrhands_ladder_link(&ladder, vec3(5.0f, 10.0f, 12.0f)), -1);
+        want("a hand above the top spot's reach is not",
+             vrhands_ladder_link(&ladder, vec3(10.0f, -6.0f, 0.0f)), -1);
+        want("a hand at the foot spot's height is in its grab zone",
+             vrhands_ladder_link(&ladder, vec3(2.0f, 20.0f, 0.0f)), 0);
+    }
     printf("hands: faces counted: %d of 2 (the wall), %d of 1 (the floor), %d of 1 (the table top)\n",
            face_tris(&wall), face_tris(&floor), face_tris(&table));
     if (sFails != 0) {

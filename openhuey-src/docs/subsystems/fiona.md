@@ -340,7 +340,8 @@ castle-1f-2 (two), room 3 (two), 29, 37, 40, 47, 48, 84. Checked by
 from it nothing; on from the foot and up, off on the floor above; the stalker at its foot - she
 holds on; struck on it, knocked off (`knocked-off`, Fiona_StateCaughtCrawling); panicking on it,
 let go. Not yet: the
-region's slot bits for Hewie.
+region's slot bits for Hewie. Her hands in the headset can now grab a ladder in the air beside her
+while she climbs - a buzz only, nothing moves her yet (docs/subsystems/hands.md, "Ladder grab").
 
 Also fixed with it: `walk-anim` (Fiona_StateCmdWalkAnim) read the animation's key events for
 `MOTION_EVENTS` $20; it is the motion's come-round flag (`ended?`).

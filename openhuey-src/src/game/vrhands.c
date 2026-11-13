@@ -60,6 +60,9 @@ void vrhands_take_times(unsigned *pose, unsigned *stop) {
 #define HOLD_WARD 4
 
 static int sHold[2], sHoldId[2], sDoorAxis[2];
+/* the ladder each hand holds (a nav link of the room, -1 none): the air beside a ladder while
+ * Fiona climbs. It moves nothing yet - the buzz and the link kept are the whole of it. */
+static int sLadderHold[2] = {-1, -1};
 static float sGripWas[2], sGrabYaw[2];
 static Vec3 sGrabRot[2];
 /* a wardrobe leaf taken by that hand: the angle it took it at, the frame it held, and the span and
@@ -1613,6 +1616,7 @@ static void release_hand(Room *r, int side) {
         ward_release(&r->placed, side, id);   /* (a leaf still turning keeps its speed) */
     }
     sHold[side] = HOLD_NONE;
+    sLadderHold[side] = -1;   /* (a hand let go of its ladder with whatever it held) */
 }
 
 static void drive_door(Engine *e, int id, int axis, Vec3 hand) {
@@ -3043,6 +3047,87 @@ int vrhands_petting(int side) {
     return 1;
 }
 
+/* ---- a ladder's grab zone ---- */
+#define LADDER_GRAB_REACH 8.0f   /* world units: how near the line a ladder makes across the floor a hand grabs it */
+#define LADDER_GRAB_RISE 5.0f    /* world units: how far past its top or its foot a hand still reaches it */
+#define LADDER_ANIM_FIRST 0x700  /* her first on-ladder animation: on from the top (scripts/fiona/anims.fs) */
+#define LADDER_ANIM_LAST 0x709   /* her last: holding on, either kind ($708, $709) */
+#define FIONA_MODEL_PREFIX "O_FI"   /* her model's files: O_FIN/FIN_000, O_FIS/FIS_000, ... */
+
+/* how far (x, z) is from the segment a-b, in the horizontal plane */
+static float flat_line_dist(Vec3 p, Vec3 a, Vec3 b) {
+    float ax = b.x - a.x, az = b.z - a.z, len2 = ax * ax + az * az, t, dx, dz;
+
+    if (len2 <= 0.0f) {   /* (a ladder upright on one spot) */
+        dx = p.x - a.x;
+        dz = p.z - a.z;
+        return sqrtf(dx * dx + dz * dz);
+    }
+    t = ((p.x - a.x) * ax + (p.z - a.z) * az) / len2;
+    if (t < 0.0f) {
+        t = 0.0f;
+    } else if (t > 1.0f) {
+        t = 1.0f;
+    }
+    dx = p.x - (a.x + ax * t);
+    dz = p.z - (a.z + az * t);
+    return sqrtf(dx * dx + dz * dz);
+}
+
+int vrhands_ladder_link(const NavMesh *nav, Vec3 at) {
+    int i;
+
+    if (nav == NULL) {
+        return -1;
+    }
+    for (i = 0; i < nav->nlinks; i++) {
+        const NavLink *l = &nav->links[i];
+        float lo = l->spot[0].y, hi = l->spot[1].y;
+
+        if (lo > hi) {   /* (the game's y runs down: the top is the smaller) */
+            float swap = lo;
+
+            lo = hi;
+            hi = swap;
+        }
+        if (at.y < lo - LADDER_GRAB_RISE || at.y > hi + LADDER_GRAB_RISE) {
+            continue;
+        }
+        if (flat_line_dist(at, l->spot[0], l->spot[1]) <= LADDER_GRAB_REACH) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* the current room's ladder a hand at `at` is in the grab zone of, -1 none */
+static int ladder_grab_link(Vec3 at) {
+    return vrhands_ladder_link(&gEngine.room.nav, at);
+}
+
+/* Fiona on a ladder: her model is playing one of the ladder's own animations. Her mode (3,
+ * ladder-mode) is a field of her Forth state, which only her own actor's words may read
+ * (ClankForth's field words give the current actor's), so her model's motion stands in: only her
+ * climbing plays these ids (scripts/fiona/ladder.fs, scripts/fiona/anims.fs) */
+static int ladder_climbing(void) {
+    int i;
+
+    for (i = 0; i < MAX_ACTORS; i++) {
+        const Actor *a = &gEngine.actors[i];
+
+        if (a->used && strncmp(a->name, FIONA_MODEL_PREFIX, sizeof(FIONA_MODEL_PREFIX) - 1) == 0) {
+            int id = a->motion >= 0 ? model_motion_id(&a->model, (int)a->motion) : -1;
+
+            return id >= LADDER_ANIM_FIRST && id <= LADDER_ANIM_LAST;
+        }
+    }
+    return 0;
+}
+
+int vrhands_ladder_hold(int side) {
+    return side >= 0 && side < 2 ? sLadderHold[side] : -1;
+}
+
 void vrhands_tick(Engine *e) {
     int side, i;
 
@@ -3064,6 +3149,7 @@ void vrhands_tick(Engine *e) {
         memset(sPushWas, 0, sizeof(sPushWas));
         sHandHave[0] = sHandHave[1] = 0;        /* (another room's doors and walls are not the old's) */
         sHandStopHave[0] = sHandStopHave[1] = 0;
+        sLadderHold[0] = sLadderHold[1] = -1;   /* (another room's links are not these) */
         sPushRoom = e->room.id;
     }
     for (side = 0; side < 2; side++) {
@@ -3080,6 +3166,7 @@ void vrhands_tick(Engine *e) {
             }
             sGripWas[side] = 0.0f;
             sHandHave[side] = 0;
+            sLadderHold[side] = -1;   /* (no hand, no ladder) */
             sHandStopHave[side] = 0;   /* (no hand, no stop: the next one takes the hand as it is) */
 #if 0   /* (temporary: no hand, no leaf in reach) */
             sWardNear[side] = 0;   /* (temporary: no hand, no leaf in reach) */
@@ -3143,6 +3230,7 @@ void vrhands_tick(Engine *e) {
         }
 #endif
         if (grip <= 0.4f) {
+            sLadderHold[side] = -1;   /* (let go: of the ladder too) */
             if (sHold[side] == HOLD_LOOT) {
                 loot_let_go(sHoldId[side], side);
                 sHold[side] = HOLD_NONE;
@@ -3202,6 +3290,16 @@ void vrhands_tick(Engine *e) {
                 sGrabYaw[side] = atan2f(fwd.x, fwd.z);
                 sGrabRot[side] = e->room.placed.p[prop].rot;
             }
+            /* a ladder, when nothing else took the hand: the link is kept and the controller
+             * buzzes once. It sets no hold and moves nothing - her climbing is unchanged. */
+            if (sHold[side] == HOLD_NONE && sLadderHold[side] < 0 && ladder_climbing()) {
+                int link = ladder_grab_link(at);
+
+                if (link >= 0) {
+                    sLadderHold[side] = link;
+                    vr_haptic(side, 0.15f, 0.03f);
+                }
+            }
         } else if (sHold[side] == HOLD_DOOR) {
             if (door_blocked(e, sHoldId[side])) {
                 release_hand(&e->room, side);
@@ -3215,6 +3313,7 @@ void vrhands_tick(Engine *e) {
 
             if (p == NULL || !p->shown) {
                 sHold[side] = HOLD_NONE;
+                sLadderHold[side] = -1;
             } else {
                 p->pos = at;
                 p->rot = sGrabRot[side];
@@ -3225,6 +3324,7 @@ void vrhands_tick(Engine *e) {
 
             if (p == NULL || !p->shown || !ward_leaf(p->name)) {
                 sHold[side] = HOLD_NONE;   /* (gone: a room away from it, or put away) */
+                sLadderHold[side] = -1;
             } else {
                 /* (the hiding may have played it since, or left its track to run: the leaf is
                  * taken again where it now stands, and then turned by the hand as before) */

@@ -64,10 +64,35 @@ swept through something solid.
   `vrhands_tick`), the door push (`push_step`) and every grab and swing read the controller's own
   position, unchanged. Only the arm is stopped.
 
+## Ladder grab
+
+A rising grip in the air beside a ladder takes that ladder in the hand. The room's ladders are its
+nav links (`src/data/navmesh.h`: `spot[0]` the foot, `spot[1]` the top; the game's y runs down, so
+the top is the smaller y), and a hand counts when
+
+- its wrist (the `at` the other grabs use) is within `LADDER_GRAB_REACH` (8.0 world units) of the
+  line the two spots make across the floor (x and z), and
+- its height is between the top's y less `LADDER_GRAB_RISE` (5.0) and the foot's y plus it - the
+  range worked out from the two spots either way round.
+
+Both numbers are first values, to be tuned. It is asked only while Fiona is on a ladder: her model
+is playing one of her climbing animations (`$700`..`$709`, scripts/fiona/anims.fs). Her mode is a
+field of her Forth state and is not readable from C, so her model's motion says it.
+
+The grip rules are the rest of the page's: a grab is `rising` (grip over 0.65 from 0.4 or under)
+and a release is a grip of 0.4 or under. The grab sets no hold (`sHold` stays `HOLD_NONE`), so a
+door, a prop, a leaf or loot still takes the hand exactly as before; a ladder is taken only when
+none of them did. It keeps the link (`vrhands_ladder_hold(side)` gives it, -1 none) and buzzes that
+controller once (`vr_haptic(side, 0.15f, 0.03f)`); staying in the zone does not buzz again. Her
+body, her animations, the stick and the arm's stop are untouched.
+
 ## Status
 
 Walls, floors and ceilings stop the arm at 0.40 and let it slide along them. Doors and placed
 objects buzz only.
+
+A hand also grabs a ladder in the air beside it while she climbs: the link is kept and that
+controller buzzes once, and nothing moves yet.
 
 Both touch buzzes are off (WALL_BUZZ 0 and STOP_PULSE 0 in vrhands.c); detection and the arm stop
 still run.
@@ -83,7 +108,8 @@ a path clear of the wall (or a hand already at it) let through; the wrist and th
 the slide: a hand pushing at an angle stopping 0.40 out and keeping its sideways motion, a hand
 pushing straight in stopping dead with no sideways move, the slide asked again from its own point,
 a hand moving parallel to the wall let through, and a fast hand crossing the wall in one move
-stopped in front of it.
+stopped in front of it; and a ladder's grab zone: a hand beside the middle of a slanted ladder's
+line, one 12 units away from it, one above the top spot's reach, and one at the foot spot's height.
 
 ## Left
 
@@ -96,3 +122,5 @@ stopped in front of it.
 - Loot items: a hand's own pickup (`HOLD_LOOT`) is not a source of hits, so an item in the hand
   says nothing.
 - The held object hitting other objects: the thing in a hand is not swept against the world.
+- Hands move her on the ladder (step 2): a grabbed ladder does nothing yet - the buzz and the link
+  kept are the whole of it.

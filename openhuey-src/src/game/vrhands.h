@@ -4,6 +4,7 @@
 #define VRHANDS_H
 
 #include "../core/mathx.h"
+#include "../data/navmesh.h"
 
 struct Actor;
 struct Engine;
@@ -59,5 +60,12 @@ int vrhands_door_hits(void);
 void vrhands_defense_draw(const Mat4 *view_proj);
 /* a grip release that should become a thing. 1 once, then cleared. */
 int vrhands_defense_take(int *kind, float *x, float *y, float *z, float *vx, float *vy, float *vz);
+/* the ladder a hand at `at` is in the grab zone of in `nav` - its link index, -1 none: near the
+ * line of its two spots across the floor, within its height and a rise past either end. The room
+ * is handed in, so hands_sweep_check can ask it with ladders of its own. */
+int vrhands_ladder_link(const NavMesh *nav, Vec3 at);
+/* the ladder that hand holds (the link index), or -1. A grab of the air beside a ladder while
+ * Fiona climbs: nothing moves her yet. */
+int vrhands_ladder_hold(int side);
 
 #endif
