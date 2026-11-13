@@ -3907,10 +3907,16 @@ static int cutscene_heard(const Engine *e) {
     return !e->paused && (gCamDir.scene || (movie_status() == MOVIE_PLAYING && !movie_paused()));
 }
 
+/* the alpha a menu's panel is to be made opaque at, this tick (scripts/subscreen.fs
+ * `panel-opaque`): a menu asks once a tick and the frames between keep it, or the panel
+ * would blink between opaque and see-through */
+static float sUiOpaque;
+
 void engine_tick(Engine *e) {
     int i;
 
     e->ticks++;
+    sUiOpaque = 0.0f;   /* (the menus ask again this tick; one that has closed asks nothing) */
     movie_update();
     {   /* (the pad's rumble stops while the game is paused: a menu up) */
         static int was_paused;
@@ -4003,7 +4009,6 @@ typedef struct UiItem {
 } UiItem;
 static UiItem sUi[UI_LAYERS][UI_ITEMS];
 static int sUiN[UI_LAYERS];
-static float sUiOpaque;   /* this frame's panel is to be made opaque, at this alpha (a menu's page) */
 static int ui_layer(Forth *f, Cell layer) {
     if (layer < 0 || layer >= UI_LAYERS) {
         forth_error(f, "ui: no layer %ld", (long)layer);
@@ -4157,7 +4162,13 @@ PRIM(p_ui_text_in) {   /* ( layer addr len x y rgba scale palette -- ) in the ga
         snprintf(u->s, sizeof(u->s), "%.*s", (int)(n > 0 ? n : 0), n > 0 ? (const char *)a : "");
     }
 }
-PRIM(p_panel_opaque) { sUiOpaque = (float)FPOP(); }   /* ( -- ) ( F: alpha -- ) this frame's panel made opaque */
+PRIM(p_panel_opaque) {   /* ( -- ) ( F: alpha -- ) the panel made opaque, from now until the next tick */
+    float a = (float)FPOP();
+
+    if (a > sUiOpaque) {
+        sUiOpaque = a;   /* (a menu asks every tick; the most opaque of them holds for the frames between) */
+    }
+}
 PRIM(p_ui_blend) {   /* ( layer mode fix -- ) the layer's last text or picture blended as the GS's
                        * ALPHA with FIX `fix` (128 = 1): mode 0 by its alpha (as drawn), 1 subtracted
                        * (Cd - Cs * FIX), 2 mixed ((Cs - Cd) * FIX + Cd), 3 added (Cd + Cs * FIX) */
@@ -4337,6 +4348,7 @@ static int game_text(float x, float y, float scale, uint32_t rgba, const char *s
     if (t == 0 || tw <= 0 || th <= 0) {
         return 0;
     }
+    render_nearest_2d(1);   /* (the game's pixel font: point-sampled, or its strokes are washed) */
     for (i = 0; s[i] != 0; i++) {
         int c = (unsigned char)s[i], g = c - 0x20;
         float u, v, drop;
@@ -4359,6 +4371,7 @@ static int game_text(float x, float y, float scale, uint32_t rgba, const char *s
         }
         x += (float)(16 - (kGlyphShape[g] >> 4)) * cell / 16.0f + scale * 0.5f;
     }
+    render_nearest_2d(0);
     return 1;
 }
 
@@ -4401,9 +4414,10 @@ static void ui_draw(void) {
         }
     }
     render_blend_2d(RENDER_BLEND_NORMAL, 0);
-    if (sUiOpaque > 0.0f) {   /* (a menu's page: its panel's own alpha, over everything it drew) */
+    if (sUiOpaque > 0.0f) {   /* (a menu's page: its panel's own alpha, over everything it drew.
+                               * A menu asks once a tick and the frames between must not lose it,
+                               * or the panel would blink between opaque and see-through) */
         render_panel_opaque(sUiOpaque);
-        sUiOpaque = 0.0f;
     }
 }
 

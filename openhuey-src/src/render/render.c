@@ -1119,6 +1119,11 @@ void render_image(GpuTexture t, float x, float y, float w, float h, uint32_t rgb
 
 static int sBlend2d;     /* how the pictures from now are blended (render_blend_2d) */
 static float sFix2d;     /* ... at FIX / 128 */
+static int sNearest2d;   /* the pictures from now sampled point-wise (the game's font: a 16x21 glyph
+                          * upscaled with a smooth filter never reaches full ink at its strokes) */
+static GLuint sNearestSampler;
+
+void render_nearest_2d(int on) { sNearest2d = on != 0; }
 void render_blend_2d(int mode, int fix) {
     sBlend2d = mode;
     sFix2d = (float)(fix < 0 ? 0 : fix > 255 ? 255 : fix) / 128.0f;
@@ -1213,7 +1218,16 @@ static void image_draw(GpuTexture t) {
     glProgramUniformMatrix4fv(R.prog2d_image, 0, 1, GL_FALSE, proj.m);
     glUseProgram(R.prog2d_image);
     glBindTextureUnit(0, t);
-    glBindSampler(0, 0);
+    if (sNearest2d != 0) {
+        if (sNearestSampler == 0) {   /* (the game's pixel font: point-sampled, so a stroke is a stroke) */
+            glCreateSamplers(1, &sNearestSampler);
+            glSamplerParameteri(sNearestSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glSamplerParameteri(sNearestSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        }
+        glBindSampler(0, sNearestSampler);
+    } else {
+        glBindSampler(0, 0);
+    }
     glBindVertexArray(R.vao2d);
     glDrawArrays(GL_TRIANGLES, 0, R.n2d);
     glBindVertexArray(0);

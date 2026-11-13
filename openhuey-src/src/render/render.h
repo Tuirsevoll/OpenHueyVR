@@ -204,6 +204,9 @@ void render_image_quad(GpuTexture t, const float xy[8], float u0, float v0, floa
  * Cd + Cs * FIX (0x68) - in these the texture's alpha only tests: nothing drawn where it is 0 */
 enum { RENDER_BLEND_NORMAL, RENDER_BLEND_SUBTRACT, RENDER_BLEND_MIX, RENDER_BLEND_ADD };
 void render_blend_2d(int mode, int fix);
+/* the pictures from now sampled point-wise: the game's 16 x 21 pixel font, whose strokes a
+ * smooth filter only ever draws half-strength when it is scaled up (a see-through letter) */
+void render_nearest_2d(int on);
 /* the panel's own alpha put back over all of it, its colour untouched: a menu draws over its page
  * and its picture must hold the room out (scripts/subscreen.fs, pause.fs) */
 void render_panel_opaque(float alpha);

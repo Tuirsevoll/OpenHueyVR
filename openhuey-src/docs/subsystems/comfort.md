@@ -184,9 +184,19 @@ in, reachable without a keyboard:
   paper rather than with the room; and `panel-opaque`, after everything has drawn, which puts the
   panel's own alpha back over all of it - a full-screen quad of the font's solid texel, alpha
   only, the colour untouched, so the picture stays exactly as drawn (a quad that sampled the
-  atlas's corner, as the first try did, wrote no alpha at all and changed nothing). The pause menu
-  asks for it too, at its dim's own alpha, so the world is still seen through the dim and not
-  through its letters.
+  atlas's corner, as the first try did, wrote no alpha at all and changed nothing). A menu asks
+  for it once a tick and the value holds until the next (`sUiOpaque`, cleared at the tick's
+  start): the headset draws several frames a tick, and a request kept for one frame only left the
+  panel see-through on two frames in three - a fast flicker over every UI. The pause menu asks
+  for it too, at its dim's own alpha, so the world is still seen through the dim and not through
+  its letters.
+- **The game's pixel font is drawn point-sampled** (`render.c` `render_nearest_2d`;
+  `bind_engine.c` `game_text`): the menu's words come from the game's own 16 x 21 font, drawn at
+  two to three times its size on the page. A smooth filter turns a one-pixel stroke into a ramp
+  that never reaches full ink, so every letter read as a wash the paper showed through - in the
+  window as much as on a panel, which is why it looked like an old fault. The font's quads are
+  sampled with `GL_NEAREST` (a sampler of their own, only while the game's font draws), so a
+  stroke is a stroke; the art around them keeps its smooth filtering.
 - **The defaults are the game as it was**: smooth turning, no vignette, the stick walking her,
   neither seated nor left-handed, her eyes as the first pose found them, a scene on its screen.
   `vr.calibrate-start` is 1: a first run is asked to calibrate once (with no calibration kept, the
