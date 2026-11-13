@@ -24,7 +24,23 @@ USING: engine vectors keys game-state actors messages common facts items.names f
     $6F noise-here ;
 :noname ( -- )   \ (Fiona_Exhausted: out of breath from the panic run, 0x207; a new run length)
     3e rnd f* f>s 30 * 120 + her-panic-t !  breathless-doing her-doing !  out-of-breath-anim -1 play-table ; is exhausted
+variable fall-floor            \ the panic bar a fall left, as an integer
+variable fall-hold-ticks       \ ticks left in which the panic bar cannot fall (1.5 s = 45 ticks, from the fall)
+variable fall-drain-ticks      \ ticks left in which the recovery counter drains extra, once she is back on her feet (3 s = 90 ticks)
+variable fall-drain-step       \ the extra the recovery counter drains a tick in those ticks (the fall's slowdown spread over them)
+: fall-after ( -- )            \ (each frame: the panic bar is held at least at the fall's value for 45 ticks - it can still rise; then, once she is back on her feet, the recovery counter drains extra for 90 ticks)
+    fall-hold-ticks @ 0> if
+        -1 fall-hold-ticks +!
+        fall-floor @ panic-id send panic-reach
+    then
+    fall-drain-ticks @ 0> if
+        her-mode @ own-mode = if
+            -1 fall-drain-ticks +!
+            her-recovery @ fall-drain-step @ - 0 max her-recovery !
+        then
+    then ;
 : feel-the-panic ( -- )   \ (each frame: the panic's stage taken up; her fear meter; her timers)
+    fall-after
     her-panic-stage @
     her-fear-bits @ 1 and 0= if
         dup scared >= if

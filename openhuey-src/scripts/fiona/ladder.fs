@@ -187,14 +187,16 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     her-at v.y sf@ 0 end-y 6e f- f>= ;
 variable ladder-free-ticks                 \ (ticks with no hand on a mid-ladder hold: the let-go's count)
 variable ladder-gripped                     \ (1 once a hand has gripped the ladder since she mounted: a fall needs this first)
-variable fall-breath                        \ (the breath frames a fall gives, set when she falls, used when she lands)
 9 constant LET_GO_TICKS                    \ (0.3 s at the game's 30 ticks: both hands off this long mid-ladder, and she falls)
 : at-bottom? ( -- flag )                   \ (within 10 of the bottom's floor, or past it: the bottom is side 1)
     her-at v.y sf@ 1 end-y 10e f+ f<= ;
 : let-go-fall ( -- )                       \ (both hands let go mid-ladder: she falls off, the same reaction as the panic's let-go)
     her-at v.y sf@ 1 end-y f- 0e fmax  {: F: h :}               \ (the height fallen: her y less the bottom floor's, never below 0)
-    65e  1.2e h f*  fmin  her-panic-level f@ f+ 95e fmin  f>s panic-id send panic-reach   \ (the bar's new level: the fall's amount on the current bar, at most 95 - a fall alone never reaches full panic)
-    1.6e h f*  f>s  85 min  900 +  her-recovery !                  \ (the slowdown: 1.6 frames a unit, at most 85, on her recovery counter - the shaken-running slowdown, past 900)
+    65e  1.2e h f*  fmin  her-panic-level f@ f+ 95e fmin  f>s  dup fall-floor !  panic-id send panic-reach   \ (the bar's new level: the fall's amount on the current bar, at most 95 - a fall alone never reaches full panic; the bar is then held for 1.5 seconds)
+    45 fall-hold-ticks !
+    h 55e f/ 1e fmin 1800e f* f>s  dup 90 / fall-drain-step !     \ (the slowdown: up to the whole counter, scaled by the height, drained over 90 ticks)
+    dup her-recovery @ + 1800 min her-recovery !
+    drop 90 fall-drain-ticks !
     thrown-doing her-doing !  thrown-mode her-mode !  off-ladder-r her-sub !  knocked-off ;
 : bottom-off ( -- )   \ (placed on the ground at the bottom: the end's front, free)
     her-ladder @ 1 off-offset nav-link-front                      ( tri ) ( F: x y z )

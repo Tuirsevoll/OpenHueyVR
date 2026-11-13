@@ -355,10 +355,11 @@ bottom: a hand's climb to the top starts her stepping off it and a hand's climb 
 her at once, neither with a step-off animation. Letting go with one hand at the top dismounts her;
 letting go with both hands at the bottom places her there (unchanged); mid-ladder, letting go with
 both hands makes her fall after about a third of a second (`LET_GO_TICKS`), while at either end it is
-the dismount (the top) or nothing (the bottom), as before. A fall makes her run slower for up to
-about three seconds, by setting her recovery counter - the original's shaken-running slowdown; it
-fades as the counter falls. Letting go with both hands at the bottom places her on the ground, with
-no fall.
+the dismount (the top) or nothing (the bottom), as before. A fall raises the panic bar, which cannot
+fall for 1.5 seconds after the fall (it can still rise); and it slows her running by raising her
+recovery counter, which drains extra for about 3 seconds once she is back on her feet, so the slowdown
+is short and scales with the height fallen. Letting go with both hands at the bottom places her on the
+ground, with no fall.
 She cannot fall off a ladder until a hand
 has gripped it since she mounted; the top dismount registers within 6 units of the top's floor.
 Grabbing a ladder's air starts her getting
