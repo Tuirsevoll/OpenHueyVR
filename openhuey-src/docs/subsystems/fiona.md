@@ -357,7 +357,9 @@ letting go with both hands at the bottom places her there (unchanged); the mid-l
 is not built yet. Grabbing a ladder's air starts her getting on, the same as the button, from the
 nearer end; from the top, the walk to the spot is still used (to be changed later). A grab mounts her
 at once, with no mounting animation, at the end's front, so she can climb straight away; the button
-keeps its mounting animation.
+keeps its mounting animation. At the top, mounting (by the button or a grab) lowers her onto the first
+rung over about a second, facing the ladder, with the camera moving with her; the lowering distance is
+a first guess to be tuned.
 
 Also fixed with it: `walk-anim` (Fiona_StateCmdWalkAnim) read the animation's key events for
 `MOTION_EVENTS` $20; it is the motion's come-round flag (`ended?`).

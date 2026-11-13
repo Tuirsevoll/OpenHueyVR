@@ -208,11 +208,36 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
 
 \ ---- getting on (Fiona_StateLadder, LadderWalk): to its end's spot, facing it; there, on ----
 6 constant getting-on   7 constant on-rungs   \ (her sub on the ladder)
+\ ---- lowering onto the first rung from the top (VR): her height goes from the top's floor down to the first rung, over LOWER_ON_TICKS ticks, along the same line; then she holds on ----
+30 constant LOWER_ON_TICKS    \ (about a second at the game's 30 ticks)
+: lower-drop ( -- ) ( F: -- d )   12e ;     \ (the drop from the top's floor to the first rung, in game units: a first guess, tuned in play)
+: lower-on ( -- )   \ (her lowering onto the first rung, from the top: the per-tick step, then she holds on)
+    ladder-pull fdrop                                               \ (a hand's pull is not what moves her here)
+    her-drop-n @ 0= if
+        her-at her-drop-at vec-copy                                 \ (the first rung: put her there exactly)
+        on-rungs her-sub !
+        ['] on-ladder her-act !  exit
+    then
+    her-drop-dx f@ her-at v.x sf@ f+ her-at v.x sf!
+    her-drop-dy f@ her-at v.y sf@ f+ her-at v.y sf!
+    her-drop-dz f@ her-at v.z sf@ f+ her-at v.z sf!
+    -1 her-drop-n +! ;
+: lower-start ( -- )   \ (a mounting at the top: her per-tick steps down to the first rung, set once)
+    her-drop-at her-at vec-copy                                    \ (the place she starts from, copied: dst src)
+    her-drop-at v.y sf@                                            ( F: y )
+    1 end-y 0 end-y f-  fdup fabs f/  lower-drop f* f+  her-drop-at v.y sf!   \ (her height along the way to the other end by the drop: the first rung)
+    her-tri @ her-drop-tri !
+    LOWER_ON_TICKS her-drop-n !
+    0e her-drop-dx f!
+    her-drop-at v.y sf@ her-at v.y sf@ f-  LOWER_ON_TICKS s>f f/  her-drop-dy f!
+    0e her-drop-dz f!
+    ['] lower-on her-act ! ;
 : ladder-walk ( -- )
     walk-to-spot dup 0< if  drop off-ladder exit  then  if  exit  then
     on-rungs her-sub !
     her-ladder-side @ if  on-ladder-top-anim  else  on-ladder-foot-anim  then
-    play-own  ['] on-ladder her-act ! ;
+    play-own
+    her-ladder-side @ 0= if  lower-start  else  ['] on-ladder her-act !  then ;
 : ladder-start ( -- )
     her-ladder @ her-ladder-side @  dup if  0e 6.7e  else  0e -7.1068e  then  nav-link-front   ( tri ) ( F: x y z )
     dup 0< if  drop fdrop fdrop fdrop off-ladder exit  then
@@ -247,7 +272,7 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     her-ladder @ her-ladder-side @ nav-link-yaw her-yaw f!
     on-rungs her-sub !
     ladder-hold-anim play-own
-    ['] on-ladder her-act ! ;
+    her-ladder-side @ 0= if  lower-start  else  ['] on-ladder her-act !  then ;
 : try-ladder-grab ( -- )   \ (a hand just grabbed a ladder's air: she gets on there, as the button does - no button needed)
     ladder-grab {: link side :}                              \ (always taken, so a grab is not kept for later)
     link 0< if  exit  then

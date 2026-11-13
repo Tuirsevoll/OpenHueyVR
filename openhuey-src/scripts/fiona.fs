@@ -181,6 +181,7 @@ create feet-off-acts   \ (the states that clear +0x1AD5BC)
     ' fiona.ladder:crawl-drop ,   ' fiona.ladder:crawl-fall ,   ' fiona.ladder:crawl-down ,   \ CrawlDrop, CrawlFall, CrawlDown
     ' fiona.ladder:crawl-up ,   ' fiona.ladder:ladder-off ,   ' fiona.ladder:on-ladder ,     \ CrawlPull, LadderOff, OnLadder
     ' fiona.ladder:walk-off-top ,                  \ the step off the top of a ladder: her height is her own, not the floor's (the floor under her feet is still the ladder's bottom)
+    ' fiona.ladder:lower-on ,                    \ the lowering onto the first rung from the top: her height is her own, not the floor's
     0 ,
 : feet-off-act? ( xt -- flag )
     {: xt :}  feet-off-acts  begin  dup @ while  dup @ xt = if  drop true exit  then  cell+  repeat  drop false ;
