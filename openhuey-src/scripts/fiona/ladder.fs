@@ -218,19 +218,26 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
         on-rungs her-sub !
         ['] on-ladder her-act !  exit
     then
+    her-yaw f@ {: F: before :}                                  \ (the view turns with her: her yaw before the step)
+    10e deg>rad turn-to-heading fdrop                           \ (toward the rungs, 10 degrees a tick, over the lowering)
+    her-yaw f@ before f- angle-wrap vr-turn-view                 \ (the step she took, given to the view)
     her-drop-dx f@ her-at v.x sf@ f+ her-at v.x sf!
     her-drop-dy f@ her-at v.y sf@ f+ her-at v.y sf!
     her-drop-dz f@ her-at v.z sf@ f+ her-at v.z sf!
     -1 her-drop-n +! ;
-: lower-start ( -- )   \ (a mounting at the top: her per-tick steps down to the first rung, set once)
-    her-drop-at her-at vec-copy                                    \ (the place she starts from, copied: dst src)
-    her-drop-at v.y sf@                                            ( F: y )
-    1 end-y 0 end-y f-  fdup fabs f/  lower-drop f* f+  her-drop-at v.y sf!   \ (her height along the way to the other end by the drop: the first rung)
-    her-tri @ her-drop-tri !
+: lower-start ( -- )   \ (a mounting at the top: she moves to the rung side of the top's edge, turns to face the rungs, and lowers onto the first rung, one step per tick)
+    her-ladder @ 0 nav-link-spot  {: F: x0 F: y0 F: z0 :}        \ (the top spot)
+    her-ladder @ 1 nav-link-spot  {: F: x1 F: y1 F: z1 :}        \ (the bottom spot: its height is only the drop's way)
+    her-drop-at her-at vec-copy                                  \ (dst src: her place, where the steps start)
+    x0  x1 x0 f- 0.8e f* f+  her-drop-at v.x sf!                 \ (8/10 of the way to the bottom spot: on the rung side, past the edge)
+    z0  z1 z0 f- 0.8e f* f+  her-drop-at v.z sf!
+    y0  y1 y0 f- fdup fabs f/ lower-drop f* f+  her-drop-at v.y sf!   \ (the top's height, the drop toward the bottom's)
+    her-ladder @ 0 nav-link-yaw pi f+ her-heading f!             \ (the rung side's facing: the nav yaw turned round)
+    her-drop-at 0 v-tri-in  dup 0< if  drop her-tri @  then  her-drop-tri !   \ (the triangle there; hers kept if there is none)
     LOWER_ON_TICKS her-drop-n !
-    0e her-drop-dx f!
+    her-drop-at v.x sf@ her-at v.x sf@ f-  LOWER_ON_TICKS s>f f/  her-drop-dx f!
     her-drop-at v.y sf@ her-at v.y sf@ f-  LOWER_ON_TICKS s>f f/  her-drop-dy f!
-    0e her-drop-dz f!
+    her-drop-at v.z sf@ her-at v.z sf@ f-  LOWER_ON_TICKS s>f f/  her-drop-dz f!
     ['] lower-on her-act ! ;
 : ladder-walk ( -- )
     walk-to-spot dup 0< if  drop off-ladder exit  then  if  exit  then
