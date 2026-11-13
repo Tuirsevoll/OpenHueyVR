@@ -193,8 +193,8 @@ variable fall-breath                        \ (the breath frames a fall gives, s
     her-at v.y sf@ 1 end-y 10e f+ f<= ;
 : let-go-fall ( -- )                       \ (both hands let go mid-ladder: she falls off, the same reaction as the panic's let-go)
     her-at v.y sf@ 1 end-y f- 0e fmax  {: F: h :}               \ (the height fallen: her y less the bottom floor's, never below 0)
-    65e  1.2e h f*  fmin  add-fear                              \ (fear: 1.2 a unit, at most 65)
-    1.6e h f*  f>s  85 min  dup her-run-t !  fall-breath !      \ (breath: the frames it lasts, at most 85)
+    65e  1.2e h f*  fmin  her-panic-level f@ f+ 95e fmin  f>s panic-id send panic-reach   \ (the bar's new level: the fall's amount on the current bar, at most 95 - a fall alone never reaches full panic)
+    1.6e h f*  f>s  85 min  900 +  her-recovery !                  \ (the slowdown: 1.6 frames a unit, at most 85, on her recovery counter - the shaken-running slowdown, past 900)
     thrown-doing her-doing !  thrown-mode her-mode !  off-ladder-r her-sub !  knocked-off ;
 : bottom-off ( -- )   \ (placed on the ground at the bottom: the end's front, free)
     her-ladder @ 1 off-offset nav-link-front                      ( tri ) ( F: x y z )
