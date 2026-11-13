@@ -240,6 +240,14 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     stalker-touching? if  2drop exit  then
     her-ladder-side !  her-ladder !
     getting-on her-sub !  ladder-doing her-doing !  ladder-mode her-mode !  ladder-start ;
+: grab-on ( -- )   \ (a grab mounts her at once, with no mounting animation: she is put at the end's front, facing the ladder, holding on, so she can climb straight away)
+    her-ladder @ her-ladder-side @  dup if  0e 6.7e  else  0e -7.1068e  then  nav-link-front   ( tri ) ( F: x y z )
+    dup 0< if  drop fdrop fdrop fdrop off-ladder exit  then
+    her-tri !  her-at vec!
+    her-ladder @ her-ladder-side @ nav-link-yaw her-yaw f!
+    on-rungs her-sub !
+    ladder-hold-anim play-own
+    ['] on-ladder her-act ! ;
 : try-ladder-grab ( -- )   \ (a hand just grabbed a ladder's air: she gets on there, as the button does - no button needed)
     ladder-grab {: link side :}                              \ (always taken, so a grab is not kept for later)
     link 0< if  exit  then
@@ -247,5 +255,5 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     stalker-touching? if  exit  then
     link stalker-side side = if  exit  then                  \ (the stalker is on that side: as the button path does)
     link her-ladder !  side her-ladder-side !
-    getting-on her-sub !  ladder-doing her-doing !  ladder-mode her-mode !  ladder-start ;
+    ladder-doing her-doing !  ladder-mode her-mode !  grab-on ;
 
