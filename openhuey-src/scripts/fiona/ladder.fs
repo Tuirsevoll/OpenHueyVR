@@ -109,13 +109,14 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
     her-drop-dy f@ her-at v.y sf@ f+ her-at v.y sf!
     her-drop-dz f@ her-at v.z sf@ f+ her-at v.z sf!
     -1 her-drop-n +! ;
-: walk-off-top-start ( -- )   \ (a hand's climb to the top: the walk off it begun - its target and steps)
-    her-ladder @ 1 off-offset nav-link-front                      ( tri ) ( F: x y z )
+: walk-off-top-start ( side -- )   \ (a hand's climb to the end of the ladder: the walk off it begun - its target and steps)
+    {: side :}
+    her-ladder @ side off-offset nav-link-front                   ( tri ) ( F: x y z )
     dup 0< if                                                   \ (no floor beyond it: she steps off where she is)
         ." [LADDER no-tri]" cr                                  \ TEMP-LADDER-LOG (remove later)
         drop fdrop fdrop fdrop  own-mode her-mode !  off-ladder exit
     then
-    dup her-drop-tri !  her-drop-at vec!
+    her-drop-tri !  her-drop-at vec!
     WALK_OFF_TICKS her-drop-n !
     WALK_OFF_TICKS s>f {: F: n :}
     her-drop-at v.x sf@ her-at v.x sf@ f- n f/  her-drop-dx f!
@@ -182,21 +183,21 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
 : hold-still ( -- )   \ (the hold animation kept: any other is replaced by the first hold)
     anim@ {: anim :}
     anim ladder-hold-anim = anim ladder-hold-2-anim = or 0= if  ladder-hold-anim play-own  then ;
+\ side 0 is the physical top on this ladder (the end at the larger height); side 1 is the physical bottom.
 : vr-climb ( -- )
     hold-still
     ladder-hands? 0= if  exit  then                            \ (no hand on it: she hangs)
     ladder-pull {: F: pull :}                                  \ (this tick's pull: down the hand is up her)
     pull her-at v.y sf@ f+ her-at v.y sf!
     pull 0e f>  her-at v.y sf@ 0 end-y f>= and  0 stalker-on 0= and if    \ (down this tick, at the foot)
-        ." [LADDER foot] y=" her-at v.y sf@ f>s .  cr           \ TEMP-LADDER-LOG (remove later)
-        her-ladder @ 0 off-offset nav-link-front                      ( tri ) ( F: x y z )
-        dup 0< if  drop fdrop fdrop fdrop
-        else  her-tri !  her-at vec!  stand-anim play-cut  then
-        own-mode her-mode !  off-ladder exit
+        ." [LADDER physical top] y=" her-at v.y sf@ f>s .  cr   \ TEMP-LADDER-LOG (remove later)
+        0 walk-off-top-start exit
     then
     pull 0e f<  her-at v.y sf@ 1 end-y f- 3e f<= and  0 stalker-on 0= and if   \ (up this tick, at the top)
-        ." [LADDER top] y=" her-at v.y sf@ f>s .  ." top-end=" 1 end-y f>s .  cr   \ TEMP-LADDER-LOG (remove later)
-        walk-off-top-start exit
+        ." [LADDER physical bottom] y=" her-at v.y sf@ f>s .  ." top-end=" 1 end-y f>s .  cr   \ TEMP-LADDER-LOG (remove later)
+        her-ladder @ 1 off-offset nav-link-front                      ( tri ) ( F: x y z )
+        dup 0< if  drop fdrop fdrop fdrop  else  her-tri !  her-at vec!  then
+        own-mode her-mode !  off-ladder exit
     then ;
 : on-ladder ( -- )   \ (Fiona_StateOnLadder; until the move has faded in: still)
     settled? 0= if  exit  then
