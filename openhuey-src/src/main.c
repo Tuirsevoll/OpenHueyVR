@@ -869,12 +869,12 @@ static int sRecenter;
 static Camera sBlendCam;
 static int sBlendCamHave;
 
-/* a scene watched from her own eyes: the option on, a headset to stand in it with, a scene that has
- * the camera (a film has no place to stand in) - and one the game's own models play. A scene whose
- * picture is its movie (keyed, alpha, strip, opaque: an SFD over the room) keeps its screen: there
- * would be nothing of it to watch from her eyes. */
+/* a scene watched from her own eyes: the option on, a headset to stand in it with, and a scene that
+ * has the camera. No screen is put up and the story's camera is not used at all: the eyes are hers
+ * and the head's look is free on top. (A film on its own - an FMV, which has no place to stand in -
+ * is not a scene: gCamDir.scene is only the director's cutscenes.) */
 static int first_person_scene(void) {
-    return gVrOptions.cutscene_first_person && vr_active() && gCamDir.scene && !engine_scene_picture();
+    return gVrOptions.cutscene_first_person && vr_active() && gCamDir.scene;
 }
 
 /* her eyes. the headset's own orientation is applied on top of sAlign, so looking around does not
@@ -1047,10 +1047,10 @@ static void fiona_pose_after(Engine *e) {
  * tick (a frame between two ticks sees the same figure; measuring it a frame would read 0 on most
  * of them and never grow), then eased in quickly and out slowly, a frame at a time. Nothing while
  * the world is held or a scene has the camera. */
-#define COMFORT_SPEED_START 14.0f   /* room units a second: under it, a slow walk */
-#define COMFORT_SPEED_FULL 45.0f    /* over it, a run */
-#define COMFORT_TURN_START 0.8f     /* radians a second */
-#define COMFORT_TURN_FULL 3.0f
+#define COMFORT_SPEED_START 4.0f    /* room units a second: a crawl, under it */
+#define COMFORT_SPEED_FULL 15.0f    /* her walk (about 13) is nearly full comfort; a run past it */
+#define COMFORT_TURN_START 0.4f     /* radians a second */
+#define COMFORT_TURN_FULL 1.6f      /* a smooth turn at full stick */
 #define COMFORT_IN 0.12f            /* seconds to darken the corners */
 #define COMFORT_OUT 0.45f           /* ... and to let them go again */
 static float sComfort;       /* what is drawn now */

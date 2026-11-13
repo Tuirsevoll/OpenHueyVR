@@ -226,6 +226,7 @@ static const char *kCompositeFs =
     "layout(location = 18) uniform vec4 u_tint_contrast;\n"
     "layout(location = 19) uniform vec4 u_room_bloom;\n"   /* the room's bloom (a: signed strength) */
     "layout(location = 20) uniform vec4 u_dof;\n"   /* the room's depth of field (x > y: off) */
+    "layout(location = 23) uniform float u_comfort;\n"   /* the comfort vignette's share (0 none) */
     "layout(binding = 7) uniform sampler2D u_dof_blur;\n"
     "layout(binding = 8) uniform sampler2D u_glow_trail;\n"   /* the glow pass's buffer */
     "layout(location = 21) uniform float u_glow_k;\n"          /* its strength this frame (0: none) */
@@ -296,6 +297,9 @@ static const char *kCompositeFs =
     "    s = pow(c, vec3(1.0 / 2.2));\n"   /* to display values */
     "    s = clamp((s - 0.5) * u_contrast + 0.5, 0.0, 1.0);\n"
     "    s *= 1.0 - u_vignette * smoothstep(0.35, 0.95, length((v_uv - 0.5) * vec2(1.4, 1.0)));\n"
+    /* the comfort vignette (VR): its own curve, wider and deeper than the picture's own, so a
+     * player who asked for it can feel it - the corners at the strength chosen, the middle as */
+    "    s *= 1.0 - u_comfort * smoothstep(0.28, 0.88, length((v_uv - 0.5) * vec2(1.25, 1.0)));\n"
     /* film grain (a setting: none by default) - a new pattern each frame, kept out of the
      * shadows, where a dark game would show it as crawling dither */
     "    uvec2 p = uvec2(gl_FragCoord.xy);\n"
@@ -1096,15 +1100,8 @@ void post_finish(const PostCamera *cam, const RenderSettings *s, int x, int y, i
     glProgramUniform1i(sCompositeProg, 7, s->tonemap);
     glProgramUniform1f(sCompositeProg, 8, s->saturation);
     glProgramUniform1f(sCompositeProg, 9, s->contrast);
-    {   /* the comfort vignette adds to the picture's own, never replaces it: the two darken the
-         * corners, so what is left multiplies */
-        float vignette = s->vignette;
-
-        if (sComfort > 0.0f) {
-            vignette = 1.0f - (1.0f - vignette) * (1.0f - sComfort);
-        }
-        glProgramUniform1f(sCompositeProg, 10, vignette);
-    }
+    glProgramUniform1f(sCompositeProg, 10, s->vignette);
+    glProgramUniform1f(sCompositeProg, 23, sComfort);   /* (the comfort vignette: its own curve) */
     glProgramUniform1f(sCompositeProg, 11, s->grain);
     glProgramUniform1f(sCompositeProg, 12, time);
     glProgramUniform1i(sCompositeProg, 13, s->debug);

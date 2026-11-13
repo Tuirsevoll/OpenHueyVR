@@ -152,6 +152,7 @@ static int sViewCount;
 static int sRunning, sActive, sFrameOn, sRender, sSubmit;
 static int sAcquired[VR_MAX_EYES];
 static int sQuit;
+static int sLogged;   /* the once-only console line: what this session was told to do */
 static int sHaveOrigin;
 static int sLockPose;   /* a cutscene or story shot: eyes stay on the scripted camera */
 static XrViewStateFlags sViewFlags;
@@ -210,7 +211,7 @@ static Vec3 sAnchorEye;
 static float sAnchorYaw;
 static float sStickX, sStickY, sRightX;
 static float sMoveYaw, sFaceYaw, sTurn;
-static int sDown[8], sPressed[8], sRun, sClickWas, sBothWas, sRecenterReq, sAlignRecenter, sTalk;
+static int sDown[8], sPressed[8], sRun, sClickWas, sRecenterReq, sAlignRecenter, sTalk;
 /* the options' snap turning: the turn stick's pull that snaps (1 at the stick's edge), the pull it
  * must fall back under before another, and the stick's centred state */
 #define SNAP_AT 0.70f
@@ -494,6 +495,7 @@ static XrPosef head_look(void) {
 
 int vr_body_view(Mat4 *view) {
     float h;
+    static float sScaleWas;
 
     if (view == NULL || !sHaveOrigin || sViewCount <= 0 || !floor_height(&h)) {
         return 0;
@@ -506,6 +508,13 @@ int vr_body_view(Mat4 *view) {
         XrPosef d = head_look();
         float s = body_scale();
 
+        if (sScaleWas != 0.0f && s != sScaleWas) {
+            /* the world's size changed under the player (a calibration, or seated play on or off):
+             * the same head motion now means another place, so the origin is taken again where they
+             * stand - else the camera would jump by their own offset from it. */
+            sRecenterReq = 1;
+        }
+        sScaleWas = s;
         /* the same scale as the eye separation, so a lean and the stereo agree */
         d.position.x /= s;
         d.position.y /= s;
@@ -546,6 +555,10 @@ int vr_calibrate(float *height_m, float *scale) {
     /* a real floor height sizes the world to her. Anything else (a seated origin) keeps scale 1. */
     gVrOptions.body_scale = (h >= 0.8f && h <= 2.3f) ? clamp_scale(1.6f / h) : 1.0f;
     gVrOptions.calibrated = 1;
+    /* and the origin is taken again where they stand, so the world's new size applies from here
+     * instead of shifting the camera by their own offset from the old one. One action: the height
+     * measured, the world sized, the view anchored (VRIK's, as far as this game's rig allows). */
+    sRecenterReq = 1;
     if (height_m != NULL) {
         *height_m = gVrOptions.eye_height;
     }
@@ -748,18 +761,12 @@ static void sync_stick(void) {
     {
         int right = read_bool(resetClick);
 
-        if (click && right) {
-            if (!sBothWas) {
-                sRecenterReq = 1;   /* both sticks: put the view back on her facing */
-            }
-            sBothWas = 1;
-        } else {
-            sBothWas = 0;
-            if (click && !sClickWas) {
-                sRun = !sRun;
-            }
-            sTalk = right && !click;   /* right click alone: hold to talk. both clicks stay the recenter */
+        /* the two clicks are the run's and the talk's; nothing else. Both of them at once is not a
+         * gesture of its own: the height calibration is the VR options page's, one way to set it. */
+        if (click && !sClickWas) {
+            sRun = !sRun;
         }
+        sTalk = right && !click;   /* the turn stick's click alone, held: talk */
     }
     sClickWas = click;
     if (turnStick != XR_NULL_HANDLE && xrGetActionStateVector2f != NULL) {
@@ -1166,13 +1173,15 @@ static Mat4 proj_fov(XrFovf fov, float znear, float zfar) {
     float l = tanf(fov.angleLeft), r = tanf(fov.angleRight);
     float b = tanf(fov.angleDown), t = tanf(fov.angleUp);
     float iw = r - l, ih = t - b;
-    float s = body_scale();
     Mat4 m = {{0}};
 
-    /* the same scale as the eye separation, on the focal length. Near and far stay in world
-     * units. Close and far surfaces then change size together when Page Up sets the scale. */
-    m.m[0] = 2.0f / iw * s;
-    m.m[5] = 2.0f / ih * s;
+    /* the headset's own field of view, unscaled. A world scale (vr.body-scale, body_scale in
+     * vr_body_view) is the *camera's* motion over the real one, with the eye separation scaled the
+     * same: a metre of head motion and the stereo both say "the world is s times the size", so the
+     * two agree. Turning the focal length the other way as well used to make an object's size and
+     * its parallax disagree, which the eye reads as the picture warping as the head moves. */
+    m.m[0] = 2.0f / iw;
+    m.m[5] = 2.0f / ih;
     m.m[8] = (r + l) / iw;
     m.m[9] = (t + b) / ih;
     m.m[10] = -(zfar + znear) / (zfar - znear);
@@ -1731,6 +1740,16 @@ int vr_begin_frame(void) {
     }
     sFrameOn = 1;
     sync_stick();
+    if (!sLogged) {
+        /* once, to the console: what a headset session was told to do. A support line - the VR
+         * options are otherwise silent, and a setting that never reached the engine looks the
+         * same as one that did nothing. */
+        sLogged = 1;
+        printf("vr: comfort %d (%.2f), scenes from her eyes %d, world scale %.3f (eye %.2f m), seated %d\n",
+               (int)gVrOptions.comfort, (double)gVrOptions.comfort_strength,
+               (int)gVrOptions.cutscene_first_person, (double)body_scale(),
+               (double)gVrOptions.eye_height, (int)gVrOptions.seated);
+    }
     sRender = 0;
     sSubmit = 0;
     if (!sFrame.shouldRender) {
