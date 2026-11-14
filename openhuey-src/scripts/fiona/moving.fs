@@ -158,7 +158,9 @@ defer push-check ( F: reach -- )   ' fdrop is push-check   \ (something to push 
     vr? if
         \ the pose plays. the distance is the animation's own root step, aimed along the stick.
         \ a reversal keeps the last step, so the restart of the cycle does not stop her
-        rx ahead vlen kept-step her-stick-k f@ f* vr-shove move-by
+        rx ahead vlen kept-step her-stick-k f@ f*
+        fiona.sneak:sneak-hiding? if  fiona.sneak:sneak-speed f@ f*  then
+        vr-shove move-by
     else
         \ the root motion by her heading-to-be, less the further the stick points from her facing
         rx ahead her-heading f@ rotate-by  {: F: dx dz :}

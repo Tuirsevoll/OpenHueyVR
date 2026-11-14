@@ -39,7 +39,7 @@ typedef struct VrOptions {
     float crouch_deadzone;    /* below this drop, no crouch animation at all */
     float crouch_on;          /* the hide flag on at this drop */
     float crouch_off;         /* ... and off only above this one (the hysteresis) */
-    float sneak_speed;        /* the sneak's share of a walk, and its animation rate (0.35) */
+    float sneak_speed;        /* the crouch walk's share of a walk, and its animation rate (0.45) */
 } VrOptions;
 extern VrOptions gVrOptions;
 
@@ -114,6 +114,14 @@ float vr_right_stick(void);
  * -1 none. Only a quick, straight push from the centre counts (see turn_gesture in vr.c). The
  * gesture holds until the tick ends (vr_pad_clear), as a key press does. */
 int vr_gesture_now(void);
+/* a menu is up (a pause, the status screen, the console): the triggers page the tabs left / right
+ * instead of crouching and kicking */
+void vr_menu_mode(int on);
+/* 1 while a menu is up (the same state vr_menu_mode sets): the crouch trigger pages, not crouches */
+int vr_menu_up(void);
+/* the crouch trigger's share of the standing eyes (0..1): the view's own crouch, so a trigger
+ * crouch lowers the camera as a physical one does (scripts/story/crouch.fs) */
+void vr_crouch_key(float share);
 void vr_add_turn(float yaw);
 float vr_take_turn(void);
 float vr_peek_turn(void);   /* the turn waiting, taken or not (the picture blends towards it) */

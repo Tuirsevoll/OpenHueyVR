@@ -16,7 +16,7 @@ testing the headset crouch's defaults: deadzone 13%, on 25%, off 18%, sneak 35%
 T{ vr-settings vr.crouch-deadzone sf@ 100e f* fround f>s
    vr-settings vr.crouch-on sf@ 100e f* fround f>s
    vr-settings vr.crouch-off sf@ 100e f* fround f>s
-   vr-settings vr.sneak-speed sf@ 100e f* fround f>s -> 13 25 18 35 }T
+   vr-settings vr.sneak-speed sf@ 100e f* fround f>s -> 13 25 18 45 }T
 
 testing vr-defaults puts them back after a change
 1 vr-settings vr.turn-snap l!  90e vr-settings vr.snap-degrees sf!  1 vr-settings vr.teleport l!

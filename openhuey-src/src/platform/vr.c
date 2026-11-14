@@ -43,7 +43,7 @@ VrOptions gVrOptions = {
     0.13f,    /* crouch_deadzone: a look down does nothing */
     0.25f,    /* crouch_on: the hide flag's drop */
     0.18f,    /* crouch_off: ... and its release */
-    0.35f     /* sneak_speed: 35% of a walk */
+    0.45f     /* sneak_speed: 45% of a walk */
 };
 
 /* seated (vr.seated): how far the view rides above (positive) or below her own eyes, in room units -
@@ -74,6 +74,7 @@ int vr_tracking(void) { return 0; }
 float vr_crouch_depth(void) { return 0.0f; }
 float vr_crouch_fraction(void) { return 0.0f; }
 float vr_crouch_anchor(float eye_y) { return eye_y; }
+void vr_crouch_key(float share) { (void)share; }
 void vr_set_crouch_active(int on) { (void)on; }
 void vr_crouch_forget_anchor(void) {}
 int vr_body_view(Mat4 *view) { (void)view; return 0; }
@@ -94,6 +95,8 @@ void vr_stick(float *x, float *y) {
 int vr_pad_down(int button) { (void)button; return 0; }
 int vr_pad_pressed(int button) { (void)button; return 0; }
 void vr_pad_clear(void) {}
+void vr_menu_mode(int on) { (void)on; }
+int vr_menu_up(void) { return 0; }
 int vr_run_on(void) { return 0; }
 int vr_talk_held(void) { return 0; }
 float vr_right_stick(void) { return 0.0f; }
@@ -224,6 +227,9 @@ static float sAnchorYaw;
 static int sCrouchOn;             /* the headset crouch is active (story/crouch.fs) */
 static int sCrouchHave;            /* sCrouchStandY is her standing eye height, kept */
 static float sCrouchStandY;
+static float sCrouchLastEye;       /* her head's eye last frame: a jump is a teleport / new room */
+static float sCrouchKey;           /* the crouch trigger's share (0..1) for the view's own drop */
+static int sMenuMode;              /* a menu is up: the triggers page, they do not crouch / kick */
 static float sStickX, sStickY, sRightX;
 static float sMoveYaw, sFaceYaw, sTurn;
 static int sDown[8], sPressed[8], sRun, sRunClickWas, sTurnClickWas, sRecenterReq, sAlignRecenter, sTalk;
@@ -652,27 +658,76 @@ void vr_set_crouch_active(int on) {
     sCrouchOn = on ? 1 : 0;
 }
 
+/* the crouch trigger's share: a virtual crouch lowers the camera by the body's own crouch drop,
+ * less what the player's physical head has already dropped, so a trigger crouch and a physical one
+ * give the same view and never add */
+void vr_crouch_key(float share) {
+    if (share < 0.0f) {
+        share = 0.0f;
+    }
+    if (share > 1.0f) {
+        share = 1.0f;
+    }
+    sCrouchKey = share;
+}
+
+void vr_menu_mode(int on) {
+    sMenuMode = on ? 1 : 0;
+}
+
+int vr_menu_up(void) {
+    return sMenuMode ? 1 : 0;
+}
+
 void vr_crouch_forget_anchor(void) {
     sCrouchHave = 0;
 }
 
 float vr_crouch_anchor(float eye_y) {
+    float y;
+
     if (!sHaveOrigin) {
         return eye_y;
     }
     if (!sCrouchOn) {
         sCrouchStandY = eye_y;
         sCrouchHave = 1;
+        sCrouchLastEye = eye_y;
         return eye_y;
     }
     if (!sCrouchHave) {
         sCrouchStandY = eye_y;
         sCrouchHave = 1;
+        sCrouchLastEye = eye_y;
     }
-    if (fabsf(eye_y - sCrouchStandY) > 12.0f) {   /* a teleport or a new room: take her head again */
+    /* a jump between two frames is a teleport or a new room: take her head again. The crouch
+     * itself is gradual, however far it goes, so it must not be mistaken for one. */
+    if (fabsf(eye_y - sCrouchLastEye) > 15.0f) {
         sCrouchStandY = eye_y;
     }
-    return sCrouchStandY;
+    sCrouchLastEye = eye_y;
+    y = sCrouchStandY;
+    if (sCrouchKey > 0.0f) {
+        float t = sCrouchKey;
+        float body_drop = sCrouchStandY - eye_y;
+
+        if (gVrOptions.crouch_on > 0.001f) {
+            t /= gVrOptions.crouch_on;
+        }
+        if (t > 1.0f) {
+            t = 1.0f;
+        }
+        body_drop *= t;
+        if (body_drop > 0.0f) {
+            /* the headset's own drop is already in the view (vr_body_view adds it): the virtual
+             * crouch only makes up the difference, so the two together are the deeper one */
+            body_drop -= vr_crouch_fraction() * gVrOptions.eye_height * VR_UNITS_PER_METER;
+            if (body_drop > 0.0f) {
+                y -= body_drop;
+            }
+        }
+    }
+    return y;
 }
 
 static float quat_yaw(XrQuaternionf q);
@@ -939,15 +994,25 @@ static void sync_stick(void) {
         sSnapTurn = 0.0f;   /* (turned off with a push waiting: it is not taken) */
         sSnapArmed = 1;
     }
-    crouch = read_float(crouchAction);
-    note_button(2, crouch >= CROUCH_TRIGGER_AT);          /* the crouch trigger: L1, and a page left */
+    if (sMenuMode) {
+        /* a menu's tabs: the physical left trigger pages left, the right pages right, whichever
+         * hand the sticks and face buttons are on */
+        float left_trigger = read_float(sIndexL);
+        float right_trigger = read_float(sKick);
+
+        note_button(2, left_trigger >= CROUCH_TRIGGER_AT);
+        note_button(4, read_bool(backstep) || right_trigger >= 0.6f);
+    } else {
+        crouch = read_float(crouchAction);
+        note_button(2, crouch >= CROUCH_TRIGGER_AT);      /* the crouch trigger: L1 */
+        note_button(4, read_bool(backstep));              /* X (left B): the step back (R1) */
+        kick = read_float(kickAction);
+        note_button(1, kick >= 0.6f);                     /* A's trigger: kick / tackle (square) */
+    }
     note_button(0, read_bool(interact));                  /* A (left X): use, and accept in a menu */
     note_button(5, read_bool(interact));
-    note_button(4, read_bool(backstep));                  /* X (left B): the step back (R1) */
     note_button(7, read_bool(menu));                      /* Y (right A): the status screen (Select) */
     note_button(6, read_bool(sPause));                    /* Option (left menu): pause (Start) */
-    kick = read_float(kickAction);
-    note_button(1, kick >= 0.6f);                         /* A's trigger: kick / tackle (square) */
     sync_hands();
     /* a grip is the grab, and the way back out of a dialogue or a menu (the triangle) */
     note_button(3, sHand[0].grip >= 0.60f || sHand[1].grip >= 0.60f);
@@ -1776,6 +1841,9 @@ void vr_close(void) {
     sQuit = 0;
     sHaveOrigin = 0;
     sLockPose = 0;
+    sCrouchKey = 0.0f;
+    sCrouchLastEye = 0.0f;
+    sMenuMode = 0;
     sFlickArmed = 0;
     sFlickAt = 0;
     sGesture = -1;

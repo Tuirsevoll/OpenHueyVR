@@ -36,7 +36,7 @@ PRIVATE>
     0.13e vr-settings vr.crouch-deadzone sf!   \ (a drop below 13% of standing height: no crouch)
     0.25e vr-settings vr.crouch-on sf!         \ (the hide flag on at 25% ...)
     0.18e vr-settings vr.crouch-off sf!        \ (... and off only above 18%)
-    0.35e vr-settings vr.sneak-speed sf! ;     \ (the sneak's share of a walk)
+    0.45e vr-settings vr.sneak-speed sf! ;     \ (the crouch walk: 45% of a walk - 55% slower)
 
 \ the options written out as Forth, read back at start-up (each line runs)
 : save-vr-options ( -- )
@@ -68,7 +68,14 @@ PRIVATE>
     vr-settings vr.sneak-speed sf@ 6 f>s$ type       ."  vr-settings vr.sneak-speed sf!" cr
     end-file  ." saved " settings-file type cr ;
 
-: load-vr-options ( -- )  settings-file file-exists? if  settings-file included  then ;
+: load-vr-options ( -- )
+    settings-file file-exists? if
+        settings-file included
+        \ 0.35 was the crouch walk before it was asked to be 55% slower: lift an old default
+        vr-settings vr.sneak-speed sf@ 0.3499e f> vr-settings vr.sneak-speed sf@ 0.3501e f< and if
+            0.45e vr-settings vr.sneak-speed sf!
+        then
+    then ;
 
 \ measure and keep the player's height at once, without the title's screen or the options page: a
 \ save's load does this (saves.fs), so the world is sized to them as their game comes back. Seated

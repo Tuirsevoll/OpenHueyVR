@@ -35,7 +35,7 @@ no-flee state-flag-clear
 0.13e vr-settings vr.crouch-deadzone sf!
 0.25e vr-settings vr.crouch-on sf!
 0.18e vr-settings vr.crouch-off sf!
-0.35e vr-settings vr.sneak-speed sf!
+0.45e vr-settings vr.sneak-speed sf!
 -1 vr!
 0e vr-crouch-test f!
 60 run-frames

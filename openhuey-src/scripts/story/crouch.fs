@@ -28,14 +28,15 @@ variable vr-sneak-had        \ we set fiona-half-hidden: it is ours to clear
 \ L1). It ramps into the same shares the headset's drop uses, so the hide flag, the scrubbed
 \ animation and the slow sneak walk are exactly the rules below.
 : crouch-key-held? ( -- flag )
-    vr?  l1 button-down? and  world-held state? 0= and ;
+    vr?  l1 button-down? and  vr-menu? 0= and  world-held state? 0= and ;
 : crouch-key-step ( -- )
     crouch-key-held? if  vr-key-frac f@ 0.05e f+  else  vr-key-frac f@ 0.05e f-  then
     0e fmax  crouch-on fmin  vr-key-frac f! ;
 
 : read-crouch ( -- )
-    vr? 0= if  0e vr-crouch-frac f!  0e vr-key-frac f!  exit  then
+    vr? 0= if  0e vr-crouch-frac f!  0e vr-key-frac f!  0e vr-crouch-key!  exit  then
     crouch-key-step
+    vr-key-frac f@ vr-crouch-key!   \ (the view's own drop, less the headset's: vr.c)
     testing? if  vr-crouch-test f@  else  vr-crouch  then
     vr-key-frac f@ fmax  vr-crouch-frac f! ;
 
@@ -68,7 +69,7 @@ variable vr-sneak-had        \ we set fiona-half-hidden: it is ours to clear
     request-now @ spirit-request <> and
     fiona-doing-now @ backstep-doing <> and
     fiona-idle? and  fiona-p holder-of @ 0< and
-    fading @ 0= and  world-held state? 0= and  world-frozen state? 0= and ;
+    fading @ 0= and  world-held state? 0= and  world-frozen state? 0= and  vr-menu? 0= and ;
 
 \ a scripted move's mode or a hold left with no doing in it (a scene's teleport, a cutscene, a
 \ stopped door): put right when a crouch is asked for, so it is not lost for good

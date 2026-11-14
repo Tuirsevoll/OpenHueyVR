@@ -1542,6 +1542,7 @@ int main(int argc, char **argv) {
         int vr_frame = 0;
 
         if (vr_active()) {
+            vr_menu_mode(e->paused || e->console.open);   /* (the triggers page, they do not kick) */
             if (!vr_begin_frame()) {
                 break;
             }

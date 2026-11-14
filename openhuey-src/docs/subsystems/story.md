@@ -60,9 +60,11 @@ has one.
   still offers it). **The headset's height is the crouch instead** (story/crouch.fs): below 13% of
   the calibrated standing height nothing; from 13% to 25% the crouch animation scrubs to its full
   pose; the hide flag (`fiona-half-hidden`, the L1 crouch's own) comes on at 25% and goes off only
-  at 18% on the way up (the hysteresis). While it is on she is not held: she sneaks at 35% of a
+  at 18% on the way up (the hysteresis). While it is on she is not held: she sneaks at 45% of a
   walk with the stick (a slowed walk - no crouch-walk animation exists), turning as usual, and
-  still takes the crouch pose. The stalker's sight and reach treat her exactly as the L1 crouch.
+  still takes the crouch pose. The crouch trigger ramps the same shares, so holding it crouches
+  her without ducking, and the view lowers with her. The stalker's sight and reach treat her
+  exactly as the L1 crouch.
   The settings are `vr.crouch-deadzone`, `vr.crouch-on`, `vr.crouch-off` and `vr.sneak-speed`
   (docs/subsystems/fiona.md "Crouching by the headset").
 - **Offers**: what she may do where she stands - `offer` (an activity, Fiona held for it),

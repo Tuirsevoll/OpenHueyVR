@@ -649,31 +649,38 @@ runtime's floor, position only - a head tilt or a look down does not change it.
   Rising out of hiding it scrubs back from `vr.crouch-off` (0.18) to the deadzone, so the body
   does not jump when the flag lets go. The settings are the `VrOptions` fields
   `vr.crouch-deadzone`, `vr.crouch-on`, `vr.crouch-off`, `vr.sneak-speed` (defaults 0.13, 0.25,
-  0.18, 0.35); set them in `<user>/vr-options.fs` or at the console.
+  0.18, 0.45); set them in `<user>/vr-options.fs` or at the console. The crouch trigger ramps the
+  same shares (`vr-key-frac`), so holding it is a crouch without ducking.
 - **The hide flag**: `fiona-half-hidden` (the L1 crouch's own flag) is set at `vr.crouch-on` and
   cleared at `vr.crouch-off` - the hysteresis. The stalker's sight mask and reach (10 instead of
   20, `stalker/senses.fs`) and Riccardo's `crouched?` treat her exactly as the L1 crouch does.
   `fiona-hidden` (a hiding place's) is not set.
 - **Sneak movement**: while the flag is on she is not held. `fiona/moving.fs`'s `sneak-anim`
-  (`idle-move`) plays the crouch pose while still, and the walk at `vr.sneak-speed` (35%) while
-  the stick moves her; her turning and the normal step remain. `idle-move` skips its normal
-  released/stick-held animation choice while the sneak owns it, so the crouch is held rather than
-  restarted under it. No crouch-walk animation exists, so the fallback is the slowed walk. The
-  original's moving-cancels-crouch is the L1 doing's `crouch-held?`/`shook-now`; this path does
-  not use it, so the flag stays while she sneaks.
+  (`idle-move`) plays the crouch pose while still, and the walk at `vr.sneak-speed` (45%, 55%
+  slower) while the stick moves her; the VR step itself is scaled by the same share, so the speed
+  is the walk's 45% whichever way the crouch was made (a headset drop or the trigger). Her
+  turning and the normal step remain. `idle-move` skips its normal released/stick-held animation
+  choice while the sneak owns it, so the crouch is held rather than restarted under it. No
+  crouch-walk animation exists, so the fallback is the slowed walk. The original's
+  moving-cancels-crouch is the L1 doing's `crouch-held?`/`shook-now`; this path does not use it,
+  so the flag stays while she sneaks.
 - **The view and the hands**: while the crouch is active the scripts set `vr-crouch-on!`; C keeps
   her standing eye height (`vr_crouch_anchor`, `fiona_view`) as the camera's and the hands'
-  anchor. Her body crouches or walks under it, so the view and the hands stay at the player's
-  head, not down through her body; a recenter forgets the kept height.
+  anchor. Her body crouches or walks under it, so a physical crouch's view and hands stay at the
+  player's head, not down through her body; a recenter forgets the kept height. The crouch
+  trigger passes its share to C (`vr-crouch-key!`), which lowers the camera by her body's own
+  crouch drop, less the headset's physical drop: a trigger crouch lowers the view as a physical
+  one does, and the two together are the deeper one, not their sum.
 - **Gates and recovery**: the L1 gate (`fiona-idle?`, not held, no panic, no fade, the world
   going) and only while the headset is down. A canned animation, a cutscene, a ladder, a story
   move or a hold turns the sneak off (no flag, no lift, no movement override) and the story's
   own animation plays. A stale scripted `led` mode or a hold left in the place's table with no
   doing is put right when a crouch is asked for (`stale-led?`, `stale-held?`), so the crouch is
   not lost until a save is loaded.
-- **Seated** (`vr.seated`): no crouch.
+- **Seated** (`vr.seated`): a headset drop is not a crouch (there is no floor's height to lose);
+  the crouch trigger still is.
 - Tested headless (`tests/story/test_vr_crouch.fs`): the deadzone, the scrub, the hide
-  hysteresis, a stale mode/hold, and the slowed sneak walk; the L1 paths are
+  hysteresis, a stale mode/hold, the trigger's ramp, and the slowed sneak walk; the L1 paths are
   `tests/story/test_crouch.fs` and `tests/places/test_chaos_forest_vr_crouch.fs`.
 
 **Read again, 2026-11 (0.2.42).** Against fiona.c: steering after a camera cut faced the mirrored

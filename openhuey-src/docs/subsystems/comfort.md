@@ -37,13 +37,14 @@ rest single floats (`sf@ sf!`).
 | `vr.crouch-deadzone` | the headset drop or crouch trigger (a share of the standing height) below which no crouch animation plays | 0.13 |
 | `vr.crouch-on` | ... and the share at which the hide flag comes on | 0.25 |
 | `vr.crouch-off` | ... and the share it goes off at, rising (the hysteresis) | 0.18 |
-| `vr.sneak-speed` | the sneak's share of a walk, and its animation rate | 0.35 |
+| `vr.sneak-speed` | the crouch walk's share of a walk, and its animation rate (45%: 55% slower) | 0.45 |
 
 | Word | Stack | Meaning |
 |---|---|---|
 | `vr-settings` | `-- addr` | the options' struct; the `vr.` fields add to it |
 | `vr-snap` | `F: -- radians` | the turn stick's snap waiting, taken (0: none) |
 | `vr-gesture` | `-- g` | the turn stick's Hewie gesture this tick: 0 up (go / attack), 1 down (come), 2 its click (stay), -1 none |
+| `vr-menu?` | `-- flag` | a menu is up: the triggers page the tabs, they do not crouch / kick |
 | `vr-tracking?` | `-- flag` | the headset's pose is found (a calibration can measure it) |
 | `hand-stops-clear` | `--` | the arms' stops dropped (a snap turn: the hands' places moved with her) |
 | `vr-defaults` | `--` | every option as the game was (`vr-options`) |
@@ -62,12 +63,12 @@ in, reachable without a keyboard:
 - **The title**: its menu has a row `VR OPTIONS` (`scripts/opening.fs`, entry `e-vr`), after
   OPTIONS; the cross opens the sub screen on the VR page (mode 6, `open-vr-options`, the options'
   page alone - the triangle returns to the title).
-- **In a game**: Select (Y) opens the sub screen; the crouch trigger (L1) turns the pages back
-  and X (R1) turns them on, and the VR page is the last of them (`page-order` in
-  `subscreen/input.fs`; the page after the options, as it should be). The arrows are read from
-  the VR stick in a headset (`read-arrows`), so every page of the sub screen - the lists, the map,
-  the files, the options - and this one are worked with the controllers: the movement stick moves,
-  A answers, a grip backs out.
+- **In a game**: Select (Y) opens the sub screen; the left trigger (L1) turns the pages back
+  and the right trigger (or X, R1) turns them on, and the VR page is the last of them
+  (`page-order` in `subscreen/input.fs`; the page after the options, as it should be). The arrows
+  are read from the VR stick in a headset (`read-arrows`), so every page of the sub screen - the
+  lists, the map, the files, the options - and this one are worked with the controllers: the
+  movement stick moves, A answers, a grip backs out.
 - **Its rows**, nine of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
   Comfort vignette (Off, Low, Med, High), Teleport movement (Off, Fixed, Dynamic),
   Calibrate height (the measurement, or Not set), Seated mode (Off, On), View height offset
@@ -95,12 +96,17 @@ and each grip still grabs with its own hand.
 | Stick | move, click runs | Stick | turn; a quick straight flick up is Hewie's "go / attack", down is "come"; its click is stay / stop |
 | Y | status screen, or the movie pause in a cutscene | B | hold for Whisper (PTT) |
 | X | backstep | A | interact, and accept in a menu |
-| Option (the menu button) | pause | Trigger | kick / tackle |
-| Trigger | hold to crouch (the VR crouch rules, slow sneak walk); a page left in a menu | Grip | grab |
+| Option (the menu button) | pause | Trigger | kick / tackle; a page right in a menu |
+| Trigger | hold to crouch (the VR crouch rules, slow sneak walk, and the view lowers with it); a page left in a menu | Grip | grab |
 | Grip | grab, and back / close a dialogue or a menu | | |
 
 The two grips are the triangle everywhere as well as the grab: a grip backs out of a menu or
 closes a dialogue, and (as the triangle always has) lets go of a held throw.
+
+In a menu the triggers are the tabs by their **physical** side - the left pages left, the right
+pages right - even in left-handed play; in the game they are crouch and kick, and those swap with
+the hands as the rest does. The crouch trigger lowers the view with her body and raises it as she
+comes up: the player does not have to duck, and the physical and trigger crouches do not add.
 
 The turn stick's gesture is strict, so turning or resting the stick cannot call Hewie: it must
 leave the centre as a mostly vertical push (`FLICK_STRAIGHT` 0.35 across, and up two and a half
