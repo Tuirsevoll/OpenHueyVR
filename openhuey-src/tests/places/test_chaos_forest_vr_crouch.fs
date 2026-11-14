@@ -1,6 +1,7 @@
-\ L1 by a Chaos Forest bush (story/places/forest.fs, bush-frame): in the headset it starts no
-\ crouch there either - none of crouch-down-anim, crouching-anim or crouch-up-anim, and not her
-\ hiding; out of it, L1 puts her in the bush as before. Headless:
+\ L1 by a Chaos Forest bush (story/places/forest.fs, bush-frame): in the headset a tap starts no
+\ bush crouch there either - no bush script holds her, none of crouch-down-anim, crouching-anim or
+\ crouch-up-anim, and not her hiding (holding L1 is the VR crouch of story/crouch.fs, not the bush);
+\ out of it, L1 puts her in the bush as before. Headless:
 \   build/openhuey-src/openhuey --test openhuey-src/tests/places/test_chaos_forest_vr_crouch.fs
 IN: test-chaos-forest-vr-crouch
 USING: tester engine game-state actors messages keys room-names game debug facts flag-names

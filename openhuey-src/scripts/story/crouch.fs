@@ -11,21 +11,33 @@
 \
 \ The state itself is in fiona/sneak.fs: her movement and model read it from there.
 IN: story.crouch
-USING: engine actors messages vectors facts flag-names story.kit fiona.sneak ;
+USING: engine actors messages vectors facts flag-names story.kit fiona.sneak keys ;
 
 fvariable vr-crouch-frac     \ the headset's drop, a share of her standing eyes (0..1)
+fvariable vr-key-frac        \ the crouch trigger's ramp, a share of that same height
+fvariable vr-crouch-test     \ testing: a drop set by hand (a test has no headset)
 variable vr-sneak-hide       \ the hide flag's state (the hysteresis)
 variable vr-sneak-releasing  \ just rose out of hiding: the animation scrubs off -> deadzone
 variable vr-sneak-had        \ we set fiona-half-hidden: it is ours to clear
 
-: read-crouch ( -- )
-    vr? 0= if  0e vr-crouch-frac f!  exit  then
-    testing? if  exit  then
-    vr-crouch  vr-crouch-frac f! ;
-
 : crouch-deadzone ( F: -- share )  vr-settings vr.crouch-deadzone sf@ ;
 : crouch-on ( F: -- share )  vr-settings vr.crouch-on sf@ ;
 : crouch-off ( F: -- share )  vr-settings vr.crouch-off sf@ ;
+
+\ the crouch trigger (the left trigger, the right in left-handed play: C gives it as the pad's
+\ L1). It ramps into the same shares the headset's drop uses, so the hide flag, the scrubbed
+\ animation and the slow sneak walk are exactly the rules below.
+: crouch-key-held? ( -- flag )
+    vr?  l1 button-down? and  world-held state? 0= and ;
+: crouch-key-step ( -- )
+    crouch-key-held? if  vr-key-frac f@ 0.05e f+  else  vr-key-frac f@ 0.05e f-  then
+    0e fmax  crouch-on fmin  vr-key-frac f! ;
+
+: read-crouch ( -- )
+    vr? 0= if  0e vr-crouch-frac f!  0e vr-key-frac f!  exit  then
+    crouch-key-step
+    testing? if  vr-crouch-test f@  else  vr-crouch  then
+    vr-key-frac f@ fmax  vr-crouch-frac f! ;
 
 \ the hide flag: on at the on share, off only at the off share
 : update-hide ( -- )

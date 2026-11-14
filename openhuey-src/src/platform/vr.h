@@ -24,7 +24,7 @@ typedef struct VrOptions {
     float seated_height;      /* the eye height seated play is sized to, metres (1.6: as standing) */
     float seated_offset;      /* the view raised or lowered within her body, metres */
     int32_t left_handed;      /* the sticks and the face buttons swapped between the hands */
-    int32_t whisper_open;     /* the microphone: 0 the right stick holds it (PTT), 1 open mic */
+    int32_t whisper_open;     /* the microphone: 0 B holds it (PTT), 1 open mic */
     int32_t whisper_debug;    /* the speech subtitles: 0 off, 1 the command alone, 2 the command and
                                * the words Whisper heard (the name is kept: it is the saved field) */
     int32_t calibrate_start;  /* the start-up height calibration: a first run, or asked for */
@@ -99,16 +99,21 @@ float vr_move_yaw(void);
 /* game heading of the rendered look (0 along +z), for interaction tests */
 void vr_set_face_yaw(float yaw);
 float vr_face_yaw(void);
-/* the left controller stick: x right, y down, length 1 past the dead zone (0 0 at rest) */
+/* the movement stick: x right, y down, length 1 past the dead zone (0 0 at rest). Left-handed
+ * play puts it on the right controller. */
 void vr_stick(float *x, float *y);
 /* Quest buttons, in the game’s order (circle, square, …, select). down is held; pressed is this tick. */
 int vr_pad_down(int button);
 int vr_pad_pressed(int button);
-void vr_pad_clear(void);   /* a tick took the presses */
-int vr_run_on(void);       /* left stick click toggles this */
-int vr_talk_held(void);    /* right stick click held, and not the left (both clicks still recenter) */
-/* right stick x, -1..1, after the dead zone. Both stick clicks request a yaw reset. */
+void vr_pad_clear(void);   /* a tick took the presses (and the stick's gesture) */
+int vr_run_on(void);       /* the movement stick's click toggles this */
+int vr_talk_held(void);    /* the Whisper button held: B, or Y in left-handed play */
+/* the turn stick x, -1..1, after the dead zone. Left-handed play puts it on the left controller. */
 float vr_right_stick(void);
+/* the turn stick's Hewie gesture this tick: 0 up (go / attack), 1 down (come), 2 its click (stay),
+ * -1 none. Only a quick, straight push from the centre counts (see turn_gesture in vr.c). The
+ * gesture holds until the tick ends (vr_pad_clear), as a key press does. */
+int vr_gesture_now(void);
 void vr_add_turn(float yaw);
 float vr_take_turn(void);
 float vr_peek_turn(void);   /* the turn waiting, taken or not (the picture blends towards it) */

@@ -37,8 +37,13 @@ end-state
 
 \ ---- opening (SceneGame_SubPlay: Start, the world not held, pausing allowed) ----
 : on-title? ( -- flag )  s" opening" actor-named 0< 0= ;   \ (the title and the opening: their own Start)
+\ in play Start pauses; in the headset Y (Select) does too, where it opens the movie pause's
+\ "Unpause game" / "Skip" - a cutscene's screen is what the player is looking at
+: pause-asked? ( -- flag )
+    start-button button-pressed?
+    select-button button-pressed? cutscene-active? and  or ;
 : may-pause? ( -- flag )
-    start-button button-pressed?  on-title? 0= and  world-held state-flag? 0= and  no-pause state-flag? 0= and ;
+    pause-asked?  on-title? 0= and  world-held state-flag? 0= and  no-pause state-flag? 0= and ;
 : movie-wanted? ( -- flag )  cutscene-active? movie-status 1 = and ;
 : play-wanted? ( -- flag )  cutscene-active? 0=  movie-status 1 <> and ;
 : open-movie ( -- )  0e t f!  movie-opening stage !  1 movie-pause  open-sound sound ;   \ Pause_Open, mode 1

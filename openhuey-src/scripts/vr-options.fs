@@ -29,7 +29,7 @@ PRIVATE>
     1.6e vr-settings vr.seated-height sf!
     0e vr-settings vr.seated-offset sf!
     0 vr-settings vr.left-handed l!                \ (the microphone and its transcript: vr.h VrOptions)
-    0 vr-settings vr.whisper-open l!               \ (the right stick holds it, as the game had it)
+    0 vr-settings vr.whisper-open l!               \ (B holds it, as the game had it)
     0 vr-settings vr.whisper-debug l!              \ (the subtitles off: the page steps Off, On, Debug)
     1 vr-settings vr.calibrate-start l!
     0 vr-settings vr.cutscene-first-person l!

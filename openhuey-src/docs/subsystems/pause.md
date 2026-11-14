@@ -11,12 +11,15 @@ the stage music and the movie), its movie half too (back up as a skip darkens). 
 while a scene's movie plays pauses it and dims the screen with "Unpause game" / "Skip". Start
 goes back to it; Cancel skips it - the screen darkens to black and `movie-skipped` is set, which
 the scene's script reads to end the scene; the script then sets `pause-wanted`, which closes it.
+In a headset Y (Select) opens this movie pause too (`pause-asked?`), so a cutscene's screen is
+paused without reaching for Start; the grip, as Cancel, is the skip.
 
 ## API
 
-No messages: it reads the buttons (`keys.fs`: `start-button`, `cross`), the state flags
-(`world-held`, `no-pause`, `movie-skipped`, `pause-wanted`) and the scene (`cutscene-active?`,
-`movie-status`). `pause-wanted` is cleared each frame, as the original's flag 6 is.
+No messages: it reads the buttons (`keys.fs`: `start-button`, `select-button` with a cutscene,
+`cross`), the state flags (`world-held`, `no-pause`, `movie-skipped`, `pause-wanted`) and the scene
+(`cutscene-active?`, `movie-status`). `pause-wanted` is cleared each frame, as the original's flag
+6 is.
 
 **Draws** on UI layer 5 (over everything), in the PS2's 512 x 448: the dimming (alpha 63 of 128
 open, to full black skipping); the lines in the game's font at its size and their colours

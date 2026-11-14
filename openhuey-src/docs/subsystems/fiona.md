@@ -149,7 +149,8 @@ These, and the buttons' refusals below, are checked by `tests/fiona/test_rules.f
 `panic.fs`.)
 
 **F3 built** (`scripts/fiona/commands.fs`, with Hewie's H2). The right stick's gestures (keys 1
-up, 2 down, 3 R3, 4 right - held for more praise, 5 left), read under `hewie-commandable` and not
+up, 2 down, 3 R3, 4 right - held for more praise, 5 left; in a headset the turn stick's quick
+straight flick up / down and its click, `vr-gesture`), read under `hewie-commandable` and not
 `fiona-occupied` (Fiona_ReadsPad) and acted on the next frame. While a script has her (`scripted`:
 the original's Fiona_Think) the gesture is read whatever she is doing, under those two flags alone,
 for the story to read (the attack lesson's tip) - and the story placing her (`place`) keeps its hold

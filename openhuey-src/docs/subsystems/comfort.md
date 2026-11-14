@@ -26,15 +26,15 @@ rest single floats (`sf@ sf!`).
 | `vr.seated` | seated play: her eye height is the seated one, never the floor's | 0 |
 | `vr.seated-height` | the eye height seated play is sized to, metres | 1.6 |
 | `vr.seated-height` | the eye height seated play is sized to, metres (not a row: 1.6 stands for a seat) | 1.6 |
-| `vr.left-handed` | the sticks and face buttons swapped between the hands | 0 |
-| `vr.whisper-open` | the microphone: 0 the right stick holds it (PTT), 1 open mic | 0 |
+| `vr.left-handed` | the sticks, face buttons and triggers swapped between the hands (the pause button stays on the left) | 0 |
+| `vr.whisper-open` | the microphone: 0 B holds it (PTT), 1 open mic | 0 |
 | `vr.whisper-debug` | the speech subtitles: 0 off, 1 the command alone, 2 the command and the words heard | 0 |
 | `vr.calibrate-start` | the start-up height calibration (a first run, or asked for) | 1 |
 | `vr.cutscene-first-person` | an in-game scene watched from her eyes | 0 |
 | `vr.eye-height` | her eyes above the floor, metres (what a calibration measured) | 1.6 |
 | `vr.body-scale` | a metre of head motion in the world's units (1: as measured) | 1 |
 | `vr.calibrated` | 1 once a calibration has been kept | 0 |
-| `vr.crouch-deadzone` | the headset drop (a share of the standing height) below which no crouch animation plays | 0.13 |
+| `vr.crouch-deadzone` | the headset drop or crouch trigger (a share of the standing height) below which no crouch animation plays | 0.13 |
 | `vr.crouch-on` | ... and the share at which the hide flag comes on | 0.25 |
 | `vr.crouch-off` | ... and the share it goes off at, rising (the hysteresis) | 0.18 |
 | `vr.sneak-speed` | the sneak's share of a walk, and its animation rate | 0.35 |
@@ -43,6 +43,7 @@ rest single floats (`sf@ sf!`).
 |---|---|---|
 | `vr-settings` | `-- addr` | the options' struct; the `vr.` fields add to it |
 | `vr-snap` | `F: -- radians` | the turn stick's snap waiting, taken (0: none) |
+| `vr-gesture` | `-- g` | the turn stick's Hewie gesture this tick: 0 up (go / attack), 1 down (come), 2 its click (stay), -1 none |
 | `vr-tracking?` | `-- flag` | the headset's pose is found (a calibration can measure it) |
 | `hand-stops-clear` | `--` | the arms' stops dropped (a snap turn: the hands' places moved with her) |
 | `vr-defaults` | `--` | every option as the game was (`vr-options`) |
@@ -61,12 +62,12 @@ in, reachable without a keyboard:
 - **The title**: its menu has a row `VR OPTIONS` (`scripts/opening.fs`, entry `e-vr`), after
   OPTIONS; the cross opens the sub screen on the VR page (mode 6, `open-vr-options`, the options'
   page alone - the triangle returns to the title).
-- **In a game**: Select (Y) opens the sub screen; R1 - the left trigger - turns the pages past the
-  options, and the VR page is the last of them (`page-order` in `subscreen/input.fs`; the page
-  after the options, as it should be). The arrows are read from the VR stick in a headset
-  (`read-arrows`), so every page of the sub screen - the lists, the map, the files, the options -
-  and this one are worked with the controllers: the left stick moves, the cross answers, the
-  triangle backs out.
+- **In a game**: Select (Y) opens the sub screen; the crouch trigger (L1) turns the pages back
+  and X (R1) turns them on, and the VR page is the last of them (`page-order` in
+  `subscreen/input.fs`; the page after the options, as it should be). The arrows are read from
+  the VR stick in a headset (`read-arrows`), so every page of the sub screen - the lists, the map,
+  the files, the options - and this one are worked with the controllers: the movement stick moves,
+  A answers, a grip backs out.
 - **Its rows**, nine of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
   Comfort vignette (Off, Low, Med, High), Teleport movement (Off, Fixed, Dynamic),
   Calibrate height (the measurement, or Not set), Seated mode (Off, On), View height offset
@@ -82,6 +83,45 @@ in, reachable without a keyboard:
   last tab says `VR` on this page: the art's own `Options` word is covered with the paper it sits
   on, `VR` drawn in its place - the paper sized to the word, inside the tab's own frame (a tab of
   its own would need art the game has not).
+
+## The controllers
+
+The Quest 3 (Touch Plus) layout, in the right hand's play (`vr.c` `sync_stick`). The hands
+themselves do not move when left-handed play is on: the sticks, face buttons and triggers swap,
+and each grip still grabs with its own hand.
+
+| Left hand | Action | Right hand | Action |
+|---|---|---|---|
+| Stick | move, click runs | Stick | turn; a quick straight flick up is Hewie's "go / attack", down is "come"; its click is stay / stop |
+| Y | status screen, or the movie pause in a cutscene | B | hold for Whisper (PTT) |
+| X | backstep | A | interact, and accept in a menu |
+| Option (the menu button) | pause | Trigger | kick / tackle |
+| Trigger | hold to crouch (the VR crouch rules, slow sneak walk); a page left in a menu | Grip | grab |
+| Grip | grab, and back / close a dialogue or a menu | | |
+
+The two grips are the triangle everywhere as well as the grab: a grip backs out of a menu or
+closes a dialogue, and (as the triangle always has) lets go of a held throw.
+
+The turn stick's gesture is strict, so turning or resting the stick cannot call Hewie: it must
+leave the centre as a mostly vertical push (`FLICK_STRAIGHT` 0.35 across, and up two and a half
+times its sideways), reach `FLICK_PULL` (0.85) within 180 ms, and centre again before another. Its
+click is its own button and counts wherever the stick is. The gesture is read for the whole tick
+(`vr_gesture_now`) and dropped when the tick ends (`vr_pad_clear`), exactly as a key press is.
+
+**Left-handed play** swaps the functions above between the hands - movement to the right stick,
+turning and Hewie's gestures to the left, interact to X, status to A, backstep to B, Whisper to
+Y, crouch to the right trigger and kick to the left - except the pause button, which the right
+Touch controller has no bindable button for (its system button belongs to the runtime). The
+pause stays on the left controller's menu button. OpenXR will not re-bind a live session, so both
+hands' actions are bound once when the session opens (`move_r`, `turn_l`, `interact_l`, ...) and
+`sync_stick` reads the pair the option names; a change is in effect on the next frame.
+
+Other headsets: the Touch layouts (Quest 2 / 3 / Pro's Touch and Touch Plus, Pico 4 / Neo 3,
+Vive Focus 3) get the same mapping. Index controllers get the sticks, grips, both triggers and
+the A / B face buttons, with the left trackpad's click as pause. WMR, HP Reverb and Vive Cosmos
+get the sticks, grips, triggers and the left menu button; the Vive wands get the same on their
+trackpads. A controller without a face button cannot give the face-button actions, so the
+keyboard remains beside them.
 
 ## Rules
 
@@ -161,14 +201,17 @@ in, reachable without a keyboard:
   where the first stride is already stopped. Letting go takes her there - her feet on that floor,
   facing the way the flick went - and what her hands held is let go (`hands-drop`), so nothing is
   dragged along. A place she cannot stand is not taken: letting go there leaves her where she is.
-- **Left-handed play** (`vr.left-handed`; `vr.c` `bind_stick`, `sync_stick`): the sticks and the
-  face buttons swap hands - the moving stick to the right, the turning stick to the left, use to
-  X, back to Y, pause to B, menu to A - while the hands themselves keep their own sides: the grips,
-  the triggers (kick, step back) and the drawn arms are her hands, whichever way the player holds
-  them. OpenXR will not re-bind a live session, so both hands' parts are bound once when the session
-  opens (`move_r`, `turn_l`, `interact_l`, ...) and `sync_stick` reads the pair the option names; a
-  change is in effect on the next frame. Nothing else is on the sticks: the both-clicks recentre
-  is gone, so the calibration is the menu's one way and a scene is not interrupted by it.
+- **Left-handed play** (`vr.left-handed`; `vr.c` `bind_stick`, `sync_stick`): the sticks, face
+  buttons and triggers swap hands - the moving stick to the right, the turning stick (and Hewie's
+  flick gestures and stop click) to the left, use to X, status to A, backstep to B, Whisper to Y,
+  crouch to the right trigger and kick to the left - while the hands themselves keep their own
+  sides: the grips, the drawn arms and the grab are her hands, whichever way the player holds them.
+  The pause button is the exception: it stays on the left controller's menu button, because the
+  right Touch controller has no bindable button of its own there (its system button is the
+  runtime's). OpenXR will not re-bind a live session, so both hands' parts are bound once when the
+  session opens (`move_r`, `turn_l`, `interact_l`, ...) and `sync_stick` reads the pair the option
+  names; a change is in effect on the next frame. Nothing else is on the sticks: the both-clicks
+  recentre is gone, so the calibration is the menu's one way and a scene is not interrupted by it.
 - **A cutscene keeps its screen** (`main.c` `cutscene_on_screen`, `fiona_view`): the scene is
   drawn once, at 4:3, and put on a screen in front of the player, her model hidden; her eyes are
   not used and the story's camera stays the picture's. (An option to watch the game's scenes from
@@ -209,7 +252,7 @@ in, reachable without a keyboard:
   stroke is a stroke; the art around them keeps its smooth filtering.
 - **The defaults are the game as it was**: smooth turning, no vignette, the stick walking her,
   neither seated nor left-handed, her eyes as the first pose found them, a scene on its screen,
-  the right stick holding the microphone and the subtitles off.
+  B holding the microphone and the subtitles off.
   `vr.calibrate-start` is 1: a first run is asked to calibrate once (with no calibration kept, the
   first pose's height is used as before).
 
@@ -224,7 +267,8 @@ origin together), **seated play**
 (`vr.seated`, with `vr.seated-offset` for the view's height in the body), **teleporting**
 (`vr.teleport`: Off, Fixed, Dynamic - the stick flick, its aim walking out until something stops
 it, facing the way it went, a glow for the landing), **left-handed play** (`vr.left-handed`: the
-sticks and face buttons over, the hands as they are), **the microphone's mode** (`vr.whisper-open`:
+sticks, face buttons and triggers over, the hands and the pause button as they are), **the
+microphone's mode** (`vr.whisper-open`:
 PTT, Open Mic) and **its subtitles** (`vr.whisper-debug`: Off, On, Debug - Off none; On the command
 Hewie heard, capitalised and with an exclamation mark, and nothing when the words made no command;
 Debug the command and the words Whisper heard in brackets, or `UNRECOGNISED:` and the words, in the

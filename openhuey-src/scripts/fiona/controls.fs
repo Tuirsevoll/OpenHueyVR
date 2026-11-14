@@ -14,7 +14,7 @@ USING: engine keys common vectors messages facts fiona.state fiona.anims ;
     0e stick-x f!  0e stick-z f!
     hands-off? if  exit  then
     stick@ stick-z f!  stick-x f! ;
-: run-held? ( -- flag )   \ (Fiona_Move: cross held; the headset: the left stick click toggles it)
+: run-held? ( -- flag )   \ (Fiona_Move: cross held; the headset: the movement stick's click toggles it)
     hands-off? 0=  vr? if  vr-run?  else  cross button-down?  then  and ;
 : turned ( F: cam-yaw nx nz -- dx dz )  stick-turned ;
 \ in the headset, the stick points where she is looking, not where the old camera sits

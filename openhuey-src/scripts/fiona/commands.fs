@@ -4,8 +4,9 @@
 \ his body; she tells him with `command`, `reaction` and the meeting (meet-me / meet-now).
 \
 \ The right stick's gestures on the keyboard: 1 up (go / attack), 2 down (come back), 3 R3
-\ (stay / come), 4 right (praise; held: more), 5 left (scold). They are read only under state
-\ flag 0xD (the story: Hewie is hers to command) and not 0x2B.
+\ (stay / come), 4 right (praise; held: more), 5 left (scold). In a headset the turn stick gives
+\ up / down / its click (keys.fs `gesture@`, `vr-gesture`), and never right or left. They are
+\ read only under state flag 0xD (the story: Hewie is hers to command) and not 0x2B.
 IN: fiona.commands
 USING: engine vectors game-state actors messages hewie-names common facts keys fiona.state fiona.anims fiona.model fiona.moving fiona.spots fiona.looks flag-names floor-flags ;
 

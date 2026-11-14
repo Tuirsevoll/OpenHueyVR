@@ -5,7 +5,9 @@ Fiona's hands on the Quest controllers (`src/game/vrhands.c`).
 ## Purpose
 
 Her arms reach the grip poses, the hand shapes follow the triggers, and a grip takes a small
-object, a door's knob or a wardrobe leaf. This page covers one part of that: **wall detection** of
+object, a door's knob or a wardrobe leaf. A grip is also the pad's triangle - the way back out of
+a menu or a dialogue - and the crouch trigger on the left hand drives the VR crouch
+(docs/subsystems/comfort.md). This page covers one part of that: **wall detection** of
 the room's walls, its door leaves and its placed objects, so a controller can say when a hand has
 swept through something solid.
 

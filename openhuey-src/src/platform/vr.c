@@ -33,7 +33,7 @@ VrOptions gVrOptions = {
     1.6f,     /* seated_height: as standing */
     0.0f,     /* seated_offset */
     0,        /* left_handed */
-    0,        /* whisper_open: the right stick holds the microphone */
+    0,        /* whisper_open: B holds the microphone */
     0,        /* whisper_debug: subtitles off */
     1,        /* calibrate_start: a first run is asked (the title's step, once) */
     0,        /* cutscene_first_person */
@@ -97,6 +97,7 @@ void vr_pad_clear(void) {}
 int vr_run_on(void) { return 0; }
 int vr_talk_held(void) { return 0; }
 float vr_right_stick(void) { return 0.0f; }
+int vr_gesture_now(void) { return -1; }
 void vr_add_turn(float yaw) { (void)yaw; }
 float vr_take_turn(void) { return 0.0f; }
 float vr_peek_turn(void) { return 0.0f; }
@@ -203,12 +204,12 @@ static PFN_xrGetActionStateFloat xrGetActionStateFloat;
 static PFN_xrCreateActionSpace xrCreateActionSpace;
 static PFN_xrApplyHapticFeedback xrApplyHapticFeedback;
 static XrActionSet sActions;
-static XrAction sMove, sRunClick, sInteract, sMenu, sKick, sTurnStick, sRightClick;
-static XrAction sIndexL, sCancel, sPause;
+static XrAction sMove, sRunClick, sInteract, sMenu, sPause, sBackstep, sWhisper, sKick, sTurnStick, sRightClick;
+static XrAction sIndexL;
 /* the same parts of the other hand, for left-handed play: OpenXR will not re-bind a live session,
  * so both hands' actions are bound once and the options pick which the game reads */
 static XrAction sMoveR, sRunClickR, sTurnStickL, sResetClickL;
-static XrAction sInteractL, sCancelL, sPauseR, sMenuR;
+static XrAction sInteractL, sMenuR, sBackstepR, sWhisperL;
 typedef struct VrHandSlot {
     XrAction pose, squeeze, thumb, haptic;
     XrSpace space;
@@ -225,7 +226,20 @@ static int sCrouchHave;            /* sCrouchStandY is her standing eye height, 
 static float sCrouchStandY;
 static float sStickX, sStickY, sRightX;
 static float sMoveYaw, sFaceYaw, sTurn;
-static int sDown[8], sPressed[8], sRun, sClickWas, sRecenterReq, sAlignRecenter, sTalk;
+static int sDown[8], sPressed[8], sRun, sRunClickWas, sTurnClickWas, sRecenterReq, sAlignRecenter, sTalk;
+/* the turn stick's Hewie gestures: one at a time, read by a tick (vr_gesture_now) and dropped
+ * when the tick ends. A flick is armed only from the stick's centre, must be a quick straight
+ * push, and gets one try. */
+#define FLICK_CENTRE 0.25f
+#define FLICK_PULL 0.85f
+#define FLICK_STRAIGHT 0.35f
+#define FLICK_WINDOW_NS 180000000
+static int sFlickArmed;      /* the stick was centred: a push may be a flick */
+static XrTime sFlickAt;      /* when it left the centre (0: no try left) */
+static int sGesture = -1;    /* 0 up, 1 down, 2 click (the stick's), -1 none */
+static XrTime sGestureAt;
+/* the crouch trigger's level that means a crouch (the left trigger; the right in left-handed play) */
+#define CROUCH_TRIGGER_AT 0.55f
 /* the options' snap turning: the turn stick's pull that snaps (1 at the stick's edge), the pull it
  * must fall back under before another, and the stick's centred state */
 #define SNAP_AT 0.70f
@@ -782,25 +796,64 @@ static void sync_hands(void) {
     }
 }
 
+/* a Hewie gesture on the turn stick, one a push: a quick, straight flick from the centre (up /
+ * down), or its click. A slow push, a turn, or a drift up or down does not fire: it must leave
+ * the centre as a mostly vertical push, reach FLICK_PULL within the window, and must centre again
+ * before another. The click counts wherever the stick is (it is its own button). */
+static void note_gesture(int gesture) {
+    sGesture = gesture;
+    sGestureAt = sFrame.predictedDisplayTime;
+}
+
+static void turn_gesture(float x, float y, int clicked) {
+    float ax = fabsf(x), ay = fabsf(y);
+    XrTime now = sFrame.predictedDisplayTime;
+
+    if (clicked) {
+        note_gesture(2);   /* its click: stay / stop */
+    }
+    if (ax <= FLICK_CENTRE && ay <= FLICK_CENTRE) {
+        sFlickArmed = 1;
+        sFlickAt = 0;
+        return;
+    }
+    if (sFlickArmed) {
+        sFlickArmed = 0;   /* just left the centre: this push gets one try */
+        sFlickAt = now;
+    }
+    if (sFlickAt == 0 || ay < FLICK_PULL || ax > FLICK_STRAIGHT || ay <= ax * 2.5f) {
+        return;
+    }
+    if (now != 0 && now - sFlickAt <= FLICK_WINDOW_NS) {
+        note_gesture(y > 0.0f ? 0 : 1);   /* up: go / attack, down: come */
+    }
+    sFlickAt = 0;
+}
+
+/* the movement stick's run click and the turn stick's click are read by sync_stick; the crouch
+ * trigger is its own L1 (scripts/story/crouch.fs ramps that into the VR crouch rules) */
+
 static void sync_stick(void) {
     XrActiveActionSet active;
     XrActionsSyncInfo sync = {XR_TYPE_ACTIONS_SYNC_INFO};
     XrActionStateGetInfo get = {XR_TYPE_ACTION_STATE_GET_INFO};
     XrActionStateVector2f state = {XR_TYPE_ACTION_STATE_VECTOR2F};
-    XrActionStateFloat kick = {XR_TYPE_ACTION_STATE_FLOAT};
     /* the hand each part belongs to: the usual one, or its twin for left-handed play. The hands
      * themselves (grips, triggers, the arms) never move: only what the sticks and buttons mean. */
     int leftie = gVrOptions.left_handed;
     XrAction move = leftie ? sMoveR : sMove;
     XrAction runClick = leftie ? sRunClickR : sRunClick;
     XrAction turnStick = leftie ? sTurnStickL : sTurnStick;
-    XrAction resetClick = leftie ? sResetClickL : sRightClick;
+    XrAction turnClick = leftie ? sResetClickL : sRightClick;
     XrAction interact = leftie ? sInteractL : sInteract;
-    XrAction cancel = leftie ? sCancelL : sCancel;
     XrAction menu = leftie ? sMenuR : sMenu;
-    XrAction pause = leftie ? sPauseR : sPause;
-    float x, y, len;
-    int click;
+    XrAction backstep = leftie ? sBackstepR : sBackstep;
+    XrAction whisper = leftie ? sWhisperL : sWhisper;
+    XrAction kickAction = leftie ? sIndexL : sKick;      /* the kick trigger, from the other hand */
+    XrAction crouchAction = leftie ? sKick : sIndexL;    /* ... and crouch's */
+    float x, y, len, rx = 0.0f, ry = 0.0f;
+    float kick, crouch;
+    int click, stop;
 
     sStickX = sStickY = sRightX = 0.0f;
     sTalk = 0;
@@ -831,21 +884,16 @@ static void sync_stick(void) {
         }
     }
     click = read_bool(runClick);
-    {
-        int right = read_bool(resetClick);
-
-        /* the two clicks are the run's and the talk's; nothing else. Both of them at once is not a
-         * gesture of its own: the height calibration is the VR options page's, one way to set it. */
-        if (click && !sClickWas) {
-            sRun = !sRun;
-        }
-        sTalk = right && !click;   /* the turn stick's click alone, held: talk */
+    if (click && !sRunClickWas) {
+        sRun = !sRun;   /* the movement stick's click: run on or off */
     }
-    sClickWas = click;
+    sRunClickWas = click;
+    sTalk = read_bool(whisper);   /* B held: Whisper push-to-talk */
     if (turnStick != XR_NULL_HANDLE && xrGetActionStateVector2f != NULL) {
         get.action = turnStick;
         if (XR_SUCCEEDED(xrGetActionStateVector2f(sSession, &get, &state)) && state.isActive) {
-            float rx = state.currentState.x;
+            rx = state.currentState.x;
+            ry = state.currentState.y;   /* +y is up (the game's stick negates it, vr_stick) */
 
             if (rx > 0.2f || rx < -0.2f) {
                 /* stick right is positive. Her yaw's positive direction is a left turn, so this is negated. */
@@ -853,6 +901,9 @@ static void sync_stick(void) {
             }
         }
     }
+    stop = read_bool(turnClick);
+    turn_gesture(rx, ry, stop && !sTurnClickWas);
+    sTurnClickWas = stop;
     /* the options' snap turning: one turn a push of the turn stick, its angle chosen. Read here,
      * every headset frame, so a flick that begins and ends between two ticks is still seen: the
      * turn waits for the tick (vr_snap_take) - the scripts turn her by it. */
@@ -888,21 +939,18 @@ static void sync_stick(void) {
         sSnapTurn = 0.0f;   /* (turned off with a push waiting: it is not taken) */
         sSnapArmed = 1;
     }
+    crouch = read_float(crouchAction);
+    note_button(2, crouch >= CROUCH_TRIGGER_AT);          /* the crouch trigger: L1, and a page left */
     note_button(0, read_bool(interact));                  /* A (left X): use, and accept in a menu */
     note_button(5, read_bool(interact));
-    note_button(3, read_bool(cancel));                    /* B (left Y): back */
-    note_button(7, read_bool(menu));                      /* Y (right A): the status menu */
-    note_button(6, read_bool(pause));                     /* X (right B): pause */
-    if (sKick != XR_NULL_HANDLE && xrGetActionStateFloat != NULL) {
-        get.action = sKick;
-        if (XR_SUCCEEDED(xrGetActionStateFloat(sSession, &get, &kick)) && kick.isActive) {
-            note_button(1, kick.currentState >= 0.6f);    /* right trigger: kick */
-        } else {
-            note_button(1, 0);
-        }
-    }
-    note_button(4, read_float(sIndexL) >= 0.6f);          /* left trigger: step back */
+    note_button(4, read_bool(backstep));                  /* X (left B): the step back (R1) */
+    note_button(7, read_bool(menu));                      /* Y (right A): the status screen (Select) */
+    note_button(6, read_bool(sPause));                    /* Option (left menu): pause (Start) */
+    kick = read_float(kickAction);
+    note_button(1, kick >= 0.6f);                         /* A's trigger: kick / tackle (square) */
     sync_hands();
+    /* a grip is the grab, and the way back out of a dialogue or a menu (the triangle) */
+    note_button(3, sHand[0].grip >= 0.60f || sHand[1].grip >= 0.60f);
 }
 
 int vr_pad_down(int button) {
@@ -925,12 +973,27 @@ void vr_pad_clear(void) {
     for (i = 0; i < 8; i++) {
         sPressed[i] = 0;
     }
+    sGesture = -1;   /* (a tick had its chance: a gesture is one a push, not one a frame) */
 }
 
 int vr_run_on(void) { return sRun ? 1 : 0; }
 int vr_talk_held(void) { return sTalk ? 1 : 0; }
 
 float vr_right_stick(void) { return sRightX; }
+
+/* the turn stick's gesture waiting for a tick. It holds for every read within that tick (as a
+ * key press does) and vr_pad_clear drops it once the tick has run. One not wanted at once is
+ * dropped, as a snap turn's is: half a second of no tick means it is not wanted now. */
+int vr_gesture_now(void) {
+    int g = sGesture;
+
+    if (g >= 0 && sFrame.predictedDisplayTime != 0 && sGestureAt != 0 &&
+        sFrame.predictedDisplayTime - sGestureAt > 500000000) {
+        sGesture = -1;
+        return -1;
+    }
+    return g;
+}
 
 void vr_add_turn(float yaw) { sTurn += yaw; }
 
@@ -1110,18 +1173,20 @@ static void suggest(const char *profile, XrActionSuggestedBinding *binds, uint32
     xrSuggestInteractionProfileBindings(sInstance, &sug);
 }
 
-/* the left stick, and the Quest 3 buttons (Touch and Touch Plus) */
+/* the sticks and buttons: the Quest 3's (Touch Plus) as the request lays them out, the Touch-like
+ * controllers, and the sticks, grips and triggers of the other major headsets */
 static void bind_stick(void) {
-    static const char *const sticks[] = {
+    static const char *const stick_profiles[] = {
         "/interaction_profiles/valve/index_controller",
         "/interaction_profiles/microsoft/motion_controller",
         "/interaction_profiles/hp/mixed_reality_controller",
         "/interaction_profiles/htc/vive_cosmos_controller",
-        "/interaction_profiles/htc/vive_focus3_controller",
+    };
+    static const char *const trackpad_profiles[] = {
+        "/interaction_profiles/htc/vive_controller",
     };
     XrActionSetCreateInfo set = {XR_TYPE_ACTION_SET_CREATE_INFO};
     XrSessionActionSetsAttachInfo attach = {XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
-    XrActionSuggestedBinding one;
     size_t i;
 
     if (xrCreateActionSet == NULL || xrCreateAction == NULL || xrStringToPath == NULL ||
@@ -1138,20 +1203,21 @@ static void bind_stick(void) {
     }
     make_action(&sRunClick, XR_ACTION_TYPE_BOOLEAN_INPUT, "run", "Run");
     make_action(&sInteract, XR_ACTION_TYPE_BOOLEAN_INPUT, "interact", "Interact");
-    make_action(&sCancel, XR_ACTION_TYPE_BOOLEAN_INPUT, "cancel", "Back");
     make_action(&sMenu, XR_ACTION_TYPE_BOOLEAN_INPUT, "menu", "Menu");
     make_action(&sPause, XR_ACTION_TYPE_BOOLEAN_INPUT, "pause", "Pause");
+    make_action(&sBackstep, XR_ACTION_TYPE_BOOLEAN_INPUT, "backstep", "Backstep");
+    make_action(&sWhisper, XR_ACTION_TYPE_BOOLEAN_INPUT, "whisper", "Whisper");
     make_action(&sKick, XR_ACTION_TYPE_FLOAT_INPUT, "kick", "Kick");
     make_action(&sTurnStick, XR_ACTION_TYPE_VECTOR2F_INPUT, "turn", "Turn");
-    make_action(&sRightClick, XR_ACTION_TYPE_BOOLEAN_INPUT, "reset", "Reset");
+    make_action(&sRightClick, XR_ACTION_TYPE_BOOLEAN_INPUT, "stop", "Hewie stop");
     /* the other hand's, for left-handed play: never read at once with the first set */
     make_action(&sMoveR, XR_ACTION_TYPE_VECTOR2F_INPUT, "move_r", "Move (right hand)");
     make_action(&sRunClickR, XR_ACTION_TYPE_BOOLEAN_INPUT, "run_r", "Run (right hand)");
     make_action(&sTurnStickL, XR_ACTION_TYPE_VECTOR2F_INPUT, "turn_l", "Turn (left hand)");
-    make_action(&sResetClickL, XR_ACTION_TYPE_BOOLEAN_INPUT, "reset_l", "Reset (left hand)");
+    make_action(&sResetClickL, XR_ACTION_TYPE_BOOLEAN_INPUT, "stop_l", "Hewie stop (left hand)");
     make_action(&sInteractL, XR_ACTION_TYPE_BOOLEAN_INPUT, "interact_l", "Interact (left hand)");
-    make_action(&sCancelL, XR_ACTION_TYPE_BOOLEAN_INPUT, "cancel_l", "Back (left hand)");
-    make_action(&sPauseR, XR_ACTION_TYPE_BOOLEAN_INPUT, "pause_r", "Pause (right hand)");
+    make_action(&sBackstepR, XR_ACTION_TYPE_BOOLEAN_INPUT, "backstep_r", "Backstep (right hand)");
+    make_action(&sWhisperL, XR_ACTION_TYPE_BOOLEAN_INPUT, "whisper_l", "Whisper (left hand)");
     make_action(&sMenuR, XR_ACTION_TYPE_BOOLEAN_INPUT, "menu_r", "Menu (right hand)");
     make_action(&sHand[0].pose, XR_ACTION_TYPE_POSE_INPUT, "grip_l", "Left hand");
     make_action(&sHand[1].pose, XR_ACTION_TYPE_POSE_INPUT, "grip_r", "Right hand");
@@ -1162,65 +1228,120 @@ static void bind_stick(void) {
     make_action(&sHand[1].thumb, XR_ACTION_TYPE_BOOLEAN_INPUT, "thumb_r", "Right thumb");
     make_action(&sHand[0].haptic, XR_ACTION_TYPE_VIBRATION_OUTPUT, "buzz_l", "Left buzz");
     make_action(&sHand[1].haptic, XR_ACTION_TYPE_VIBRATION_OUTPUT, "buzz_r", "Right buzz");
-    for (i = 0; i < sizeof(sticks) / sizeof(sticks[0]); i++) {
-        if (bind_path(sMove, "/user/hand/left/input/thumbstick", &one)) {
-            suggest(sticks[i], &one, 1);
+    /* the sticks, the grips and both triggers on the other major headsets. Index controllers
+     * also have A / B on each hand; their trackpad's click is free, so it is the pause there.
+     * WMR, HP and Cosmos have a menu button on the left hand instead. */
+    for (i = 0; i < sizeof(stick_profiles) / sizeof(stick_profiles[0]); i++) {
+        XrActionSuggestedBinding b[32];
+        uint32_t n = 0;
+        int index = strstr(stick_profiles[i], "index_controller") != NULL;
+
+        n += bind_path(sMove, "/user/hand/left/input/thumbstick", &b[n]);
+        n += bind_path(sRunClick, "/user/hand/left/input/thumbstick/click", &b[n]);
+        n += bind_path(sTurnStick, "/user/hand/right/input/thumbstick", &b[n]);
+        n += bind_path(sRightClick, "/user/hand/right/input/thumbstick/click", &b[n]);
+        n += bind_path(sMoveR, "/user/hand/right/input/thumbstick", &b[n]);
+        n += bind_path(sRunClickR, "/user/hand/right/input/thumbstick/click", &b[n]);
+        n += bind_path(sTurnStickL, "/user/hand/left/input/thumbstick", &b[n]);
+        n += bind_path(sResetClickL, "/user/hand/left/input/thumbstick/click", &b[n]);
+        if (index) {
+            n += bind_path(sInteract, "/user/hand/right/input/a/click", &b[n]);
+            n += bind_path(sMenu, "/user/hand/left/input/b/click", &b[n]);
+            n += bind_path(sBackstep, "/user/hand/left/input/a/click", &b[n]);
+            n += bind_path(sWhisper, "/user/hand/right/input/b/click", &b[n]);
+            n += bind_path(sInteractL, "/user/hand/left/input/a/click", &b[n]);
+            n += bind_path(sMenuR, "/user/hand/right/input/a/click", &b[n]);
+            n += bind_path(sBackstepR, "/user/hand/right/input/b/click", &b[n]);
+            n += bind_path(sWhisperL, "/user/hand/left/input/b/click", &b[n]);
+            n += bind_path(sPause, "/user/hand/left/input/trackpad/click", &b[n]);
+        } else {
+            n += bind_path(sPause, "/user/hand/left/input/menu/click", &b[n]);
         }
-        /* the two sticks' parts the other way round, for left-handed play */
-        if (bind_path(sMoveR, "/user/hand/right/input/thumbstick", &one)) {
-            suggest(sticks[i], &one, 1);
-        }
-        if (bind_path(sRunClickR, "/user/hand/right/input/thumbstick/click", &one)) {
-            suggest(sticks[i], &one, 1);
-        }
-        if (bind_path(sTurnStickL, "/user/hand/left/input/thumbstick", &one)) {
-            suggest(sticks[i], &one, 1);
-        }
-        if (bind_path(sResetClickL, "/user/hand/left/input/thumbstick/click", &one)) {
-            suggest(sticks[i], &one, 1);
-        }
+        n += bind_path(sHand[0].pose, "/user/hand/left/input/grip/pose", &b[n]);
+        n += bind_path(sHand[1].pose, "/user/hand/right/input/grip/pose", &b[n]);
+        n += bind_path(sHand[0].squeeze, "/user/hand/left/input/squeeze/value", &b[n]);
+        n += bind_path(sHand[1].squeeze, "/user/hand/right/input/squeeze/value", &b[n]);
+        n += bind_path(sKick, "/user/hand/right/input/trigger/value", &b[n]);
+        n += bind_path(sIndexL, "/user/hand/left/input/trigger/value", &b[n]);
+        n += bind_path(sHand[0].haptic, "/user/hand/left/output/haptic", &b[n]);
+        n += bind_path(sHand[1].haptic, "/user/hand/right/output/haptic", &b[n]);
+        suggest(stick_profiles[i], b, n);
     }
-    if (bind_path(sMove, "/user/hand/left/input/trackpad", &one)) {
-        suggest("/interaction_profiles/htc/vive_controller", &one, 1);
+    /* the wands: a trackpad each, no face buttons */
+    for (i = 0; i < sizeof(trackpad_profiles) / sizeof(trackpad_profiles[0]); i++) {
+        XrActionSuggestedBinding b[24];
+        uint32_t n = 0;
+
+        n += bind_path(sMove, "/user/hand/left/input/trackpad", &b[n]);
+        n += bind_path(sRunClick, "/user/hand/left/input/trackpad/click", &b[n]);
+        n += bind_path(sTurnStick, "/user/hand/right/input/trackpad", &b[n]);
+        n += bind_path(sRightClick, "/user/hand/right/input/trackpad/click", &b[n]);
+        n += bind_path(sMoveR, "/user/hand/right/input/trackpad", &b[n]);
+        n += bind_path(sRunClickR, "/user/hand/right/input/trackpad/click", &b[n]);
+        n += bind_path(sTurnStickL, "/user/hand/left/input/trackpad", &b[n]);
+        n += bind_path(sResetClickL, "/user/hand/left/input/trackpad/click", &b[n]);
+        n += bind_path(sPause, "/user/hand/left/input/menu/click", &b[n]);
+        n += bind_path(sHand[0].pose, "/user/hand/left/input/grip/pose", &b[n]);
+        n += bind_path(sHand[1].pose, "/user/hand/right/input/grip/pose", &b[n]);
+        n += bind_path(sHand[0].squeeze, "/user/hand/left/input/squeeze/value", &b[n]);
+        n += bind_path(sHand[1].squeeze, "/user/hand/right/input/squeeze/value", &b[n]);
+        n += bind_path(sKick, "/user/hand/right/input/trigger/value", &b[n]);
+        n += bind_path(sIndexL, "/user/hand/left/input/trigger/value", &b[n]);
+        n += bind_path(sHand[0].haptic, "/user/hand/left/output/haptic", &b[n]);
+        n += bind_path(sHand[1].haptic, "/user/hand/right/output/haptic", &b[n]);
+        suggest(trackpad_profiles[i], b, n);
     }
     {
-        XrActionSuggestedBinding quest[28];
-        uint32_t n = 0;
-        static const char *const quest_profiles[] = {
+        XrActionSuggestedBinding touch[32];
+        uint32_t n = 0, no_thumb;
+        static const char *const touch_profiles[] = {
             "/interaction_profiles/oculus/touch_controller",
             "/interaction_profiles/meta/touch_controller_plus",
         };
+        static const char *const touch_like_profiles[] = {
+            "/interaction_profiles/bytedance/pico4_controller",
+            "/interaction_profiles/bytedance/pico_neo3_controller",
+            "/interaction_profiles/htc/vive_focus3_controller",
+        };
 
-        n += bind_path(sMove, "/user/hand/left/input/thumbstick", &quest[n]);
-        n += bind_path(sRunClick, "/user/hand/left/input/thumbstick/click", &quest[n]);
-        n += bind_path(sInteract, "/user/hand/right/input/a/click", &quest[n]);
-        n += bind_path(sCancel, "/user/hand/right/input/b/click", &quest[n]);
-        n += bind_path(sMenu, "/user/hand/left/input/y/click", &quest[n]);
-        n += bind_path(sPause, "/user/hand/left/input/x/click", &quest[n]);
-        n += bind_path(sKick, "/user/hand/right/input/trigger/value", &quest[n]);
-        n += bind_path(sTurnStick, "/user/hand/right/input/thumbstick", &quest[n]);
-        n += bind_path(sRightClick, "/user/hand/right/input/thumbstick/click", &quest[n]);
-        /* left-handed: the face buttons and sticks of the other hand. On a Touch controller the
-         * left hand has X (where the right has A), Y (B), the left stick and its click */
-        n += bind_path(sInteractL, "/user/hand/left/input/x/click", &quest[n]);
-        n += bind_path(sCancelL, "/user/hand/left/input/y/click", &quest[n]);
-        n += bind_path(sPauseR, "/user/hand/right/input/b/click", &quest[n]);
-        n += bind_path(sMenuR, "/user/hand/right/input/a/click", &quest[n]);
-        n += bind_path(sMoveR, "/user/hand/right/input/thumbstick", &quest[n]);
-        n += bind_path(sRunClickR, "/user/hand/right/input/thumbstick/click", &quest[n]);
-        n += bind_path(sTurnStickL, "/user/hand/left/input/thumbstick", &quest[n]);
-        n += bind_path(sResetClickL, "/user/hand/left/input/thumbstick/click", &quest[n]);
-        n += bind_path(sHand[0].pose, "/user/hand/left/input/grip/pose", &quest[n]);
-        n += bind_path(sHand[1].pose, "/user/hand/right/input/grip/pose", &quest[n]);
-        n += bind_path(sHand[0].squeeze, "/user/hand/left/input/squeeze/value", &quest[n]);
-        n += bind_path(sHand[1].squeeze, "/user/hand/right/input/squeeze/value", &quest[n]);
-        n += bind_path(sIndexL, "/user/hand/left/input/trigger/value", &quest[n]);
-        n += bind_path(sHand[0].thumb, "/user/hand/left/input/thumbrest/touch", &quest[n]);
-        n += bind_path(sHand[1].thumb, "/user/hand/right/input/thumbrest/touch", &quest[n]);
-        n += bind_path(sHand[0].haptic, "/user/hand/left/output/haptic", &quest[n]);
-        n += bind_path(sHand[1].haptic, "/user/hand/right/output/haptic", &quest[n]);
-        for (i = 0; i < sizeof(quest_profiles) / sizeof(quest_profiles[0]); i++) {
-            suggest(quest_profiles[i], quest, n);
+        /* Quest 3 (Touch Plus), Quest 2 and the Touch Pro: the face buttons as the request has
+         * them. Y opens the status screen; X is the backstep; the left menu is the pause; A
+         * interacts; B holds the microphone; the triggers crouch and kick; a grip grabs and backs
+         * out. The left-handed twins are the same controls on the other hand - except pause, which
+         * the right Touch controller has no bindable button for (its system button is the runtime's). */
+        n += bind_path(sMove, "/user/hand/left/input/thumbstick", &touch[n]);
+        n += bind_path(sRunClick, "/user/hand/left/input/thumbstick/click", &touch[n]);
+        n += bind_path(sTurnStick, "/user/hand/right/input/thumbstick", &touch[n]);
+        n += bind_path(sRightClick, "/user/hand/right/input/thumbstick/click", &touch[n]);
+        n += bind_path(sInteract, "/user/hand/right/input/a/click", &touch[n]);
+        n += bind_path(sMenu, "/user/hand/left/input/y/click", &touch[n]);
+        n += bind_path(sBackstep, "/user/hand/left/input/x/click", &touch[n]);
+        n += bind_path(sWhisper, "/user/hand/right/input/b/click", &touch[n]);
+        n += bind_path(sPause, "/user/hand/left/input/menu/click", &touch[n]);
+        n += bind_path(sKick, "/user/hand/right/input/trigger/value", &touch[n]);
+        n += bind_path(sIndexL, "/user/hand/left/input/trigger/value", &touch[n]);
+        n += bind_path(sInteractL, "/user/hand/left/input/x/click", &touch[n]);
+        n += bind_path(sMenuR, "/user/hand/right/input/a/click", &touch[n]);
+        n += bind_path(sBackstepR, "/user/hand/right/input/b/click", &touch[n]);
+        n += bind_path(sWhisperL, "/user/hand/left/input/y/click", &touch[n]);
+        n += bind_path(sMoveR, "/user/hand/right/input/thumbstick", &touch[n]);
+        n += bind_path(sRunClickR, "/user/hand/right/input/thumbstick/click", &touch[n]);
+        n += bind_path(sTurnStickL, "/user/hand/left/input/thumbstick", &touch[n]);
+        n += bind_path(sResetClickL, "/user/hand/left/input/thumbstick/click", &touch[n]);
+        n += bind_path(sHand[0].pose, "/user/hand/left/input/grip/pose", &touch[n]);
+        n += bind_path(sHand[1].pose, "/user/hand/right/input/grip/pose", &touch[n]);
+        n += bind_path(sHand[0].squeeze, "/user/hand/left/input/squeeze/value", &touch[n]);
+        n += bind_path(sHand[1].squeeze, "/user/hand/right/input/squeeze/value", &touch[n]);
+        n += bind_path(sHand[0].haptic, "/user/hand/left/output/haptic", &touch[n]);
+        n += bind_path(sHand[1].haptic, "/user/hand/right/output/haptic", &touch[n]);
+        no_thumb = n;   /* (the two thumb rests are last: the other controllers do not all have one) */
+        n += bind_path(sHand[0].thumb, "/user/hand/left/input/thumbrest/touch", &touch[n]);
+        n += bind_path(sHand[1].thumb, "/user/hand/right/input/thumbrest/touch", &touch[n]);
+        for (i = 0; i < sizeof(touch_profiles) / sizeof(touch_profiles[0]); i++) {
+            suggest(touch_profiles[i], touch, n);
+        }
+        for (i = 0; i < sizeof(touch_like_profiles) / sizeof(touch_like_profiles[0]); i++) {
+            suggest(touch_like_profiles[i], touch, no_thumb);
         }
     }
     attach.countActionSets = 1;
@@ -1655,6 +1776,10 @@ void vr_close(void) {
     sQuit = 0;
     sHaveOrigin = 0;
     sLockPose = 0;
+    sFlickArmed = 0;
+    sFlickAt = 0;
+    sGesture = -1;
+    sGestureAt = 0;
 }
 
 int vr_active(void) { return sActive; }
@@ -1851,7 +1976,7 @@ int vr_begin_frame(void) {
     if (!sFrame.shouldRender) {
         return 1;
     }
-    /* the first tracked pose, and both stick clicks, set the yaw origin once. Views after
+    /* the first tracked pose sets the yaw origin once (a recenter takes it again). Views after
      * that are the offset from that level facing, and the layer is submitted in that same
      * space. Pitch and roll are not stored, and the origin is not adjusted again. */
     if (!sHaveOrigin || sRecenterReq) {

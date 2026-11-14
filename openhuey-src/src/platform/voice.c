@@ -1,5 +1,5 @@
 /* Hewie's voice, in process: a capture thread, then Whisper (tiny or base) on its own thread.
- * No console window and no whisper.exe. Push-to-talk is the right stick click; the open mic is
+ * No console window and no whisper.exe. Push-to-talk is B (Y in left-handed play); the open mic is
  * the VR options' other choice (vr.h VrOptions). The transcript's subtitles are an option too.
  * A missing model leaves the commands quiet. */
 #include "voice.h"
@@ -632,7 +632,7 @@ static DWORD WINAPI worker_main(LPVOID unused) {
         fprintf(stderr, "voice: could not load %s\n", sModel);
         return 0;
     }
-    fprintf(stderr, "voice: %s ready (right stick click talks, F8 open mic, Home hides the transcript)\n", sModel);
+    fprintf(stderr, "voice: %s ready (B talks, F8 open mic, Home hides the transcript)\n", sModel);
     while (!sQuit) {
         float local[MAX_N];
         int n = 0;

@@ -81,8 +81,11 @@ variable nav-bits
 \ the right stick's gesture this frame (Gesture_Update): I up, K down, L right, J left, F as R3
 \ (0 up, 1 down, 2 R3, 3 right, 4 left; -1 none - messages.fs stick-gesture); one a press, as
 \ the stick's are one a push (gesture_step) - before 0.2.42 L held was right every frame, a praise
-\ repeated each time she was free again
+\ repeated each time she was free again. In a headset the turn stick gives 0 / 1 / 2 itself
+\ (vr-gesture: a quick straight flick up or down, or its click), and never its right or left.
+: vr-gesture@ ( -- g )  vr? if  vr-gesture  else  -1  then ;
 : gesture@ ( -- g )
+    vr-gesture@ dup -1 <> if  exit  then  drop
     key: I pressed? if  0 exit  then  key: K pressed? if  1 exit  then
     key: F pressed? if  2 exit  then  key: L pressed? if  3 exit  then
     key: J pressed? if  4 exit  then  -1 ;

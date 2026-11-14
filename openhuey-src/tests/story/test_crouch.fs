@@ -1,6 +1,7 @@
-\ The shared crouch (story/common.fs, $81 / $82 / $87) started at L1: in the headset it starts
-\ nothing - none of crouch-down-anim, crouching-anim or crouch-up-anim, and not fiona-half-hidden;
-\ out of it, L1 held crouches her as the original does. Headless:
+\ The shared crouch (story/common.fs, $81 / $82 / $87) started at L1: in the headset the L1
+\ (the crouch trigger) ramps the VR crouch of story/crouch.fs instead - the same scrubbed pose
+\ and hide flag, without the script holding her; out of it, L1 held crouches her as the original
+\ does. Headless:
 \   build/openhuey-src/openhuey --test openhuey-src/tests/story/test_crouch.fs
 IN: test-crouch
 USING: tester engine game-state actors messages keys room-names game debug facts flag-names story.kit
@@ -21,11 +22,12 @@ variable was-vr   vr? was-vr !
 60 run-frames
 no-flee state-flag-clear   \ (the opening's hold on her - no crouching - over)
 
-testing in the headset: L1 starts no crouch - none of its animations, not half hidden, nothing doing
+testing in the headset: L1 (the crouch trigger) holds her down by the VR rules, still free
 -1 vr!   \ (main.c's vr? is a constant: the tests play the headset by writing its body, read as the scripts run)
 hold-l1
-T{ 60 crouch-seen?  doing-busy? -> 0 0 }T
-let-l1
+T{ 60 crouch-seen?  doing-busy? -> -1 0 }T
+let-l1  60 run-frames
+T{ fiona-half-hidden state-flag? -> 0 }T
 testing ... and out of it, as the original: L1 held, she crouches (half hidden); let go, up again
 was-vr @ vr!  30 run-frames
 hold-l1

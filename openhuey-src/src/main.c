@@ -857,7 +857,7 @@ static int cutscene_on_screen(void) {
 /* where "looking ahead" sits. her yaw 0 faces +Z and a camera yaw of 0 faces -Z, so the
  * camera yaw along her facing is pi minus her yaw. a right-stick turn adds to her yaw and
  * subtracts here: the headset keeps its direction in the room while she turns. lean and
- * look are applied on top. taken again after a cutscene, the free camera, or both stick clicks. */
+ * look are applied on top. taken again after a cutscene, the free camera, or a recenter. */
 static float sAlign;
 static int sAlignSet;
 static int sRecenter;
