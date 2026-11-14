@@ -82,18 +82,21 @@ in, reachable without a keyboard:
   are read from the VR stick in a headset (`read-arrows`), so every page of the sub screen - the
   lists, the map, the files, the options - and this one are worked with the controllers: the
   movement stick moves, A answers, a grip backs out.
-- **Its rows**, eleven of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
-  Comfort vignette (Off, Low, Med, High), Teleport movement (Off, Fixed, Dynamic),
-  Calibrate height (the measurement, or Not set), Seated mode (Off, On), Whisper (PTT, Open Mic),
-  Whisper Subtitles (Off, On, Debug), 3D Audio (Off, On) and Hiding door (Off, On) - the 3D audio
-  the binaural HRTF, its occlusion coming with it (docs/subsystems/audio3d.md), and the hiding door
-  the see-through door of a walked-into spot (docs/subsystems/hiding.md). A label on the
-  left, its value on the right, the row chosen drawn in a lit bar:
+- **Its pages**: the main page stays short - Calibrate Height, Left-handed Mode, Comfort Options,
+  Hewie, VR Enhancements and Panic Effects. A sub menu opens with the cross (or left / right), and
+  the triangle goes back to the main page; on the main page it leaves the menu. **Comfort Options**:
+  Turning (Smooth, Snap 45, Snap 90), Comfort Vignette (Off, Low, Med, High), Locomotion
+  (Continuous, Teleport Fixed, Teleport Dynamic) and Seated Mode (Off, On). **Hewie**: Whisper (PTT,
+  Open Mic) and Whisper Subtitles (Off, On, Debug). **VR Enhancements**: 3D Audio (Off, On) and
+  Hiding Spot Door Transparency (Off, On) - the 3D audio the binaural HRTF, its occlusion coming
+  with it (docs/subsystems/audio3d.md), and the hiding spot's door the see-through door of a
+  walked-into spot (docs/subsystems/hiding.md). **Panic Effects**: the preset (Full, Reduced,
+  Minimal; Custom shown, never stepped to) and, listed below it, the seven individual settings.
+  A label on the left, its value on the right, the row chosen drawn in a lit bar:
   up / down choose, left / right step the row (a choice round its words, a number by its step),
-  and the cross steps it too - on Calibrate height the cross is the measurement itself
+  and the cross steps it too - on Calibrate Height the cross is the measurement itself
   (`vr-calibrate`; without a headset the buzzer says so, and the row reads Not set). A change is
   heard (a cursor sound) and kept (`save-vr-options`).
-  Not set). A change is heard (a cursor sound) and kept (`save-vr-options`).
 - It draws with the sub screen's own art and font (`subscreen/art.fs`: `page-art`, `centred`,
   `text`), so it reads as the game's menu - no other effect, as the PS2 look asks. The strip's
   last tab says `VR` on this page: the art's own `Options` word is covered with the paper it sits
@@ -287,28 +290,30 @@ Med, High - 25, 50, 75 per cent of the corners, its own ring over the picture), 
 calibration** (kept in the options, a first run's screen on the title, the page's row for later,
 a save's load measuring without a prompt, one action: the height, the world's size and the view's
 origin together), **seated play** (`vr.seated`), **teleporting**
-(`vr.teleport`: Off, Fixed, Dynamic - the stick flick, its aim walking out until something stops
-it, facing the way it went, a glow for the landing), **left-handed play** (`vr.left-handed`: the
-sticks, face buttons and triggers over, the hands and the pause button as they are), **the
-microphone's mode** (`vr.whisper-open`:
+(`vr.teleport`: Continuous, Teleport Fixed, Teleport Dynamic - the stick flick, its aim walking out
+until something stops it, facing the way it went, a glow for the landing), **left-handed play**
+(`vr.left-handed`: the sticks, face buttons and triggers over, the hands and the pause button as they
+are), **the microphone's mode** (`vr.whisper-open`:
 PTT, Open Mic) and **its subtitles** (`vr.whisper-debug`: Off, On, Debug - Off none; On the command
 Hewie heard, capitalised and with an exclamation mark, and nothing when the words made no command;
 Debug the command and the words Whisper heard in brackets, or `UNRECOGNISED:` and the words, in the
 message window's panel at the bottom of the screen), and **the VR options page**
-(`scripts/subscreen/vr.fs`, eleven rows and the panic effects' own page): the title's `VR OPTIONS`
+(`scripts/subscreen/vr.fs`, six rows on the main page and four sub menus): the title's `VR OPTIONS`
 row and, in a game, the sub screen's page after the options - both worked with the controllers, the
-sub screen's arrows read from the VR stick in a headset. Its last two rows are the panic's
-**preset** (Full, Reduced, Minimal; Custom shown, never stepped to) and the `Panic effects` button
-that opens the seven individual settings in the status screen's own look (grey/darkening tint,
-heartbeat smear, zoom blur, negative flash, camera shake, panic stumbles, heartbeat haptics Off /
-Half / Full). A preset writes its settings over the individual ones; any other set shows as
-Custom. The keyboard's `P` opens the same seven in the F1 menu's panel (`scripts/panic-menu.fs`):
-arrows, Return or right to change, left back, P to close. Both write the same saved values.
+sub screen's arrows read from the VR stick in a headset. Its sub menus are Comfort Options (the
+turning, the vignette, Locomotion and seated play), Hewie (the microphone and its subtitles), VR
+Enhancements (the 3D audio and the hiding spot's door) and Panic Effects: the panic's **Preset**
+(Full, Reduced, Minimal; Custom shown, never stepped to) and, below it, the seven individual
+settings in the status screen's own look (grey/darkening tint, heartbeat smear, zoom blur, negative
+flash, camera shake, panic stumbles, heartbeat haptics Off / Half / Full). A preset writes its
+settings over the individual ones; any other set shows as Custom. The keyboard's `P` opens the same
+seven in the F1 menu's panel (`scripts/panic-menu.fs`): arrows, Return or right to change, left back,
+P to close. Both write the same saved values.
 
 The options the game had are the defaults, so a run with none of them picked plays as it always did.
 Each row that is a choice steps round its words (Smooth, Snap 45, Snap 90; Off, Low, Med, High;
-Off, Fixed, Dynamic; On, Off; Off, On, Debug) and the row's value is capitalised as the other
-menus' words are.
+Continuous, Teleport Fixed, Teleport Dynamic; On, Off; Off, On, Debug) and the row's value is
+capitalised as the other menus' words are.
 `vr.teleport-reach`, `vr.seated-height` and the calibration are kept in the options but are not
 rows - the reach is what a Dynamic flick grows to, and seated play sizes the world itself.
 The F1 settings menu (`scripts/graphics.fs`) is still the keyboard's: arrow keys only.

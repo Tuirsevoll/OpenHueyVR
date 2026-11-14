@@ -156,9 +156,11 @@ message box), `lists.fs` (the item lists, an item's actions, the files), `map.fs
    and the volume scales everything heard (SubScreen_ApplyOptions); the sound out and the
    position have nothing here to change.
    After the options comes hga's own page, **the VR options** (`subscreen/vr.fs`, page `pg-vr`; the
-   title's `VR OPTIONS` opens it alone, mode 6): the comfort settings, one to a row - the stick
-   picks, left / right (or the cross) changes, the triangle leaves. It is the last page, so R1 from
-   the options turns to it (docs/subsystems/comfort.md).
+   title's `VR OPTIONS` opens it alone, mode 6): six rows - the calibration, the left hand, and the
+   Comfort Options, Hewie, VR Enhancements and Panic Effects sub menus. The stick picks a row, left /
+   right (or the cross) changes it or opens a sub menu, and the triangle goes back a page (and
+   leaves the menu from the main page). It is the last page, so R1 from the options turns to it
+   (docs/subsystems/comfort.md).
 3. **The word plate** (the scripts' mode 2, SubScreen_StateWordMake): a word of up to 8 letters on
    a QWERTY plate; done makes a plate bearing it (item $3F, `give-plate`; at most 10) and sets
    `plate-made`; in the golem rooms quietly, with the machine's sounds.

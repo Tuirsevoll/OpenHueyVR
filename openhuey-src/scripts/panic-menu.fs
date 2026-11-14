@@ -1,8 +1,8 @@
 \ panic-menu.fs - the panic effects from the keyboard (P), drawn as the settings menu (F1) is: the
-\ rows of the VR options page's panic page, the same labels and values, in the same dark panel -
-\ arrows move, right / Return changes a row, left goes back, P closes. Both menus write the same
-\ saved values (vr-options.fs), so a row changed here is what the page shows, and the other way
-\ round. It does not hold the game: as F1, the world plays on behind it.
+\ rows of the VR options page's Panic Effects submenu, the same labels and values, in the same dark
+\ same dark panel - arrows move, right / Return changes a row, left goes back, P closes. Both menus
+\ write the same saved values (vr-options.fs), so a row changed here is what the page shows, and the
+\ other way round. It does not hold the game: as F1, the world plays on behind it.
 IN: panic-menu
 USING: engine vr-options ;
 

@@ -99,9 +99,20 @@ cal-screen kill   \ (done with it: the game's own actors are not touched)
 : tap ( key -- )  dup true key-hold  game-tick  false key-hold  game-tick ;
 : menu@ ( xt -- x )  game:subscreen enter  execute  leave-actor ;
 : stage@ ( -- n )  [: subscreen.state:stage @ ;] menu@ ;
-testing the VR options page opens in the sub screen, its first row the turning
+testing the VR options page opens in the sub screen, its first row the calibration
 6 game:subscreen send menu-mode  subscreen-wanted state-flag-set  deliver  20 run-frames
 T{ stage@  [: mode @ ;] menu@  [: page @ ;] menu@  [: options-only @ ;] menu@ -> 2 on-page 6 -1 }T
+testing the first row is the calibration: without a headset it measures nothing
+key: X tap
+T{ vr-settings vr.calibrated l@ -> 0 }T
+testing down to left-handed: the cross turns the sticks and buttons over
+key: Down tap
+key: X tap
+T{ vr-settings vr.left-handed l@ -> 1 }T
+testing down to Comfort Options: the cross opens its own page
+key: Down tap
+key: X tap
+T{ [: mode @ ;] menu@  [: page @ ;] menu@ -> on-page 6 }T
 testing the cross puts the turning at Snap 45; right goes to 90, right again to Smooth
 key: X tap
 T{ vr-settings vr.turn-snap l@  vr-settings vr.snap-degrees sf@ f>s -> 1 45 }T
@@ -111,10 +122,6 @@ key: Right tap
 T{ vr-settings vr.turn-snap l@ -> 0 }T
 key: Left tap
 T{ vr-settings vr.turn-snap l@  vr-settings vr.snap-degrees sf@ f>s -> 1 90 }T
-testing down to left-handed: the cross turns the sticks and buttons over
-key: Down tap
-key: X tap
-T{ vr-settings vr.left-handed l@ -> 1 }T
 testing down to the vignette: off, low, med, high - a quarter of the corners each, 75 the most
 key: Down tap
 key: Right tap
@@ -127,7 +134,7 @@ key: Right tap
 T{ vr-settings vr.comfort l@ -> 0 }T
 key: Left tap
 T{ vr-settings vr.comfort l@  vr-settings vr.comfort-strength sf@ 100e f* fround f>s -> 1 75 }T
-testing down to teleport: off, fixed, dynamic
+testing down to Locomotion: Continuous, Teleport Fixed, Teleport Dynamic
 key: Down tap
 key: Right tap
 T{ vr-settings vr.teleport l@  vr-settings vr.teleport-mode l@ -> 1 0 }T
@@ -137,16 +144,18 @@ key: Right tap
 T{ vr-settings vr.teleport l@ -> 0 }T
 key: Left tap
 T{ vr-settings vr.teleport l@  vr-settings vr.teleport-mode l@ -> 1 1 }T
-testing down to the calibration: without a headset it measures nothing
-key: Down tap
-key: X tap
-T{ vr-settings vr.calibrated l@ -> 0 }T
 testing seated play: the cross turns it on
 key: Down tap
 key: X tap
 T{ vr-settings vr.seated l@ -> 1 }T
-testing the whisper rows below it: PTT to open mic, then the subtitles off, on and debug
+testing the triangle goes back to the main page, at Comfort Options
+key: V tap
+T{ stage@ -> 2 }T
+testing down to Hewie: the cross opens its own page
 key: Down tap
+key: X tap
+T{ [: mode @ ;] menu@  [: page @ ;] menu@ -> on-page 6 }T
+testing the whisper rows: PTT to open mic, then the subtitles off, on and debug
 T{ vr-settings vr.whisper-open l@  vr-settings vr.whisper-debug l@ -> 0 0 }T
 key: X tap
 T{ vr-settings vr.whisper-open l@ -> 1 }T
@@ -157,11 +166,27 @@ key: X tap
 T{ vr-settings vr.whisper-debug l@ -> 2 }T
 key: X tap
 T{ vr-settings vr.whisper-debug l@ -> 0 }T
-testing down to the panic preset: Reduced by default - the tint, the stumbles, the full beat
-key: Down tap   \ (the 3D Audio row, left as it is)
-key: Down tap   \ (the Hiding door row, left as it is)
-
-key: Down tap   \ (the panic preset)
+testing the triangle is back on the main page, at Hewie
+key: V tap
+T{ stage@ -> 2 }T
+testing down to VR Enhancements: the cross opens its own page
+key: Down tap
+key: X tap
+T{ [: mode @ ;] menu@  [: page @ ;] menu@ -> on-page 6 }T
+testing the 3D audio and the hiding spot's door: the cross turns each over
+key: X tap
+T{ vr-settings vr.audio3d l@ -> 0 }T
+key: Down tap
+key: X tap
+T{ vr-settings vr.hide-door l@ -> 0 }T
+testing the triangle is back on the main page, at VR Enhancements
+key: V tap
+T{ stage@ -> 2 }T
+testing down to Panic Effects: the cross opens its own page
+key: Down tap
+key: X tap
+T{ [: mode @ ;] menu@  [: page @ ;] menu@ -> on-page 6 }T
+testing the panic preset: Reduced by default - the tint, the stumbles, the full beat
 T{ panic-preset  vr-settings vr.panic-tint l@  vr-settings vr.panic-stumbles l@  vr-settings vr.panic-haptics l@ -> 1 1 1 2 }T
 testing ... right again Minimal (no screen effect, no stumbles, half the beat)
 key: Right tap
@@ -181,13 +206,10 @@ T{ vr-settings vr.panic-tint l@ vr-settings vr.panic-smear l@ vr-settings vr.pan
 testing ... round: right again Minimal
 key: Right tap
 T{ panic-preset -> 2 }T
-testing down to the Panic effects button: the cross opens its own page, the status screen's look
+testing down to the first individual setting: its rows sit below the preset, the tint turns over
 key: Down tap
 key: X tap
-T{ [: mode @ ;] menu@  [: page @ ;] menu@ -> on-panic 6 }T
-testing ... its rows are the settings: the tint turned over makes the set Custom
-key: X tap
-T{ panic-preset -> -1 }T
+T{ [: mode @ ;] menu@  [: page @ ;] menu@  panic-preset -> on-page 6 -1 }T
 testing ... down to the heartbeat's haptics: Full, Off, Half
 key: Down tap key: Down tap key: Down tap key: Down tap key: Down tap key: Down tap
 key: Right tap
@@ -203,11 +225,11 @@ key: X tap
 T{ vr-settings vr.panic-stumbles l@ -> 1 }T
 key: X tap
 T{ vr-settings vr.panic-stumbles l@ -> 0 }T
-testing the triangle is back to the VR options page, the preset row now Custom
+testing the triangle is back on the main page, at Panic Effects, the preset now Custom
 key: V tap
 T{ [: mode @ ;] menu@  [: page @ ;] menu@  panic-preset -> on-page 6 -1 }T
-testing ... left from Custom picks Minimal (the last preset)
-key: Up tap
+testing ... back into Panic Effects, left from Custom picks Minimal (the last preset)
+key: X tap
 key: Left tap
 T{ vr-settings vr.panic-tint l@ vr-settings vr.panic-stumbles l@ vr-settings vr.panic-haptics l@ panic-preset -> 0 0 1 2 }T
 testing the seated height sizes the world: 1.6 / 1.28 for the scale in use
@@ -215,7 +237,10 @@ testing the seated height sizes the world: 1.6 / 1.28 for the scale in use
 T{ vr-body 1000e f* fround f>s  1000e f* fround f>s -> 1250 1280 }T
 vr-defaults
 T{ vr-settings vr.whisper-open l@  vr-settings vr.whisper-debug l@ -> 0 0 }T
-testing the triangle leaves the page
+testing the triangle from a sub menu goes back to the main page, not out of the menu
+key: V tap
+T{ stage@  [: mode @ ;] menu@ -> 2 on-page }T
+testing ... and from the main page it leaves the menu
 key: V tap  20 run-frames
 T{ stage@ -> 0 }T
 

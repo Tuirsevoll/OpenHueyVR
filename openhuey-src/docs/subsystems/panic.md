@@ -84,7 +84,7 @@ only the first picture of a tick is blended into it, so the smear fades at the g
 however often the headset draws; `frame-blend-off` goes with the pulse's end and the panic's reset,
 so no ghost of it is left.
 
-The effects are the VR options page's too (docs/subsystems/comfort.md): the grey tint, the
+The effects are the VR options page's Panic Effects submenu too (docs/subsystems/comfort.md): the grey tint, the
 heartbeat smear, the zoom blur, the negative, the camera shake, the stumbles and the haptics, each
 on its own and by preset (Full, Reduced - the default, Minimal; anything else Custom). With the
 stumbles off `panic-controls` skips the wall check, the bump's sound, the stumble (0x1001) and the
