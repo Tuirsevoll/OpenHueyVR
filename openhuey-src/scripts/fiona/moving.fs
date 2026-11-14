@@ -1,7 +1,7 @@
 \ fiona/moving.fs - how Fiona moves (Fiona_StateIdleMove, the turning states, Fiona_Footsteps):
 \ her animations' root motion moves her over her floor; she stands, rests, walks and runs.
 IN: fiona.moving
-USING: engine game-state actors messages common vectors facts items.names fiona.state fiona.anims fiona.model fiona.controls flag-names floor-flags ;
+USING: engine game-state actors messages common vectors facts items.names fiona.state fiona.anims fiona.model fiona.controls fiona.sneak flag-names floor-flags ;
 
 : blocked-floor ( -- mask )   \ (none - the story's 0x20: through anything)
     her-noclip @ if  0  else  fiona-floor  then ;
@@ -66,6 +66,29 @@ fvariable vr-step   \ the last real step, kept across a reversal so a new cycle 
     {: F: raw :}
     raw 0.04e f> if  raw vr-step f!  raw exit  then
     vr-step f@ ;
+: sneak-crouch ( -- )   ( the crouch animation at k: standing 0 .. its lowest point 1 )
+    her-mode @ own-mode = if  0 her-sub !  then
+    anim@ crouch-down-anim = 0= if
+        her-model @ crouch-down-anim 0e motion-hold
+    then
+    her-model @ motion-frames 1- s>f fiona.sneak:sneak-k f@ f*
+    her-model @ crouch-down-anim motion-hold ;
+
+: sneak-anim? ( -- flag )   ( hers to animate: free and not panicking )
+    fiona.sneak:sneak?  her-doing @ free-doing = and  her-fear-bits @ 2 and 0= and ;
+
+: sneak-anim ( -- )   ( still: the crouch pose; moving: the walk, slowed while hiding )
+    her-still @ 6 < if
+        0 her-run? !   ( a sneak never runs )
+        walk-look
+        stick-len
+        fiona.sneak:sneak-hiding? if  fiona.sneak:sneak-speed f@ f*  then
+        0.05e fmax her act.rate sf!
+    else
+        sneak-crouch
+    then ;
+
+
 : stick-held ( -- )   \ the stick held: walk, or run with the run button (not under story flag 0x1E)
     stick-heading her-heading f!   \ (the way she walks - in the headset too, not where she looks)
     vr? stick-len vr-stride f< and if
@@ -103,8 +126,11 @@ defer push-check ( F: reach -- )   ' fdrop is push-check   \ (something to push 
     then ;
 : idle-move ( -- )
     her-still @ 0= if  1e  else  her-stick-k f@ 0.05e f- 0e fmax  then  her-stick-k f!
-    group
-    settled? if
+    sneak-anim? if
+        sneak-anim
+    else
+        group
+        settled? if
         her-doing @ free-doing = if
             her-fear-bits @ 2 and 0= if
                 her-still @ if  dup released  else  stick-held  then
@@ -124,7 +150,8 @@ defer push-check ( F: reach -- )   ' fdrop is push-check   \ (something to push 
                 else  run-look  then
             then
         then
-    then  drop
+        then  drop
+    then
     root-turn {: F: rx ry rz :}
     turn-to-stick
     rz slope-keep f* {: F: ahead :}

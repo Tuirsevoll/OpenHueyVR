@@ -57,11 +57,14 @@ has one.
   `may-crouch?` (story/common.fs) and
   `bush-frame` (story/places/forest.fs) ask the headset as well, so no crouch animation plays,
   `fiona-half-hidden` is not set, and L1 does not put her in a Chaos Forest bush (her examine
-  still offers it). **The headset's height is the crouch instead** (story/crouch.fs): lowered
-  past 0.12 m it crouches her - `crouch-down-anim` scrubbed by how far it is down, up and down
-  again, `fiona-half-hidden` set as the L1 crouch sets it - and as it rises she stands again. The
-  view rides at her animated head, so it does not sink through her body (docs/subsystems/fiona.md
-  "Crouching by the headset").
+  still offers it). **The headset's height is the crouch instead** (story/crouch.fs): below 13% of
+  the calibrated standing height nothing; from 13% to 25% the crouch animation scrubs to its full
+  pose; the hide flag (`fiona-half-hidden`, the L1 crouch's own) comes on at 25% and goes off only
+  at 18% on the way up (the hysteresis). While it is on she is not held: she sneaks at 35% of a
+  walk with the stick (a slowed walk - no crouch-walk animation exists), turning as usual, and
+  still takes the crouch pose. The stalker's sight and reach treat her exactly as the L1 crouch.
+  The settings are `vr.crouch-deadzone`, `vr.crouch-on`, `vr.crouch-off` and `vr.sneak-speed`
+  (docs/subsystems/fiona.md "Crouching by the headset").
 - **Offers**: what she may do where she stands - `offer` (an activity, Fiona held for it),
   `offer-remark` - the first offered in a frame wins; `unhurried` (the scripts' 0x0A kind 0),
   `any-time` (1), `calm-hewie-up` (3), `calm-only` (4: an examining), `hiding-spot` (5 / 6),

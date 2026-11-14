@@ -39,7 +39,11 @@ VrOptions gVrOptions = {
     0,        /* cutscene_first_person */
     1.6f,     /* eye_height: her eyes, before anything measures them */
     1.0f,     /* body_scale: a metre of head motion, as it is */
-    0         /* calibrated: nothing kept yet */
+    0,        /* calibrated: nothing kept yet */
+    0.13f,    /* crouch_deadzone: a look down does nothing */
+    0.25f,    /* crouch_on: the hide flag's drop */
+    0.18f,    /* crouch_off: ... and its release */
+    0.35f     /* sneak_speed: 35% of a walk */
 };
 
 /* seated (vr.seated): how far the view rides above (positive) or below her own eyes, in room units -
@@ -68,9 +72,10 @@ void vr_comfort_preview(void) {}
 int vr_comfort_previewing(void) { return 0; }
 int vr_tracking(void) { return 0; }
 float vr_crouch_depth(void) { return 0.0f; }
-float vr_crouch_view(void) { return 0.0f; }
-void vr_set_crouch(float metres) { (void)metres; }
-float vr_crouch_lift(void) { return 0.0f; }
+float vr_crouch_fraction(void) { return 0.0f; }
+float vr_crouch_anchor(float eye_y) { return eye_y; }
+void vr_set_crouch_active(int on) { (void)on; }
+void vr_crouch_forget_anchor(void) {}
 int vr_body_view(Mat4 *view) { (void)view; return 0; }
 int vr_eye_body(int eye, Mat4 *view) { (void)eye; (void)view; return 0; }
 float vr_head_yaw(void) { return 0.0f; }
@@ -215,7 +220,9 @@ static VrHandSlot sHand[2];
 static int sAnchorOn;
 static Vec3 sAnchorEye;
 static float sAnchorYaw;
-static float sCrouchMetres;   /* the body's crouch: how far the view rides up to her head (fiona_view) */
+static int sCrouchOn;             /* the headset crouch is active (story/crouch.fs) */
+static int sCrouchHave;            /* sCrouchStandY is her standing eye height, kept */
+static float sCrouchStandY;
 static float sStickX, sStickY, sRightX;
 static float sMoveYaw, sFaceYaw, sTurn;
 static int sDown[8], sPressed[8], sRun, sClickWas, sRecenterReq, sAlignRecenter, sTalk;
@@ -596,9 +603,7 @@ void vr_body(float *height_m, float *scale) {
 }
 
 /* The crouch (scripts/story/crouch.fs). Depth is the headset's own height lost against the
- * standing calibration, measured above the runtime's floor so a recenter does not lose it. View
- * is the same fall as vr_body_view applies from the neutral pose: the scripts add it back to the
- * camera, so the eyes ride at her head while her crouch is scrubbed. */
+ * standing calibration, measured above the runtime's floor so a recenter does not lose it. */
 float vr_crouch_depth(void) {
     float h;
 
@@ -609,25 +614,51 @@ float vr_crouch_depth(void) {
     return h > 0.0f ? h : 0.0f;
 }
 
-float vr_crouch_view(void) {
-    float d;
+float vr_crouch_fraction(void) {
+    float d = vr_crouch_depth();
+    float h = gVrOptions.eye_height;
 
-    if (!sHaveOrigin || sViewCount <= 0 || gVrOptions.seated) {
+    if (gVrOptions.seated || h < 0.5f || h > 3.0f) {
         return 0.0f;
     }
-    d = -head_look().position.y;
-    return d > 0.0f ? d : 0.0f;
-}
-
-void vr_set_crouch(float metres) {
-    sCrouchMetres = metres > 0.0f ? metres : 0.0f;
-}
-
-float vr_crouch_lift(void) {
-    if (sCrouchMetres <= 0.0f) {
-        return 0.0f;
+    d /= h;
+    if (d < 0.0f) {
+        d = 0.0f;
     }
-    return sCrouchMetres * VR_UNITS_PER_METER / body_scale();
+    if (d > 1.0f) {
+        d = 1.0f;
+    }
+    return d;
+}
+
+/* Her standing eye height, kept while the crouch is active: the body crouches or walks under it,
+ * so the camera and the hands' anchor stay at the player's head (vr_body_view adds the headset's
+ * own fall on top). A recenter forgets it and takes the current pose as the standing one. */
+void vr_set_crouch_active(int on) {
+    sCrouchOn = on ? 1 : 0;
+}
+
+void vr_crouch_forget_anchor(void) {
+    sCrouchHave = 0;
+}
+
+float vr_crouch_anchor(float eye_y) {
+    if (!sHaveOrigin) {
+        return eye_y;
+    }
+    if (!sCrouchOn) {
+        sCrouchStandY = eye_y;
+        sCrouchHave = 1;
+        return eye_y;
+    }
+    if (!sCrouchHave) {
+        sCrouchStandY = eye_y;
+        sCrouchHave = 1;
+    }
+    if (fabsf(eye_y - sCrouchStandY) > 12.0f) {   /* a teleport or a new room: take her head again */
+        sCrouchStandY = eye_y;
+    }
+    return sCrouchStandY;
 }
 
 static float quat_yaw(XrQuaternionf q);

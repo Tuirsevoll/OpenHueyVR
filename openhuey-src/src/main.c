@@ -895,6 +895,7 @@ static int fiona_view(Engine *e, Camera *out) {
     }
     if (vr_take_recenter()) {
         sRecenter = 1;
+        vr_crouch_forget_anchor();
     }
     sAlign -= vr_take_turn();
     if (!sAlignSet || sRecenter) {
@@ -912,10 +913,10 @@ static int fiona_view(Engine *e, Camera *out) {
                                         : vec3(pick->pos.x, pick->pos.y + 14.0f, pick->pos.z);
 
         /* height from the head, but not its walk-cycle sway: that yaw is the old camera's fight.
-         * A headset crouch (vr_crouch_lift) is added back: the view rides at her head as the
-         * crouch is scrubbed, not down through her body. */
+         * While a headset crouch is active, her standing eye height is the anchor: the body
+         * crouches or walks under it, so the view and the hands stay at the player's head. */
         out->pos.x = pick->pos.x + sinf(sAlign);
-        out->pos.y = bone.y + 1.5f + vr_seat_lift() + vr_crouch_lift();   /* (seated: the view within her body) */
+        out->pos.y = vr_crouch_anchor(bone.y + 1.5f) + vr_seat_lift();   /* (seated: the view within her body) */
         out->pos.z = pick->pos.z - cosf(sAlign);
     }
     vr_anchor_set(1, out->pos, out->yaw);

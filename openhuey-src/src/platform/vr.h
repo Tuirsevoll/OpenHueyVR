@@ -35,6 +35,11 @@ typedef struct VrOptions {
     float eye_height;         /* her eyes above the floor, metres */
     float body_scale;         /* a metre of head motion in the world's units (1: as measured) */
     int32_t calibrated;       /* 1 once a calibration has been kept */
+    /* the headset crouch (scripts/story/crouch.fs): shares of the standing eye height */
+    float crouch_deadzone;    /* below this drop, no crouch animation at all */
+    float crouch_on;          /* the hide flag on at this drop */
+    float crouch_off;         /* ... and off only above this one (the hysteresis) */
+    float sneak_speed;        /* the sneak's share of a walk, and its animation rate (0.35) */
 } VrOptions;
 extern VrOptions gVrOptions;
 
@@ -47,13 +52,15 @@ float vr_seat_lift(void);
  * (the floor's own measurement, so a recenter keeps it); 0 seated, out of a headset, or before a
  * height is measured */
 float vr_crouch_depth(void);
-/* ... and how far the eyes have lowered from the neutral pose, in metres: what vr_body_view adds
- * below the camera (0 or less: 0 here) */
-float vr_crouch_view(void);
-/* the body's crouch has taken this much of that fall (metres): fiona_view lifts her eyes by it, so
- * the view rides at her head rather than sinking through it. The scripts keep it (0 when standing) */
-void vr_set_crouch(float metres);
-float vr_crouch_lift(void);
+/* ... and the same as a share of the standing eye height, 0..1: the crouch's own measure. Position
+ * only: a head tilt or a look down does not change it. */
+float vr_crouch_fraction(void);
+/* the camera's and the hands' anchor while the headset crouch is active: her standing eye height
+ * is kept, so her body crouches or walks under it, and the eyes and hands stay at the player's
+ * head instead of following the body down (a recenter forgets the kept height) */
+float vr_crouch_anchor(float eye_y);
+void vr_set_crouch_active(int on);
+void vr_crouch_forget_anchor(void);
 int vr_active(void);
 
 /* one headset frame. 0: the session ended (do not draw, do not vr_end_frame) */

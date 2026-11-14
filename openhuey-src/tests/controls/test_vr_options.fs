@@ -12,6 +12,11 @@ T{ vr-settings vr.teleport l@  vr-settings vr.seated l@  vr-settings vr.left-han
 T{ vr-settings vr.calibrate-start l@ -> 1 }T
 testing the microphone and subtitles: PTT, the subtitles off until the page asks
 T{ vr-settings vr.whisper-open l@  vr-settings vr.whisper-debug l@ -> 0 0 }T
+testing the headset crouch's defaults: deadzone 13%, on 25%, off 18%, sneak 35%
+T{ vr-settings vr.crouch-deadzone sf@ 100e f* fround f>s
+   vr-settings vr.crouch-on sf@ 100e f* fround f>s
+   vr-settings vr.crouch-off sf@ 100e f* fround f>s
+   vr-settings vr.sneak-speed sf@ 100e f* fround f>s -> 13 25 18 35 }T
 
 testing vr-defaults puts them back after a change
 1 vr-settings vr.turn-snap l!  90e vr-settings vr.snap-degrees sf!  1 vr-settings vr.teleport l!

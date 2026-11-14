@@ -34,6 +34,10 @@ rest single floats (`sf@ sf!`).
 | `vr.eye-height` | her eyes above the floor, metres (what a calibration measured) | 1.6 |
 | `vr.body-scale` | a metre of head motion in the world's units (1: as measured) | 1 |
 | `vr.calibrated` | 1 once a calibration has been kept | 0 |
+| `vr.crouch-deadzone` | the headset drop (a share of the standing height) below which no crouch animation plays | 0.13 |
+| `vr.crouch-on` | ... and the share at which the hide flag comes on | 0.25 |
+| `vr.crouch-off` | ... and the share it goes off at, rising (the hysteresis) | 0.18 |
+| `vr.sneak-speed` | the sneak's share of a walk, and its animation rate | 0.35 |
 
 | Word | Stack | Meaning |
 |---|---|---|
