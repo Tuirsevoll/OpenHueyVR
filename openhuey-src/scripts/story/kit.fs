@@ -188,6 +188,10 @@ variable acting   -1 acting !   \ the activity being run (-1: none)
 : along-scene ( xt -- )  start dup 0< if  drop exit  then  1 swap lshift scene-acts @ or scene-acts ! ;
 : scene-acts-end ( -- )  #activities 0 do  scene-acts @ i rshift 1 and if  i stop-act  then  loop  0 scene-acts ! ;
 : start-only ( xt -- )  dup running? if  drop  else  start drop  then ;   \ (once, if it isn't already running)
+: move-doing? ( doing -- flag )   \ a doing's last move, hers until she is let go (fiona/moves.fs start-move)
+    {: d :}
+    d anim-doing =  d walk-to-doing walk-path-doing 1+ within  or
+    d turn-who-doing walk-anim-doing 1+ within  or ;
 : run-acts ( -- )
     #activities 0 do
         i cells act-lost + @ if  0 i cells act-lost + !  i stop-act  then
@@ -195,10 +199,12 @@ variable acting   -1 acting !   \ the activity being run (-1: none)
             i acting !  resume 0= if  0 i act-slot !  i not-scene's  i let-go-all  then  -1 acting !
         then
     loop
-    \ the last doing over: an animation she was left in is hers again - in the headset `hold` refused
-    \ her, so nothing told her `scripted 0`; the same call a hiding place's exit makes (out-and-free)
+    \ the last doing over: a move she was left in is hers again - in the headset `hold` refused her,
+    \ so nothing told her `scripted 0`; the same call a hiding place's exit makes (out-and-free).
+    \ A walk's `to-spot` only says the move is done, so every move a doing can end in is here: an
+    \ animation, a walk, a turn. Her own door use is `door-doing`; a run's `path-to` idles her itself
     #activities 0 do  i act-slot @ if  unloop exit  then  loop
-    fiona-doing-now @ anim-doing =  fiona-p holder-of @ 0<  and if  fiona-p 0 tell-held  then ;
+    fiona-doing-now @ move-doing?  fiona-p holder-of @ 0<  and if  fiona-p 0 tell-held  then ;
 : lost ( -- )  -1 acting @ cells act-lost + !  begin  yield  again ;   \ (this activity ends: run-acts stops it)
 
 \ ---- holding a person: a place moves only those its activity holds ----

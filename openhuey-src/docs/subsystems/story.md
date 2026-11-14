@@ -48,7 +48,11 @@ has one.
   first. Two doings would take her from the player badly, the telephone's fright and the clothes'
   look-over: those `skip-her!` for their length, and her moves are skipped - the event goes on, a
   story door still opens. A hiding place's exit gives her back, the room's camera and fog with it
-  (`out-and-free`). L1 starts no crouch there either: `may-crouch?` (story/common.fs) and
+  (`out-and-free`). A doing that ends without holding her is let go the same way by `run-acts`,
+  once its last activity is over: the move she was left in - an animation, a walk (a walk's
+  `to-spot` only reports the move done), a turn (`move-doing?`) - is hers again. Her own door use
+  is not (a door she is using carries on), nor a run: `path-to` idles her itself. L1 starts no
+  crouch there either: `may-crouch?` (story/common.fs) and
   `bush-frame` (story/places/forest.fs) ask the headset as well, so no crouch animation plays,
   `fiona-half-hidden` is not set, and L1 does not put her in a Chaos Forest bush (her examine
   still offers it).

@@ -105,7 +105,6 @@ variable sw  variable sh  variable lh
 
 : run-from ( subtitles through? -- )   \ faded in, a frame at a time until the movie or the director ends (or it is skipped)
     through !  dup $FFFF = if  drop -1  then  subtitles !  -1 page !
-    through !  dup $FFFF = if  drop -1  then  subtitles !  -1 page !
     -1 cue-was !  -1 cue !  cutscene-go  cutscene-run
     1e movie-volume!  screen:from-black fade-to  world-held state-flag-clear  0 movie-pause   \ (coming in: the world let go - it may be paused, and skipped)
     movie-skipped state-flag-clear  running step ! ;

@@ -66,6 +66,9 @@ T{ radii fover fover f+ fswap 0.5e f* f+ hewie-ahead  [: story.kit:fiona story.k
 T{ radii fover fover f+ fswap 2e f* f+ 0.5e f+ hewie-ahead  [: story.kit:fiona story.kit:hewie story.kit:self-touching? ;] in-place -> 0 }T
 testing the second clock (shared script $85): its own words, "It's another clock..."
 T{ story.kit:another-clock-msg story.kit:clock-msg -> $8017 $8014 }T
+testing the moves a place lets her out of (the headset's let-go, `move-doing?`): an animation, a walk, a turn - not her own door use, nor a run (it idles her itself)
+T{ anim-doing story.kit:move-doing?  walk-to-doing story.kit:move-doing?  walk-path-doing story.kit:move-doing?  turn-who-doing story.kit:move-doing?  turn-heading-doing story.kit:move-doing?  walk-anim-doing story.kit:move-doing? -> -1 -1 -1 -1 -1 -1 }T
+T{ free-doing story.kit:move-doing?  door-doing story.kit:move-doing?  run-to-doing story.kit:move-doing?  run-path-doing story.kit:move-doing? -> 0 0 0 0 }T
 full-suite   \ (on: waits, scenes, walks - the full run's)
 
 test-summary

@@ -59,6 +59,13 @@ T{ 180 -0.195e 50e -27.107e put  said -> diorama-msg }T   \ (where she reads it:
 T{ 45 45e 50e -99e put  said  45 45e 50e -99e put  said -> spear-msg spear-2-msg }T   \ (facing its middle)
 T{ armour-area 180 at  said  armour-2-area 180 at  said -> armour-msg armour-2-msg }T
 T{ handrail-area -90 at  said  handrail-area -90 at  said -> handrail-msg handrail-2-msg }T
+testing ... in the headset: the last of them is a doing that ends in a walk - still while she reads it, free after
+-1 vr!
+create vr-spot 12 allot
+T{ handrail-area -90 at  circle press  [: window-shown handrail-2-msg = ;] 600 soon -> -1 }T
+T{ game:fiona body-pos vr-spot vec!  key: W true key-hold  20 run-frames  key: W false key-hold  vr-spot game:fiona body-at vec-dist 0.01e f< -> -1 }T
+T{ [: window-shown 0< 0= if  cross press  then  [: her-mode @ own-mode = ;] as-her ;] 600 soon  [: her-mode @ ;] as-her  [: her-doing @ ;] as-her -> -1 own-mode free-doing }T
+0 vr!
 
 testing the Camomile and the Medallion: picked up
 camomile items:items-of before !
