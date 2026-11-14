@@ -242,6 +242,12 @@ add_executable(hands-sweep-check tests/hands_sweep_check.c src/game/vrhands.c)
 target_link_libraries(hands-sweep-check PRIVATE hgadata forth)
 add_test(NAME hands_sweep_check COMMAND hands-sweep-check)
 
+# a thing in a hand: drawn between the last two ticks' hand frames, as her eyes are (loot.c)
+add_executable(loot-frame-check tests/loot_frame_check.c src/game/loot.c)
+target_link_libraries(loot-frame-check PRIVATE hgadata forth)
+target_compile_definitions(loot-frame-check PRIVATE "HG2_SCRIPT_DIR=\"${SCRIPT_DIR}\"")
+add_test(NAME loot_frame_check COMMAND loot-frame-check)
+
 # the movies' conversion: every SFD split as the import splits it - the same video packets, the same sound
 add_executable(movie-check tests/movie_check.c)
 target_link_libraries(movie-check PRIVATE hgadata)
@@ -302,7 +308,7 @@ add_test(NAME mods_free_play_entry COMMAND hga --mod "${CMAKE_CURRENT_SOURCE_DIR
 # STATUS_DLL_NOT_FOUND (exit code 0xc0000135), which shows up as a dialog that comes back for every run.
 foreach(_tgt hga
              texbank-check mods-check prop-check music-check messages-check sound-check spu-check
-             hands-sweep-check movie-check room-check model-check)
+             hands-sweep-check loot-frame-check movie-check room-check model-check)
     if(TARGET ${_tgt})
         add_custom_command(TARGET ${_tgt} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different

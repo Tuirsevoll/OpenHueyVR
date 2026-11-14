@@ -117,10 +117,31 @@ not read there and her root motion is not used (`scripts/fiona/ladder.fs`, `vr-c
   ladder, and `ladder-pull` ( F: -- dy ), the pending total in the game's y, taken (cleared) by the
   call.
 
+- **A held thing is drawn between two ticks** (`src/game/loot.c`, "a held thing's frame"). The game
+  moves at its 30 ticks a second, but a headset draws every frame it can, and her eyes and arms are
+  already drawn between the last two ticks (main.c, `sPose`). A hand's place is not blended there,
+  but a held thing's place is an offset from her eyes: between two ticks every drawn frame took the
+  hand's frame as the last tick left it, so walking (her body moving under a hand held still) the
+  eyes led the hand and the thing jumped on to the tick's end on each drawn frame at once - the
+  stutter. So an item in a hand (`HOLD_LOOT`) keeps its frame at the two ticks it was last given -
+  where the hand's move this tick started (`loot_give_step`, the step measured between the tick's
+  two hand poses) and where it ended (`loot_follow`) - and is drawn between them at the frame's
+  share of the tick
+  (`loot_draw_between(sPoseAlpha)`, before the draw), its place and axes eased and the axes kept
+  square. A hand that moves (an item turned or swung) reads smooth either way and is eased the
+  same, so only the walk changes. A hand that jumped (further than a swing in a tick) draws its
+  thing at once, no easing. Only the drawn frame moves: at the end of every frame the game has the
+  hand's own frame again (`loot_rebase`, once a frame - a hand that let go of its last thing, or is
+  gone, drops what it was drawn from). The eyes and hands are left exactly as they were.
+
 ## Status
 
 Walls, floors and ceilings stop the arm at 0.40 and let it slide along them. Doors and placed
 objects buzz only.
+
+A held thing (loot) is drawn between the last two ticks' hand frames, so walking with one in a hand
+no longer stutters (above); props, wardrobe leaves, doors and the equipped magnesia/antimony are not
+put through that easing.
 
 A hand also grabs a ladder in the air beside it while she climbs: the link is kept, that
 controller buzzes once, and the base game's rung sound plays. The grab no longer needs the climb to be running: a new grab on a ladder

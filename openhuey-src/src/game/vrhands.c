@@ -3368,9 +3368,15 @@ void vrhands_tick(Engine *e) {
 
                 if (loot >= 0 && (door < 0 || lootD < doorD) && (prop < 0 || lootD <= propD) &&
                     (ward < 0 || lootD <= wardD)) {
+                    Vec3 was;
+                    float g = 0.0f, n = 0.0f, th = 0.0f;
+
                     sHold[side] = HOLD_LOOT;
                     sHoldId[side] = loot;
                     loot_grab(loot, side);
+                    if (hand_world(side, &was, &right, &up, &fwd, &g, &n, &th)) {
+                        loot_give_step(side, vec3_sub(at, was));   /* (where the hand came from) */
+                    }
                     loot_follow(loot, at, right, up, fwd);
                     door = -1;
                     prop = -1;
@@ -3401,6 +3407,15 @@ void vrhands_tick(Engine *e) {
                 drive_door(e, sHoldId[side], sDoorAxis[side], at);
             }
         } else if (sHold[side] == HOLD_LOOT) {
+            Vec3 was;
+            float g = 0.0f, n = 0.0f, th = 0.0f;
+
+            /* the tick's frame is given from where the hand was before its move: a draw then
+             * eases the thing from there, never past where the game has it (loot.c, "a held
+             * thing's frame") */
+            if (hand_world(side, &was, &right, &up, &fwd, &g, &n, &th)) {
+                loot_give_step(side, vec3_sub(at, was));
+            }
             loot_follow(sHoldId[side], at, right, up, fwd);
         } else if (sHold[side] == HOLD_PROP) {
             Placed *p = sHoldId[side] >= 0 && sHoldId[side] < e->room.placed.n ? &e->room.placed.p[sHoldId[side]] : NULL;

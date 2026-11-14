@@ -132,6 +132,19 @@ int loot_claims_placed(int placed_index) {
     return 0;
 }
 
+void loot_give_step(int side, Vec3 step) {
+    (void)side;
+    (void)step;
+}
+
+void loot_draw_between(float alpha) {
+    (void)alpha;
+}
+
+void loot_rebase(int side) {
+    (void)side;
+}
+
 int vr_active(void) { return 0; }
 
 void vr_body(float *height_m, float *scale) {
