@@ -62,6 +62,16 @@ PRIVATE>
 
 : load-vr-options ( -- )  settings-file file-exists? if  settings-file included  then ;
 
+\ measure and keep the player's height at once, without the title's screen or the options page: a
+\ save's load does this (saves.fs), so the world is sized to them as their game comes back. Seated
+\ play sizes the world from its own height, and without a tracked headset there is nothing to
+\ measure - both are left as they were.
+: vr-calibrate-now ( -- calibrated? )
+    vr?  vr-settings vr.seated l@ 0= and  vr-tracking? and if
+        vr-calibrate
+        vr-settings vr.calibrated l@ 0<> if  save-vr-options  -1  else  0  then
+    else  0  then ;
+
 \ a fresh start: the defaults, then the player's
 vr-defaults
 ' load-vr-options catch drop

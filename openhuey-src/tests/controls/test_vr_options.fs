@@ -50,6 +50,16 @@ T{ opening:calibrate-wanted? -> 0 }T
 testing nothing to track without a headset
 T{ vr-tracking? -> 0 }T
 
+testing a save's load calibrates at once: a headset with no tracked floor measures nothing
+-1 vr!
+0 vr-settings vr.calibrated l!
+T{ vr-calibrate-now -> 0 }T
+T{ vr-settings vr.calibrated l@ -> 0 }T
+testing ... and seated play is left alone, its own height sizing the world
+1 vr-settings vr.seated l!
+T{ vr-calibrate-now -> 0 }T
+0 vr-settings vr.seated l!  was-vr @ vr!
+
 \ ---- the first run's calibration screen (scripts/opening.fs): it leaves by itself once the result has
 \ been said - the bug this guards was the wait that no one counted down, the screen never leaving
 testing a measurement's wait: three seconds, then the menu (opening.fs calibrate-frame)

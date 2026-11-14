@@ -8,7 +8,7 @@
 \ was. This actor writes the progress, then asks the others (`write-save`) for their own lines -
 \ Fiona's, Hewie's - and closes it. So a save can be read, sent along, or edited by hand.
 IN: saves
-USING: engine game-state actors messages keys facts flag-names story.base ;
+USING: engine game-state actors messages keys facts flag-names story.base vr-options ;
 
 \ ---- the files ----
 create path-buf 256 allot   variable path-len
@@ -232,6 +232,7 @@ create records-written 36 allot          \ (and the mini-game's best times)
 : unlocks-back ( -- )  unlocks progress pr.resident resident-flags 8 / move ;
 : load-file ( -- )
     save-path file-exists? 0= if  ." no save at " save-path type cr exit  then
+    vr-calibrate-now drop   \ (a headset's height at once, as the save comes back: no menu first)
     keep-unlocks  save-path included  unlocks-back  0 hewie-played !   \ (SceneGame_ctor: Fiona played)
     panic-back   \ (at once: not the panic she had as she loaded)
     doors-unheld   \ (a save made before they were left out)

@@ -111,19 +111,22 @@ in, reachable without a keyboard:
   very edge of vision and nothing else) times the share; the picture's own vignette setting and
   shader are untouched. The page's Low, Med and High are 0.25, 0.5 and 0.75 of it - the corners
   about half at High on a walk, the middle clear - and off is off.
-  straight, the headset height above the floor becomes her eye height, the world is sized to her
-  (see below), and the play space's origin is taken again where she stands, so the new size
-  applies from there and the view does not shift by her offset from the old one. The result lives
-  in the options (`vr.eye-height`, `vr.body-scale`, `vr.calibrated`), so it is kept and read at
-  start-up; `vr-defaults` leaves it - it is not a row. A first run (a headset, `vr.calibrate-start`
-  on, nothing kept yet) opens the title on its own screen: stand straight and press A, or B to go
-  on without it; what it measured is said for about three seconds, then the screen leaves for the
-  menu by itself (`calibrate-frame`, ninety ticks, counted by the title's own tick); the page's
-  `Calibrate height` row does it again later, and shows what it measured. A runtime with no floor
-  space measures nothing: the screen says so and whatever was kept stands. The height alone is
-  enough - an arm span (a T-pose) says the same thing about a body to within a few per cent, and
-  this game's body is Fiona's, not the player's; what the number is needed for here is the world's
-  size, not a skeleton's.
+- **The height calibration** (`vr.c` `vr_calibrate`, `scripts/opening.fs`, `scripts/vr-options.fs`,
+  `subscreen/vr.fs`): stand straight, the headset height above the floor becomes her eye height,
+  the world is sized to her (see below), and the play space's origin is taken again where she
+  stands, so the new size applies from there and the view does not shift by her offset from the
+  old one. The result lives in the options (`vr.eye-height`, `vr.body-scale`, `vr.calibrated`), so
+  it is kept and read at start-up; `vr-defaults` leaves it - it is not a row. A first run (a headset,
+  `vr.calibrate-start` on, nothing kept yet) opens the title on its own screen: stand straight and
+  press A, or B to go on without it; what it measured is said for about three seconds, then the
+  screen leaves for the menu by itself (`calibrate-frame`, ninety ticks, counted by the title's own
+  tick); the page's `Calibrate height` row does it again later, and shows what it measured. A
+  save's load does it at once, before the world comes back (`vr-calibrate-now`, `saves.fs`): no
+  menu, no button, so a game loaded in a headset is sized to the player standing there. A runtime
+  with no floor space measures nothing: the screen says so and whatever was kept stands. The
+  height alone is enough - an arm span (a T-pose) says the same thing about a body to within a few
+  per cent, and this game's body is Fiona's, not the player's; what the number is needed for here
+  is the world's size, not a skeleton's.
 - **Seated play** (`vr.seated`): the world is sized to `vr.seated-height` instead of a floor
   measurement (1.6 / height, clamped), so the virtual floor stays at the player's own; the first
   run's calibration is not asked for (`scripts/opening.fs` `calibrate-wanted?`) and a standing
@@ -212,7 +215,8 @@ Built: the options' store (`VrOptions`, the `vr.` fields, `scripts/vr-options.fs
 written on change), **turning** (Smooth, Snap 45, Snap 90), **the comfort vignette** (Off, Low,
 Med, High - 25, 50, 75 per cent of the corners, its own ring over the picture), **the height
 calibration** (kept in the options, a first run's screen on the title, the page's row for later,
-one action: the height, the world's size and the view's origin together), **seated play**
+a save's load measuring without a prompt, one action: the height, the world's size and the view's
+origin together), **seated play**
 (`vr.seated`, with `vr.seated-offset` for the view's height in the body), **teleporting**
 (`vr.teleport`: Off, Fixed, Dynamic - the stick flick, its aim walking out until something stops
 it, facing the way it went, a glow for the landing), **left-handed play** (`vr.left-handed`: the

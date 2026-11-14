@@ -52,8 +52,9 @@ the progress (the doors' held bits left out, as `Progress_CopyState` clears them
 broadcasts `write-save` and each actor (Fiona, Hewie, the stalker, the summoner - its record, the
 progress' +0x764 -, the panic - her stage, level and its parts, the progress' +0x7B0: read back
 at once, a save without it calm as `Panic_Reset` -, the sub screen - the map's page she is on, the save's +0x18F0 -, the things)
-prints its own line. Loading puts the progress back (held bits cleared from an older save),
-broadcasts `game-loaded` (the music makes the stage music the story has come to again:
+prints its own line. Loading calibrates the headset at once, before the world comes back (a
+standing player, no menu: `vr-calibrate-now`), puts the progress back (held bits cleared from an
+older save), broadcasts `game-loaded` (the music makes the stage music the story has come to again:
 `SceneGame_LoadedStart`), plays the room again and puts them where they were - the summoner's
 record after the stalker is loaded (a save without it: his time away rolled anew), the map
 turned to her page; a stalker saved in the game away from her room, down or held off, is then
