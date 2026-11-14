@@ -95,7 +95,7 @@ $18 constant first-mandragora   5 constant #mandragoras
     fiona pick-up-anim play  4 frames  found-on-him  8 frames  fiona up-from-pick-anim play  wait-closed ;
 : searching ( -- )  lying-on-front? 0= if  exit  then  over-him? if  ['] search-him calm-only offer  then ;
 
-:noname ( -- )  crouching  stalker-watched  mandragora-spell  rewards  searching ; is every-room
+:noname ( -- )  crouching  story.kit:vr-hiding-flags  stalker-watched  mandragora-spell  rewards  searching ; is every-room
 
 \ ---- items used: her drink, Hewie fed (her part and his kept in step) ----
 : drinks ( -- )   \ ($8D)

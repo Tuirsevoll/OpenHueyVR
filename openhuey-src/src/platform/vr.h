@@ -46,6 +46,9 @@ typedef struct VrOptions {
      * as it was) */
     int32_t audio3d;          /* 1: placed sounds through the HRTF, occlusion included (off: the
                                * original stereo) */
+    /* the hiding spots a player walks into (scripts/story/vr-hiding.fs): a door drawn see-through
+     * while she is fully hidden, instead of the flat screen's camera on the stalker */
+    int32_t hide_door_see_through;   /* 1: the active hiding spot's doors at about half alpha */
     /* the panic's effects and Fiona's panic run (scripts/panic.fs, scripts/fiona/fear.fs;
      * docs/subsystems/panic.md): what the player may turn off for photosensitivity, the run's
      * stumbles, the heartbeat's haptics. Each 0 off / 1 on; the haptics 0 off, 1 half, 2 full.

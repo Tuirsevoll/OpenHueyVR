@@ -159,6 +159,8 @@ key: X tap
 T{ vr-settings vr.whisper-debug l@ -> 0 }T
 testing down to the panic preset: Reduced by default - the tint, the stumbles, the full beat
 key: Down tap   \ (the 3D Audio row, left as it is)
+key: Down tap   \ (the Hiding door row, left as it is)
+
 key: Down tap   \ (the panic preset)
 T{ panic-preset  vr-settings vr.panic-tint l@  vr-settings vr.panic-stumbles l@  vr-settings vr.panic-haptics l@ -> 1 1 1 2 }T
 testing ... right again Minimal (no screen effect, no stumbles, half the beat)

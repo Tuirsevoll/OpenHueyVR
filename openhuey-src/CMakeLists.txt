@@ -158,7 +158,7 @@ add_executable(hga
     src/render/render.c src/render/post.c
     src/game/room.c src/game/console.c src/game/actor.c src/game/doglegs.c src/game/humanlegs.c src/game/vrhands.c src/game/loot.c src/game/chair.c src/game/cloth.c src/game/world.c
     src/game/camdirector.c src/game/areas.c src/game/exits.c src/game/messages.c src/game/cutscene.c src/game/placed.c src/game/sprites.c src/game/mods.c src/game/particles.c src/game/things.c src/game/obstacles.c src/game/swimpath.c src/game/rumble.c src/game/props.c
-    src/game/sound3d.c
+    src/game/sound3d.c src/game/vrspots.c
     src/forth/bind_engine.c)
 target_link_libraries(hga PRIVATE hgadata forth gamestate hactor SDL3::SDL3 whisper)
 if(HGA_HAVE_STEAMAUDIO)

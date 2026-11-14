@@ -8,7 +8,7 @@
 IN: subscreen.vr
 USING: engine ps2-screen subscreen.state subscreen.art subscreen.input vr-options ;
 
-enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-whisper vr-whisper-debug vr-audio3d vr-panic vr-panic-open ;
+enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-whisper vr-whisper-debug vr-audio3d vr-hide-door vr-panic vr-panic-open ;
 : #vr-rows ( -- n )  vr-panic-open 1+ ;
 
 variable vr-at   0 vr-at !
@@ -128,6 +128,7 @@ variable panic-page-at   0 panic-page-at !
           vr-whisper of  s" Whisper"  endof
           vr-whisper-debug of  s" Whisper Subtitles"  endof
           vr-audio3d of  s" 3D Audio"  endof
+          vr-hide-door of  s" Hiding door"  endof
           vr-panic of  s" Panic Effects (PHOTOSENSITIVITY WARNING)"  endof
           vr-panic-open of  s" Panic effects"  endof
           >r s" Calibrate height" r>  endcase ;
@@ -142,11 +143,12 @@ variable panic-page-at   0 panic-page-at !
         vr-whisper of  whisper$  endof
         vr-whisper-debug of  subtitles$  endof
         vr-audio3d of  vr-settings vr.audio3d l@ on-off$  endof
+        vr-hide-door of  vr-settings vr.hide-door l@ on-off$  endof
         vr-panic of  panic-preset$  endof
         vr-panic-open of  s" Open"  endof
         >r  vr-settings vr.snap-degrees sf@ f>s n>s  r>
     endcase ;
-: vr-row-y ( i -- y )  $20 * $48 + ;
+: vr-row-y ( i -- y )  $1E * $48 + ;
 variable vr-step
 \ a change: a choice steps on a level (round, the last back to the first), a flag turns over; the
 \ preset writes its seven settings over the individual ones; the last row opens their page
@@ -182,6 +184,9 @@ variable vr-step
         vr-audio3d of
             vr-settings vr.audio3d l@ 0= 1 and vr-settings vr.audio3d l!
             se-decide  save-vr-options endof
+        vr-hide-door of
+            vr-settings vr.hide-door l@ 0= 1 and vr-settings vr.hide-door l!
+            se-decide  save-vr-options endof
         vr-panic of
             vr-step @ panic-preset panic-preset-step panic-preset!
             se-decide  save-vr-options endof
@@ -209,7 +214,7 @@ variable vr-step
     s" VIRTUAL REALITY"  256 $34 centred
     #vr-rows 0 do
         i vr-at @ = if
-            art-layer  $30 sx  i vr-row-y 2 - sy  $1C0 sw  $20 sy
+            art-layer  $30 sx  i vr-row-y 2 - sy  $1C0 sw  $1E sy
             $40 openness @ * 128 /  $40405000 or  ui-rect
         then
         i vr-row-label  $48  i vr-row-y 6 +  i vr-at @ =  text

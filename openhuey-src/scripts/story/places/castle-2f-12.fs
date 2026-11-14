@@ -87,9 +87,16 @@ $30 constant rock-phase   $34 constant rock-size   $38 constant rock-fade   $3C 
 
 \ ---- as she comes in ----
 : came-in ( exit -- )
-    drop  room-sounds  wardrobe-floor keeps-hewie-off floor-on  wardrobe-floor keeps-stalkers-off floor-on
-    open? if  doors-part show-part  wardrobe-floor barred-floor floor-on  left-door object-hide  right-door object-hide
-    else  doors-part hide-part  wardrobe-floor barred-floor floor-off  left-door object-show  right-door object-show  then
+    drop
+    s" left_door" s" right_door"  19.25e 41e 90e 5e 7e 16.8e 48e  vr-hiding-spot
+    room-sounds  wardrobe-floor keeps-hewie-off floor-on  wardrobe-floor keeps-stalkers-off floor-on
+    open? if  wardrobe-floor barred-floor floor-on  else  wardrobe-floor barred-floor floor-off  then
+    vr? if
+        doors-part hide-part  left-door object-show  right-door object-show
+    else
+        open? if  doors-part show-part  left-door object-hide  right-door object-hide
+        else  doors-part hide-part  left-door object-show  right-door object-show  then
+    then
     3 0 do  i chair-still  loop  ['] rocking start drop
     c2f-12-flag2 fact? 0= if  false chairs-set  c2f-12-flag2 fact!  then
     the-vase as-it-stands  the-vase broken?  c2f-12-medallion fact? 0= and if  medallion-fx -17.5e 1e 47e flicker-at  then
@@ -158,17 +165,17 @@ variable wardrobe-in-noclip   2 wardrobe-in-noclip !
     stalker-in? if  0 stalker-order  stalker let-go  then
     fiona true noclip  2 doors-anim  out-facing  fiona room-motion 2 + 0 start-blend
     16 frames  open-sound room-bank fiona sound-by  56 frames  shut-sound room-bank fiona sound-by  fiona wait-anim
-    fiona false noclip  turns-to-him  c2f-12-flag1 fact-off  out-and-free ;
+    fiona false noclip  turns-to-him  c2f-12-flag1 fact-off  out-and-free  vr? if  0 pose-her!  then ;
 : out-in-panic ( -- )   \ (bursting out: the doors left open)
     fiona hold  1 hide-step +!  -1 left-in-panic !  fiona follow  fiona-hidden state-off
     stalker-in?  stage @ 0= and if  0 stalker-order  stalker let-go  then
     fiona true noclip  4 doors-anim  out-facing  fiona room-motion 4 + 0 start-blend  7 frames  open-sound room-bank fiona sound-by
-    fiona wait-anim  fiona false noclip  turns-to-him  c2f-12-flag1 fact!  wardrobe-floor barred-floor floor-on  out-and-free ;
+    fiona wait-anim  fiona false noclip  turns-to-him  c2f-12-flag1 fact!  wardrobe-floor barred-floor floor-on  out-and-free  vr? if  0 pose-her!  then ;
 : dragged-out ( -- )   \ (Debilitas has the doors open: out she comes)
     begin  stage @ 2 < while  yield  repeat
     1 hide-step +!  2 avoid-prompt  fiona follow  fiona-hidden state-off
     fiona true noclip  out-facing  fiona room-motion 3 + 0 play-blend  fiona false noclip
-    c2f-12-flag1 fact!  wardrobe-floor barred-floor floor-on  out-and-free ;
+    c2f-12-flag1 fact!  wardrobe-floor barred-floor floor-on  out-and-free  vr? if  0 pose-her!  then ;
 : goes-in ( -- )   \ (the doors open - the first time shut - in, and shut)
     s" start" show-her-at   \ (temporary: where she stands as she starts in)
     fiona true noclip  fiona -1 look-at  yield
@@ -203,7 +210,10 @@ variable wardrobe-in-noclip   2 wardrobe-in-noclip !
     left-in-panic @ if  hewie room-motion 4 + 0 start-blend  7 frames  open-sound room-bank fiona sound-by  hewie wait-anim
     else  stage @ 0= if  hewie room-motion 2 + 0 play-blend  else  hewie room-motion 3 + 0 play-blend  then  then
     hewie false noclip ;
+defer vr-hides-do
+' noop is vr-hides-do
 : hides ( -- )
+    vr? if  vr-hides-do  exit  then
     stalkers-stay state!  0 came-while-hidden !  fiona wait-move
     0 stage !  0 shaking !  open? 0= first-time !  0 hide-step !  0 hewie-along !  0 hewie-in-place !  0 left-in-panic !
     hewie-in? if   \ (Hewie, free and near her: in with her)
@@ -252,7 +262,7 @@ variable wardrobe-in-noclip   2 wardrobe-in-noclip !
         4 frames  2 stage !  stalker wait-anim  stalker step-back-anim play
     else
         stalker there-anim play
-        fiona-hidden state? if  2 avoid-prompt  panic-eased  ['] out-in-panic start drop  then
+        fiona-hidden state? if  2 avoid-prompt  panic-eased  vr? if  fiona hold-posed  then  ['] out-in-panic start drop  then
     then
     stalker 10 idle  begin  fiona held? while  yield  repeat  0 stalker-order ;
 : search-outcome ( -- n )   \ (0 nothing, 1 he rattles it, 2 he finds her - by how often he has come)
@@ -363,7 +373,27 @@ variable wardrobe-in-noclip   2 wardrobe-in-noclip !
 create cameras  4 , 1 , -1 ,   5 , 0 , 0 ,   \ (area, set, path)
 create ahead  2 , 0 ,   3 , 1 ,   \ (area, exit)
 create entries  1 , -1 ,   1 , -1 ,   \ (by exit 0, 1: the camera)
-: each-frame ( -- )  2 exits-out  cameras 2 cameras-at  ahead 2 ways-out  hewie-sniffs  hewie-watch  spots  wardrobe-floor-follows  wardrobe-noclip-follows ;
+: vr-hides ( -- )   \ (the headset: she walked in; watch her, and the place's own search takes over)
+    0 came-while-hidden !  0 stage !  0 shaking !  open? 0= first-time !  0 hide-step !  0 hewie-along !  0 hewie-in-place !  0 left-in-panic !
+    fiona her-motions motions-for  stalker stalker-motions motions-for
+    begin
+        vr-spot-inside? 0= if  out-and-free exit  then
+        stage @ 1 = debilitas? and if
+            0 shaking !  seized-sound common-bank fiona sound-by  -1 vr-hiding-caught !
+            fiona hold-posed  dragged-out  0 pose-her!  exit
+        then
+        in-panic? if  -1 vr-hiding-caught !  fiona hold-posed  out-in-panic  0 pose-her!  exit  then
+        found-her @ 0<> if  -1 vr-hiding-caught !  exit  then   \ (the place's own finds-her starts the exit)
+        hidden-calm  yield
+    again ;
+' vr-hides is vr-hides-do
+: vr-wardrobe-watch ( -- )
+    vr? 0= if  exit  then
+    vr-spot-inside? 0= if  exit  then
+    ['] vr-hides running? if  exit  then
+    ['] vr-hides start drop ;
+
+: each-frame ( -- )  2 exits-out  cameras 2 cameras-at  ahead 2 ways-out  hewie-sniffs  hewie-watch  vr-wardrobe-watch  spots ;
 : person-in ( i -- )
     case
         fiona-p of  entries 2 ways-in  endof

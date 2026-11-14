@@ -1223,8 +1223,8 @@ static int push_step(const RoomDoor *d, Vec3 prev, Vec3 curr, int have_prev, flo
  * The hiding plays the same leaves on tracks of their own (doors-anim: placed_anim, which clears
  * `paused` and starts its track at frame 0), so a hand takes the leaf again on its own track when it
  * finds another loaded (ward_own_track), and each tick while it holds it (ward_retake).
- * (right_door is the same path: its direction comes from its own track, not from a sign here.) */
-#define WARD_LEAF "left_door"   /* (the leaves driven by hand; right_door joins it once proven) */
+ * (any marked hiding leaf is the same path: its direction comes from its own track, not from a
+ * sign here.) */
 #define WARD_TOUCH 5.0f         /* world units from the leaf's face: a hand on it */
 #define WARD_STILL 1.0e-3f      /* radians a frame that barely turns: a flat end of the track */
 /* degrees a tick the leaf itself turns: let go faster than this, it keeps that speed to the stop
@@ -1232,23 +1232,44 @@ static int push_step(const RoomDoor *d, Vec3 prev, Vec3 curr, int have_prev, flo
  * turns more or less a frame than this one is judged by the same throw) */
 #define WARD_COAST 1.5f
 
-/* 1 when a placed object is a leaf a hand may turn (Placed.name: 16 bytes) */
-static int ward_leaf(const char *name) {
-    return strncmp(name, WARD_LEAF, 16) == 0;
+/* 1 when a placed object is a leaf a hand may turn: a hiding spot marks its doors (vrspots.c) */
+static int ward_leaf(const Placed *p) {
+    return p->hiding_leaf;
 }
 
-/* the turn a frame of the leaf's track gives (format 8: a key's three floats are the turn) */
-static Vec3 ward_key(const Placed *p, int frame) {
-    Vec3 r = vec3(0.0f, 0.0f, 0.0f);
+/* a frame of the leaf's track: its turn, and for format 7 the place that goes with it (the leaf's
+ * hinge moves as it swings) */
+typedef struct WardKey {
+    Vec3 rot, pos;
+    int pos_from_key;
+} WardKey;
 
+/* the turn (and, format 7, the place) a frame of the leaf's track gives */
+static WardKey ward_key(const Placed *p, int frame) {
+    WardKey k;
+
+    k.rot = vec3(0.0f, 0.0f, 0.0f);
+    k.pos = p->def_pos;
+    k.pos_from_key = 0;
+    if (p->keys == NULL || p->frames <= 0) {
+        return k;
+    }
     if (frame < 0) {
         frame = 0;
     }
     if (frame >= p->frames) {
         frame = p->frames - 1;
     }
-    memcpy(&r, p->keys + frame * 12, 12);
-    return r;
+    if (p->format == 7) {   /* (Track_Sample's format 7: the turn, then the place) */
+        const uint8_t *key = p->keys + frame * 24;
+
+        memcpy(&k.rot, key, 12);
+        memcpy(&k.pos, key + 12, 12);
+        k.pos_from_key = 1;
+    } else if (p->format == 8 || p->format == 9) {
+        memcpy(&k.rot, p->keys + frame * 12, 12);
+    }
+    return k;
 }
 
 /* how far apart two turns of the track are: its largest part that differs */
@@ -1262,12 +1283,12 @@ static float ward_gap(Vec3 a, Vec3 b) {
 static int ward_span(const Placed *p, int *lo, int *hi) {
     int a, b;
 
-    if (p->keys == NULL || p->format != 8 || p->frames < 3) {
+    if (p->keys == NULL || (p->format != 7 && p->format != 8) || p->frames < 3) {
         return 0;
     }
-    for (a = 1; a < p->frames - 1 && ward_gap(ward_key(p, a), ward_key(p, 0)) < WARD_STILL; a++) {
+    for (a = 1; a < p->frames - 1 && ward_gap(ward_key(p, a).rot, ward_key(p, 0).rot) < WARD_STILL; a++) {
     }
-    for (b = p->frames - 2; b > 0 && ward_gap(ward_key(p, b), ward_key(p, p->frames - 1)) < WARD_STILL; b--) {
+    for (b = p->frames - 2; b > 0 && ward_gap(ward_key(p, b).rot, ward_key(p, p->frames - 1).rot) < WARD_STILL; b--) {
     }
     if (b - a < 2) {
         return 0;
@@ -1311,15 +1332,17 @@ static Vec3 ward_tip(const Placed *p) {
 
 /* the hand's angle about the leaf's place with the leaf turned that far: where its tip sits.
  * (the turn's own axes give the hand its direction, whichever way round the track turns) */
-static float ward_angle(const Placed *p, Vec3 turn, Vec3 tip) {
+static float ward_angle(const Placed *p, WardKey key, Vec3 tip) {
     Placed at = *p;
+    Vec3 hinge = key.pos_from_key ? key.pos : p->def_pos;
     Vec3 w;
     Mat4 place;
 
-    at.rot = turn;
+    at.rot = key.rot;
+    at.pos = hinge;
     place = placed_world(&at);
     w = mat4_point(&place, tip);
-    return atan2f(w.x - p->pos.x, w.z - p->pos.z);
+    return atan2f(w.x - hinge.x, w.z - hinge.z);
 }
 
 /* the hand's radians a frame of the swing: the two ends of the track, posed */
@@ -1337,7 +1360,7 @@ static int nearest_ward(PlacedSet *s, Vec3 hand, int other, float *best) {
         Vec3 lo, hi, gap;
         float reach;
 
-        if (!p->shown || p->mesh.nv <= 0 || !ward_leaf(p->name)) {
+        if (!p->shown || p->mesh.nv <= 0 || !ward_leaf(p)) {
             continue;
         }
         if (other >= 0 && sHold[other] == HOLD_WARD && sHoldId[other] == i) {
@@ -1366,7 +1389,7 @@ static int ward_near(PlacedSet *s, Vec3 hand, float reach_max, float *best) {
         Vec3 lo, hi, gap;
         float reach;
 
-        if (!p->shown || p->mesh.nv <= 0 || !ward_leaf(p->name)) {
+        if (!p->shown || p->mesh.nv <= 0 || !ward_leaf(p)) {
             continue;
         }
         ward_bounds(p, &lo, &hi);
@@ -1435,8 +1458,14 @@ static int ward_take(PlacedSet *s, int side, int id, Vec3 hand) {
         return 0;
     }
     if (loaded) {   /* (never played: the end of the swing its own pose sits at) */
-        float pose = wrap_rad(ward_angle(p, p->rot, tip) - ward_angle(p, ward_key(p, lo), tip));
-        float shut = wrap_rad(ward_angle(p, ward_key(p, hi), tip) - ward_angle(p, ward_key(p, lo), tip));
+        WardKey cur;
+        float pose, shut;
+
+        cur.rot = p->rot;
+        cur.pos = p->pos;
+        cur.pos_from_key = p->format == 7;
+        pose = wrap_rad(ward_angle(p, cur, tip) - ward_angle(p, ward_key(p, lo), tip));
+        shut = wrap_rad(ward_angle(p, ward_key(p, hi), tip) - ward_angle(p, ward_key(p, lo), tip));
 
         frame = fabsf(pose) <= fabsf(pose - shut) ? lo : hi;
     } else {
@@ -1503,7 +1532,8 @@ static void ward_release(PlacedSet *s, int side, int id) {
     float degs;
 
     w->mode = 0;
-    if (!p->shown || p->keys == NULL || p->frames <= 0 || !p->paused || p->format != 8) {
+    if (!p->shown || p->keys == NULL || p->frames <= 0 || !p->paused ||
+        (p->format != 7 && p->format != 8)) {
         return;
     }
     /* the frames a tick in the degrees of the leaf's own swing (radians a frame of its track) */
@@ -1535,8 +1565,8 @@ static void ward_tick(Engine *e) {
         if (w->mode == 0) {
             continue;
         }
-        if (!p->shown || p->keys == NULL || !p->paused || p->format != 8 || !ward_leaf(p->name) ||
-            !ward_span(p, &lo, &hi)) {
+        if (!p->shown || p->keys == NULL || !p->paused || (p->format != 7 && p->format != 8) ||
+            !ward_leaf(p) || !ward_span(p, &lo, &hi)) {
             w->mode = 0;   /* (a script has the leaf again, or it is put away: hands off) */
             continue;
         }
@@ -1568,7 +1598,7 @@ static void hide_probe(Engine *e) {
         sHideRoom = e->room.id;
     }
     for (i = 0; i < s->n; i++) {
-        if (s->p[i].shown && s->p[i].mesh.nv > 0 && ward_leaf(s->p[i].name)) {
+        if (s->p[i].shown && s->p[i].mesh.nv > 0 && ward_leaf(&s->p[i])) {
             p = &s->p[i];
             break;
         }
@@ -1599,7 +1629,7 @@ static int nearest_prop(PlacedSet *s, Vec3 hand, int other, float *best) {
         float edge, d2;
 
         if (!p->shown || (other >= 0 && sHold[other] == HOLD_PROP && sHoldId[other] == i) || loot_claims_placed(i) ||
-            ward_leaf(p->name)) {   /* (a leaf is turned by hand, not carried) */
+            ward_leaf(p)) {   /* (a leaf is turned by hand, not carried) */
             continue;
         }
         ext = vec3_sub(p->mesh.hi, p->mesh.lo);
@@ -3436,7 +3466,7 @@ void vrhands_tick(Engine *e) {
         } else if (sHold[side] == HOLD_WARD) {
             Placed *p = sHoldId[side] >= 0 && sHoldId[side] < e->room.placed.n ? &e->room.placed.p[sHoldId[side]] : NULL;
 
-            if (p == NULL || !p->shown || !ward_leaf(p->name)) {
+            if (p == NULL || !p->shown || !ward_leaf(p)) {
                 sHold[side] = HOLD_NONE;   /* (gone: a room away from it, or put away) */
                 sLadderHold[side] = -1;
                 sLadderFresh[side] = 0;

@@ -38,6 +38,7 @@ rest single floats (`sf@ sf!`).
 | `vr.crouch-on` | ... and the share at which the hide flag comes on | 0.25 |
 | `vr.crouch-off` | ... and the share it goes off at, rising (the hysteresis) | 0.18 |
 | `vr.sneak-speed` | the crouch walk's share of a walk, and its animation rate (45%: 55% slower) | 0.45 |
+| `vr.hide-door` | a hiding spot's door drawn see-through (about half alpha) while she is inside and fully hidden | 1 |
 | `vr.panic-tint` | the panic's grey / darkening tint at each heartbeat (the VR page's Reduced preset) | 1 |
 | `vr.panic-smear` | the heartbeat's frame blend, held and blended in again (photosensitive: off) | 0 |
 | `vr.panic-zoom` | the first frames drawn 16 pixels bigger over themselves (photosensitive: off) | 0 |
@@ -81,11 +82,12 @@ in, reachable without a keyboard:
   are read from the VR stick in a headset (`read-arrows`), so every page of the sub screen - the
   lists, the map, the files, the options - and this one are worked with the controllers: the
   movement stick moves, A answers, a grip backs out.
-- **Its rows**, ten of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
+- **Its rows**, eleven of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
   Comfort vignette (Off, Low, Med, High), Teleport movement (Off, Fixed, Dynamic),
   Calibrate height (the measurement, or Not set), Seated mode (Off, On), Whisper (PTT, Open Mic),
-  Whisper Subtitles (Off, On, Debug) and 3D Audio (Off, On) - the last the binaural HRTF, its
-  occlusion coming with it (docs/subsystems/audio3d.md). A label on the
+  Whisper Subtitles (Off, On, Debug), 3D Audio (Off, On) and Hiding door (Off, On) - the 3D audio
+  the binaural HRTF, its occlusion coming with it (docs/subsystems/audio3d.md), and the hiding door
+  the see-through door of a walked-into spot (docs/subsystems/hiding.md). A label on the
   left, its value on the right, the row chosen drawn in a lit bar:
   up / down choose, left / right step the row (a choice round its words, a number by its step),
   and the cross steps it too - on Calibrate height the cross is the measurement itself

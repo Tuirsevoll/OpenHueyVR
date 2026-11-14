@@ -967,6 +967,7 @@ void render_mesh_free(GpuMesh *g) {
 }
 
 static float sTint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+static float sObjectAlpha = 1.0f;
 
 /* the character microprograms' clip test (tools/vudis.py: CLIP each corner, FCAND over the
  * triangle's three, the ADC bit then drops it): a triangle with a corner outside the PS2's clip
@@ -998,15 +999,21 @@ void render_mesh_tint(float r, float g, float b, float a) {
     sTint[3] = a < 0.0f ? 0.0f : a > 1.0f ? 1.0f : a;
 }
 
+void render_mesh_alpha(float a) {
+    sObjectAlpha = a < 0.0f ? 0.0f : a > 1.0f ? 1.0f : a;
+}
+
 void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, const GpuTexture *textures,
                  int ntextures, const uint32_t groups[8]) {
-    int i, multisampled = gRender.msaa > 1, faded = sTint[3] < 1.0f;
+    float alpha = sTint[3] * sObjectAlpha;
+    int i, multisampled = gRender.msaa > 1, faded = alpha < 1.0f;
 
     if (g->vao == 0) {
+        sObjectAlpha = 1.0f;
         return;
     }
     glProgramUniformMatrix4fv(R.mesh_prog, U_MVP, 1, GL_FALSE, mvp->m);
-    glProgramUniform4f(R.mesh_prog, U_ALPHA, sTint[0], sTint[1], sTint[2], sTint[3]);
+    glProgramUniform4f(R.mesh_prog, U_ALPHA, sTint[0], sTint[1], sTint[2], alpha);
     glUseProgram(R.mesh_prog);
     glDisable(GL_BLEND);   /* (for both targets: only the colour one ever blends) */
     glBindSampler(0, R.sampler);
@@ -1078,6 +1085,7 @@ void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, c
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
     glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+    sObjectAlpha = 1.0f;
 }
 
 /* ---- 2D ---- */

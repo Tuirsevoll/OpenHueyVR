@@ -660,7 +660,8 @@ runtime's floor, position only - a head tilt or a look down does not change it.
 - **The hide flag**: `fiona-half-hidden` (the L1 crouch's own flag) is set at `vr.crouch-on` and
   cleared at `vr.crouch-off` - the hysteresis. The stalker's sight mask and reach (10 instead of
   20, `stalker/senses.fs`) and Riccardo's `crouched?` treat her exactly as the L1 crouch does.
-  `fiona-hidden` (a hiding place's) is not set.
+  `fiona-hidden` is not the crouch's: it is a hiding spot's (`docs/subsystems/hiding.md`), set by
+  `vr-hiding-flags` when she walks into one of the four wardrobes/cabinets and its doors are shut.
 - **Sneak movement**: while the flag is on she is not held. `fiona/moving.fs`'s `sneak-anim`
   (`idle-move`) plays the crouch pose while still, and the walk at `vr.sneak-speed` (45%, 55%
   slower) while the stick moves her; the VR step itself is scaled by the same share, so the speed

@@ -31,6 +31,7 @@ stereo, untouched.
 | `saudio_block(frames)` | the audio thread's 4 ms block: the ramp, the sources' occlusion/low-pass, and the 16 voices the HRTF runs for |
 | `saudio_voice_weight(v)` / `saudio_voice_render(...)` | this voice's binaural share (0: the original pans) and its mono samples through the HRTF |
 | `saudio_occlude(v, blocked)` | 0 clear .. 1 blocked (from `sound3d.c`, once a tick) |
+| `saudio_enclosed(v, enclosed)` | 0 open .. 1 inside a shut hiding spot: the HRTF's `spatialBlend` lowered toward the plain signal, so direction is widened |
 | `saudio_sources(...)` | the spatial voices playing, and their points (for the occlusion rays) |
 
 `src/game/sound3d.h`:
@@ -82,9 +83,12 @@ each tick from the room's nav mesh and `gProgress`'s `fiona-hidden`).
    sound over the room's nav mesh (`navmesh_wall_masked`: navmesh.c), with the flags a sound
    cannot pass - a wall (0x4000) and a shut door's passage flags (0x60000, which `Doors_RoomIn`
    moves as the door swings). A wall, a shut door, or a sound off this room's mesh (another
-   room) is blocked: its gain x 0.55 and a one-pole low-pass from 12 kHz to 900 Hz. Hidden in a
-   wardrobe (`fiona-hidden`, `gProgress` bit 9) blocks everything but her own body's sounds
-   (within 0.5 m). The ears off the floor (a ladder) leave a sound clear, not blocked.
+   room) is blocked: its gain x 0.55 and a one-pole low-pass from 12 kHz to 900 Hz. A base hiding
+   (a bed, `fiona-hidden`, `gProgress` bit 9) blocks everything but her own body's sounds (within
+   0.5 m). Inside a physical hiding spot with every door shut (`vrspot_enclosed`), the room is
+   blocked the same way and `saudio_enclosed` lowers `spatialBlend` to about 0.4: the direction is
+   widened, so what is outside is hard to place. The ears off the floor (a ladder) leave a sound
+   clear, not blocked.
 7. **The cap.** The HRTF runs for 16 voices at once: the loudest and nearest
    (`gain * 1000 / (100 + distance)`). A voice outside those, or within the 0.75 m of the ears,
    keeps the driver's original left / right mix for that block - so nothing is lost, only less
@@ -129,7 +133,8 @@ each tick from the room's nav mesh and `gProgress`'s `fiona-hidden`).
 `snddrv.c` and `spu.c`; the options in `scripts/subscreen/vr.fs` and `scripts/vr-options.fs`).
 The SDK is optional - `HGA_STEAMAUDIO` is only defined when CMake finds it - so every existing
 test builds and runs without it. Not spatialised: music, menus, a cutscene's movie sound, and
-sounds within 0.75 m of the ears (by design). The wardrobe hide's flag does not currently turn
-on (a separate bug): until it does, that rule never fires.
+sounds within 0.75 m of the ears (by design). The physical hiding spots' enclosure
+(`vrspot_enclosed`, `docs/subsystems/hiding.md`) drives the widened field; a base hiding (a bed)
+keeps the `fiona-hidden` muffling.
 
 

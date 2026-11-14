@@ -31,6 +31,7 @@
 #include "../game/vrhands.h"
 #include "../game/loot.h"
 #include "../game/sound3d.h"
+#include "../game/vrspots.h"
 
 #include "../core/files.h"
 #include "../core/zip.h"
@@ -3965,6 +3966,46 @@ PRIM(p_vr_head) {   /* ( -- flag ) ( F: -- x y z ) the headset, when it is track
     PUSH(-1);
 }
 
+/* ---- the hiding spots a player walks into (game/vrspots.c) ---- */
+PRIM(p_vr_spot) {   /* ( a1 n1 a2 n2 -- id ) ( F: ox oz yaw half depth ix iz -- ) */
+    Cell n2 = POP(), a2 = POP(), n1 = POP(), a1 = POP();
+    float iz = (float)FPOP(), ix = (float)FPOP(), depth = (float)FPOP(), half = (float)FPOP();
+    float yaw = (float)FPOP(), oz = (float)FPOP(), ox = (float)FPOP();
+    char leaf1[16], leaf2[16];
+
+    snprintf(leaf1, sizeof(leaf1), "%.*s", (int)n1, (const char *)a1);
+    snprintf(leaf2, sizeof(leaf2), "%.*s", (int)n2, (const char *)a2);
+    PUSH(vrspot_add(&gEngine, leaf1, leaf2, ox, oz, yaw, half, depth, ix, iz));
+}
+PRIM(p_vr_spot_here) {   /* ( F: x y z -- ) the scripts' own her-at, for a headless tick */
+    float z = (float)FPOP(), y = (float)FPOP(), x = (float)FPOP();
+
+    vrspot_here(vec3(x, y, z));
+}
+PRIM(p_vr_spot_release) { vrspot_release(POP() != 0); }   /* ( on -- ) a discovery has her out */
+PRIM(p_vr_spot_inside) { PUSH(vrspot_inside() ? -1 : 0); }       /* ( -- flag ) */
+PRIM(p_vr_spot_full) { PUSH(vrspot_full() ? -1 : 0); }           /* ( -- flag ) */
+PRIM(p_vr_spot_half) { PUSH(vrspot_half() ? -1 : 0); }           /* ( -- flag ) */
+PRIM(p_vr_spot_enclosed) { PUSH(vrspot_enclosed() ? -1 : 0); }   /* ( -- flag ) */
+PRIM(p_vr_spot_noclip) { PUSH(vrspot_noclip() ? -1 : 0); }       /* ( -- flag ) */
+PRIM(p_vr_spot_active) { PUSH(vrspot_active() ? -1 : 0); }       /* ( -- flag ) */
+PRIM(p_vr_spot_id) { PUSH(vrspot_id_at(&gEngine)); }             /* ( -- id ) */
+PRIM(p_vr_spot_closure) { FPUSH(vrspot_closure() * 100.0f); }    /* ( F: -- pct ) 0..100 */
+PRIM(p_vr_spot_step) {   /* ( F: dx dz -- dx' dz' ) the player's step, clamped to the spot */
+    float dz = (float)FPOP(), dx = (float)FPOP();
+    Vec3 r = vrspot_step_here(&gEngine, dx, dz);
+
+    FPUSH(r.x);
+    FPUSH(r.z);
+}
+PRIM(p_vr_spot_step_at) {   /* ( F: x y z dx dz -- dx' dz' ) the same from a given place (tests) */
+    float dz = (float)FPOP(), dx = (float)FPOP(), z = (float)FPOP(), y = (float)FPOP(), x = (float)FPOP();
+    Vec3 r = vrspot_step_at(&gEngine, vec3(x, y, z), vec3(dx, 0.0f, dz));
+
+    FPUSH(r.x);
+    FPUSH(r.z);
+}
+
 /* a cutscene's track is the movie's. The room's music, the stage music and the sound effects
  * sit under it until the scene (or a movie on its own) is over. A pause menu keeps what it set. */
 static void cutscene_audio(int on, int restore) {
@@ -4081,6 +4122,7 @@ void engine_tick(Engine *e) {
         }
     }
     vrhands_tick(e);   /* grip grabs and doors, after the room has swung them itself */
+    vrspot_tick(e);    /* (the hiding spot a player is in: its closure and the door's alpha) */
     freecam_tick(e);   /* (last: over the shots and the cutscenes) */
     render_look_tick();
     sound3d_tick(e);   /* (the 3-D audio's occlusion: after everything moved this tick) */
@@ -4705,7 +4747,7 @@ void bind_engine(Forth *f) {
         {"motion-table", p_motion_table, "( id addr len -- )"}, {"exe-table", p_exe_table, "( addr len -- addr n | 0 0 )"}, {"root-delta", p_root_delta, "( id -- ) ( F: -- F: turn dx dy dz )"}, {"bone-pos", p_bone_pos, "( id bone -- ) ( F: -- F: x y z )"}, {"bone-point", p_bone_point, "( id bone -- ) ( F: ox oy oz -- F: x y z )"}, {"foot-down?", p_foot_down, "( id foot -- flag )"}, {"dog-legs", p_dog_legs, "( id on -- )"}, {"human-legs", p_human_legs, "( id right left -- )"}, {"legs-fit", p_legs_fit, "( id tri mask plant -- ) ( F: back front -- )"}, {"lorenzo-chair", p_lorenzo_chair, "( id on -- )"}, {"chair-fit", p_chair_fit, "( id tri mask -- ) ( F: front back pitch yaw -- )"}, {"chair-rises", p_chair_rises, "( id -- ) ( F: body front -- )"}, {"head-bones", p_head_bones, "( id head neck -- )"}, {"head-turn", p_head_turn, "( id -- ) ( F: pitch yaw -- )"}, {"legs-height", p_legs_height, "( id -- ) ( F: -- F: y )"}, {"motion-track", p_motion_track, "( id code prev? -- flag ) ( F: -- F: a b c )"}, {"motion-track-by", p_motion_track_by, "( id code prev? -- flag ) ( F: dt -- F: a b c )"}, {"foot-at", p_foot_at, "( id left? -- down? ) ( F: dt -- F: x y z )"}, {"motion-overlay", p_motion_overlay, "( id motion-id -- )"}, {"turns-clear", p_turns_clear, "( id -- )"}, {"turn+", p_turn_add, "( id bone -- ) ( F: pitch yaw -- )"}, {"bone-count", p_bone_count, "( id -- n )"}, {"bone-named", p_bone_named, "( id addr len -- bone )"}, {"bone-parent", p_bone_parent, "( id bone -- parent )"}, {"bone-rest", p_bone_rest, "( id bone -- ) ( F: -- rx ry rz )"}, {"bone-set", p_bone_set, "( id bone -- ) ( F: rx ry rz -- )"}, {"bone-free", p_bone_free, "( id bone -- )"}, {"bones-free", p_bones_free, "( id -- )"}, {"motion@", p_motion_fetch, "( id -- motion-id | -1 )"}, {"motion-done?", p_motion_done, "( id -- flag )"},
         {"motion-frames", p_motion_frames, "( id -- frames )"}, {"motion-hold", p_motion_hold, "( id motion-id F: frame -- )"}, {".motions", p_motions, "( id -- )"},
         {"rumble", p_rumble, "( channel strength frames -- )"}, {"rumble-buzz", p_rumble_buzz, "( channel on frames -- )"}, {"rumble-swell", p_rumble_swell, "( channel from to frames -- )"}, {"rumble-sequence-clear", p_rumble_seq_clear, "( -- )"}, {"rumble-step", p_rumble_seq_add, "( small? from to frames -- )"}, {"rumble-now", p_rumble_now, "( -- small? large )"}, {"rumble-allowed!", p_rumble_allow, "( flag -- )"}, {"game-volume!", p_game_volume, "( F: v -- )"}, {"world-volume!", p_world_volume, "( F: v -- )"}, {"world-volume", p_world_volume_q, "( F: -- v )"}, {"pad-stick", p_pad_stick, "( F: -- x y )"}, {"key-down?", p_key_down, "( key -- flag )"}, {"key-hold", p_key_hold, "( scancode flag -- )"}, {"controls", p_controls, "( -- n )"}, {"control-key", p_control_key, "( i -- scancode )"}, {"control-binding", p_control_binding, "( i which -- scancode )"}, {"control-bind", p_control_bind, "( scancode i which -- )"}, {"controls-reset", p_controls_reset, "( -- )"}, {"control-bind-next", p_control_bind_next, "( i -- )"}, {"control-waiting", p_control_waiting, "( -- i )"}, {"key-name", p_key_name, "( scancode -- addr len )"}, {"mod-camera", p_mod_camera, "( -- addr )"}, {"mod-camera!", p_mod_camera_set, "( on -- )"}, {"mod-camera?", p_mod_camera_has, "( -- flag )"}, {"mouse-capture", p_mouse_capture, "( on -- )"}, {"art-picture", p_art_picture, "( picture group -- h flag )"}, {"thumbnail", p_thumbnail, "( movie group -- flag )"}, {"alone", p_alone, "( id -- )"}, {"cam-keep", p_cam_keep, "( -- )"}, {"cam-kept", p_cam_kept, "( -- )"}, {"key-push", p_key_push, "( scancode -- )"}, {"key-pressed?", p_key_pressed, "( key -- flag )"}, {"mouse-dx", p_mouse_dx, "( F: -- F: dx )"},
-        {"mouse-dy", p_mouse_dy, "( F: -- F: dy )"}, {"freecam?", p_freecam, "( -- flag )"}, {"freecam!", p_freecam_set, "( on -- )"}, {"vr-calibrate", p_vr_calibrate, "( -- )"}, {"vr-height!", p_vr_height, "( F: metres -- )"}, {"vr-scale!", p_vr_scale, "( F: scale -- )"}, {"vr-body", p_vr_body, "( -- ) ( F: -- F: height scale )"}, {"vr-tracking?", p_vr_tracking, "( -- flag )"}, {"vr-preview", p_vr_preview, "( -- )"}, {"vr-haptic", p_vr_haptic, "( F: amplitude seconds -- )"}, {"vr-head-yaw", p_vr_head_yaw, "( -- ) ( F: -- radians )"}, {"vr-recenter", p_vr_recenter, "( -- )"}, {"vase-named?", p_vase_named, "( xt -- flag )"}, {"vase-scale", p_vase_scale, "( -- ) ( F: -- F: scale )"}, {"vase-part", p_vase_part, "( group -- ) ( F: x y z scale -- )"}, {"vr-stick", p_vr_stick, "( -- ) ( F: -- F: x y )"}, {"vr-look-yaw", p_vr_look_yaw, "( -- ) ( F: -- F: yaw )"}, {"vr-face", p_vr_face, "( -- ) ( F: -- F: yaw )"}, {"vr-down?", p_vr_down, "( button -- flag )"}, {"vr-pressed?", p_vr_pressed, "( button -- flag )"}, {"vr-run?", p_vr_run, "( -- flag )"}, {"vr-menu?", p_vr_menu, "( -- flag )"}, {"ladder-hands?", p_ladder_hands, "( -- flag )"}, {"ladder-both?", p_ladder_both, "( -- flag )"}, {"ladder-grab", p_ladder_grab, "( -- link side )"}, {"ladder-pull", p_ladder_pull, "( -- ) ( F: -- dy )"}, {"voice-heard", p_voice_heard, "( -- id )"}, {"voice-gen", p_voice_gen, "( -- n )"}, {"voice-text", p_voice_text, "( -- addr len )"}, {"voice-debug", p_voice_debug, "( flag -- )"}, {"voice-debug?", p_voice_debug_q, "( -- flag )"}, {"voice-open-mic", p_voice_open, "( flag -- )"}, {"voice-open-mic?", p_voice_open_q, "( -- flag )"}, {"vr-right", p_vr_right, "( -- ) ( F: -- F: x )"}, {"vr-gesture", p_vr_gesture, "( -- g )"}, {"vr-snap", p_vr_snap, "( -- ) ( F: -- radians )"}, {"hand-stops-clear", p_hand_stops_clear, "( -- )"}, {"hands-drop", p_hands_drop, "( -- )"}, {"vr-petting?", p_vr_petting, "( side -- flag )"}, {"hand-blow?", p_hand_blow, "( -- flag )"}, {"hand-swing?", p_hand_swing, "( -- flag )"}, {"hand-shove?", p_hand_shove, "( -- flag )"}, {"hand-shove-take", p_hand_shove_take, "( -- )"}, {"hand-door?", p_hand_door, "( -- exit )"}, {"hand-door-way", p_hand_door_way, "( -- sign )"}, {"hand-door-take", p_hand_door_take, "( -- )"}, {"door-hits", p_door_hits, "( -- bits )"}, {"loot-sparkle", p_loot_sparkle, "( n -- n )"}, {"loot-at", p_loot_at, "( item -- ) ( F: x y z -- )"}, {"loot-move", p_loot_move, "( item -- ) ( F: x y z -- )"}, {"loot-part", p_loot_part, "( item fact fx part -- )"}, {"loot-doll", p_loot_doll, "( item fact fx -- )"}, {"loot-script", p_loot_script, "( xt -- )"}, {"loot-offer", p_loot_offer, "( xt -- )"}, {"loot-spark?", p_loot_spark_q, "( -- fx true | false )"}, {"loot-waiting?", p_loot_waiting, "( -- flag )"}, {"loot-take?", p_loot_take, "( -- item fact fx mode xt true | false )"}, {"loot-idle", p_loot_idle, "( -- )"}, {"loot-fact", p_loot_fact, "( -- fact )"}, {"loot-consume", p_loot_consume, "( -- )"}, {"loot-keep?", p_loot_keep, "( -- fx flag ) ( F: -- x y z )"}, {"loot-got", p_loot_got, "( item -- )"}, {"defense-let", p_defense_let, "( -- n flag ) ( F: -- x y z vx vy vz )"}, {"vr-crouch", p_vr_crouch, "( -- ) ( F: -- frac )"}, {"vr-crouch-on!", p_vr_crouch_on, "( on -- )"}, {"vr-crouch-key!", p_vr_crouch_key, "( F: share -- )"}, {"vr-head", p_vr_head, "( -- flag ) ( F: -- F: x y z )"}, {"vr-turn!", p_vr_turn, "( -- ) ( F: yaw -- )"}, {"vr-turn-view", p_vr_turn_view, "( -- ) ( F: radians -- )"}, {"mouse-down?", p_mouse_down, "( button -- flag )"},
+        {"mouse-dy", p_mouse_dy, "( F: -- F: dy )"}, {"freecam?", p_freecam, "( -- flag )"}, {"freecam!", p_freecam_set, "( on -- )"}, {"vr-calibrate", p_vr_calibrate, "( -- )"}, {"vr-height!", p_vr_height, "( F: metres -- )"}, {"vr-scale!", p_vr_scale, "( F: scale -- )"}, {"vr-body", p_vr_body, "( -- ) ( F: -- F: height scale )"}, {"vr-tracking?", p_vr_tracking, "( -- flag )"}, {"vr-preview", p_vr_preview, "( -- )"}, {"vr-haptic", p_vr_haptic, "( F: amplitude seconds -- )"}, {"vr-head-yaw", p_vr_head_yaw, "( -- ) ( F: -- radians )"}, {"vr-recenter", p_vr_recenter, "( -- )"}, {"vase-named?", p_vase_named, "( xt -- flag )"}, {"vase-scale", p_vase_scale, "( -- ) ( F: -- F: scale )"}, {"vase-part", p_vase_part, "( group -- ) ( F: x y z scale -- )"}, {"vr-stick", p_vr_stick, "( -- ) ( F: -- F: x y )"}, {"vr-look-yaw", p_vr_look_yaw, "( -- ) ( F: -- F: yaw )"}, {"vr-face", p_vr_face, "( -- ) ( F: -- F: yaw )"}, {"vr-down?", p_vr_down, "( button -- flag )"}, {"vr-pressed?", p_vr_pressed, "( button -- flag )"}, {"vr-run?", p_vr_run, "( -- flag )"}, {"vr-menu?", p_vr_menu, "( -- flag )"}, {"ladder-hands?", p_ladder_hands, "( -- flag )"}, {"ladder-both?", p_ladder_both, "( -- flag )"}, {"ladder-grab", p_ladder_grab, "( -- link side )"}, {"ladder-pull", p_ladder_pull, "( -- ) ( F: -- dy )"}, {"voice-heard", p_voice_heard, "( -- id )"}, {"voice-gen", p_voice_gen, "( -- n )"}, {"voice-text", p_voice_text, "( -- addr len )"}, {"voice-debug", p_voice_debug, "( flag -- )"}, {"voice-debug?", p_voice_debug_q, "( -- flag )"}, {"voice-open-mic", p_voice_open, "( flag -- )"}, {"voice-open-mic?", p_voice_open_q, "( -- flag )"}, {"vr-right", p_vr_right, "( -- ) ( F: -- F: x )"}, {"vr-gesture", p_vr_gesture, "( -- g )"}, {"vr-snap", p_vr_snap, "( -- ) ( F: -- radians )"}, {"hand-stops-clear", p_hand_stops_clear, "( -- )"}, {"hands-drop", p_hands_drop, "( -- )"}, {"vr-petting?", p_vr_petting, "( side -- flag )"}, {"hand-blow?", p_hand_blow, "( -- flag )"}, {"hand-swing?", p_hand_swing, "( -- flag )"}, {"hand-shove?", p_hand_shove, "( -- flag )"}, {"hand-shove-take", p_hand_shove_take, "( -- )"}, {"hand-door?", p_hand_door, "( -- exit )"}, {"hand-door-way", p_hand_door_way, "( -- sign )"}, {"hand-door-take", p_hand_door_take, "( -- )"}, {"door-hits", p_door_hits, "( -- bits )"}, {"loot-sparkle", p_loot_sparkle, "( n -- n )"}, {"loot-at", p_loot_at, "( item -- ) ( F: x y z -- )"}, {"loot-move", p_loot_move, "( item -- ) ( F: x y z -- )"}, {"loot-part", p_loot_part, "( item fact fx part -- )"}, {"loot-doll", p_loot_doll, "( item fact fx -- )"}, {"loot-script", p_loot_script, "( xt -- )"}, {"loot-offer", p_loot_offer, "( xt -- )"}, {"loot-spark?", p_loot_spark_q, "( -- fx true | false )"}, {"loot-waiting?", p_loot_waiting, "( -- flag )"}, {"loot-take?", p_loot_take, "( -- item fact fx mode xt true | false )"}, {"loot-idle", p_loot_idle, "( -- )"}, {"loot-fact", p_loot_fact, "( -- fact )"}, {"loot-consume", p_loot_consume, "( -- )"}, {"loot-keep?", p_loot_keep, "( -- fx flag ) ( F: -- x y z )"}, {"loot-got", p_loot_got, "( item -- )"}, {"defense-let", p_defense_let, "( -- n flag ) ( F: -- x y z vx vy vz )"}, {"vr-crouch", p_vr_crouch, "( -- ) ( F: -- frac )"}, {"vr-crouch-on!", p_vr_crouch_on, "( on -- )"}, {"vr-crouch-key!", p_vr_crouch_key, "( F: share -- )"}, {"vr-head", p_vr_head, "( -- flag ) ( F: -- F: x y z )"}, {"vr-spot", p_vr_spot, "( a1 n1 a2 n2 -- id ) ( F: ox oz yaw half depth ix iz -- )"}, {"vr-spot-here", p_vr_spot_here, "( F: x y z -- )"}, {"vr-spot-release", p_vr_spot_release, "( on -- )"}, {"vr-spot-inside?", p_vr_spot_inside, "( -- flag )"}, {"vr-spot-full?", p_vr_spot_full, "( -- flag )"}, {"vr-spot-half?", p_vr_spot_half, "( -- flag )"}, {"vr-spot-enclosed?", p_vr_spot_enclosed, "( -- flag )"}, {"vr-spot-noclip?", p_vr_spot_noclip, "( -- flag )"}, {"vr-spot-active?", p_vr_spot_active, "( -- flag )"}, {"vr-spot-id", p_vr_spot_id, "( -- id )"}, {"vr-spot-closure", p_vr_spot_closure, "( -- ) ( F: -- pct )"}, {"vr-spot-step", p_vr_spot_step, "( -- ) ( F: dx dz -- dx' dz' )"}, {"vr-spot-step-at", p_vr_spot_step_at, "( -- ) ( F: x y z dx dz -- dx' dz' )"}, {"vr-turn!", p_vr_turn, "( -- ) ( F: yaw -- )"}, {"vr-turn-view", p_vr_turn_view, "( -- ) ( F: radians -- )"}, {"mouse-down?", p_mouse_down, "( button -- flag )"},
         {"on-tick", p_on_tick, "( xt -- )"}, {"off-tick", p_off_tick, "( xt -- )"}, {"ticks", p_ticks, "( -- ticks )"}, {"dt", p_dt, "( F: -- F: seconds )"},
         {"on-draw", p_on_draw, "( xt -- )"}, {"off-draw", p_off_draw, "( xt -- )"}, {"pen-color", p_pen_color, "( rgba -- )"},
         {"pen-scale", p_pen_scale, "( n -- )"}, {"draw-text", p_draw_text, "( addr len x y -- )"}, {"draw-rect", p_draw_rect, "( x y w h -- )"},
@@ -4850,6 +4892,7 @@ void bind_engine(Forth *f) {
     field(f, "vr.crouch-off", offsetof(VrOptions, crouch_off));
     field(f, "vr.sneak-speed", offsetof(VrOptions, sneak_speed));
     field(f, "vr.audio3d", offsetof(VrOptions, audio3d));
+    field(f, "vr.hide-door", offsetof(VrOptions, hide_door_see_through));
     /* the panic's screens, Fiona's stumbles and the heartbeat's haptics (scripts/panic.fs,
      * scripts/fiona/fear.fs; docs/subsystems/panic.md) */
     field(f, "vr.panic-tint", offsetof(VrOptions, panic_tint));

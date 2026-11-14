@@ -35,6 +35,7 @@ only points there.
 | Acoustics | the noises made this frame, and who hears them | `acoustics.fs` | `Noise_Make`, `Character_Hearing` | [acoustics](subsystems/acoustics.md) |
 | 3-D audio | placed sounds binaurally through an HRTF, with occlusion | `saudio.c`, `sound3d.c` | - (hga's own) | [audio3d](subsystems/audio3d.md) |
 | Danger | calm / followed / chased | `danger.fs` | `SceneGame_Danger` | [danger](subsystems/danger.md) |
+| Hiding spots (VR) | the four wardrobes/cabinets walked into: their doors, closure, flags, step and muffling | `story/kit.fs`, `vrspots.c` | - (hga's own) | [hiding](subsystems/hiding.md) |
 | Music | the background track, the stage music, volumes and fades | `music.fs` | `music.c`, `MusicDir_*` | [music](subsystems/music.md) |
 | Screen | the fade to and from black | `screen.fs` | `Events_Fade` | [screen](subsystems/screen.md) |
 | Window | the message window and its choices | `window.fs` | `text.c` | [window](subsystems/window.md) |

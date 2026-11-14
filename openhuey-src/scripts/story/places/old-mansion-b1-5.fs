@@ -27,7 +27,7 @@ own: waiting  own: hum-on  own: noticed-0  own: noticed-1  own: hewie-away  own:
 1 constant door-swing-anim
 omb1-5-flag4 $12 0  $7B 180  $7D 180  $7B 180  $1D 153
     16.59e -25.02e  11.91e -21.5e  14.14e -24.14e  9.84e -11.27e  cabinet: the-cabinet
-the-cabinet 8 cabinet-doors
+the-cabinet 18 cabinet-doors
 
 \ ---- as she comes in ----
 create flames  -2.8e f, 31.7e f, -5.1e f,   -5.7e f, 31.4e f, -0.3e f,   -3.3e f, 31.4e f, 4.3e f,
@@ -37,7 +37,9 @@ create flames  -2.8e f, 31.7e f, -5.1e f,   -5.7e f, 31.4e f, -0.3e f,   -3.3e f
     omb1-5-flag5 fact?  omb1-5-flag4 fact? or  partner-kind dup daniella-kind = swap kind34-kind = or 0= or  stalker-told? or if  false exit  then
     om1f-13-flag2 fact? 0=  white-mandragora-used fact? or ;
 : came-in ( exit -- )
-    drop  room-sounds  the-cabinet cabinet-shown
+    drop
+    s" l_door0" s" r_door0"  21.5e -30e 90e 3.5e 7e 21.5e -37e  vr-hiding-spot
+    room-sounds  the-cabinet cabinet-shown
     waiting-due? dup waiting !  if  force-followed state!  then
     candles-lit  $650 fact? if  $238 give-file  then ;
 
@@ -118,6 +120,12 @@ create flames  -2.8e f, 31.7e f, -5.1e f,   -5.7e f, 31.4e f, -0.3e f,   -3.3e f
 
 \ ---- the cabinet (the kit's); Daniella waiting inside it the first time ----
 : hides ( -- )  shriek-sound hide-shriek !  the-cabinet hides-in-cabinet ;
+: vr-cabinet-hides ( -- )  shriek-sound hide-shriek !  the-cabinet hides-in-cabinet ;
+: vr-cabinet-watch ( -- )
+    vr? 0= if  exit  then
+    vr-spot-inside? 0= if  exit  then
+    ['] vr-cabinet-hides running? if  exit  then
+    ['] vr-cabinet-hides start drop ;
 : stalker-came ( -- )  0 waiting !  force-followed state-off  the-cabinet cabinet-stalker-came ;
 : bursts-out ( -- )   \ (Daniella's part: out of the cabinet at her)
     stalker-present  stalker hold  stalker true noclip  stalker $77 0 15.58e -33.18e place-at
@@ -156,6 +164,7 @@ create looks  17.16e 0e 30.67e  22e 18e 18e look,   -33.99e 0e 32.91e  22e 18e 1
 
 create cameras  1 , 0 , 0 ,   2 , 2 , 2 ,   3 , 1 , 1 ,   4 , 2 , 2 ,   \ (area, set, path)
 : each-frame ( -- )
+    vr-cabinet-watch
     hums  0 exit-out  cameras 4 cameras-at
     omb1-5-flag5 fact? 0=  omb1-5-flag4 fact? 0= and if
         noticed-0 100 17.96e 0e -27.69e 15e 18e notices? if  ['] wary start drop  then
@@ -173,7 +182,9 @@ create cameras  1 , 0 , 0 ,   2 , 2 , 2 ,   3 , 1 , 1 ,   4 , 2 , 2 ,   \ (area,
     8 locked-request? if  ['] trap-shut any-time offer  then
     fiona cabinet-area in-area?  fiona 180 60 heading? and if
         stalker-in? if  no-time-message offer-remark-now
-        else  waiting @  trap-door doors:door-locked? 0= and if  ['] she-was-inside  else  ['] hides  then  hiding-spot offer  then
+        else  vr? 0= if
+            waiting @  trap-door doors:door-locked? 0= and if  ['] she-was-inside  else  ['] hides  then  hiding-spot offer
+        then  then
     then ;
 : person-in ( i -- )
     case

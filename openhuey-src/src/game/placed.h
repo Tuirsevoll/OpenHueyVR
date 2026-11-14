@@ -27,10 +27,13 @@ typedef struct Placed {
     RoomMesh mesh;              /* model space */
     GpuMesh gpu;
     float scale;
-    /* the animation playing: its keys, format (8: the turn, 9: the place - xyz floats), frames */
+    /* the animation playing: its keys, format (7: the turn and the place, 8: the turn, 9: the
+     * place - xyz floats), frames */
     const uint8_t *keys;
     int format, frames, frame;
     int paused;                 /* held at `frame` by hand (placed_frame_set): the track stays, not advancing */
+    int hiding_leaf;            /* a hiding spot's door: a hand may turn it (vrspots.c) */
+    float alpha;                /* drawn faded (1 as it is; 0.5 a hiding door seen through) */
     /* the rooms' own values kept on the object (the original's object words at +0x30..+0x7C:
      * a lid's speed, a chair's rock; read and written by their offset, `placed-word`) */
     uint32_t words[0x80 / 4];

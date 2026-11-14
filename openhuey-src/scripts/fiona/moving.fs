@@ -17,6 +17,8 @@ USING: engine game-state actors messages common vectors facts items.names fiona.
 : move-within ( mask -- ) ( F: x z -- )
     her-at her-tri @ rot v-slide  dup 0< if  drop  else  her-tri !  then ;
 : move-by ( F: x z -- )  blocked-floor move-within ;
+: vr-spot-move ( F: x z -- )   \ (the hiding spot's mouth and inside: its own solid floor, its box)
+    vr-spot-noclip? if  0 move-within  else  move-by  then ;
 \ Model_SlopeKeep: on a slope (motion flag 4) the part of a step kept, by her facing along the fall
 4 constant on-slope-flag
 : slope-keep ( F: -- k )
@@ -160,7 +162,7 @@ defer push-check ( F: reach -- )   ' fdrop is push-check   \ (something to push 
         \ a reversal keeps the last step, so the restart of the cycle does not stop her
         rx ahead vlen kept-step her-stick-k f@ f*
         fiona.sneak:sneak-hiding? if  fiona.sneak:sneak-speed f@ f*  then
-        vr-shove move-by
+        vr-shove  vr-spot-step  vr-spot-move
     else
         \ the root motion by her heading-to-be, less the further the stick points from her facing
         rx ahead her-heading f@ rotate-by  {: F: dx dz :}

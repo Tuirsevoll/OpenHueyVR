@@ -224,6 +224,7 @@ void placed_load(PlacedSet *s, const uint8_t *defs, size_t defs_size, const uint
         }
         memset(p, 0, sizeof(*p));
         p->shown = 1;   /* (drawn until a script hides it: the original's +0 starts 0) */
+        p->alpha = 1.0f;
         memcpy(p->name, def, 15);
         p->kind = i < counts[0] ? 0 : i < counts[0] + counts[1] ? 1 : i < counts[0] + counts[1] + counts[2] ? 2 : 3;
         p->def_rot = p->rot = vec3(rdf(def + 0x10), rdf(def + 0x14), rdf(def + 0x18));
@@ -321,9 +322,13 @@ void placed_frame_set(PlacedSet *s, Placed *p, int frame) {
     }
     p->frame = frame;
     if (p->keys != NULL && p->frames > 0 && frame < p->frames) {   /* (the sample placed_tick takes) */
-        k = p->keys + frame * 12;
-        v = vec3(rdf(k), rdf(k + 4), rdf(k + 8));
-        if (p->format == 8 || p->format == 9) {
+        if (p->format == 7) {   /* (Track_Sample's format 7: the turn, then the place) */
+            k = p->keys + frame * 24;
+            p->rot = vec3(rdf(k), rdf(k + 4), rdf(k + 8));
+            p->pos = vec3(rdf(k + 12), rdf(k + 16), rdf(k + 20));
+        } else if (p->format == 8 || p->format == 9) {
+            k = p->keys + frame * 12;
+            v = vec3(rdf(k), rdf(k + 4), rdf(k + 8));
             if (p->format == 9) {
                 p->pos = v;
             } else {
@@ -354,7 +359,12 @@ void placed_tick(PlacedSet *s) {
         if (p->keys == NULL || p->frames <= 0 || p->paused) {
             continue;
         }
-        if (p->format == 8 || p->format == 9) {   /* (Track_Sample: xyz floats, a key a frame) */
+        if (p->format == 7) {   /* (Track_Sample: the turn, then the place) */
+            const uint8_t *k = p->keys + (p->frame < p->frames ? p->frame : p->frames - 1) * 24;
+
+            p->rot = vec3(rdf(k), rdf(k + 4), rdf(k + 8));
+            p->pos = vec3(rdf(k + 12), rdf(k + 16), rdf(k + 20));
+        } else if (p->format == 8 || p->format == 9) {   /* (Track_Sample: xyz floats, a key a frame) */
             const uint8_t *k = p->keys + (p->frame < p->frames ? p->frame : p->frames - 1) * 12;
 
             v = vec3(rdf(k), rdf(k + 4), rdf(k + 8));
@@ -391,10 +401,14 @@ Mat4 placed_world(const Placed *p) {
     return mat4_mul(t, mat4_mul(rz, mat4_mul(ry, mat4_mul(rx, sc))));
 }
 
-/* its renderer layer by its name (PlacedObject_Draw): "g_..." $26, "a_..." $19, others 1 */
+/* its renderer layer by its name (PlacedObject_Draw): "g_..." $26, "a_..." $19, others 1. A door
+ * a player sees through (alpha below 1) is drawn in the see-through layer, after the room's solids. */
 int placed_layer(const Placed *p) {
     char c = p->name[0] | 0x20;
 
+    if (p->alpha < 1.0f) {
+        return 0x19;
+    }
     return p->name[1] != '_' ? 1 : c == 'g' ? 0x26 : c == 'a' ? 0x19 : 1;
 }
 
@@ -408,6 +422,7 @@ void placed_draw(PlacedSet *s, const Mat4 *view_proj, const GpuTexture *textures
         if (p->shown && p->mesh.nd > 0 && placed_layer(p) == layer) {
             Mat4 mvp = mat4_mul(*view_proj, placed_world(p));
 
+            render_mesh_alpha(p->alpha);
             render_mesh(&p->gpu, &mvp, p->mesh.d, p->mesh.nd, textures, ntextures, kAll);
         }
     }

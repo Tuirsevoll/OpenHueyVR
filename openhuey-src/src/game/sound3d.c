@@ -14,6 +14,7 @@
 #include "sound3d.h"
 
 #include "progress.h"
+#include "vrspots.h"
 
 #include "../platform/saudio.h"
 
@@ -43,7 +44,7 @@ void sound3d_tick(Engine *e) {
     static float world[SOUND3D_VOICES][3];
     int voices[SOUND3D_VOICES];
     Vec3 ear;
-    int n, i, hidden;
+    int n, i, hidden, spot, enclosed;
 
     if (e == NULL || !saudio_on() || !saudio_listener_at(&ear)) {
         return;
@@ -53,6 +54,8 @@ void sound3d_tick(Engine *e) {
         return;
     }
     hidden = (int)(gProgress.state[SOUND3D_HIDDEN >> 5] >> (SOUND3D_HIDDEN & 31)) & 1;
+    spot = vrspot_active();
+    enclosed = spot && vrspot_enclosed();
     for (i = 0; i < n; i++) {
         Vec3 at = vec3(world[i][0], world[i][1], world[i][2]);
         float dx = at.x - ear.x, dy = at.y - ear.y, dz = at.z - ear.z;
@@ -60,10 +63,16 @@ void sound3d_tick(Engine *e) {
 
         if (d <= SOUND3D_SELF) {
             saudio_occlude(voices[i], 0.0f);   /* her own body: as it was */
-        } else if (hidden) {
-            saudio_occlude(voices[i], 1.0f);   /* hidden away: the room is muffled */
+            saudio_enclosed(voices[i], 0.0f);
+        } else if (enclosed) {
+            saudio_occlude(voices[i], 1.0f);   /* inside a shut hiding spot: muffled ... */
+            saudio_enclosed(voices[i], 1.0f);  /* ... and its direction widened */
+        } else if (!spot && hidden) {
+            saudio_occlude(voices[i], 1.0f);   /* the flat screen's hiding: the room is muffled */
+            saudio_enclosed(voices[i], 0.0f);
         } else {
             saudio_occlude(voices[i], (float)sound3d_blocked(&e->room.nav, ear, at));
+            saudio_enclosed(voices[i], 0.0f);
         }
     }
 }

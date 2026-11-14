@@ -24,6 +24,9 @@
 #define SAUDIO_GAIN_TAU 0.030f   /* s: ... and its loudness */
 #define SAUDIO_OCCL_IN 0.12f     /* s: a wall between, then gone again */
 #define SAUDIO_OCCL_OUT 0.35f
+#define SAUDIO_ENCL_IN 0.10f     /* s: inside a shut hiding spot, and out of it again */
+#define SAUDIO_ENCL_OUT 0.30f
+#define SAUDIO_ENCL_SPREAD 0.6f  /* how far the HRTF's direction is widened when enclosed (0..1) */
 #define SAUDIO_LP_CLEAR 12000.0f /* Hz: unobstructed */
 #define SAUDIO_LP_BLOCKED 900.0f /* Hz: through a wall */
 #define SAUDIO_OCCL_GAIN 0.55f   /* the muffling as well as the low-pass */
@@ -41,6 +44,7 @@ typedef struct Source {
     Vec3 target, pos;            /* world units */
     float gain, gain_target;     /* the placement's amplitude (the left/right pair's energy) */
     float occl, occl_target;
+    float enclosed, enclosed_target;
     float lp, lp_coef;
     float weight;                /* this block's binaural share (0: the original left / right) */
     /* The effect processes exactly frameSize samples a call and nothing less
@@ -75,6 +79,7 @@ static struct {
     double stat_freq;
     /* the smoothing, as per-sample factors (fixed once, from the constants above) */
     float k_gain, k_occl_in, k_occl_out, k_pos;
+    float k_encl_in, k_encl_out;
 } S;
 static void stats_print(void) {
     double sec = S.stat_freq > 0.0 ? S.stat_ticks / S.stat_freq : 0.0;
@@ -306,6 +311,8 @@ int saudio_start(void) {
     S.k_gain = 1.0f - expf(-1.0f / (SAUDIO_GAIN_TAU * (float)SOUND_RATE));
     S.k_occl_in = 1.0f - expf(-1.0f / (SAUDIO_OCCL_IN * (float)SOUND_RATE));
     S.k_occl_out = 1.0f - expf(-1.0f / (SAUDIO_OCCL_OUT * (float)SOUND_RATE));
+    S.k_encl_in = 1.0f - expf(-1.0f / (SAUDIO_ENCL_IN * (float)SOUND_RATE));
+    S.k_encl_out = 1.0f - expf(-1.0f / (SAUDIO_ENCL_OUT * (float)SOUND_RATE));
     S.k_pos = 1.0f - expf(-(float)SAUDIO_FRAME / (SAUDIO_POS_TAU * (float)SOUND_RATE));
     SDL_LockMutex(S.lock);   /* (the audio thread reads ready under it) */
     S.ready = 1;
@@ -407,6 +414,7 @@ void saudio_source(int voice, int spatial, const float world[3], float gain, uin
         s->gen = gen;
         s->gain = s->gain_target;
         s->occl = s->occl_target;
+        s->enclosed = s->enclosed_target;
         s->lp = 0.0f;
         s->in_n = 0;
         s->out_n = SAUDIO_FRAME;   /* (the latency: a frame of silence, then the effect's output) */
@@ -439,6 +447,15 @@ void saudio_occlude(int voice, float blocked) {
     }
     SDL_LockMutex(S.lock);
     S.src[voice].occl_target = blocked < 0.0f ? 0.0f : blocked > 1.0f ? 1.0f : blocked;
+    SDL_UnlockMutex(S.lock);
+}
+
+void saudio_enclosed(int voice, float enclosed) {
+    if (voice < 0 || voice >= SAUDIO_VOICES || S.lock == NULL) {
+        return;
+    }
+    SDL_LockMutex(S.lock);
+    S.src[voice].enclosed_target = enclosed < 0.0f ? 0.0f : enclosed > 1.0f ? 1.0f : enclosed;
     SDL_UnlockMutex(S.lock);
 }
 
@@ -587,7 +604,7 @@ static void apply_block(int voice) {
     S.in.numSamples = SAUDIO_FRAME;
     S.out.numSamples = SAUDIO_FRAME;
     p.interpolation = IPL_HRTFINTERPOLATION_BILINEAR;
-    p.spatialBlend = 1.0f;
+    p.spatialBlend = 1.0f - SAUDIO_ENCL_SPREAD * s->enclosed;
     p.hrtf = S.hrtf;
     p.peakDelays = NULL;
     if (S.stats) {
@@ -635,6 +652,8 @@ void saudio_voice_render(int voice, const float *mono, int frames, float gain, f
         s->gain += (s->gain_target - s->gain) * S.k_gain;
         s->occl += (s->occl_target - s->occl) *
                    (s->occl_target > s->occl ? S.k_occl_in : S.k_occl_out);
+        s->enclosed += (s->enclosed_target - s->enclosed) *
+                       (s->enclosed_target > s->enclosed ? S.k_encl_in : S.k_encl_out);
         og = 1.0f - s->occl * (1.0f - SAUDIO_OCCL_GAIN);
         x = mono[i] * s->gain * og;
         if (s->occl > 0.001f) {
@@ -688,6 +707,10 @@ void saudio_source_off(int voice) { (void)voice; }
 void saudio_occlude(int voice, float blocked) {
     (void)voice;
     (void)blocked;
+}
+void saudio_enclosed(int voice, float enclosed) {
+    (void)voice;
+    (void)enclosed;
 }
 int saudio_sources(int *voices, float (*world)[3], int max) {
     (void)voices;

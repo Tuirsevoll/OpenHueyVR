@@ -56,7 +56,9 @@ create flames  -3.3e f, 31.4e f, -4.3e f,   -5.7e f, 31.4e f, 0.3e f,   -2.8e f,
     2.9e f, 31.1e f, -4.4e f,   5.6e f, 31.5e f, 0.5e f,   2.7e f, 31.7e f, 5e f,
 : candles-lit ( -- )  6 0 do  i 0  flames i 3 * floats +  dup f@  dup float+ f@  2 floats + f@  flame-at  loop ;
 : came-in ( exit -- )
-    drop  room-sounds  the-cabinet cabinet-shown  1 barred-floor floor-off
+    drop
+    s" l_door0" s" r_door0"  14.5e 30e 90e 3.5e 7e 14.5e 37e  vr-hiding-spot
+    room-sounds  the-cabinet cabinet-shown  1 barred-floor floor-off
     waiting-due? waiting !
     waiting @ if
         stalkers-stay state!  force-followed state!  stalker-no-fear state!  no-stalker-camera state!
@@ -67,6 +69,12 @@ create flames  -3.3e f, 31.4e f, -4.3e f,   -5.7e f, 31.4e f, 0.3e f,   -2.8e f,
 
 \ ---- the cabinet (the kit's) ----
 : hides ( -- )  shriek-sound hide-shriek !  the-cabinet hides-in-cabinet ;
+: vr-cabinet-hides ( -- )  shriek-sound hide-shriek !  the-cabinet hides-in-cabinet ;
+: vr-cabinet-watch ( -- )
+    vr? 0= if  exit  then
+    vr-spot-inside? 0= if  exit  then
+    ['] vr-cabinet-hides running? if  exit  then
+    ['] vr-cabinet-hides start drop ;
 : stalker-came ( -- )  the-cabinet cabinet-stalker-came ;
 
 \ ---- what she may look at here (each from a spot of its own, its own shot) ----
@@ -95,6 +103,7 @@ create cameras  1 , 0 , 0 ,   2 , 1 , 1 ,   3 , 1 , 1 ,   4 , 2 , 2 ,   \ (area,
 create her-look  -27.99e 0e -19.65e  30e 8e 8e look,
 create looks  19.24e 0e -32.32e  22e 18e 18e look,   -32.619e 0e -33.47e  22e 18e 18e look,   19.13e 0e -1.45e  17e 14e 14e look,
 : each-frame ( -- )
+    vr-cabinet-watch
     hums  0 exit-out  cameras 4 cameras-at
     waiting @ if
         her-noticed 100 -27.99e 0e -19.65e 30e 8e notices? if  ['] tense start drop  then
@@ -111,7 +120,8 @@ create looks  19.24e 0e -32.32e  22e 18e 18e look,   -32.619e 0e -33.47e  22e 18
     $B 180 50 fiona-faces? if  ['] still unhurried offer  then
     fiona cabinet-area in-area?  fiona 0 60 heading? and if
         waiting @ if  ['] right-there unhurried offer
-        else  stalker-in? if  no-time-message offer-remark-now  else  ['] hides hiding-spot offer  then  then
+        else  stalker-in? if  no-time-message offer-remark-now
+              else  vr? 0= if  ['] hides hiding-spot offer  then  then  then
     then
     waiting @ 0=  stalker-in? 0= or if  exit  then
     fiona stalker 20 close-to?  fiona 45 stalker body-pos fswap fdrop faces-point? and if  ['] she-turns unhurried offer  then ;

@@ -5,7 +5,7 @@
 \ The places themselves: story/places/*.fs. A room without one still runs its converted
 \ scripts (story/room.fs).
 IN: story.kit
-USING: engine game-state actors messages common vectors facts flag-names story-names stalker-names room-names effects hewie-names hewie.anims floor-flags keys mods ;
+USING: engine game-state actors messages common vectors facts flag-names story-names stalker-names room-names effects hewie-names hewie.anims floor-flags keys mods fiona.sneak fiona.state ;
 
 \ ---- the characters a place directs: Fiona, Hewie, the stalker in the game ----
 3 constant #people
@@ -1391,6 +1391,44 @@ $84 constant calmed-sound   $40A8 constant recovery-doc-msg   $A8 constant recov
     then
     shot-off  stalkers-stay state-off ;
 
+
+\ ---- the headset's physical hiding spots: the four wardrobe/cabinet doors a player walks through.
+\ The geometry, closure and step are C (game/vrspots.c); this sets the game's own flags from them.
+variable vr-hiding-on
+variable vr-hiding-cam
+variable vr-hiding-caught   \ (a discovery has taken her out of this spot: no hiding again till she leaves it)
+: vr-hiding-spot ( a1 n1 a2 n2 F: ox oz yaw half depth ix iz -- )
+    vr? if  vr-spot drop
+    else  fdrop fdrop fdrop fdrop fdrop fdrop fdrop  2drop 2drop  then ;
+: vr-half-clear ( -- )  fiona.sneak:sneak-hide @ 0= if  fiona-half-hidden state-off  then ;
+: vr-hiding-busy? ( -- flag )   \ (a discovery has her: the place's own sequence owns the flags)
+    found-her @ 0<>  fiona held? or  fiona-p holder-of @ 0< 0= or ;
+: vr-hiding-cam-on ( -- )
+    no-stalker-camera state? 0= if  no-stalker-camera state!  -1 vr-hiding-cam !  then ;
+: vr-hiding-cam-off ( -- )
+    vr-hiding-cam @ if  0 vr-hiding-cam !  no-stalker-camera state-off  then ;
+: vr-hiding-clear ( -- )
+    0 vr-hiding-on !  fiona-hidden state-off  vr-half-clear  1 avoid-prompt  vr-hiding-cam-off ;
+: vr-hiding-flags ( -- )
+    vr? 0= if  0 vr-spot-release  exit  then
+    vr-hiding-caught @ if
+        vr-spot-inside? if  -1 vr-spot-release  vr-hiding-clear  exit  then
+        0 vr-hiding-caught !
+    then
+    0 vr-spot-release
+    vr-spot-active? 0= if  vr-hiding-on @ if  vr-hiding-clear  then  exit  then
+    vr-spot-inside? 0= if  0 vr-hiding-caught !  vr-hiding-on @ if  vr-hiding-clear  then  exit  then
+    -1 vr-hiding-on !
+    vr-hiding-busy? if  exit  then
+    vr-spot-full? if
+        fiona-hidden state!  vr-half-clear
+    else
+        fiona-hidden state-off
+        vr-spot-half? if  fiona-half-hidden state!  else  vr-half-clear  then
+    then
+    0 avoid-prompt
+    vr-spot-full? vr-spot-half? or if  vr-hiding-cam-on  else  vr-hiding-cam-off  then ;
+
 \ ---- a hiding place (the rooms' cupboards and wardrobes): she walks to it, slips in and lies low,
 \ calming; out by the circle button - or, found (or panicking, or he is in), hauled out. The room's
 \ motions for it (her file): 4 the walk there, 5 in, 1 lying low, 2 out, 3 hauled out; his (his
@@ -1488,7 +1526,10 @@ variable cab-searched
 : cabinet-shut ( -- )  cab @ cb.fact @ fact!  0 barred-floor floor-on ;
 : cabinet-shown ( cb -- )   \ (as she comes in: shut, or open - nobody but her before it)
     cab !  0 keeps-hewie-off floor-on  0 keeps-stalkers-off floor-on
-    cab @ cb.fact @ fact? if  0 show-part  0 barred-floor floor-on  cab-door object-hide  cab-door 1+ object-hide
+    cab @ cb.fact @ fact? if
+        vr? if  0 hide-part  cab-door object-show  cab-door 1+ object-show
+        else  0 show-part  cab-door object-hide  cab-door 1+ object-hide  then
+        0 barred-floor floor-on
     else  0 hide-part  0 barred-floor floor-off  cab-door object-show  cab-door 1+ object-show  then ;
 : near-her? ( id F: d -- flag )  {: id F: d :}  id here? 0= if  false exit  then  fiona body-at id body-at vec-dist d f<= ;
 \ she within d of the stalker while he has her in sight or reach (cond 0x23 from Fiona to a
@@ -1502,15 +1543,15 @@ variable cab-searched
 : cab-steps-out ( -- )
     cab-out  cab-him-off  fiona true noclip  2 cab-doors  fiona room-motion 2 + 0 start-blend
     16 frames  cab-open-sound room-bank fiona sound-by  56 frames  cab-shut-sound room-bank fiona sound-by
-    fiona wait-anim  fiona false noclip  cab-faces-him  cab @ cb.fact @ fact-off  out-and-free ;
+    fiona wait-anim  fiona false noclip  cab-faces-him  cab @ cb.fact @ fact-off  out-and-free  vr? if  0 pose-her!  then ;
 : cab-bursts-out ( -- )
     cab-out  -1 cab-burst !  cab-stage @ 0= if  cab-him-off  then
     fiona true noclip  4 cab-doors  fiona room-motion 4 + 0 start-blend  7 frames  cab-open-sound room-bank fiona sound-by
-    fiona wait-anim  fiona false noclip  cab-faces-him  cabinet-shut  out-and-free ;
+    fiona wait-anim  fiona false noclip  cab-faces-him  cabinet-shut  out-and-free  vr? if  0 pose-her!  then ;
 : cab-forced-out ( -- )  fiona hold  cab-bursts-out ;   \ (seen there: out of it, at once)
 : cab-pulled-out ( -- )
     begin  cab-stage @ 2 = 0= while  yield  repeat
-    cab-out  2 avoid-prompt  fiona true noclip  fiona room-motion 3 + 0 play-blend  fiona false noclip  cabinet-shut ;
+    cab-out  2 avoid-prompt  fiona true noclip  fiona room-motion 3 + 0 play-blend  fiona false noclip  cabinet-shut  vr? if  0 pose-her!  then ;
 : cab-hewie-hides ( -- )
     hewie hold  hewie 3 motions-for  hewie cab @ cb.dog-tri @ cab @ cb.dog-deg @ -1 walk-path-move  cab @ cb.dog-x f@ cab @ cb.dog-z f@ go-to
     hewie use-motions  -1 cab-dog-in !  begin  cab-steps @ 0= while  yield  repeat
@@ -1543,7 +1584,22 @@ variable cab-searched
             cab-steps-out  0 barred-floor floor-off  exit
         then
     again ;
+: vr-hides-in-cabinet ( cb -- )   \ (the headset: she walked in; watch her, the place's search as it is)
+    {: a :}  a cab !
+    0 came-while-hidden !  0 cab-stage !  0 cab-held !  a cb.fact @ fact? cab-closed !  0 cab-steps !  0 cab-dog !  0 cab-dog-in !  0 cab-burst !
+    begin
+        vr-spot-inside? 0= if  0 barred-floor floor-off  out-and-free exit  then
+        cab-stage @ 1 = if
+            -1 vr-hiding-caught !
+            fiona hold-posed
+            stalker-in? if  cab-pulled-out  else  cab-steps-out  then
+            0 pose-her!  exit
+        then
+        in-panic? if  -1 vr-hiding-caught !  fiona hold-posed  cab-bursts-out  0 pose-her!  exit  then
+        hidden-calm  yield
+    again ;
 : hides-in-cabinet ( cb -- )   \ (a place's doing: in it, lying low)
+    vr? if  vr-hides-in-cabinet  exit  then
     {: a :}  a cab !
     stalkers-stay state!  0 came-while-hidden !  fiona hold  fiona wait-move
     0 cab-stage !  0 cab-held !  a cb.fact @ fact? cab-closed !  0 cab-steps !  0 cab-dog !  0 cab-dog-in !  0 cab-burst !
@@ -1572,7 +1628,7 @@ variable cab-searched
         stalker wait-anim  stalker stalker.anims:step-back-anim play
     else
         stalker stalker.anims:there-anim play
-        fiona-hidden state? if  2 avoid-prompt  panic-eased  ['] cab-forced-out start drop  then
+        fiona-hidden state? if  2 avoid-prompt  panic-eased  vr? if  fiona hold-posed  then  ['] cab-forced-out start drop  then
     then
     stalker 10 idle  begin  fiona held? while  yield  repeat  0 stalker-order ;
 : cab-finding ( var -- result )   \ (0 he passes, 1 a grab, 2 he opens it)

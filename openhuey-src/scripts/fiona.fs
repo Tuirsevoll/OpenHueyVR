@@ -177,6 +177,7 @@ variable tp-go   -1 tp-go !
 \ each tick the option is on: the stick pushed aims (growing while it is held), let go lands
 : teleport-step ( -- )
     vr-settings vr.teleport l@ 0= if  tp-clear  exit  then
+    vr-spot-active? if  tp-clear  exit  then   \ (a hiding spot's own step: no teleport through it)
     hands-off? her-mode @ own-mode <> or  her-doing @ free-doing <> or if  tp-clear  exit  then
     sx sz vlen {: F: len :}
     tp-aiming @ if
@@ -528,6 +529,7 @@ behaviour free
       her-model @ scene-has? if  followed  else  frame  then ;
   on frame-end ( -- )   \ what she is doing, as the frame left her; her move
       self body? 0= if  exit  then
+      her-at vec@  vr-spot-here
       unseen-frame
       her-mode @ her-sub @ her-cond @ her-cmd @ her-doing @ broadcast fiona-doing
       her-hit-who @ broadcast fiona-struck-by

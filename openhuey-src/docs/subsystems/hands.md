@@ -5,7 +5,7 @@ Fiona's hands on the Quest controllers (`src/game/vrhands.c`).
 ## Purpose
 
 Her arms reach the grip poses, the hand shapes follow the triggers, and a grip takes a small
-object, a door's knob or a wardrobe leaf. A grip is also the pad's triangle - the way back out of
+object, a door's knob or a hiding spot's leaf. A grip is also the pad's triangle - the way back out of
 a menu or a dialogue - and the crouch trigger on the left hand drives the VR crouch
 (docs/subsystems/comfort.md). This page covers one part of that: **wall detection** of
 the room's walls, its door leaves and its placed objects, so a controller can say when a hand has
@@ -34,6 +34,10 @@ swept through something solid.
 - **What the hand holds is not in its way**: the door or placed object that same hand holds
   (`HOLD_DOOR` its door; `HOLD_PROP`, `HOLD_WARD` its placed object) is the skipped index, so a
   leaf that follows the hand does not buzz it. Detection runs while holding anything else.
+- **A hiding spot's leaves** are marked `hiding_leaf` by `vr-hiding-spot` (`docs/subsystems/hiding.md`);
+  `nearest_ward` takes either leaf of the spot, one per hand. A leaf's track may be format 8 (the
+  turn) or 7 (the turn and the place, the hinge moving as it swings); both are scrubbed the same way,
+  so the right leaf of a pair is no longer inert.
 - The room's draws are read as `room_touch` reads them: a batch with fewer than three vertices, the
   bloom mask, and a batch whose visibility group is hidden are left out.
 - A hand entering a wall, a leaf or a placed object buzzes its controller once
@@ -149,8 +153,13 @@ Walls, floors and ceilings stop the arm at 0.40 and let it slide along them. Doo
 objects buzz only.
 
 A held thing (loot) and the equipped magnesia/antimony are drawn from the hand's own frame at each
-draw, so walking with one in a hand no longer stutters (above). Props and wardrobe leaves are still
-placed by the tick.
+draw, so walking with one in a hand no longer stutters (above). Props and the hiding spots' leaves
+are still placed by the tick.
+
+The hiding spots' leaves are both driven by hand (format 7 or 8); a spot marks them and the generic
+hiding-spot layer uses their closure (`docs/subsystems/hiding.md`). The right leaf of the nursery
+wardrobe and one leaf of each old-mansion cabinet, silent before because their tracks are format 7,
+now swing.
 
 A hand also grabs a ladder in the air beside it while she climbs: the link is kept, that
 controller buzzes once, and the base game's rung sound plays. The grab no longer needs the climb to be running: a new grab on a ladder

@@ -46,7 +46,8 @@ PRIVATE>
     0 vr-settings vr.panic-shake l!
     1 vr-settings vr.panic-stumbles l!
     2 vr-settings vr.panic-haptics l!
-    1 vr-settings vr.audio3d l! ;              \ (placed sounds through the headset's HRTF, occluded: on)
+    1 vr-settings vr.audio3d l!              \ (placed sounds through the headset's HRTF, occluded: on)
+    1 vr-settings vr.hide-door l! ;            \ (a hiding spot's door see-through while fully hidden: on)
 
 \ the options written out as Forth, read back at start-up (each line runs)
 : save-vr-options ( -- )
@@ -76,6 +77,8 @@ PRIVATE>
     vr-settings vr.crouch-off sf@ 6 f>s$ type        ."  vr-settings vr.crouch-off sf!" cr
     vr-settings vr.sneak-speed sf@ 6 f>s$ type       ."  vr-settings vr.sneak-speed sf!" cr
     vr-settings vr.audio3d l@ n>s type               ."  vr-settings vr.audio3d l!" cr
+    vr-settings vr.hide-door l@ n>s type             ."  vr-settings vr.hide-door l!" cr
+
     vr-settings vr.panic-tint l@ n>s type            ."  vr-settings vr.panic-tint l!" cr
     vr-settings vr.panic-smear l@ n>s type           ."  vr-settings vr.panic-smear l!" cr
     vr-settings vr.panic-zoom l@ n>s type            ."  vr-settings vr.panic-zoom l!" cr

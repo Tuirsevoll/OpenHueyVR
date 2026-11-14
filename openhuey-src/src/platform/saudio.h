@@ -65,6 +65,9 @@ void saudio_voice_render(int voice, const float *mono, int frames, float gain, f
 /* occlusion, 0 clear .. 1 blocked (sound3d.c, once a tick): muffled and attenuated, eased over
  * time here */
 void saudio_occlude(int voice, float blocked);
+/* how enclosed the ears are, 0 open .. 1 inside a shut hiding spot (sound3d.c): the HRTF's
+ * direction widened toward the plain signal, so what is outside is harder to place. Eased. */
+void saudio_enclosed(int voice, float enclosed);
 
 /* the voices that are spatial now (sound3d.c casts its rays for these): how many, into `voices`;
  * `world` their points, world units */

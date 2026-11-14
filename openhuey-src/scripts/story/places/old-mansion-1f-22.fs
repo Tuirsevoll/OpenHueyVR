@@ -15,11 +15,19 @@ om1f-22-flag1 $10 2  $47 90  $47 90  $47 90  $4F 80
     144.89e 65.089e  140.97e 60.42e  144.89e 65.089e  134.56e 61.52e  cabinet: the-cabinet
 
 : came-in ( exit -- )
-    drop  room-sounds  the-cabinet cabinet-shown
+    drop
+    s" l_door0" s" r_door0"  149.9e 70e 0e 3.5e 7e 156.9e 70e  vr-hiding-spot
+    room-sounds  the-cabinet cabinet-shown
     om1f-22-refined-antimony fact? 0= if  antimony-fx 147.17e 11e 86.89e flicker-at  then
     flame-fx 1 -36.7e 19.1e -34.8e flame-at  flame-2-fx 1 -36.7e 19.1e 34.8e flame-at
     1 $2300 reverb ;
 : hides ( -- )  the-cabinet hides-in-cabinet ;
+: vr-cabinet-hides ( -- )  the-cabinet hides-in-cabinet ;
+: vr-cabinet-watch ( -- )
+    vr? 0= if  exit  then
+    vr-spot-inside? 0= if  exit  then
+    ['] vr-cabinet-hides running? if  exit  then
+    ['] vr-cabinet-hides start drop ;
 : stalker-came ( -- )  the-cabinet cabinet-stalker-came ;
 
 \ ---- what she may take here ----
@@ -30,10 +38,11 @@ om1f-22-flag1 $10 2  $47 90  $47 90  $47 90  $4F 80
 create cameras  4 , 0 , 0 ,   5 , 1 , 1 ,   \ (area, set, path)
 create entries  0 , 0 ,   1 , 1 ,   \ (by exit 0, 1: the camera)
 : each-frame ( -- )
+    vr-cabinet-watch
     0 exit-out  1 1 leaves-by  cameras 2 cameras-at
     fiona 2 entered? if  0 prepare-exit  scene-figure figure-slot 0 figure-in-by  then
     fiona 3 entered? if  1 prepare-exit  figure-slot figure-out  then
-    fiona cabinet-area in-area?  fiona 90 60 heading? and if
+    fiona cabinet-area in-area?  fiona 90 60 heading? and  vr? 0= and if
         stalker-in? if  no-time-message offer-remark-now  else  ['] hides hiding-spot offer  then
     then
     om1f-22-refined-antimony fact? 0=  fiona 147.17e 11e 86.89e 5e 5e touches? and if  ['] take-antimony calm-only offer  then
