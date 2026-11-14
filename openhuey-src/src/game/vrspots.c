@@ -110,7 +110,9 @@ static int spot_near(const VrSpot *s, float x, float y, float z) {
     float u, v;
 
     spot_local(s, x, z, &u, &v);
-    return fabsf(u) <= s->half_width + 2.0f && v >= -2.0f && v <= s->depth + 2.0f &&
+    /* six units in front: the threshold's barred floor, which the base game's noclip box covered,
+     * so she can reach the doorway on the wardrobe floor */
+    return fabsf(u) <= s->half_width + 2.0f && v >= -6.0f && v <= s->depth + 2.0f &&
            y >= s->floor_y - 2.0f && y <= s->floor_y + s->height;
 }
 
@@ -458,30 +460,43 @@ static Vec3 spot_step_id(Engine *e, int id, Vec3 at, Vec3 step) {
     if (!spot_near(s, at.x, at.y, at.z) && !spot_near(s, at.x + step.x, at.y, at.z + step.z)) {
         return step;
     }
-    if (u2 > s->half_width) {
-        u2 = s->half_width;
-    } else if (u2 < -s->half_width) {
-        u2 = -s->half_width;
-    }
     {
         int from_inside = fabsf(u) <= s->half_width && v >= 0.0f && v <= s->depth;
 
         if (from_inside) {
-            /* inside: the back wall, and the doorway where a leaf is fully shut */
+            /* inside: the side walls, the back wall, and the doorway where a leaf is fully shut */
+            if (u2 > s->half_width) {
+                u2 = s->half_width;
+            } else if (u2 < -s->half_width) {
+                u2 = -s->half_width;
+            }
             if (v2 > s->depth) {
                 v2 = s->depth;
             }
             if (v2 < 0.0f && spot_blocked(s, set, u2)) {
                 v2 = 0.0f;
             }
-        } else {
-            /* outside: the back wall always, and entering only through the doorway, where it is open */
-            if (v2 > s->depth) {
+        } else if (v > s->depth) {
+            /* behind it: the back wall, never through it */
+            if (v2 < s->depth) {
                 v2 = s->depth;
-            } else if (v > s->depth && v2 < s->depth) {
+            }
+            if (u2 > s->half_width) {
+                u2 = s->half_width;
+            } else if (u2 < -s->half_width) {
+                u2 = -s->half_width;
+            }
+        } else {
+            /* in front or at a side: the doorway only, and only where it is open */
+            if (v2 > s->depth) {
                 v2 = s->depth;
             }
             if (v2 > 0.0f) {
+                if (u2 > s->half_width) {
+                    u2 = s->half_width;
+                } else if (u2 < -s->half_width) {
+                    u2 = -s->half_width;
+                }
                 if (fabsf(u_raw) > s->half_width || spot_blocked(s, set, u2)) {
                     v2 = 0.0f;
                 }

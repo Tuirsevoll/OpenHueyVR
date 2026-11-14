@@ -48,7 +48,11 @@ scripted hiding.
    spot clears it only when the crouch is not using it.
 6. **The door seen through.** `vr.hide-door` (default on) draws the active spot's leaves at about
    half alpha in the see-through layer while she is inside and fully hidden. Off, they stay opaque.
-7. **The audio.** Inside and every leaf shut (`vr-spot-enclosed?`), `sound3d.c` muffles the room and
+7. **The prompts.** Entering the spot shows the “Hiding…” avoid row once (`0 avoid-prompt`); the
+   avoid actor clears it after its second, and it is not re-sent while she stays. Coast clear
+   (`1 avoid-prompt`) is shown only if `chased?` was true while she was in the spot and the stalker
+   has since lost her and left (`vr-hiding-chased`); a spot entered out of danger never shows it.
+8. **The audio.** Inside and every leaf shut (`vr-spot-enclosed?`), `sound3d.c` muffles the room and
    `saudio.c` lowers `spatialBlend` to about 0.4, so outside sounds are hard to place. Her own body's
    sounds stay clear. A base hiding (a bed) keeps the old `fiona-hidden` muffling.
 
@@ -56,7 +60,7 @@ scripted hiding.
 
 | Room | Leaves | Doorway origin, yaw | Half width, depth | Inside point |
 |---|---|---|---|---|
-| castle-2f-12 (nursery) | `left_door`, `right_door` | (19.25, 41.0), 90° | 5.0, 7.0 | (16.8, 48.0) |
+| castle-2f-12 (nursery) | `left_door`, `right_door` | (19.28, 38.49), 135° | 6.8, 6.0 | (20.69, 39.91) |
 | old-mansion-1f-22 | `l_door0`, `r_door0` | (149.9, 70.0), 0° | 3.5, 7.0 | (156.9, 70.0) |
 | old-mansion-b1-4 | `l_door0`, `r_door0` | (14.5, 30.0), 90° | 3.5, 7.0 | (14.5, 37.0) |
 | old-mansion-b1-5 | `l_door0`, `r_door0` | (21.5, -30.0), 90° | 3.5, 7.0 | (21.5, -37.0) |

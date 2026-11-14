@@ -14,6 +14,14 @@ USING: tester engine game-state actors messages keys room-names game debug facts
 : open-both ( -- )  30 frame-both ;
 : inside ( -- )  16.8e 0e 45e put-at ;
 : outside ( -- )  16.8e 0e 35e put-at ;
+variable px  variable pz
+: walk-in ( -- )   \ (a virtual +z walk from the flat screen's entry, the step clamped each time)
+    16.729e px sf!  33.985e pz sf!
+    40 0 do
+        px sf@  0e  pz sf@  0e 0.5e  vr-spot-step-at
+        pz sf@ f+  pz sf!
+        px sf@ f+  px sf!
+    loop ;
 
 free-play  10 run-frames
 true vr!
@@ -53,15 +61,24 @@ T{ hidden?  half?  vr-spot-inside? -> 0 0 0 }T
 
 
 testing the box walls: the back and a side stop a step, not the doorway
-T{ 16.8e 0e 47e 0e 2e vr-spot-step-at fswap fdrop 1.5e f< -> -1 }T
-T{ 23e 0e 45e 2e 0e vr-spot-step-at fdrop 1.5e f< -> -1 }T
+T{ 23.165e 0e 42.381e 0e 2e vr-spot-step-at fswap fdrop 1.5e f< -> -1 }T
+T{ 24.933e 0e 35.663e 2e 0e vr-spot-step-at fdrop 1.7e f< -> -1 }T
 
 testing the step: a shut door stops it, an open one lets it through
 shut-both  10 run-frames
-T{ 16.8e 0e 42e 0e 2e fnegate vr-spot-step-at fswap fdrop 1.5e fnegate f> -> -1 }T
+T{ 16.8e 0e 42e 0e 2e fnegate vr-spot-step-at fswap fdrop 1.8e fnegate f> -> -1 }T
 open-both  10 run-frames
 T{ 16.8e 0e 42e 0e 2e fnegate vr-spot-step-at fswap fdrop 1.9e fnegate f< -> -1 }T
 
+
+testing the front approach reaches the spot and walks in through the open doors
+open-both  10 run-frames
+16.729e 0e 33.985e put-at  2 run-frames
+T{ vr-spot-noclip? -> -1 }T
+walk-in
+T{ pz sf@ 42e f> -> -1 }T
+20.69e 0e 39.91e put-at  2 run-frames
+T{ vr-spot-inside? -> -1 }T
 
 test-summary
 

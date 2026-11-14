@@ -88,7 +88,7 @@ $30 constant rock-phase   $34 constant rock-size   $38 constant rock-fade   $3C 
 \ ---- as she comes in ----
 : came-in ( exit -- )
     drop
-    s" left_door" s" right_door"  19.25e 41e 90e 5e 7e 16.8e 48e  vr-hiding-spot
+    s" left_door" s" right_door"  19.276e 38.492e 135e 6.8e 6e 20.69e 39.91e  vr-hiding-spot
     room-sounds  wardrobe-floor keeps-hewie-off floor-on  wardrobe-floor keeps-stalkers-off floor-on
     open? if  wardrobe-floor barred-floor floor-on  else  wardrobe-floor barred-floor floor-off  then
     vr? if
@@ -374,7 +374,7 @@ create cameras  4 , 1 , -1 ,   5 , 0 , 0 ,   \ (area, set, path)
 create ahead  2 , 0 ,   3 , 1 ,   \ (area, exit)
 create entries  1 , -1 ,   1 , -1 ,   \ (by exit 0, 1: the camera)
 : vr-hides ( -- )   \ (the headset: she walked in; watch her, and the place's own search takes over)
-    0 came-while-hidden !  0 stage !  0 shaking !  open? 0= first-time !  0 hide-step !  0 hewie-along !  0 hewie-in-place !  0 left-in-panic !
+    0 came-while-hidden !  0 stage !  0 shaking !  open? 0= first-time !  0 hide-step !  0 hewie-along !  0 hewie-in-place !  0 left-in-panic !  0 vr-hiding-chased !
     fiona her-motions motions-for  stalker stalker-motions motions-for
     begin
         vr-spot-inside? 0= if  out-and-free exit  then
@@ -384,7 +384,7 @@ create entries  1 , -1 ,   1 , -1 ,   \ (by exit 0, 1: the camera)
         then
         in-panic? if  -1 vr-hiding-caught !  fiona hold-posed  out-in-panic  0 pose-her!  exit  then
         found-her @ 0<> if  -1 vr-hiding-caught !  exit  then   \ (the place's own finds-her starts the exit)
-        hidden-calm  yield
+        vr-hidden-calm  yield
     again ;
 ' vr-hides is vr-hides-do
 : vr-wardrobe-watch ( -- )
