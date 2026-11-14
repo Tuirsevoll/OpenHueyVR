@@ -638,10 +638,21 @@ static void bind(GLuint unit, GLuint texture, GLuint sampler) {
     glBindSampler(unit, sampler);
 }
 
-/* the frame blend (Renderer_Additive: the scripts' 0xCD): this frame's picture with the last at
- * sTrail, for one frame; the last frame kept while it is wanted */
-static GLuint sTrailTex;
-static int sTrailW, sTrailH, sTrailValid, sTrailOn;
+/* the frame blend (Renderer_Additive: the scripts' 0xCD): this frame's picture with the last that
+ * was blended, at sTrail, for one frame; the last kept while it is wanted.
+ *
+ * One trail a picture - each eye's own, and the window's: a headset draws both eyes, many frames a
+ * tick, and one trail made each eye fade over the other eye's picture. And the trail moves on a
+ * game tick, not on a drawn frame: the first picture a tick leaves is the one blended in and kept,
+ * so the fade is the game's 30 a second however often the headset asks for a picture. A slot keeps
+ * two textures: the one blending over this tick's pictures, and this tick's blended one. */
+#define TRAIL_SLOTS 3   /* (eye 0, eye 1, and the window's own) */
+static GLuint sTrailTex[TRAIL_SLOTS][2];
+static int sTrailW[TRAIL_SLOTS], sTrailH[TRAIL_SLOTS];   /* (both of a slot's are this size) */
+static int sTrailValid[TRAIL_SLOTS][2];   /* that one holds a tick's blended picture */
+static int sTrailCur[TRAIL_SLOTS];        /* the one blending over this tick's pictures */
+static int sTrailWritten[TRAIL_SLOTS];    /* this tick's blended picture is in cur ^ 1 */
+static int sTrailOn;
 static float sTrail;   /* the last frame's weight */
 
 void post_trail(float a) {
@@ -649,45 +660,106 @@ void post_trail(float a) {
     sTrail = 1.0f - a;
     sTrailOn = 1;
 }
-void post_trail_off(void) { sTrailOn = 0; }
+void post_trail_off(void) {
+    int i;
 
-static void trail(int x, int y, int w, int h) {
-    if (!sTrailOn) {
-        sTrailValid = 0;
+    sTrailOn = 0;
+    for (i = 0; i < TRAIL_SLOTS; i++) {
+        sTrailValid[i][0] = sTrailValid[i][1] = 0;
+        sTrailWritten[i] = 0;
+    }
+}
+
+static int trail_slot(void) {
+    int eye = vr_eye_active();
+
+    return eye >= 0 && eye < 2 ? eye : 2;   /* (the window's, or a picture drawn on its own) */
+}
+
+static void trail_size(int s, int w, int h) {
+    int i;
+
+    if (sTrailW[s] == w && sTrailH[s] == h) {
         return;
     }
-    if (sTrailTex == 0 || sTrailW != w || sTrailH != h) {
-        if (sTrailTex != 0) {
-            glDeleteTextures(1, &sTrailTex);
+    for (i = 0; i < 2; i++) {
+        if (sTrailTex[s][i] != 0) {
+            glDeleteTextures(1, &sTrailTex[s][i]);
         }
-        glCreateTextures(GL_TEXTURE_2D, 1, &sTrailTex);
-        glTextureStorage2D(sTrailTex, 1, GL_RGBA8, w, h);
-        sTrailW = w;
-        sTrailH = h;
-        sTrailValid = 0;
+        glCreateTextures(GL_TEXTURE_2D, 1, &sTrailTex[s][i]);
+        glTextureStorage2D(sTrailTex[s][i], 1, GL_RGBA8, w, h);
+        sTrailValid[s][i] = 0;
     }
-    if (sTrailValid) {
+    sTrailW[s] = w;
+    sTrailH[s] = h;
+    sTrailWritten[s] = 0;
+}
+
+static void trail(int x, int y, int w, int h) {
+    int s = trail_slot(), next;
+
+    if (!sTrailOn) {
+        sTrailValid[s][0] = sTrailValid[s][1] = 0;
+        sTrailWritten[s] = 0;
+        return;
+    }
+    trail_size(s, w, h);
+    if (sTrailValid[s][sTrailCur[s]]) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glProgramUniform1f(sTrailProg, 0, sTrail);
-        bind(0, sTrailTex, sLinear);
+        bind(0, sTrailTex[s][sTrailCur[s]], sLinear);
         glUseProgram(sTrailProg);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glDisable(GL_BLEND);
     }
-    glCopyTextureSubImage2D(sTrailTex, 0, 0, 0, x, y, w, h);
-    sTrailValid = 1;
+    if (!sTrailWritten[s]) {   /* (the first picture this tick: the one blended in and kept) */
+        next = sTrailCur[s] ^ 1;
+        glCopyTextureSubImage2D(sTrailTex[s][next], 0, 0, 0, x, y, w, h);
+        sTrailValid[s][next] = 1;
+        sTrailWritten[s] = 1;
+    }
 }
 
-/* ---- the panic's screens (post.h): each the screen so far copied, drawn back through kPanicFs ---- */
+/* ---- the panic's screens (post.h): each the screen so far copied, drawn back through kPanicFs ----
+ * The scripts ask during a game tick (post_negative / post_zoom_blur / post_panic_tint); post_tick_end
+ * keeps what they asked for until the next tick ends, so both eyes - and every refresh of the tick -
+ * show it. They were cleared as they were drawn, and a headset draws two eyes and several refreshes
+ * a tick: the right eye, and two refreshes in three, showed none of the tint. */
 static GLuint sPanicTex;
-static int sPanicW, sPanicH, sPanicNeg, sPanicZoom, sPanicLimit, sPanicAmount;
+static int sPanicW, sPanicH;
+static int sPanicNegWant, sPanicZoomWant, sPanicLimitWant, sPanicAmountWant;   /* this tick's */
+static int sPanicNeg, sPanicZoom, sPanicLimit, sPanicAmount;                   /* kept */
 
-void post_negative(void) { sPanicNeg = 1; }
-void post_zoom_blur(void) { sPanicZoom = 1; }
+void post_negative(void) { sPanicNegWant = 1; }
+void post_zoom_blur(void) { sPanicZoomWant = 1; }
 void post_panic_tint(int limit, int amount) {
-    sPanicLimit = limit;
-    sPanicAmount = amount;
+    sPanicLimitWant = limit;
+    sPanicAmountWant = amount > 0 ? amount : 0;
+}
+
+void post_tick_end(void) {
+    int i;
+
+    for (i = 0; i < TRAIL_SLOTS; i++) {
+        if (sTrailWritten[i]) {   /* (the tick's picture becomes the one the next fades from) */
+            sTrailCur[i] ^= 1;
+            sTrailWritten[i] = 0;
+        }
+        if (!sTrailOn) {   /* (no trail: nothing kept to blend over a later picture) */
+            sTrailValid[i][0] = sTrailValid[i][1] = 0;
+        }
+    }
+    sPanicNeg = sPanicNegWant;
+    sPanicZoom = sPanicZoomWant;
+    sPanicLimit = sPanicLimitWant;
+    sPanicAmount = sPanicAmountWant;
+    sPanicNegWant = sPanicZoomWant = sPanicLimitWant = sPanicAmountWant = 0;
+}
+
+void post_panic_reset(void) {
+    sPanicNeg = sPanicZoom = sPanicLimit = sPanicAmount = 0;
+    sPanicNegWant = sPanicZoomWant = sPanicLimitWant = sPanicAmountWant = 0;
 }
 
 static void panic_pass(int mode, int x, int y, int w, int h) {
@@ -719,7 +791,6 @@ static void panic_screens(int x, int y, int w, int h) {   /* (in ScreenFade_Fram
     if (sPanicAmount > 0) {
         panic_pass(3, x, y, w, h);
     }
-    sPanicNeg = sPanicZoom = sPanicAmount = 0;
 }
 
 void post_tv_want(void) { sTvWanted = 1; }

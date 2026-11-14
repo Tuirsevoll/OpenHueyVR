@@ -3,7 +3,7 @@
 \ she walks by and the view together - which is what a snap is. Headless:
 \   build/openhuey-src/openhuey --test openhuey-src/tests/controls/test_vr_options.fs
 IN: test-vr-options
-USING: tester engine game-state game actors messages keys facts flag-names subscreen subscreen.state fiona.state fiona.controls vr-options opening debug ;
+USING: tester engine game-state game actors messages keys facts flag-names subscreen subscreen.state fiona.state fiona.controls vr-options panic-menu opening debug ;
 
 testing the options a fresh game has: smooth turning, a 45 degree snap, the rest as the game was
 T{ vr-settings vr.turn-snap l@  vr-settings vr.snap-degrees sf@ f>s -> 0 45 }T
@@ -157,6 +157,57 @@ key: X tap
 T{ vr-settings vr.whisper-debug l@ -> 2 }T
 key: X tap
 T{ vr-settings vr.whisper-debug l@ -> 0 }T
+testing down to the panic preset: Reduced by default - the tint, the stumbles, the full beat
+key: Down tap   \ (the 3D Audio row, left as it is)
+key: Down tap   \ (the panic preset)
+T{ panic-preset  vr-settings vr.panic-tint l@  vr-settings vr.panic-stumbles l@  vr-settings vr.panic-haptics l@ -> 1 1 1 2 }T
+testing ... right again Minimal (no screen effect, no stumbles, half the beat)
+key: Right tap
+T{ vr-settings vr.panic-tint l@ vr-settings vr.panic-smear l@ vr-settings vr.panic-zoom l@
+   vr-settings vr.panic-negative l@ vr-settings vr.panic-shake l@ vr-settings vr.panic-stumbles l@
+   vr-settings vr.panic-haptics l@ panic-preset -> 0 0 0 0 0 0 1 2 }T
+testing ... right again Full (every screen effect, the stumbles, the full beat)
+key: Right tap
+T{ vr-settings vr.panic-tint l@ vr-settings vr.panic-smear l@ vr-settings vr.panic-zoom l@
+   vr-settings vr.panic-negative l@ vr-settings vr.panic-shake l@ vr-settings vr.panic-stumbles l@
+   vr-settings vr.panic-haptics l@ panic-preset -> 1 1 1 1 1 1 2 0 }T
+testing ... right again Reduced; Custom is never one of the steps
+key: Right tap
+T{ vr-settings vr.panic-tint l@ vr-settings vr.panic-smear l@ vr-settings vr.panic-zoom l@
+   vr-settings vr.panic-negative l@ vr-settings vr.panic-shake l@ vr-settings vr.panic-stumbles l@
+   vr-settings vr.panic-haptics l@ panic-preset -> 1 0 0 0 0 1 2 1 }T
+testing ... round: right again Minimal
+key: Right tap
+T{ panic-preset -> 2 }T
+testing down to the Panic effects button: the cross opens its own page, the status screen's look
+key: Down tap
+key: X tap
+T{ [: mode @ ;] menu@  [: page @ ;] menu@ -> on-panic 6 }T
+testing ... its rows are the settings: the tint turned over makes the set Custom
+key: X tap
+T{ panic-preset -> -1 }T
+testing ... down to the heartbeat's haptics: Full, Off, Half
+key: Down tap key: Down tap key: Down tap key: Down tap key: Down tap key: Down tap
+key: Right tap
+T{ vr-settings vr.panic-haptics l@ -> 2 }T
+key: Right tap
+T{ vr-settings vr.panic-haptics l@ -> 0 }T
+key: Right tap
+T{ vr-settings vr.panic-haptics l@ -> 1 }T
+testing ... up to the panic's stumbles: the row turns it over, both ways
+key: Up tap
+T{ vr-settings vr.panic-stumbles l@ -> 0 }T
+key: X tap
+T{ vr-settings vr.panic-stumbles l@ -> 1 }T
+key: X tap
+T{ vr-settings vr.panic-stumbles l@ -> 0 }T
+testing the triangle is back to the VR options page, the preset row now Custom
+key: V tap
+T{ [: mode @ ;] menu@  [: page @ ;] menu@  panic-preset -> on-page 6 -1 }T
+testing ... left from Custom picks Minimal (the last preset)
+key: Up tap
+key: Left tap
+T{ vr-settings vr.panic-tint l@ vr-settings vr.panic-stumbles l@ vr-settings vr.panic-haptics l@ panic-preset -> 0 0 1 2 }T
 testing the seated height sizes the world: 1.6 / 1.28 for the scale in use
 1.28e vr-settings vr.seated-height sf!
 T{ vr-body 1000e f* fround f>s  1000e f* fround f>s -> 1250 1280 }T
@@ -204,5 +255,24 @@ game:fiona enter  30 tp-hold  fiona:tp-dist f@ tp-got f!  leave-actor
 T{ tp-got f@ 30e f> -> -1 }T
 game:fiona enter  0e stick-x f!  0e stick-z f!  tp-step  leave-actor   \ (let it go)
 vr-defaults
+testing the keyboard's panic menu (P) edits the same saved values as the page
+key: P tap
+T{ panic-menu:panic-open @ -> -1 }T
+key: Down tap   \ (the heartbeat smear)
+key: Return tap
+T{ vr-settings vr.panic-smear l@  panic-preset -> 1 -1 }T
+key: P tap
+T{ panic-menu:panic-open @ -> 0 }T
+vr-defaults
+T{ panic-preset -> 1 }T
 
+testing the keyboard's panic menu: the stumbles row too
+key: P tap
+key: Down tap key: Down tap key: Down tap key: Down tap
+key: Return tap
+T{ vr-settings vr.panic-stumbles l@ -> 0 }T
+key: Return tap
+T{ vr-settings vr.panic-stumbles l@ -> 1 }T
+key: P tap
+vr-defaults
 test-summary

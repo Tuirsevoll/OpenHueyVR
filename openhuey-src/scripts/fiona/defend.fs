@@ -26,7 +26,12 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
 \ a blow sent: to the stalker (1) and Hewie (2) it reaches, each once a blow
 : blow-at ( damage -- ) ( F: x y z reach -- )   \ to the homunculi a blow reaches there (reach -1: those touching her)
     {: damage F: x y z reach :}  her-blow-n @  damage  x f>cell y f>cell z f>cell reach f>cell  broadcast fiona-blow ;
+\ during her panic (its start, the run, calming down) her blows do not land: the defense is
+\ Hewie alone, as the base game has it; an attack begun just before the panic is not carried on
+: panic-defense-off? ( -- flag )
+    panic-starting state-flag?  her-panic-stage @ panicking >= or  her-fear-bits @ 2 and or ;
 : strike ( kind damage how mask -- )   \ (each struck once a blow: 1 the stalker, 2 Hewie)
+    panic-defense-off? if  2drop 2drop exit  then
     her-struck @ invert and  dup her-struck @ or her-struck !  {: kind damage how mask :}
     mask 1 and if  kind damage how stalker-in-room send blow  then
     mask 2 and if  kind damage how dog-in-room send blow  then ;
@@ -145,6 +150,12 @@ create ahead-pt /vec allot   \ (her radius ahead)
 : kick-sub ( -- n )  $1A ;   : shove-sub ( -- n )  $1B ;   \ (her sub defending)
 : start-shove ( -- )  shove-doing her-doing !  defend-mode her-mode !  shove-sub her-sub !  ['] shove-start her-act ! ;
 : start-kick ( -- )  kick-doing her-doing !  defend-mode her-mode !  kick-sub her-sub !  ['] kick-start her-act ! ;
+\ the base game's refusal of a kick or a shove (Fiona_StateBlock 8): a script or a scene has her,
+\ she is not free (pushing, the panic attack, out of breath, at 100), her panic is running or
+\ calming down, a no-flee room - and her panic's own start (the world held for her scream)
+: defend-blocked? ( -- flag )
+    hands-off?  free-to-act? 0= or  her-panic-stage @ panicking >= or  no-flee state-flag? or
+    panic-starting state-flag? or ;
 \ a kick or a shove by her pose (Fiona_StateBlock 8): stepping back, a shove; standing, walking,
 \ resting - or just set off running, or running still frightened - a kick; running, a shove
 : defend-by-pose ( -- )
@@ -155,7 +166,7 @@ create ahead-pt /vec allot   \ (her radius ahead)
     g running-group = if  start-shove  then ;
 : try-defend ( -- )
     square button-pressed? 0= if  exit  then
-    hands-off?  free-to-act? 0= or  her-panic-stage @ panicking >= or  no-flee state-flag? or if  exit  then
+    defend-blocked? if  exit  then
     defend-by-pose ;
 \ her blow struck home (`blow-taken`): held still; her sound ($90 a shove, $8F a kick; Hewie
 \ counted as mistreated - with his trust, H3)
@@ -191,6 +202,16 @@ create poi /vec allot
 \ a forward swing of a controller: her kick grunt, hit or miss. A mesh it meets is her blow.
 \ A stalker answers only a two-hand shove, and that shove is a kick. The same shove on a shut,
 \ unlocked door bursts it open.
+\ the two hands' shove: her blow, when the game lets her strike (the same gate as the square's
+\ kick and shove) - no blow is sent while her panic runs, its start, the panic attack or a refusal
+: hand-shove ( -- )
+    defend-blocked? 0= if
+        hand-shove-take
+        1 her-blow-n +!
+        0 her-struck !
+        boosted-power
+        blow-kind @ blow-dmg @ blow-how @ 1 strike
+    then ;
 : hand-voice ( -- )
     form dup illegal-outfit <> swap cowgirl-outfit <> and if  effort-sound 0 her-sound  then ;
 : hand-strike ( -- )
@@ -198,16 +219,8 @@ create poi /vec allot
     her-mode @ defend-mode = if  exit  then
     hand-door? dup 0< if  drop
     else  slam-sound 0 her-sound  hand-door-way fiona-noise doors-id send burst-way  hand-door-take  then
-    hand-shove? if
-        hands-off?  free-to-act? 0= or  her-panic-stage @ panicking >= or  no-flee state-flag? or 0= if
-            hand-shove-take
-            1 her-blow-n +!
-            0 her-struck !
-            boosted-power
-            blow-kind @ blow-dmg @ blow-how @ 1 strike
-        then
-    then
-    hand-swing? if  hand-voice  then ;
+    hand-shove? if  hand-shove  then
+    hand-swing? if  defend-blocked? 0= if  hand-voice  then  then ;
 : tell-point ( -- )
     her-mode @ defend-mode <> if  body-point-off exit  then
     her-sub @ shove-sub = if

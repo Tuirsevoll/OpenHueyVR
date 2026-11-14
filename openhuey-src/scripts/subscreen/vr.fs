@@ -1,14 +1,15 @@
 \ subscreen/vr.fs - the VR options page (docs/subsystems/comfort.md): the comfort and accessibility
 \ choices C keeps (vr.h VrOptions) - the turning, the vignette, teleporting, which hand does what,
-\ her height, and the microphone and its subtitles - nine rows. hga's own page, in the sub
-\ screen's pages after the first list (one R1 from the menu); the title's VR OPTIONS opens it too.
-\ A row each: the stick picks, left / right (or the cross) changes it, the triangle - or Select -
-\ leaves. Written as it changes (vr-options.fs), read back at start-up.
+\ her height, the microphone and its subtitles - and the panic's effects: the preset they add up to
+\ and the page that sets each one. hga's own page, in the sub screen's pages after the first list
+\ (one R1 from the menu); the title's VR OPTIONS opens it too. A row each: the stick picks, left /
+\ right (or the cross) changes it, the triangle - or Select - leaves. Written as it changes
+\ (vr-options.fs), read back at start-up.
 IN: subscreen.vr
 USING: engine ps2-screen subscreen.state subscreen.art subscreen.input vr-options ;
 
-enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-whisper vr-whisper-debug vr-audio3d ;
-: #vr-rows ( -- n )  vr-audio3d 1+ ;
+enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-whisper vr-whisper-debug vr-audio3d vr-panic vr-panic-open ;
+: #vr-rows ( -- n )  vr-panic-open 1+ ;
 
 variable vr-at   0 vr-at !
 
@@ -47,6 +48,75 @@ variable vr-at   0 vr-at !
     subtitles-level case 0 of s" Off" endof 1 of s" On" endof >r s" Debug" r> endcase ;
 : on-off$ ( flag -- addr len )  if  s" On"  else  s" Off"  then ;
 
+\ ---- the panic's effects (panic.fs): a row each, and the preset they add up to ----
+enum: panic-row  panic-tint-row panic-smear-row panic-zoom-row panic-negative-row panic-shake-row panic-stumbles-row panic-haptics-row ;
+: #panic-rows ( -- n )  panic-haptics-row 1+ ;
+variable panic-page-at   0 panic-page-at !
+: panic-page-row-y ( i -- y )  $20 * $70 + ;
+: panic-page-haptics ( -- n )  panic-haptics ;
+: panic-page-haptics$ ( -- addr len )
+    panic-page-haptics case 0 of s" Off" endof 1 of s" Half" endof >r s" Full" r> endcase ;
+\ the preset the set adds up to, as the page's title line says it (live with each change)
+: panic-preset-line$ ( -- addr len )  spell-reset  s" PRESET: " +spell  panic-preset$ +spell  spelled ;
+: panic-page-label ( i -- addr len )
+    case
+        panic-tint-row of      s" Grey/darkening tint"  endof
+        panic-smear-row of     s" Heartbeat smear (photosensitivity warning)"  endof
+        panic-zoom-row of      s" Zoom blur (photosensitivity warning)"  endof
+        panic-negative-row of  s" Negative flash (photosensitivity warning)"  endof
+        panic-shake-row of     s" Camera shake"  endof
+        panic-stumbles-row of  s" Panic stumbles"  endof
+        panic-haptics-row of   s" Heartbeat haptics"  endof
+        >r s" Camera shake" r>  endcase ;
+: panic-page-value ( i -- addr len )
+    case
+        panic-tint-row of      vr-settings vr.panic-tint l@ on-off$  endof
+        panic-smear-row of     vr-settings vr.panic-smear l@ on-off$  endof
+        panic-zoom-row of      vr-settings vr.panic-zoom l@ on-off$  endof
+        panic-negative-row of  vr-settings vr.panic-negative l@ on-off$  endof
+        panic-shake-row of     vr-settings vr.panic-shake l@ on-off$  endof
+        panic-stumbles-row of  vr-settings vr.panic-stumbles l@ on-off$  endof
+        panic-haptics-row of   panic-page-haptics$  endof
+        >r vr-settings vr.panic-tint l@ on-off$ r>  endcase ;
+\ a change (dir -1 or 1): a flag turns over, the haptics step Off, Half, Full; the preset the set
+\ is no longer one of is Custom, which has no row here - the preset row above says so
+: panic-page-change ( dir -- )
+    {: d :}
+    panic-page-at @ case
+        panic-tint-row of      vr-settings vr.panic-tint l@ 0= 1 and vr-settings vr.panic-tint l!  endof
+        panic-smear-row of     vr-settings vr.panic-smear l@ 0= 1 and vr-settings vr.panic-smear l!  endof
+        panic-zoom-row of      vr-settings vr.panic-zoom l@ 0= 1 and vr-settings vr.panic-zoom l!  endof
+        panic-negative-row of  vr-settings vr.panic-negative l@ 0= 1 and vr-settings vr.panic-negative l!  endof
+        panic-shake-row of     vr-settings vr.panic-shake l@ 0= 1 and vr-settings vr.panic-shake l!  endof
+        panic-stumbles-row of  vr-settings vr.panic-stumbles l@ 0= 1 and vr-settings vr.panic-stumbles l!  endof
+        panic-haptics-row of   panic-page-haptics d + 3 + 3 mod vr-settings vr.panic-haptics l!  endof
+    endcase
+    se-decide  save-vr-options ;
+: panic-page-keys ( -- )
+    up? if  panic-page-at @ 1- #panic-rows wrap panic-page-at !  se-cursor  then
+    down? if  panic-page-at @ 1+ #panic-rows wrap panic-page-at !  se-cursor  then
+    left? if  -1 panic-page-change  then
+    right? if  1 panic-page-change  then
+    confirm? if  1 panic-page-change  then
+    back? if  back-to-page  se-cancel  then ;
+\ the status screen's own look (options.fs' paper and rows), one row each; the triangle is back to
+\ the VR options page it came from
+: panic-page-view ( -- )
+    3 page-art
+    word-layer page-words !
+    s" PANIC EFFECTS" 256 $34 centred
+    s" PHOTOSENSITIVITY WARNING" 256 $46 centred
+    panic-preset-line$ 256 $58 centred
+    #panic-rows 0 do
+        i panic-page-at @ = if
+            art-layer  $30 sx  i panic-page-row-y 2 - sy  $1C0 sw  $20 sy
+            $40 openness @ * 128 /  $40405000 or  ui-rect
+        then
+        i panic-page-label  $48  i panic-page-row-y 6 +  i panic-page-at @ =  text
+        i panic-page-value  $1B0  i panic-page-row-y 6 +  false  text
+    loop
+    s" Up / Down: choose   Left / Right: change   Triangle: back"  $40 $1B4 false text ;
+
 \ its label, its value and the change a step (dir -1 or 1) makes
 : vr-row-label ( i -- addr len )
     case  vr-turn of  s" Turning"  endof
@@ -58,6 +128,8 @@ variable vr-at   0 vr-at !
           vr-whisper of  s" Whisper"  endof
           vr-whisper-debug of  s" Whisper Subtitles"  endof
           vr-audio3d of  s" 3D Audio"  endof
+          vr-panic of  s" Panic Effects (PHOTOSENSITIVITY WARNING)"  endof
+          vr-panic-open of  s" Panic effects"  endof
           >r s" Calibrate height" r>  endcase ;
 : vr-row-value ( i -- addr len )
     case
@@ -70,11 +142,14 @@ variable vr-at   0 vr-at !
         vr-whisper of  whisper$  endof
         vr-whisper-debug of  subtitles$  endof
         vr-audio3d of  vr-settings vr.audio3d l@ on-off$  endof
+        vr-panic of  panic-preset$  endof
+        vr-panic-open of  s" Open"  endof
         >r  vr-settings vr.snap-degrees sf@ f>s n>s  r>
     endcase ;
-: vr-row-y ( i -- y )  $20 * $50 + ;
+: vr-row-y ( i -- y )  $20 * $48 + ;
 variable vr-step
-\ a change: a choice steps on a level (round, the last back to the first), a flag turns over
+\ a change: a choice steps on a level (round, the last back to the first), a flag turns over; the
+\ preset writes its seven settings over the individual ones; the last row opens their page
 : vr-row-change ( dir -- )   ( dir -1 or 1: a level goes back or on; the flags only turn over )
     vr-step !
     vr-at @ case
@@ -107,6 +182,10 @@ variable vr-step
         vr-audio3d of
             vr-settings vr.audio3d l@ 0= 1 and vr-settings vr.audio3d l!
             se-decide  save-vr-options endof
+        vr-panic of
+            vr-step @ panic-preset panic-preset-step panic-preset!
+            se-decide  save-vr-options endof
+        vr-panic-open of   0 panic-page-at !  on-panic mode !  se-decide endof
         >r  vr-settings vr.turn-snap l@ 0= if  1  else  0  then  vr-settings vr.turn-snap l!
             se-decide  save-vr-options
         r>
@@ -136,4 +215,4 @@ variable vr-step
         i vr-row-label  $48  i vr-row-y 6 +  i vr-at @ =  text
         i vr-row-value  $1B0  i vr-row-y 6 +  false  text
     loop
-    s" Stick: choose   Left / Right: change   Triangle: back"  $40 $18C false text ;
+    s" Stick: choose   Left / Right: change   Triangle: back"  $40 $1A8 false text ;

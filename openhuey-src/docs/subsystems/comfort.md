@@ -38,6 +38,13 @@ rest single floats (`sf@ sf!`).
 | `vr.crouch-on` | ... and the share at which the hide flag comes on | 0.25 |
 | `vr.crouch-off` | ... and the share it goes off at, rising (the hysteresis) | 0.18 |
 | `vr.sneak-speed` | the crouch walk's share of a walk, and its animation rate (45%: 55% slower) | 0.45 |
+| `vr.panic-tint` | the panic's grey / darkening tint at each heartbeat (the VR page's Reduced preset) | 1 |
+| `vr.panic-smear` | the heartbeat's frame blend, held and blended in again (photosensitive: off) | 0 |
+| `vr.panic-zoom` | the first frames drawn 16 pixels bigger over themselves (photosensitive: off) | 0 |
+| `vr.panic-negative` | the negative as her panic starts (photosensitive: off) | 0 |
+| `vr.panic-shake` | the camera shaken by her panic | 0 |
+| `vr.panic-stumbles` | she stumbles, and one time in five falls, running blindly into things | 1 |
+| `vr.panic-haptics` | the heartbeat on the controllers: 0 off, 1 half, 2 full | 2 |
 
 | Word | Stack | Meaning |
 |---|---|---|
@@ -49,6 +56,11 @@ rest single floats (`sf@ sf!`).
 | `hand-stops-clear` | `--` | the arms' stops dropped (a snap turn: the hands' places moved with her) |
 | `vr-defaults` | `--` | every option as the game was (`vr-options`) |
 | `save-vr-options`, `load-vr-options` | `--` | the player's written to / read from `<user>/vr-options.fs` |
+| `panic-preset`, `panic-preset$` | `-- p` / `-- addr len` | the panic set they add up to: 0 Full, 1 Reduced, 2 Minimal, -1 Custom (its name) |
+| `panic-preset!` | `p --` | that preset's seven settings, written over the individual ones |
+| `panic-preset-step` | `dir p -- p'` | the preset a step of the row goes to (a Custom set: Full, or Minimal, either way) |
+| `panic-tint?`, `panic-smear?`, `panic-zoom?`, `panic-negative?`, `panic-shake?`, `panic-stumbles?` | `-- flag` | one of the panic settings |
+| `panic-haptics`, `panic-haptics-scale` | `-- level` / `F: -- k` | the beat's choice (0..2) and its strength (0, 0.5, 1) |
 
 The player's are a Forth file in the player's directory, read at start-up (`scripts/vr-options.fs`,
 loaded by `subsystems.fs`), as `graphics.fs` and `controls.fs` are. Nothing is written in a test
@@ -259,7 +271,9 @@ keyboard remains beside them.
   stroke is a stroke; the art around them keeps its smooth filtering.
 - **The defaults are the game as it was**: smooth turning, no vignette, the stick walking her,
   neither seated nor left-handed, her eyes as the first pose found them, a scene on its screen,
-  B holding the microphone and the subtitles off.
+  B holding the microphone and the subtitles off. The panic's effects are the page's Reduced
+  preset (the grey tint, the stumbles, the full beat) - the one set whose default is a choice
+  rather than the original, the screen effects' photosensitivity the reason.
   `vr.calibrate-start` is 1: a first run is asked to calibrate once (with no calibration kept, the
   first pose's height is used as before).
 
@@ -279,9 +293,15 @@ PTT, Open Mic) and **its subtitles** (`vr.whisper-debug`: Off, On, Debug - Off n
 Hewie heard, capitalised and with an exclamation mark, and nothing when the words made no command;
 Debug the command and the words Whisper heard in brackets, or `UNRECOGNISED:` and the words, in the
 message window's panel at the bottom of the screen), and **the VR options page**
-(`scripts/subscreen/vr.fs`, twelve rows): the title's `VR OPTIONS` row and, in a game, the sub
-screen's page after the options - both worked with the controllers, the sub screen's arrows read
-from the VR stick in a headset.
+(`scripts/subscreen/vr.fs`, eleven rows and the panic effects' own page): the title's `VR OPTIONS`
+row and, in a game, the sub screen's page after the options - both worked with the controllers, the
+sub screen's arrows read from the VR stick in a headset. Its last two rows are the panic's
+**preset** (Full, Reduced, Minimal; Custom shown, never stepped to) and the `Panic effects` button
+that opens the seven individual settings in the status screen's own look (grey/darkening tint,
+heartbeat smear, zoom blur, negative flash, camera shake, panic stumbles, heartbeat haptics Off /
+Half / Full). A preset writes its settings over the individual ones; any other set shows as
+Custom. The keyboard's `P` opens the same seven in the F1 menu's panel (`scripts/panic-menu.fs`):
+arrows, Return or right to change, left back, P to close. Both write the same saved values.
 
 The options the game had are the defaults, so a run with none of them picked plays as it always did.
 Each row that is a choice steps round its words (Smooth, Snap 45, Snap 90; Off, Low, Med, High;

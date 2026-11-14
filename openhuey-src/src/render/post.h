@@ -22,10 +22,18 @@ void post_trail_off(void);
 /* the panic's screens this frame (ScreenFade_Frame, layer 0x2A; hg's glr_negative / glr_zoom_blur /
  * glr_panic): the negative (0x80 less each channel, as the frame holds them), the frame drawn back
  * 16 pixels bigger each side over itself at half, and the threshold tint - each pixel black whose
- * green (with the frame's alpha bits) is below `limit`, else grey 0xC0, over it at amount / 256 */
+ * green (with the frame's alpha bits) is below `limit`, else grey 0xC0, over it at amount / 256.
+ * The scripts ask during a game tick; post_tick_end (below) keeps what they asked for the whole
+ * of it, so every eye and every refresh until the next tick shows it. */
 void post_negative(void);
 void post_zoom_blur(void);
 void post_panic_tint(int limit, int amount);
+/* a game tick is over: the panic's screens the scripts asked for during it are kept for every eye
+ * and every refresh until the next tick ends, and the ones they did not ask for are let go; the
+ * frame blend's trails move on a tick (the first picture of it is the one blended in) */
+void post_tick_end(void);
+/* a fresh game (soft-reset): no panic screen of the last one */
+void post_panic_reset(void);
 /* a TV's picture (TvScreen): the frame, grey, at half size - made at this frame's end when wanted
  * (each frame); its texture for the next (0 none yet) */
 void post_tv_want(void);

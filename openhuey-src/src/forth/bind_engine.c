@@ -1521,9 +1521,9 @@ PRIM(p_room_effect0) { particles_room_effect0(POP() != 0); }   /* ( flag -- ) th
 PRIM(p_pursuer_kind) { particles_pursuer_kind((int)POP()); }   /* ( kind -- ) the stalker in the game's kind (-1 none) */
 PRIM(p_frame_blend) { post_trail((float)POP() / 128.0f); }   /* ( a -- ) each frame over the last at a / 128 from now on (0x80 all of it; 0 the last held) */
 PRIM(p_frame_blend_off) { post_trail_off(); }   /* ( -- ) no more */
-PRIM(p_panic_negative) { post_negative(); }      /* ( -- ) this frame the screen's negative (post.h) */
-PRIM(p_zoom_blur) { post_zoom_blur(); }          /* ( -- ) this frame the screen over itself 16 bigger */
-PRIM(p_panic_tint) {   /* ( limit amount -- ) this frame the panic's threshold tint */
+PRIM(p_panic_negative) { post_negative(); }      /* ( -- ) this tick the screen's negative (post.h) */
+PRIM(p_zoom_blur) { post_zoom_blur(); }          /* ( -- ) this tick the screen over itself 16 bigger */
+PRIM(p_panic_tint) {   /* ( limit amount -- ) this tick the panic's threshold tint */
     Cell amount = POP(), limit = POP();
 
     post_panic_tint((int)limit, (int)amount);
@@ -4029,6 +4029,7 @@ void engine_tick(Engine *e) {
     }
     if (e->paused) {   /* (a menu up: only its actors have a frame) */
         hactor_held_frame(e->forth);
+        post_tick_end();   /* (the panic's screens the scripts asked for: kept for the frames between ticks) */
         if (mod_camera_has()) {
             e->camera = sModCam.cam;
         }
@@ -4049,6 +4050,8 @@ void engine_tick(Engine *e) {
         }
     }
     hactor_frame(e->forth);
+    post_tick_end();   /* (its frame-end over: what the panic screens asked for is this tick's, every
+                        * eye and every frame until the next tick ends) */
     if (e->still) {   /* (the game over: the world stands still behind it, its actors running) */
         freecam_tick(e);
         render_look_tick();
@@ -4847,6 +4850,15 @@ void bind_engine(Forth *f) {
     field(f, "vr.crouch-off", offsetof(VrOptions, crouch_off));
     field(f, "vr.sneak-speed", offsetof(VrOptions, sneak_speed));
     field(f, "vr.audio3d", offsetof(VrOptions, audio3d));
+    /* the panic's screens, Fiona's stumbles and the heartbeat's haptics (scripts/panic.fs,
+     * scripts/fiona/fear.fs; docs/subsystems/panic.md) */
+    field(f, "vr.panic-tint", offsetof(VrOptions, panic_tint));
+    field(f, "vr.panic-smear", offsetof(VrOptions, panic_smear));
+    field(f, "vr.panic-zoom", offsetof(VrOptions, panic_zoom));
+    field(f, "vr.panic-negative", offsetof(VrOptions, panic_negative));
+    field(f, "vr.panic-shake", offsetof(VrOptions, panic_shake));
+    field(f, "vr.panic-stumbles", offsetof(VrOptions, panic_stumbles));
+    field(f, "vr.panic-haptics", offsetof(VrOptions, panic_haptics));
     forth_set_current(f, saved);
 }
 

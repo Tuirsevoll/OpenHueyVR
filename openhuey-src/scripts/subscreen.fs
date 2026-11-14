@@ -79,6 +79,7 @@ USING: engine game-state actors messages keys facts flag-names items items.table
         on-extras of  extras-keys  endof
         on-results of  results-keys  endof
         on-clear-save of  clear-keys  endof
+        on-panic of  panic-page-keys  endof
         on-gallery of  gallery-keys  endof
         on-page of
             page @ case  pg-files of  files-keys  endof  pg-map of  map-keys  endof
@@ -103,6 +104,7 @@ USING: engine game-state actors messages keys facts flag-names items items.table
     mode @ on-extras = if  page-black  extras-view exit  then
     mode @ on-results = if  page-black  results-view exit  then
     mode @ on-clear-save = if  clear-view exit  then
+    mode @ on-panic = if  panic-page-view exit  then
     mode @ on-box = if  art-layer page-words !  then   \ (the page under the box's shade)
     page @ case  pg-files of  files-view  endof  pg-map of  map-view  endof
                  pg-vr of  vr-options-view  endof

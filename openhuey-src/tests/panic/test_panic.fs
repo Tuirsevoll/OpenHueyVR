@@ -1,7 +1,7 @@
 \ the panic and Fiona's fear (docs/subsystems/panic.md, fiona.md F2). Headless:
 \   build/openhuey-src/openhuey --test openhuey-src/tests/panic/test_panic.fs
 IN: test-panic
-USING: tester engine game-state actors messages room-names common facts flag-names game fiona.state fiona.model debug ;
+USING: tester engine game-state actors messages room-names common facts flag-names game fiona.state fiona.model fiona.controls fiona.defend debug vr-options ;
 
 : stage ( -- s )  game:panic enter  panic:stage @  leave-actor ;
 : level ( F: -- l )  game:panic enter  panic:level f@  leave-actor ;
@@ -10,6 +10,7 @@ USING: tester engine game-state actors messages room-names common facts flag-nam
 : bits ( -- b )  [: her-fear-bits @ ;] her@ ;
 : anim ( -- id )  ['] anim@ her@ ;
 : hold ( key -- )  true key-hold ;   : release ( key -- )  false key-hold ;
+: tap ( key -- )  dup true key-hold  game-tick  false key-hold  game-tick ;
 
 3 run-frames
 0 fiona send costume  1 run-frames   \ (her clothes: these are her mechanics, not the new game's slip)
@@ -101,4 +102,49 @@ testing panicking from the level: its first breath at once and the shake a step 
 0 game:panic send panic-level!  40 run-frames
 T{ 100 game:panic send panic-level!  game-tick  stage pulse grey -> 4 0 1 }T
 
+testing the panic's stumbles off (the VR option): she runs into walls and never trips or falls
+0 vr-settings vr.panic-stumbles l!
+: trip? ( -- flag )  anim dup $1001 = swap $B00 = or ;
+: no-trip ( n -- flag )  0 ?do  game-tick  trip? if  true unloop exit  then  loop  false ;
+4 game:panic send panic-stage!  key: W hold  35 run-frames
+T{ 120 no-trip -> 0 }T
+key: W release
+1 vr-settings vr.panic-stumbles l!
+
+testing the panic attack at full fear: with the panic's stumbles off, no collapse (only a stalker's blow leaves her helpless)
+0 game:panic send panic-reset  0 game:panic send panic-level!  0 vr-settings vr.panic-stumbles l!
+30 run-frames
+fiona enter  100e her-fear f!  leave-actor
+T{ 10 run-frames  [: her-attack-t @ ;] her@ -> 0 }T
+testing ... with them on, the attack still comes (the original)
+1 vr-settings vr.panic-stumbles l!
+fiona enter  100e her-fear f!  leave-actor
+T{ 15 run-frames  anim  [: her-attack-t @ ;] her@ 0> -> 2 -1 }T
+testing the base game's kick/shove gate is shut while her panic runs (the VR shove with it)
+0 game:panic send panic-reset  0 fiona send fear-to  game:fiona enter to-idle leave-actor  3 run-frames
+4 game:panic send panic-stage!  35 run-frames
+T{ fiona enter defend-blocked? leave-actor  fiona enter panic-defense-off? leave-actor -> -1 -1 }T
+testing ... and the two-hand shove sends no blow while her panic runs (the VR hands)
+variable blow-was  fiona enter her-blow-n @ leave-actor blow-was !
+fiona enter hand-shove leave-actor  fiona enter hand-shove leave-actor
+T{ fiona enter her-blow-n @ leave-actor blow-was @ = -> -1 }T
+testing ... the square is refused with it (her kick and shove, the game's)
+key: Z tap
+T{ [: her-mode @ ;] her@ defend-mode <> -> -1 }T
+testing ... and open again once the panic is over (a kick or shove as the game has it)
+0 game:panic send panic-reset  0 fiona send fear-to  game:fiona enter to-idle leave-actor  3 run-frames
+T{ fiona enter defend-blocked? leave-actor  fiona enter panic-defense-off? leave-actor -> 0 0 }T
+testing ... and the kick comes again with the panic over
+key: Z tap
+T{ [: her-mode @ ;] her@  [: her-doing @ ;] her@ -> defend-mode kick-doing }T
+testing ... while panicking, only the stalker's blow knocks her down (a friend's leap does not)
+0 game:panic send panic-reset  0 fiona send fear-to  game:fiona enter to-idle leave-actor  0 vr-settings vr.panic-stumbles l!
+4 game:panic send panic-stage!  35 run-frames
+T{ bits 2 and -> 2 }T
+game:hewie enter  throw-request 0 10e f>cell fiona send hit  leave-actor  deliver  2 run-frames
+T{ [: her-mode @ ;] her@  [: her-doing @ ;] her@ -> own-mode free-doing }T
+game:debilitas enter  fiona body-room fiona body-tri  fiona body-at vec@  body-place  leave-actor
+game:debilitas enter  throw-request 0 10e f>cell fiona send hit  leave-actor  deliver  2 run-frames
+T{ [: her-mode @ ;] her@ -> thrown-mode }T
+1 vr-settings vr.panic-stumbles l!
 test-summary

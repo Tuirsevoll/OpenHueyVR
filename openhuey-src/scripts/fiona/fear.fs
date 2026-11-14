@@ -4,7 +4,7 @@
 \ panic run until she's out of breath; stumbling or falling as she runs into something; getting
 \ up again. The panic itself is its own actor (panic.fs): she hears its stage and level.
 IN: fiona.fear
-USING: engine vectors keys game-state actors messages common facts items.names fiona.state fiona.anims fiona.sounds fiona.model fiona.controls fiona.moving fiona.slam flag-names ;
+USING: engine vectors keys game-state actors messages common facts items.names fiona.state fiona.anims fiona.sounds fiona.model fiona.controls fiona.moving fiona.slam flag-names vr-options ;
 
 
 \ ---- her fear meter (Fiona_ChangeFear; charms: with items) ----
@@ -72,6 +72,8 @@ variable fall-drain-step       \ the extra the recovery counter drains a tick in
 
 \ ---- the panic attack (at full fear: 150 frames, her cry 0x44, animation 2) ----
 : in-attack ( -- )
+    \ (the option: with the panic's stumbles off not even the panic attack holds her down)
+    panic-stumbles? 0= if  0 her-attack-t !  to-idle exit  then
     -1 her-attack-t +!  her-attack-t @ 0= if  to-idle exit  then
     settled? anim@ attack-anim <> and if  attack-sound 0 her-sound  attack-anim -1 play-table  then
     root-move ;
@@ -125,13 +127,14 @@ create probe /vec allot  create up-was /vec allot  variable up-tri
     then
     in-exit-area? 0= if  along-wall  then ;
 : panic-fall ( -- )
+    panic-stumbles? 0= if  to-idle exit  then
     settled? if
         -1 her-attack-t !  -1 her-fall-turn !  -1 her-wall-side !  her-yaw f@ her-fall-yaw f!
         fall-anim -1 play-table  fall-sound 0 her-sound  $5F noise-here
         ['] fallen her-act !
     then
     root-move ;
-: stumbling ( -- )  ended? if  to-idle exit  then  root-move ;
+: stumbling ( -- )  panic-stumbles? 0= if  to-idle exit  then  ended? if  to-idle exit  then  root-move ;
 
 \ ---- the panic's part of her controls: running into something while panicking - a stumble, or
 \ (one time in five, at most every 30 frames) a fall; at full fear the panic attack ----
@@ -143,6 +146,9 @@ create next-at /vec allot
 : panic-controls ( -- done? )
     her-fear-bits @ 2 and if
         her-stumble-t @ if  -1 her-stumble-t +!  then
+        \ (the option: with the panic's stumbles off she runs into walls and never trips or falls;
+        \ only a stalker's blow can knock her down, as in fiona/hurt.fs)
+        panic-stumbles? 0= if  false exit  then
         blocked-ahead? 0= if  false exit  then
         bump-sound 0 her-sound
         her-stumble-t @ 0= if
@@ -154,7 +160,7 @@ create next-at /vec allot
         then
         thrown-mode her-mode !  thrown-doing her-doing !  stumble-anim -1 play-table  ['] stumbling her-act !  true exit
     then
-    her-fear f@ 100e f< 0= if
+    her-fear f@ 100e f< 0=  panic-stumbles? and if   \ (the option: no collapse at full fear either)
         150 her-attack-t !  75e her-fear f!  0 her-out-of-reach !  attack-doing her-doing !  ['] in-attack her-act !  true exit
     then
     false ;

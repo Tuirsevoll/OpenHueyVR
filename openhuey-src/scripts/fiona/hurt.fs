@@ -5,7 +5,7 @@
 \ caught (a hold: she flinches in his grip and pulls free) - the fright it carries, and getting
 \ up again. How she stands for an attack (`fiona-plight`) is told each frame.
 IN: fiona.hurt
-USING: engine vectors game-state actors messages common facts flag-names rumble items.names fiona.state fiona.anims fiona.sounds fiona.model fiona.moving fiona.fear floor-flags ;
+USING: engine vectors game-state actors messages common facts flag-names rumble items.names stalker-names fiona.state fiona.anims fiona.sounds fiona.model fiona.moving fiona.fear floor-flags vr-options ;
 
 \ how he holds her (her-hit-how): by the arm, from the side, from behind, from the front; a door's
 1 constant by-arm   2 constant by-side   3 constant from-behind   4 constant from-front   5 constant by-door
@@ -62,9 +62,19 @@ defer drop-door ( -- )   ' noop is drop-door   \ (a door she held let go: fiona.
 : reacting? ( -- flag )  thrown-mode down-mode mode-in? ;   \ (one under way, or down)
 : knock-for ( light heavy -- r )   \ (on the rungs knocked off; on a step or in a doorway the short falls)
     {: light heavy :}  on-rungs? if  off-ladder-r  else on-step? if  light  else  heavy  then then ;
+\ the blow's sender is one of the stalkers (not Hewie's leap, nor a door, nor a script)
+: stalker-blows? ( -- flag )
+    her-hit-who @ 0< if  false exit  then
+    #stalkers 0 do  i stalker# her-hit-who @ = if  true unloop exit  then  loop  false ;
+\ (the option: panicking, only the stalker's blow may put her down - not Hewie catching her
+\ in his leap, a door, or anything else - so with the stumbles off nothing else knocks her
+\ into the helpless state while her panic runs)
+: panic-holds-off? ( -- flag )
+    panic-stumbles? 0=  her-fear-bits @ 2 and  and  stalker-blows? 0= and ;
 \ Fiona_Reaction: her reaction to a request by its kind (-1 none)
 : reaction ( kind -- r | -1 )
     world-held state-flag? if  drop -1 exit  then
+    panic-holds-off? if  drop -1 exit  then
     case
         spirit-request of  reacting? her-mode @ ladder-mode = or if  no-reaction  else  spirit-fall-r  then  endof
         blow-request of  reacting? if  no-reaction  else  step-knock-r knock-r knock-for  then  endof

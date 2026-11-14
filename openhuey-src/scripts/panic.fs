@@ -2,7 +2,7 @@
 \ a lasting and a passing part, its stage, Fiona's breath and scream. Frights and fear come in
 \ as messages; each frame's end it updates and tells everyone its stage and level.
 IN: panic
-USING: engine vectors common actors messages facts flag-names stalker-names items items.names ;
+USING: engine vectors common actors messages facts flag-names stalker-names items items.names vr-options ;
 
 state: panic-state
   cell field stage           \ (enum: panic-stage, messages.fs)
@@ -65,9 +65,12 @@ create breaths   \ (shaken .. calming down)
     rumble-sequence-clear
     dup calming-down =  0  rot breath-of breath-strength @  3 rumble-step
     stage @ panicking = if  0 255 255 3 rumble-step  then ;
-: breath-haptic ( stage -- )   \ (both controllers: as hard as the pad's beat for that stage)
+: breath-haptic ( stage -- )   \ (both controllers: as hard as the pad's beat for that stage;
+    \ the option: none, half, full)
+    panic-haptics haptics-off = if  drop exit  then
     dup panicking = if  drop 1e
     else  breath-of breath-strength @ s>f 255 s>f f/  then
+    panic-haptics-scale f*
     0.1e vr-haptic ;   \ (the swell's 3 frames at the game's 30 a second)
 : breath ( -- )   \ (only with the screen fade full: not while the world is held, nor in a fade)
     fade f@ 1e f= 0= if  exit  then
@@ -125,20 +128,25 @@ create breaths   \ (shaken .. calming down)
 \ blurred bigger over itself); the grey by the shake - the dark black, the rest pale. With the
 \ level under full (a fade's frames, the world held) none of it but the grey, by the level, and the
 \ camera still: panicking or calming down, or the heartbeat cut short ----
+variable panic-blending  0 panic-blending !   \ (the frame blend is ours this tick: it is stopped when it is not)
 $30 constant grey-limit
 : full? ( -- flag )  fade f@ 1e f= ;
 : camera-still ( -- )  0 jolting !  0e cam-shake! ;
 : panicked? ( -- flag )  stage @ panicking calming-down 1+ within ;
+: blend-ask ( a -- )  frame-blend  1 panic-blending ! ;   \ (the smear asked for this tick)
+: blend-stop ( -- )  panic-blending @ if  0 panic-blending !  frame-blend-off  then ;
 : screens ( -- )
     panicked? if
-        full? if  stage @ panicking =  panic-left @ 0< and if  panic-negative  then
+        full? if  stage @ panicking =  panic-left @ 0< and  panic-negative? and if  panic-negative  then
         else  camera-still  then
     then
     pulse @ $80 <> if
-        full? if  pulse @ frame-blend  pulse @ $10 <= if  zoom-blur  then
-        else  camera-still  $80 pulse !  then
-    then
-    shake @ if  grey-limit shake @ s>f fade f@ f* f>s panic-tint  then ;   \ (the overlay tinted by its level)
+        full? if
+            panic-smear? if  pulse @ blend-ask  else  blend-stop  then
+            pulse @ $10 <=  panic-zoom? and if  zoom-blur  then
+        else  camera-still  $80 pulse !  blend-stop  then
+    else  blend-stop  then
+    shake @ panic-tint? and if  grey-limit shake @ s>f fade f@ f* f>s panic-tint  then ;   \ (the overlay tinted by its level)
 
 \ ---- Panic_FearInputs (calm with time; the stalker's part comes as fear-in) and Panic_Update ----
 : time-inputs ( -- )
@@ -229,7 +237,7 @@ create weights   \ (fright, fear, calming)
 : updating? ( -- flag )  cam-scene? 0=  panic-held state-flag? 0= and ;
 
 behaviour measuring
-  on spawned ( -- )  1e scale f!  1e fade f!  2 st-cond !  $80 pulse !  self subscribe hewie-near  self subscribe tick  self subscribe frame-end  self subscribe danger  self subscribe fiona-doing  self subscribe stalker-doing  self subscribe write-save ;
+  on spawned ( -- )  1e scale f!  1e fade f!  2 st-cond !  $80 pulse !  0 panic-blending !  self subscribe hewie-near  self subscribe tick  self subscribe frame-end  self subscribe danger  self subscribe fiona-doing  self subscribe stalker-doing  self subscribe write-save ;
   on stalker-doing ( room mode sub cond hp hp-max kind alert came -- )  2drop st-kind !  2drop st-cond !  st-sub !  st-mode !  st-room ! ;
   on danger ( level -- )  the-danger ! ;
   on hewie-near ( near -- )  weighing ! ;   \ (report_fiona_near: Hewie with her - 1 within 20, 2 within 50, 3 further)
@@ -269,15 +277,15 @@ behaviour measuring
       cell>f lasting f!  cell>f passing f!  cell>f level f!  beat !  hold !  panic-left !  stage !  inputs-clear ;
   on panic-reset ( -- )   \ (Panic_Reset)
       composed stage !  0 panic-left !  0 hold !  0 beat !  0e level f!  0e passing f!  0e lasting f!  inputs-clear
-      $80 pulse !  0 shake !  0 jolting !  1e fade f! ;
+      $80 pulse !  0 shake !  0 jolting !  1e fade f!  blend-stop ;
   \ (SceneGame_PlayStart: not while a cutscene has the camera nor under flag $F; first in the frame,
   \ so the camera is still unless her panic - or the story, after it - shakes it)
-  on tick ( -- )  updating? if  jolting @ if  0.2e  else  0e  then  cam-shake!  then ;
+  on tick ( -- )  updating? if  jolting @ panic-shake? and if  0.2e  else  0e  then  cam-shake!  then ;
   on frame-end ( -- )
       \ (the world's hold over once her panic's start isn't running - a scene, held, reset, loaded: never left on)
       panic-starting state-flag? if  updating? 0=  stage @ panicking <> or  panic-left @ 0< 0= or if  0 onset  then  then
       \ (in play the level back to full - not in a frame of the screen's fade; a scene's: as it is)
-      updating? if  update  fade-held @ 0= if  1e fade f!  then  screens  else  $80 pulse !  then
+      updating? if  update  fade-held @ 0= if  1e fade f!  then  screens  else  $80 pulse !  blend-stop  then
       0 fade-held !
       stage @ level f@ f>cell broadcast panic ;
 end-behaviour

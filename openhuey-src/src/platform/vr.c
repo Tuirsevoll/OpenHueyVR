@@ -43,7 +43,17 @@ VrOptions gVrOptions = {
     0.13f,    /* crouch_deadzone: a look down does nothing */
     0.25f,    /* crouch_on: the hide flag's drop */
     0.18f,    /* crouch_off: ... and its release */
-    0.45f     /* sneak_speed: 45% of a walk */
+    0.45f,    /* sneak_speed: 45% of a walk */
+    0,        /* audio3d: the scripts' defaults (vr-options.fs) turn it on */
+    /* the panic's effects: the page's Reduced preset (the grey tint alone, the stumbles and the
+     * full beat kept) - scripts/vr-options.fs writes the player's over these */
+    1,        /* panic_tint */
+    0,        /* panic_smear */
+    0,        /* panic_zoom */
+    0,        /* panic_negative */
+    0,        /* panic_shake */
+    1,        /* panic_stumbles */
+    2         /* panic_haptics: full */
 };
 
 #if !defined(_WIN32)
@@ -58,6 +68,7 @@ int vr_begin_frame(void) { return 0; }
 int vr_should_render(void) { return 0; }
 void vr_end_frame(void) {}
 int vr_eye_count(void) { return 0; }
+int vr_eye_active(void) { return -1; }
 int vr_head_view(int eye, Mat4 *view) { (void)eye; (void)view; return 0; }
 void vr_comfort_preview(void) {}
 int vr_comfort_previewing(void) { return 0; }
@@ -155,6 +166,7 @@ static uint32_t sImageCount[VR_MAX_EYES];
 static GLuint sFbo[VR_MAX_EYES][VR_MAX_IMAGES];
 static int sW[VR_MAX_EYES], sH[VR_MAX_EYES];
 static int sViewCount;
+static int sEyeActive = -1;   /* the eye being drawn (vr_eye_begin .. vr_eye_end), -1 none */
 static int sRunning, sActive, sFrameOn, sRender, sSubmit;
 static int sAcquired[VR_MAX_EYES];
 static int sQuit;
@@ -2078,9 +2090,11 @@ void vr_end_frame(void) {
     xrEndFrame(sSession, &end);
     sFrameOn = 0;
     sRender = 0;
+    sEyeActive = -1;
 }
 
 int vr_eye_count(void) { return sViewCount; }
+int vr_eye_active(void) { return sEyeActive; }
 
 int vr_head_view(int eye, Mat4 *view) {
     if (view == NULL || eye < 0 || eye >= sViewCount) {
@@ -2112,6 +2126,7 @@ int vr_eye_begin(int eye, float znear, float zfar, int *w, int *h, Mat4 *proj, M
         return 0;
     }
     sAcquired[eye] = 1;
+    sEyeActive = eye;
     *w = sW[eye];
     *h = sH[eye];
     *proj = proj_fov(sViews[eye].fov, znear, zfar);
@@ -2125,6 +2140,7 @@ int vr_eye_begin(int eye, float znear, float zfar, int *w, int *h, Mat4 *proj, M
 void vr_eye_end(int eye) {
     XrSwapchainImageReleaseInfo release = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
 
+    sEyeActive = -1;
     if (eye < 0 || eye >= VR_MAX_EYES || !sAcquired[eye]) {
         return;
     }

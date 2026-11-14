@@ -18,6 +18,7 @@ USING: engine actors ;
 9 constant on-results     \ its results (mode $C)
 10 constant on-gallery    \ one of the extras room's galleries (gal-kind: which - galleries.fs)
 11 constant on-clear-save \ the clear-data save (the ending's last: the scripts' mode 9)
+12 constant on-panic       \ the VR page's panic effects (scripts/subscreen/vr.fs)
 \ the galleries: the movies (mode 8), the models ($B), the music ($D), the art ($E), the TYPE ranks ($F)
 1 constant gal-movies   2 constant gal-models   3 constant gal-music   4 constant gal-art   5 constant gal-types
 \ the pages, in the order L1 / R1 turn them: the three item lists, the map, the files, the options

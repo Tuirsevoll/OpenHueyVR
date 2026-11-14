@@ -58,8 +58,8 @@ From `Panic_Update`, `Panic_Stage`, `Panic_FearInputs`, `Panic_SetLevel`, `Panic
 a swell over 3 frames to 96 / 144 / 192 / 224 by the stage, at stage 4 then full a moment, at 5
 the small motor with it - `rumble-step`, the rumble's sequence), and the VR controllers pulse with
 the same strength over those 3 frames (`breath-haptic`, `vr-haptic`: 0.38 / 0.56 / 0.75 / 0.88,
-full while panicking). Checked by `tests/panic/test_panic.fs` (with Fiona's side,
-31 tests): a level set by the story and its stage; calming 0.1 a frame when calm; a fright
+full while panicking - or half, or none, the page's option). Checked by `tests/panic/test_panic.fs` (with Fiona's side,
+45 tests): a level set by the story and its stage; calming 0.1 a frame when calm; a fright
 (half lasting, half passing); out of breath from stage 2; panicking (stage 4: her scream, the
 panic run, running on blindly); stumbles, and a fall (the dice loaded) that ends it early
 (stage 5) - down until it passes, then up and free; whatever happens, it passes; a fright's passing part
@@ -74,6 +74,28 @@ back to $80 by 4 a frame), its first frames also drawn 16 pixels bigger each sid
 at half; and a grey by the shake (1.5 a point of level past 60, $50 panicking, $90 calming down) -
 each pixel black whose green is under $30 of 255, else grey $C0, over the screen at shake / 256.
 Not while a scene has the camera.
+
+The screens are latched on the game tick, not on the drawn frame (post.c `post_tick_end`): the
+scripts ask during a tick (`panic-negative`, `zoom-blur`, `panic-tint`) and what they asked for is
+kept for every eye and every refresh until the next tick ends. A headset draws two eyes, several
+refreshes a tick: before, the right eye and two refreshes in three had none of the tint, the blur
+or the negative. The frame blend keeps one trail a picture - each eye's own, and the window's - and
+only the first picture of a tick is blended into it, so the smear fades at the game's 30 a second
+however often the headset draws; `frame-blend-off` goes with the pulse's end and the panic's reset,
+so no ghost of it is left.
+
+The effects are the VR options page's too (docs/subsystems/comfort.md): the grey tint, the
+heartbeat smear, the zoom blur, the negative, the camera shake, the stumbles and the haptics, each
+on its own and by preset (Full, Reduced - the default, Minimal; anything else Custom). With the
+stumbles off `panic-controls` skips the wall check, the bump's sound, the stumble (0x1001) and the
+fall (0xB00 / 0xB01 / 0xB02), and the full-fear panic attack (animation 2, 150 frames) is not begun
+(`in-attack` ends one already running): while her panic runs only a stalker's blow may knock her down
+(`fiona/hurt.fs` `panic-holds-off?`), a friend catching her in a leap, a door or any other blow is
+ignored. The world's freeze and her scream at full panic are never options.
+
+Her kick and shove are refused once her panic runs (or its start, or the panic attack):
+`fiona/defend.fs` `defend-blocked?` shuts the square button and the VR hands' physical
+shove alike, and `strike` drops a blow begun just before it - Hewie is the only defense then.
 
 The panic hears Fiona's state as `fiona-doing` each frame. *Note:* she hears its stage a frame
 later than in the original (it broadcasts at the frame's end).

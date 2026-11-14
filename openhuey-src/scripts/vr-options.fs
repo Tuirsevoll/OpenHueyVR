@@ -36,6 +36,16 @@ PRIVATE>
     0.25e vr-settings vr.crouch-on sf!         \ (the hide flag on at 25% ...)
     0.18e vr-settings vr.crouch-off sf!        \ (... and off only above 18%)
     0.45e vr-settings vr.sneak-speed sf!       \ (the crouch walk: 45% of a walk - 55% slower)
+    \ the panic's effects (panic.fs, fiona/fear.fs): the page's Reduced preset - the grey tint
+    \ alone, the stumbles and the full beat kept. The world's freeze and her scream at full panic
+    \ are not settings: they are always the game's.
+    1 vr-settings vr.panic-tint l!
+    0 vr-settings vr.panic-smear l!
+    0 vr-settings vr.panic-zoom l!
+    0 vr-settings vr.panic-negative l!
+    0 vr-settings vr.panic-shake l!
+    1 vr-settings vr.panic-stumbles l!
+    2 vr-settings vr.panic-haptics l!
     1 vr-settings vr.audio3d l! ;              \ (placed sounds through the headset's HRTF, occluded: on)
 
 \ the options written out as Forth, read back at start-up (each line runs)
@@ -66,6 +76,13 @@ PRIVATE>
     vr-settings vr.crouch-off sf@ 6 f>s$ type        ."  vr-settings vr.crouch-off sf!" cr
     vr-settings vr.sneak-speed sf@ 6 f>s$ type       ."  vr-settings vr.sneak-speed sf!" cr
     vr-settings vr.audio3d l@ n>s type               ."  vr-settings vr.audio3d l!" cr
+    vr-settings vr.panic-tint l@ n>s type            ."  vr-settings vr.panic-tint l!" cr
+    vr-settings vr.panic-smear l@ n>s type           ."  vr-settings vr.panic-smear l!" cr
+    vr-settings vr.panic-zoom l@ n>s type            ."  vr-settings vr.panic-zoom l!" cr
+    vr-settings vr.panic-negative l@ n>s type        ."  vr-settings vr.panic-negative l!" cr
+    vr-settings vr.panic-shake l@ n>s type           ."  vr-settings vr.panic-shake l!" cr
+    vr-settings vr.panic-stumbles l@ n>s type        ."  vr-settings vr.panic-stumbles l!" cr
+    vr-settings vr.panic-haptics l@ n>s type         ."  vr-settings vr.panic-haptics l!" cr
     end-file  ." saved " settings-file type cr ;
 
 : load-vr-options ( -- )
@@ -86,6 +103,68 @@ PRIVATE>
         vr-calibrate
         vr-settings vr.calibrated l@ 0<> if  save-vr-options  -1  else  0  then
     else  0  then ;
+
+\ ---- the panic's effects (docs/subsystems/panic.md): each one an option, and the preset their set
+\ matches. Full: every screen effect, the stumbles and the full beat. Reduced: the grey tint alone,
+\ the stumbles and the full beat. Minimal: no screen effect, no stumbles, half the beat. A set that
+\ is none of those is Custom (-1) - shown, never stepped to. Picking a preset writes its settings
+\ over the individual ones; the label is worked out from them, so there is nothing else to keep.
+0 constant panic-full
+1 constant panic-reduced
+2 constant panic-minimal
+-1 constant panic-custom
+0 constant haptics-off
+1 constant haptics-half
+2 constant haptics-full
+
+: panic-tint? ( -- flag )      vr-settings vr.panic-tint l@ 0<> ;
+: panic-smear? ( -- flag )     vr-settings vr.panic-smear l@ 0<> ;
+: panic-zoom? ( -- flag )      vr-settings vr.panic-zoom l@ 0<> ;
+: panic-negative? ( -- flag )  vr-settings vr.panic-negative l@ 0<> ;
+: panic-shake? ( -- flag )     vr-settings vr.panic-shake l@ 0<> ;
+: panic-stumbles? ( -- flag )  vr-settings vr.panic-stumbles l@ 0<> ;
+: panic-haptics ( -- level )   vr-settings vr.panic-haptics l@ 0 max 2 min ;
+\ the beat's strength: none, half, full
+: panic-haptics-scale ( F: -- k )
+    panic-haptics case  haptics-off of  0e  endof  haptics-half of  0.5e  endof  >r 1e r>  endcase ;
+
+\ the seven settings as bits - the tint, the smear, the zoom, the negative, the shake, the
+\ stumbles, then the haptics in bits 6 and 7 - so a preset is one comparison
+: panic-bits ( -- bits )
+    panic-tint? 1 and  panic-smear? 2 and or  panic-zoom? 4 and or  panic-negative? 8 and or
+    panic-shake? 16 and or  panic-stumbles? 32 and or  panic-haptics 6 lshift or ;
+1 2 or 4 or 8 or 16 or 32 or haptics-full 6 lshift or constant panic-full-bits
+1 32 or haptics-full 6 lshift or constant panic-reduced-bits
+haptics-half 6 lshift constant panic-minimal-bits
+
+\ a preset's seven settings (the stack's top is the beat's)
+: panic-set ( tint smear zoom negative shake stumbles haptics -- )
+    vr-settings vr.panic-haptics l!   vr-settings vr.panic-stumbles l!
+    vr-settings vr.panic-shake l!     vr-settings vr.panic-negative l!
+    vr-settings vr.panic-zoom l!      vr-settings vr.panic-smear l!
+    vr-settings vr.panic-tint l! ;
+: panic-preset! ( preset -- )
+    dup 0 3 within 0= if  drop exit  then
+    case
+        panic-full of     1 1 1 1 1 1 haptics-full panic-set  endof
+        panic-reduced of  1 0 0 0 0 1 haptics-full panic-set  endof
+        >r                0 0 0 0 0 0 haptics-half panic-set  r>
+    endcase ;
+: panic-preset ( -- preset )
+    panic-bits
+    dup panic-full-bits = if  drop panic-full exit  then
+    dup panic-reduced-bits = if  drop panic-reduced exit  then
+    panic-minimal-bits = if  panic-minimal  else  panic-custom  then ;
+: panic-preset$ ( -- addr len )
+    panic-preset case
+        panic-full of     s" Full"  endof
+        panic-reduced of  s" Reduced"  endof
+        panic-minimal of  s" Minimal"  endof
+        >r s" Custom" r>  endcase ;
+\ the preset a step of the row goes to (a Custom set: the first, or the last, either way)
+: panic-preset-step ( dir preset -- preset' )
+    dup panic-custom = if  drop 0> if panic-full else panic-minimal then exit  then
+    + 3 + 3 mod ;
 
 \ a fresh start: the defaults, then the player's
 vr-defaults

@@ -1412,6 +1412,7 @@ static void soft_reset(Engine *e, int hidden) {
     fprintf(stderr, "openhuey: a fresh game\n");
     hactor_reset();
     post_trail_off();   /* (the renderer made anew: no frame blend) */
+    post_panic_reset();   /* (nor a panic screen of the game that was) */
     for (i = 0; i < MAX_ACTORS; i++) {
         if (e->actors[i].used) {
             actor_free(&e->actors[i]);

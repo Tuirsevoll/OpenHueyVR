@@ -46,6 +46,18 @@ typedef struct VrOptions {
      * as it was) */
     int32_t audio3d;          /* 1: placed sounds through the HRTF, occlusion included (off: the
                                * original stereo) */
+    /* the panic's effects and Fiona's panic run (scripts/panic.fs, scripts/fiona/fear.fs;
+     * docs/subsystems/panic.md): what the player may turn off for photosensitivity, the run's
+     * stumbles, the heartbeat's haptics. Each 0 off / 1 on; the haptics 0 off, 1 half, 2 full.
+     * The defaults are the VR options page's Reduced preset - the grey tint alone, the stumbles
+     * and the full beat kept; the world's freeze and her scream at full panic are not settings. */
+    int32_t panic_tint;       /* 1: the grey / darkening tint each heartbeat */
+    int32_t panic_smear;      /* 1: the frame held and blended in again (the heartbeat's smear) */
+    int32_t panic_zoom;       /* 1: the screen drawn 16 bigger over itself (the first frames) */
+    int32_t panic_negative;   /* 1: the negative as her panic starts */
+    int32_t panic_shake;      /* 1: the camera shaken by her panic */
+    int32_t panic_stumbles;   /* 1: she stumbles, and may fall, running blindly into things */
+    int32_t panic_haptics;    /* the beat on the controllers: 0 off, 1 half, 2 full */
 } VrOptions;
 extern VrOptions gVrOptions;
 
@@ -72,6 +84,9 @@ int vr_should_render(void); /* this frame wants both eyes */
 void vr_end_frame(void);
 
 int vr_eye_count(void);
+/* the eye the picture being drawn is for (0, 1; -1 the window's own, or none begun): the post's
+ * per-eye effects keep one copy each (the panic's frame blend, post.c) */
+int vr_eye_active(void);
 /* while locked, an eye is only its offset from the head: a cutscene or story shot keeps the
  * scripted camera in front of the player. Head look applies again once this is cleared. */
 void vr_lock_pose(int on);

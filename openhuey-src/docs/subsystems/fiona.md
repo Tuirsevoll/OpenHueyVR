@@ -138,9 +138,10 @@ These, and the buttons' refusals below, are checked by `tests/fiona/test_rules.f
 - out of breath from the panic's stage 2;
 - panicking at 4, with a scream heard (0x6F) and the panic run (0x206) until out of breath (0x207);
 - stumbling (0x1001) as she runs into something, and one time in five a fall (0xB00): she
-  slides along the wall (0xB01) and gets up (0xB02) once the panic has passed;
-- the panic attack at full fear (150 frames);
-- turning to flee (Q: 0x403, fear up 10);
+  slides along the wall (0xB01) and gets up (0xB02) once the panic has passed - the VR options'
+  `Panic stumbles` may turn them off, and then only a stalker's blow knocks her down (a
+  friend's leap or any other is ignored while her panic runs);
+- the panic attack at full fear (150 frames), not begun while `Panic stumbles` is off;
 - her looks follow the danger and the panic (the chased walk 0x208, the shaken and frightened
   blends).
 
@@ -268,6 +269,11 @@ frame whatever she is doing (Fiona_Panic's timers), let go at once if she is str
 (`reaction` 11) when her kick ends without striking him. Not while she is turning to push, in a
 panic attack or out of breath (Fiona_IsIdle). Her gestures to Hewie are read during a shove only
 as it comes round (Fiona_ReadsPad: mode 8, her action 5, the motion's flag $20).
+
+The gate is `defend-blocked?` - also the VR hands' physical shove (`hand-strike`): a script or a
+scene has her, she is not free (a push, the panic attack, out of breath, fear 100), her panic is
+running or calming down, `no-flee`, or her panic's own start. A kick or shove's blow already
+under way is dropped too (`strike`, `panic-defense-off?`): Hewie alone is her defense then.
 
 
 **Costumes 6 and 7's weapons.** A part of each model is her weapon: part 25 of `O_FIB` (a thin
