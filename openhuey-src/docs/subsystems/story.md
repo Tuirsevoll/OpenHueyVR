@@ -720,7 +720,10 @@ subtitles, the pause and the skip's darkening.
   reach scaled (`light-scale`). `lights-doorway` (0x66) gives the lights a blocker for the
   frame (`light-blocker`): where its quad shades a light, the characters' shadows from that light
   don't fall (docs/subsystems/doors.md, "The open door's light").
-- **The look:** `depth-range` / `-off` (slot $1C), `fog` ($1D), `screen-blend` ($1E).
+- **The look:** `depth-range` / `-off` (slot $1C), `fog` ($1D), `screen-blend` ($1E). Each room
+  starts with none of the last one's parameters kept; a scene gives slot $1C's back as it found
+  them when it ends (its cues wipe them as it plays, and a shot after it must hold the room's
+  range, not the last cue's).
 Checked by `tests/story/test_things.fs` (8 tests).
 
 **S5b built** (2026-10-08): the rooms' effects (`docs/subsystems/effects.md`) - an actor each,

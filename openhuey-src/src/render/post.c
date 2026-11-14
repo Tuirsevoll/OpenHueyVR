@@ -20,7 +20,9 @@
  * Every pass is a single triangle covering the target (its corners made from gl_VertexID). */
 #include "post.h"
 
+#include "../game/camdirector.h"
 #include "../platform/gl.h"
+#include "../platform/vr.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -45,6 +47,15 @@ static Targets T;
 static GLuint sEmptyVao, sLinear, sAoProg, sBlurProg, sDownProg, sUpProg, sCompositeProg;
 static GLuint sTrailProg;
 static GLuint sPanicProg;   /* (the panic's screens: below) */
+
+/* the room's depth of field is a blur band a metre or so in front of the game's third-person
+ * camera (the room files and the scripts' per-set depth ranges are tuned for that). In a headset
+ * the camera is her eyes, so the band hazes everything around her head: it is left out while the
+ * headset is the camera. A cutscene's or the story's shot keeps its own - those pictures are the
+ * scripted camera's (VR: on a screen, or the eyes locked to the shot). */
+static int room_dof_on(const RenderSettings *s) {
+    return s->room_dof && gRoomLook.has_dof && !(vr_active() && !gCamDir.scene && !gCamDir.event);
+}
 
 /* ---- shaders ---- */
 
@@ -1040,7 +1051,7 @@ void post_finish(const PostCamera *cam, const RenderSettings *s, int x, int y, i
     fullscreen(T.soft_fbo[0], T.half_w, T.half_h, sDownProg);
     bind(0, T.soft[0], sLinear);
     fullscreen(T.soft_fbo[1], T.half_w, T.half_h, sUpProg);
-    if (s->room_dof && gRoomLook.has_dof) {   /* two more tent passes: about the game's 8 */
+    if (room_dof_on(s)) {   /* two more tent passes: about the game's 8 */
         bind(0, T.soft[1], sLinear);
         fullscreen(T.dof_fbo, T.half_w, T.half_h, sUpProg);
         bind(0, T.dof, sLinear);
@@ -1107,7 +1118,7 @@ void post_finish(const PostCamera *cam, const RenderSettings *s, int x, int y, i
     } else {
         glProgramUniform3f(sCompositeProg, 22, 0.0f, 0.0f, 0.0f);
     }
-    if (s->room_dof && gRoomLook.has_dof) {
+    if (room_dof_on(s)) {
         glProgramUniform4f(sCompositeProg, 20, gRoomLook.dof[0], gRoomLook.dof[1], gRoomLook.dof[2], gRoomLook.dof[3]);
     } else {
         glProgramUniform4f(sCompositeProg, 20, 1.0f, 0.0f, 0.0f, 0.0f);

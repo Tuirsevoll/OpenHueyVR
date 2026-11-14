@@ -62,7 +62,12 @@ sub-state and the room change.
 6. The panic stills the camera at the start of each frame and shakes it (0.2) through a panic's
    later stretch (`Panic_Stage`), unless a cutscene has the camera or the panic is held.
 7. The story's shot: the point and heading fixed as it starts, its distance and angles as told;
-   the room's depth range off meanwhile. Following nobody ends it.
+   the room's depth range off meanwhile. Following nobody ends it. The range is kept with the room
+   it was taken from, and given back however the shot ends (played out, or the one followed gone):
+   one held across a room change is dropped, not laid over the new room. In a headset the camera
+   is her eyes, so the room's depth range (a band a metre or so in front of the third-person
+   camera) is left out in play; a cutscene's or the story's shot keeps its own - that picture is
+   the scripted camera's.
 
 ## Debug
 

@@ -31,6 +31,8 @@ static struct {
     uint8_t *script, *marks, *cues;
     size_t script_size, marks_size, cues_size;
     RoomLook look;          /* the fog and depth range as they were at the start (+0x238, +0x268) */
+    uint8_t look_raw[16];   /* slot 0x1C's parameters as they were then (the cues wipe them) */
+    size_t look_raw_n;
     uint8_t *shots[MAX_SHOTS];
     size_t shot_size[MAX_SHOTS];
     int state, status;
@@ -544,6 +546,7 @@ void cutscene_run_state(void) {
         cast();
         camdir_scene(&gCamDir, 1);   /* (the camera director idle till the scene is over) */
         C.look = gRoomLook;
+        C.look_raw_n = room_look_get(0x1C, C.look_raw);
         C.status = 3;
         break;
     case STATE_PLAYING: {   /* (Cutscene_StatePlaying) */
@@ -787,6 +790,9 @@ void cutscene_end(void) {
         gRoomLook.fog_early = C.look.fog_early;
         gRoomLook.has_dof = C.look.has_dof;
         memcpy(gRoomLook.dof, C.look.dof, sizeof(gRoomLook.dof));
+        /* (slot 0x1C's parameters too: the cues wipe them as the scene plays, and a later shot's
+         * hold must save the room's own - not the last cue's, laid over the play that followed) */
+        room_look_restore_raw(0x1C, C.look_raw_n != 0 ? C.look_raw : NULL, C.look_raw_n);
         memset(&gEngine.extra, 0, sizeof(gEngine.extra));
         if (sOnPlace != NULL && C.cast) {
             place_at_end();

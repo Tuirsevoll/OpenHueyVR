@@ -201,11 +201,26 @@ void room_look_set(int slot, const uint8_t *d, size_t n) {
     }
 }
 
+/* the parameters as last given, put back without making the effect from them (a cutscene's cues
+ * wipe slot 0x1C as they play; the room's own are put back when it ends, so a later shot's hold
+ * saves them and not the last cue's) */
+void room_look_restore_raw(int slot, const uint8_t *d, size_t n) {
+    if (slot < 0x1C || slot > 0x1F) {
+        return;
+    }
+    sLookN[slot - 0x1C] = d != NULL ? (n < LOOK_RAW ? n : LOOK_RAW) : 0;
+    if (d != NULL) {
+        memcpy(sLookRaw[slot - 0x1C], d, sLookN[slot - 0x1C]);
+    }
+}
+
 static void load_look(Room *r) {
     size_t size;
     const uint8_t *sec = pac_section(&r->pac, PAC_EFFECTS, &size);
 
     memset(&gRoomLook, 0, sizeof(gRoomLook));
+    memset(sLookRaw, 0, sizeof(sLookRaw));   /* (the last room's parameters are not this one's) */
+    memset(sLookN, 0, sizeof(sLookN));
     post_glow_clear();   /* (a new room: the glow pass's buffer black) */
     if (sec == NULL || size < 0x18) {
         return;

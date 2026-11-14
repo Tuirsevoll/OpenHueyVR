@@ -15,8 +15,9 @@ state: camera-state
   cell field shot                     \ (enum: shot)
   1 floats field dist   1 floats field pitch   1 floats field yaw   1 floats field rise
   /vec field look   1 floats field heading   1 floats field toward
-  \ the room's depth range (look slot $1C), off during the shot (CamDirector_HoldEffect1C)
-  cell field fog-held   16 field fog
+  \ the room's depth range (look slot $1C), off during the shot (CamDirector_HoldEffect1C) -
+  \ kept with the room it was taken from (a band held across a room change is not that room's)
+  cell field fog-held   16 field fog   cell field fog-room
 end-state
 enum: shot  no-shot shot-wanted shot-taken ;
 $1C constant depth-range   \ (the room's look slot: its fog, held off during the shot)
@@ -38,10 +39,12 @@ $1C constant depth-range   \ (the room's look slot: its fog, held off during the
     look vec@ cam-place ;
 : hold-fog ( -- )   \ (kept and taken off, if the room has one)
     fog-held @ if  exit  then
-    depth-range fog look@ 0> if  -1 fog-held !  depth-range 0 0 look-set  then ;
-: give-fog ( -- )  fog-held @ 0= if  exit  then  0 fog-held !  depth-range fog 16 look-set ;
-: shot-over ( -- )   \ (the setup taken anew)
-    false cam-event!  shot @ no-shot <> if  no-shot shot !  cam-retake  then ;
+    depth-range fog look@ 0> if  -1 fog-held !  room-id fog-room !  depth-range 0 0 look-set  then ;
+: give-fog ( -- )   \ (back in the room it was taken from; one held across a room change is dropped)
+    fog-held @ 0= if  exit  then  0 fog-held !
+    fog-room @ room-id = if  depth-range fog 16 look-set  then ;
+: shot-over ( -- )   \ (the setup taken anew; the room's depth range back, however the shot ended)
+    give-fog  false cam-event!  shot @ no-shot <> if  no-shot shot !  cam-retake  then ;
 
 : fiona ( -- id )  fiona-id ;
 : fresh-start ( -- )   \ (the characters made anew: their setups none - hers as the save had it)
@@ -54,7 +57,7 @@ behaviour filming
   \ Fiona); from room to room the director goes on - its shake, its shot, whom it follows - and
   \ only the characters' setups go. The place starts it (story/kit.fs: camera-starts).
   on arrived ( room exit -- )
-      nip 0 held !  cam-stop
+      nip 0 held !  0 fog-held !  cam-stop   \ (a shot's kept depth range is the old room's: dropped)
       0< if  fresh-start  else  cam-forget-setups  then ;
   on camera-restart ( -- )  cam-restart ;
   \ the story's shot (0x82: EventCam_Set, CamDirector_HoldEffect1C): on - the distance and angles
