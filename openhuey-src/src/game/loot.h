@@ -40,23 +40,15 @@ void loot_follow(int index, Vec3 at, Vec3 right, Vec3 up, Vec3 fwd);
 void loot_let_go(int index, int side);
 int loot_claims_placed(int placed_index);
 void loot_draw(const Mat4 *view_proj, int layer);
-/* A thing in a hand is drawn between the last two ticks' hand frames, as her eyes and arms are
- * drawn between them (docs/subsystems/hands.md, "A held thing is drawn between two ticks"): `alpha`
- * is this draw's share (main.c sPoseAlpha), asked before the draw; and the tick's frame given after
- * it, so the next draw knows where the hand's move started. */
-void loot_draw_between(float alpha);
-/* the tick's frame given for `side`'s hand: `step` is how far the hand moved this tick */
-void loot_give_step(int side, Vec3 step);
-/* what `side`'s hand was drawn from is dropped: a thing whose frame it held goes on from where it
- * is (letting go of the last one, or a tracked hand gone) */
-void loot_rebase(int side);
+/* A thing a hand holds is drawn from that hand's own frame as each draw has it (the frame the arm
+ * is posed from: vrhands_hand_frame), so it sits in the hand on every drawn frame and does not step
+ * at the ticks (docs/subsystems/hands.md, "A held thing is drawn with the hand"). Asked by main.c's
+ * draw_frame once a frame, before an eye or an arm is drawn. */
+void loot_draw_from_hands(void);
 /* 1 when the item at `index` is in a hand: its holders' bits (bit 0 the left, 1 the right) */
 int loot_held(int index, int *holders);
-/* the two ticks the item at `index` in a hand is drawn between: its frame at the last (its place,
- * right, up, forward) and at the one before. 0 when it is not in a hand. For a check of the easing. */
-int loot_held_ticks(int index, Vec3 *from, Vec3 *to);
-/* the frame the item at `index` is drawn with now - the world's, or eased between two ticks when
- * a hand holds it - and 0 when there is no such item. For a check of the easing. */
+/* the frame the item at `index` is drawn with now - the world's, or the hand's when this draw took
+ * it - and 0 when there is no such item. For a check of the drawing. */
 int loot_drawn_frame(int index, Vec3 *pos, Vec3 *right, Vec3 *up, Vec3 *fwd);
 
 #endif

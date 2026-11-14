@@ -117,31 +117,40 @@ not read there and her root motion is not used (`scripts/fiona/ladder.fs`, `vr-c
   ladder, and `ladder-pull` ( F: -- dy ), the pending total in the game's y, taken (cleared) by the
   call.
 
-- **A held thing is drawn between two ticks** (`src/game/loot.c`, "a held thing's frame"). The game
-  moves at its 30 ticks a second, but a headset draws every frame it can, and her eyes and arms are
-  already drawn between the last two ticks (main.c, `sPose`). A hand's place is not blended there,
-  but a held thing's place is an offset from her eyes: between two ticks every drawn frame took the
-  hand's frame as the last tick left it, so walking (her body moving under a hand held still) the
-  eyes led the hand and the thing jumped on to the tick's end on each drawn frame at once - the
-  stutter. So an item in a hand (`HOLD_LOOT`) keeps its frame at the two ticks it was last given -
-  where the hand's move this tick started (`loot_give_step`, the step measured between the tick's
-  two hand poses) and where it ended (`loot_follow`) - and is drawn between them at the frame's
-  share of the tick
-  (`loot_draw_between(sPoseAlpha)`, before the draw), its place and axes eased and the axes kept
-  square. A hand that moves (an item turned or swung) reads smooth either way and is eased the
-  same, so only the walk changes. A hand that jumped (further than a swing in a tick) draws its
-  thing at once, no easing. Only the drawn frame moves: at the end of every frame the game has the
-  hand's own frame again (`loot_rebase`, once a frame - a hand that let go of its last thing, or is
-  gone, drops what it was drawn from). The eyes and hands are left exactly as they were.
+- **A held thing is drawn with the hand** (`src/game/loot.c`, "a held thing, drawn with the hand";
+  `vrhands_hand_frame` in `src/game/vrhands.c`). The game moves at its 30 ticks a second, but a
+  headset draws every frame it can, and her arms are posed afresh for each drawn frame (the pose
+  hook, `actor.c`: `vrhands_pose`) from the controller's pose and the eyes as *that draw* has them.
+  A held thing was placed by the tick instead, so between ticks it stood still while the eyes walked
+  on and each new tick jumped it: the stutter - worst with her walking and the hand still. So a thing
+  in a hand (`HOLD_LOOT`) is drawn from the very frame its hand is drawn from: `loot_draw_from_hands`
+  (asked by `draw_frame`, once a frame, before an eye or an arm) takes `vrhands_hand_frame`'s raw
+  hand frame - the wrist and the hand's axes, the frame the arm is posed from, before the wall stop -
+  and that is what the thing is drawn with. It therefore sits in the hand on every drawn frame, as
+  smoothly as the arm. Nothing of the game's own frame moves: what the hand gave at the tick is what
+  the game keeps (`loot_follow`), which is what the pickup, `loot_nearest` and the placed-object code
+  read. A hand not tracked (a menu, a scene with no anchor, no headset) leaves the thing where the
+  tick has it.
+- **A grip lets an equipped thing go at once** (`scripts/fiona/letgo.fs`: `hand-defense`). With a
+  magnesia, antimony (or a ball, the doll, the stone) in the equipment's slot 2, a grip pressed and
+  released - `vrhands_defense_take`, armed by a close after the model is in the hand - makes the
+  thing at the hand: a magnesia set down where it was let go (no speed), the aimed ones flicked along
+  the hand's own swing (`defense_flick`). Her set-down / throw animation is **not** played and she
+  keeps walking: no state of hers changes. The triangle it used to be bound to (see `vr.c`: a grip is
+  the game's triangle in a headset) no longer starts that animation in a headset at all -
+  `try-let-go` returns at once with `vr?` - so a grip taken to grab something does not drop into her
+  throw either. The flat screen keeps the button's own let-go, animation and all.
+- The equipped thing is drawn from the same live hand frame (`vrhands_defense_draw`), so it too stays
+  in the hand while she walks.
 
 ## Status
 
 Walls, floors and ceilings stop the arm at 0.40 and let it slide along them. Doors and placed
 objects buzz only.
 
-A held thing (loot) is drawn between the last two ticks' hand frames, so walking with one in a hand
-no longer stutters (above); props, wardrobe leaves, doors and the equipped magnesia/antimony are not
-put through that easing.
+A held thing (loot) and the equipped magnesia/antimony are drawn from the hand's own frame at each
+draw, so walking with one in a hand no longer stutters (above). Props and wardrobe leaves are still
+placed by the tick.
 
 A hand also grabs a ladder in the air beside it while she climbs: the link is kept, that
 controller buzzes once, and the base game's rung sound plays. The grab no longer needs the climb to be running: a new grab on a ladder

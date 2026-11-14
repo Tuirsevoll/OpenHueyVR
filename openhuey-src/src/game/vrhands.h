@@ -16,6 +16,11 @@ void vrhands_pose(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *u
 /* (temporary, for the headset smoothing test) the microseconds vrhands_pose and its hand_stop()
  * calls have added up since the last call, then cleared. Either pointer may be NULL. */
 void vrhands_take_times(unsigned *pose, unsigned *stop);
+/* the raw hand's frame in the room as the arms are posed from it at a draw (no wall stop): `at` is
+ * the wrist, and its axes the hand's. 0 when that hand is not tracked (or there is no anchor: a
+ * scene, a menu). A thing that hand holds is drawn from this same frame, so it sits in the hand on
+ * every drawn frame (docs/subsystems/hands.md, "A held thing is drawn with the hand"). */
+int vrhands_hand_frame(int side, Vec3 *at, Vec3 *right, Vec3 *up, Vec3 *fwd);
 /* a pet pushes the bone under the hand. Called from the pose, after the skeleton is built. */
 void vrhands_pet_pose(struct Actor *a, Mat4 *world, int nbones, const Mat4 *unplace);
 void vrhands_tick(struct Engine *e);

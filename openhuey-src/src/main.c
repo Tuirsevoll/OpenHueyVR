@@ -956,11 +956,6 @@ static float angle_wrap(float a) {
 #define POSE_SNAP 3.0f     /* room units: further than this in one tick is a cut, not a walk */
 #define TURN_SNAP 1.05f    /* radians (60 degrees): a bigger turn in one tick is a cut, not a turn */
 
-/* How far past the last tick this frame's picture falls, 0 on it and 1 at the next: what the
- * picture is drawn between the last two ticks at (her pose below, and a thing in a hand -
- * loot_draw_between). Set once a frame, between the ticks and the draw, and read only. */
-static float sPoseAlpha;
-
 static struct {
     int have;        /* prev and cur are hers: a tick has run with her in this room */
     int room;        /* the room they were taken in (e->room.id) */
@@ -1197,7 +1192,7 @@ static void draw_frame(Engine *e) {
         int i, n = vr_eye_count();
         int screen = cutscene_on_screen();
 
-        loot_draw_between(sPoseAlpha);   /* (her pose and a thing in a hand: between the same two ticks) */
+        loot_draw_from_hands();   /* (a thing in a hand: drawn from the frame its hand is drawn from) */
 
         {
             static int menu_was, screen_was;
@@ -1338,25 +1333,6 @@ static void draw_frame(Engine *e) {
     }
 }
 
-/* after a frame: a thing in a hand is drawn between the last two ticks' hand frames, and the draw
- * eased it only - put it back where the game has it (loot.c, "a held thing's frame"). What a hand
- * with nothing left in it was drawn from is dropped too: the frame just drawn is what the next
- * tick's move is measured from. */
-static void loot_rebase_draw(void) {
-    int side;
-
-    if (!vr_active()) {
-        return;
-    }
-    for (side = 0; side < 2; side++) {
-        VrController c;
-
-        if (!vr_controller(side, &c) || !c.tracked) {
-            loot_rebase(side);   /* (no hand: nothing of it to ease from) */
-        }
-    }
-}
-
 /* the picture. On a headset, mid-step or mid-turn, she is drawn where the last two ticks left her
  * - as far from the tick before as this frame's lag is past the last one - her body's yaw and the
  * camera's eased the same way, and at once put back where the game has her: only the picture moves,
@@ -1400,11 +1376,9 @@ static void draw(Engine *e) {
         p->pos = saved_pos;   /* (the game's own place and turn: no frame leaves them moved) */
         p->yaw = saved_yaw;
         sAlign = saved_align;
-        loot_rebase_draw();   /* (a thing in a hand drawn between two ticks: the game's frame again) */
         return;
     }
     draw_frame(e);
-    loot_rebase_draw();
 }
 
 /* the game's Forth and its scripts (game.fs spawns the actors: the title first) */
@@ -1654,7 +1628,6 @@ int main(int argc, char **argv) {
             float a = tick_ns > 0 ? (float)lag / (float)tick_ns : 0.0f;
 
             sPose.alpha = a < 0.0f ? 0.0f : (a > 1.0f ? 1.0f : a);
-            sPoseAlpha = sPose.alpha;
         }
         if (bind_engine_reset_wanted()) {   /* (between frames: no handler running) */
             if (vr_frame) {
@@ -1670,13 +1643,6 @@ int main(int argc, char **argv) {
         }
         if (!vr_frame || vr_should_render()) {   /* a headset redraws every refresh, so the head is not stuck at 30 */
             draw(e);
-            if (vr_active() && ticks > 0) {   /* (a thing in a hand: the tick's frame is where this draw left off) */
-                int side;
-
-                for (side = 0; side < 2; side++) {
-                    loot_give_step(side, vec3(0.0f, 0.0f, 0.0f));
-                }
-            }
         }
         if (vr_frame) {
             vr_end_frame();

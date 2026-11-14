@@ -308,6 +308,14 @@ static int hand_world(int side, Vec3 *at, Vec3 *right, Vec3 *up, Vec3 *fwd, floa
     return 1;
 }
 
+/* a hand's frame in the room, as the arm is posed from it: the wrist and the hand's axes. The same
+ * for a thing in that hand, so it is drawn in the hand (loot_draw_from_hands). */
+int vrhands_hand_frame(int side, Vec3 *at, Vec3 *right, Vec3 *up, Vec3 *fwd) {
+    float grip = 0.0f, index = 0.0f, thumb = 0.0f;
+
+    return hand_world(side, at, right, up, fwd, &grip, &index, &thumb);
+}
+
 /* The hand's length in room units, wrist to fingertip: what hand_scale fits it to (HAND_METRES of
  * hand, HAND_SCALE larger; the measured extent only sets the scale that reaches this). */
 static float hand_length(void) {
@@ -3017,23 +3025,34 @@ static void defense_tick(void) {
 
 void vrhands_defense_draw(const Mat4 *view_proj) {
     Mat4 m;
+    Vec3 at, right, up, fwd;
+    float grip = 0.0f, index = 0.0f, thumb = 0.0f;
 
     if (!sDef.shown || sDef.kind < 0 || view_proj == NULL) {
         return;
     }
+    /* where the hand is drawn this frame, not where the last tick left it: the arms are posed from
+     * the same frame, so the thing sits in the hand while she walks (loot.c's held things too) */
+    at = sDef.at;
+    right = sDef.right;
+    up = sDef.up;
+    fwd = sDef.fwd;
+    if (hand_world(sDef.side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
+        at = defense_place(at, up, fwd);
+    }
     m = mat4_identity();
-    m.m[0] = sDef.right.x;
-    m.m[1] = sDef.right.y;
-    m.m[2] = sDef.right.z;
-    m.m[4] = sDef.up.x;
-    m.m[5] = sDef.up.y;
-    m.m[6] = sDef.up.z;
-    m.m[8] = sDef.fwd.x;
-    m.m[9] = sDef.fwd.y;
-    m.m[10] = sDef.fwd.z;
-    m.m[12] = sDef.at.x;
-    m.m[13] = sDef.at.y;
-    m.m[14] = sDef.at.z;
+    m.m[0] = right.x;
+    m.m[1] = right.y;
+    m.m[2] = right.z;
+    m.m[4] = up.x;
+    m.m[5] = up.y;
+    m.m[6] = up.z;
+    m.m[8] = fwd.x;
+    m.m[9] = fwd.y;
+    m.m[10] = fwd.z;
+    m.m[12] = at.x;
+    m.m[13] = at.y;
+    m.m[14] = at.z;
     loot_draw_held(sDef.item, &m, view_proj);
 }
 
@@ -3368,15 +3387,9 @@ void vrhands_tick(Engine *e) {
 
                 if (loot >= 0 && (door < 0 || lootD < doorD) && (prop < 0 || lootD <= propD) &&
                     (ward < 0 || lootD <= wardD)) {
-                    Vec3 was;
-                    float g = 0.0f, n = 0.0f, th = 0.0f;
-
                     sHold[side] = HOLD_LOOT;
                     sHoldId[side] = loot;
                     loot_grab(loot, side);
-                    if (hand_world(side, &was, &right, &up, &fwd, &g, &n, &th)) {
-                        loot_give_step(side, vec3_sub(at, was));   /* (where the hand came from) */
-                    }
                     loot_follow(loot, at, right, up, fwd);
                     door = -1;
                     prop = -1;
@@ -3407,15 +3420,6 @@ void vrhands_tick(Engine *e) {
                 drive_door(e, sHoldId[side], sDoorAxis[side], at);
             }
         } else if (sHold[side] == HOLD_LOOT) {
-            Vec3 was;
-            float g = 0.0f, n = 0.0f, th = 0.0f;
-
-            /* the tick's frame is given from where the hand was before its move: a draw then
-             * eases the thing from there, never past where the game has it (loot.c, "a held
-             * thing's frame") */
-            if (hand_world(side, &was, &right, &up, &fwd, &g, &n, &th)) {
-                loot_give_step(side, vec3_sub(at, was));
-            }
             loot_follow(sHoldId[side], at, right, up, fwd);
         } else if (sHold[side] == HOLD_PROP) {
             Placed *p = sHoldId[side] >= 0 && sHoldId[side] < e->room.placed.n ? &e->room.placed.p[sHoldId[side]] : NULL;

@@ -10,6 +10,7 @@
 #include "room.h"
 #include "sprites.h"
 #include "things.h"
+#include "vrhands.h"
 #include "../data/pac.h"
 #include "../data/texbank.h"
 #include "../hactor/hactor.h"
@@ -62,9 +63,9 @@ typedef struct Cat {
     int has;
 } Cat;
 
-/* The frame as the hand gave it at a tick (right / up / fwd / yaw), and the frame it is drawn with
- * (the same four eased between that tick and the one before, a draw at a time: the draw's share is
- * `alpha`). The two are the same value outside a draw, so what the game keeps is the hand's. */
+/* The frame a thing is drawn with (right / up / fwd / yaw and its place): the world's own, or - a
+ * thing in a hand - the hand's, taken at the draw (docs/subsystems/hands.md, "A held thing is drawn
+ * with the hand"). */
 typedef struct PropFrame {
     Vec3 pos, right, up, fwd;
     float yaw;
@@ -80,12 +81,10 @@ typedef struct Prop {
     int holders; /* bit 0 / 1 */
     int pending;
     int spark;
-    /* in a hand (holders): how its frame is drawn (docs/subsystems/hands.md, "A held thing is
-     * drawn between two ticks").
-     * The frame at the last tick the hand gave one (`held`, and the one before in `held_prev`),
-     * which the hand's new one becomes as the tick starts (`mount`), and the frame drawn. */
+    /* in a hand: `held` 1 when this draw took the frame from that hand (`draw`), 0 when it draws
+     * where the world has it. Only ever set for a draw (loot_draw_from_hands). */
     int held;
-    PropFrame mount, held_prev, draw;
+    PropFrame draw;
 } Prop;
 
 typedef struct Template {
@@ -1899,10 +1898,6 @@ int loot_nearest(Vec3 hand, int skip, float *d2) {
     return found;
 }
 
-static void prop_frame_give(Prop *p, Vec3 step);
-static void prop_frame_settle(Prop *p);
-void loot_follow(int index, Vec3 at, Vec3 right, Vec3 up, Vec3 fwd);   /* (needs prop_frame_give) */
-
 void loot_grab(int index, int side) {
     Prop *p;
 
@@ -1936,9 +1931,6 @@ void loot_follow(int index, Vec3 at, Vec3 right, Vec3 up, Vec3 fwd) {
     p->fwd = fwd;
     p->posed = 1;
     p->yaw = atan2f(fwd.x, fwd.z);
-    /* the hand's frame is the game's again: a draw eases from it, never past it */
-    prop_frame_give(p, vec3(0.0f, 0.0f, 0.0f));
-    prop_frame_settle(p);
     if (p->style == ST_PLACED && p->placed >= 0 && p->placed < gEngine.room.placed.n) {
         gEngine.room.placed.p[p->placed].pos = at;
         gEngine.room.placed.p[p->placed].shown = 0;
@@ -1970,67 +1962,16 @@ int loot_claims_placed(int placed_index) {
     return 0;
 }
 
-/* ---- a held thing, drawn between two ticks (docs/subsystems/hands.md, "A held thing is drawn
- * between two ticks") ----
- * The game moves at its 30 ticks a second but a headset draws every frame it can, and her eyes
- * and arms are already drawn between two ticks (main.c, "the picture"). A hand's place is not
- * blended there, but where a held thing sits is an offset from her eyes, so between two ticks
- * every drawn frame took the hand's frame as the last tick left it: walking (her body moving
- * under a hand held still) the eyes led the hand, and the thing jumped on to where the tick had
- * left it on each drawn frame at once - the stutter. So an item's frame is kept at the two ticks
- * it was last given and drawn between them, as far from the tick before as this frame falls past
- * the last one. A hand that moves (an item turned in it, or swung about) reads smooth either way
- * and is eased the same, so nothing changes but the walk. Only the drawn frame moves: the game
- * keeps the hand's own at every other moment. */
-
-/* an angle's way to another, wrapped into -pi..pi: a turn past the seam is the short one */
-static float frame_angle_delta(float to, float from) {
-    float d = to - from;
-
-    while (d > 3.14159265f) {
-        d -= 6.28318531f;
-    }
-    while (d < -3.14159265f) {
-        d += 6.28318531f;
-    }
-    return d;
-}
-
-/* where between two frames one lies: `a` 0 the first, 1 the second. The turn goes the short way
- * (a yaw past +-pi is an ordinary turn), and the axes come out square to each other as in both
- * frames: an item is never drawn sheared or shrunk. A share at either end is that frame itself
- * (to within a hair, which no eye sees: a hand that jumped has both its ticks the same). */
-#define FRAME_EPS 0.0001f
-static PropFrame frame_between(const PropFrame *from, const PropFrame *to, float a) {
-    PropFrame f;
-
-    if (!(a > FRAME_EPS)) {
-        return *from;   /* (the tick before's frame: the hand's own, and nought, as it is) */
-    }
-    if (!(a < 1.0f - 2.0f * FRAME_EPS)) {
-        return *to;     /* (the last tick's: likewise - a hand turned through a right angle in a
-                         * tick keeps its own square axes, and no rounding shows) */
-    }
-    f.pos = vec3_add(from->pos, vec3_scale(vec3_sub(to->pos, from->pos), a));
-    f.fwd = vec3_norm(vec3_add(from->fwd, vec3_scale(vec3_sub(to->fwd, from->fwd), a)));
-    f.up = vec3_norm(vec3_add(from->up, vec3_scale(vec3_sub(to->up, from->up), a)));
-    f.fwd = vec3_norm(vec3_sub(f.fwd, vec3_scale(f.up, vec3_dot(f.up, f.fwd))));
-    f.right = vec3_cross(f.fwd, f.up);   /* (the handedness prop_world takes: right, up, fwd) */
-    f.yaw = from->yaw + frame_angle_delta(to->yaw, from->yaw) * a;
-    return f;
-}
-
-/* a fresh hold: the hand's frame now, nothing before it to ease from */
-static void prop_frame_take(Prop *p) {
-    p->mount.pos = p->pos;
-    p->mount.right = p->right;
-    p->mount.up = p->up;
-    p->mount.fwd = p->fwd;
-    p->mount.yaw = p->yaw;
-    p->held_prev = p->mount;
-    p->draw = p->mount;
-    p->held = 1;
-}
+/* ---- a held thing, drawn with the hand (docs/subsystems/hands.md, "A held thing is drawn with the
+ * hand") ----
+ * The game moves at its 30 ticks a second but a headset draws every frame it can, and her arms are
+ * posed afresh for each drawn frame (actor.c's pose hook: vrhands_pose) from the controller's pose
+ * and the eyes as *that draw* has them. A held thing was placed by the tick instead, so between
+ * ticks it stood still while the eyes walked on, and each new tick jumped it: the stutter - worst
+ * with her moving and the hand still. So a thing in a hand is drawn from the very frame its hand is
+ * drawn from (vrhands_hand_frame, at the same point in the frame), and sits exactly in the hand on
+ * every drawn frame, as smoothly as the arm does. Nothing of the game's own frame is changed: what
+ * the hand gave at the tick is what the game keeps (loot_follow). */
 
 int loot_held(int index, int *holders) {
     if (index < 0 || index >= LOOT_N || !sProp[index].used || !sProp[index].holders) {
@@ -2039,15 +1980,6 @@ int loot_held(int index, int *holders) {
     if (holders != NULL) {
         *holders = sProp[index].holders;
     }
-    return 1;
-}
-
-int loot_held_ticks(int index, Vec3 *from, Vec3 *to) {
-    if (index < 0 || index >= LOOT_N || !sProp[index].used || !sProp[index].held) {
-        return 0;
-    }
-    *from = sProp[index].held_prev.pos;
-    *to = sProp[index].mount.pos;
     return 1;
 }
 
@@ -2072,78 +2004,30 @@ int loot_drawn_frame(int index, Vec3 *pos, Vec3 *right, Vec3 *up, Vec3 *fwd) {
     return 1;
 }
 
-/* a hand's new frame is the tick's end: the one before it (the last, or where the move just made
- * started), and the one after it. A hand that jumped (further than a swing) eases into nothing:
- * the two are the same frame, and it is drawn where the hand is at once. */
-#define LOOT_SLIDE 30.0f   /* room units in one tick: a hand's jump is further than a swing */
-static void prop_frame_give(Prop *p, Vec3 step) {
-    Vec3 prev = p->mount.pos, prev_right = p->mount.right, prev_up = p->mount.up, prev_fwd = p->mount.fwd;
-    float prev_yaw = p->mount.yaw;
+/* Before a draw, from the game's own frames: a thing a hand holds takes that hand's frame as this
+ * draw has it (the same frame the arm is posed from), so it sits in the hand on every drawn frame.
+ * A hand not tracked (a menu, a scene, no headset) keeps the frame the tick gave, as does a thing in
+ * the world. Asked by draw_frame, once a frame, before an eye or an arm is drawn. */
+void loot_draw_from_hands(void) {
+    int i, side;
 
-    p->mount.pos = p->pos;
-    p->mount.right = p->right;
-    p->mount.up = p->up;
-    p->mount.fwd = p->fwd;
-    p->mount.yaw = p->yaw;
-    if (!p->held) {
-        prop_frame_take(p);   /* (a fresh one: from the frame it was taken in) */
-        return;
-    }
-    p->draw = p->mount;   /* (a frame from here on is the hand's own, until a draw eases it) */
-    /* the frame before this one: the last, or where this tick's move started. A hand that jumped
-     * (further than a swing, or a step it did not make) eases into nothing. */
-    if (vec3_len(step) > LOOT_SLIDE || vec3_len(vec3_sub(p->mount.pos, prev)) > LOOT_SLIDE) {
-        p->held_prev = p->mount;
-        return;
-    }
-    p->held_prev.pos = vec3_sub(p->pos, step);
-    p->held_prev.right = prev_right;
-    p->held_prev.up = prev_up;
-    p->held_prev.fwd = prev_fwd;
-    p->held_prev.yaw = prev_yaw;
-}
-
-/* the game's frame back after a draw (the thing in a hand was eased only for it) */
-static void prop_frame_out(Prop *p) {
-    if (p->held) {
-        p->draw = p->mount;
-    }
-}
-
-static void prop_frame_settle(Prop *p) {
-    prop_frame_out(p);
-    p->draw = p->mount;
-}
-
-/* only a walk is eased: the thing is drawn where the hand's own frame was before it, a draw at a
- * time. A thing no hand has (never taken, or in the world again) is drawn on the world's frame,
- * and is not eased at all. */
-static void prop_frame_hold(Prop *p) {
-    p->held = 0;
-    p->draw.pos = p->pos;
-    p->draw.right = p->right;
-    p->draw.up = p->up;
-    p->draw.fwd = p->fwd;
-    p->draw.yaw = p->yaw;
-}
-
-/* this draw's frame, given the draw's share between the last two ticks */
-void loot_draw_between(float alpha) {
-    int i;
-
-    if (!(alpha >= 0.0f)) {
-        alpha = 0.0f;
-    }
-    if (alpha > 1.0f) {
-        alpha = 1.0f;
-    }
     for (i = 0; i < LOOT_N; i++) {
         Prop *p = &sProp[i];
 
-        if (!p->used || !p->held) {
+        p->held = 0;
+        if (!p->used) {
             continue;
         }
-        p->draw = frame_between(&p->held_prev, &p->mount, alpha);
+        for (side = 0; p->holders && side < 2; side++) {
+            if ((p->holders & (1 << side)) == 0) {
+                continue;
+            }
+            if (vrhands_hand_frame(side, &p->draw.pos, &p->draw.right, &p->draw.up, &p->draw.fwd)) {
+                p->draw.yaw = atan2f(p->draw.fwd.x, p->draw.fwd.z);
+                p->held = 1;   /* (drawn from the hand: this draw only) */
+                break;
+            }
+        }
     }
 }
 
@@ -2152,7 +2036,7 @@ static Mat4 prop_world(const Prop *p) {
     const Vec3 *right = &p->right, *up = &p->up, *fwd = &p->fwd, *pos = &p->pos;
 
     if (p->posed) {
-        if (p->held) {   /* (a hand: the frame as this draw eases it, not the hand's own) */
+        if (p->held) {   /* (a hand: where it is drawn this frame, not where the tick left it) */
             right = &p->draw.right;
             up = &p->draw.up;
             fwd = &p->draw.fwd;
@@ -2172,35 +2056,6 @@ static Mat4 prop_world(const Prop *p) {
     m.m[13] = pos->y;
     m.m[14] = pos->z;
     return m;
-}
-
-/* The tick's frame given for `side`'s hand: where each thing it holds was before the hand's move
- * this tick (`step`, from where it was), so the next draw eases from there (prop_frame_give). */
-void loot_give_step(int side, Vec3 step) {
-    int i;
-
-    for (i = 0; i < LOOT_N; i++) {
-        if (sProp[i].used && sProp[i].holders && (sProp[i].holders & (1 << side))) {
-            prop_frame_give(&sProp[i], step);
-        }
-    }
-}
-
-/* what `side`'s hand was drawn from is dropped: a thing whose frame it held goes on from where it
- * is now (a hand that let go of its last one, or is gone). Needed because such a thing's frame was
- * drawn between two ticks of a hand that is no longer there to ask: the next tick's move is
- * measured from this draw's frame. */
-void loot_rebase(int side) {
-    int i;
-
-    for (i = 0; i < LOOT_N; i++) {
-        Prop *p = &sProp[i];
-
-        if (p->used && p->held && (p->holders & ~(1 << side)) == 0) {
-            prop_frame_give(p, vec3(0.0f, 0.0f, 0.0f));   /* (the frame drawn last: both of its ticks) */
-            p->draw = p->mount;   /* (the game's frame from here on: nothing eases it) */
-        }
-    }
 }
 
 static void draw_template(const Template *t, const Mat4 *vp, const Mat4 *world, int item) {
@@ -2428,17 +2283,6 @@ void loot_draw(const Mat4 *view_proj, int layer) {
             continue;
         }
         draw_spawned(p, view_proj);
-    }
-    for (i = 0; i < LOOT_N; i++) {
-        if (!sProp[i].used) {
-            continue;
-        }
-        if (sProp[i].holders || sProp[i].pending) {
-            prop_frame_out(&sProp[i]);   /* (the game's frame back: this draw eased it only - a thing
-                                          * let go is still the hand's until the pickup resolves) */
-        } else {
-            prop_frame_hold(&sProp[i]);  /* (not taken, or in the world again: the world's own frame) */
-        }
     }
 }
 
