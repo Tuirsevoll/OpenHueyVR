@@ -36,7 +36,9 @@ PRIVATE>
     0.13e vr-settings vr.crouch-deadzone sf!   \ (a drop below 13% of standing height: no crouch)
     0.25e vr-settings vr.crouch-on sf!         \ (the hide flag on at 25% ...)
     0.18e vr-settings vr.crouch-off sf!        \ (... and off only above 18%)
-    0.45e vr-settings vr.sneak-speed sf! ;     \ (the crouch walk: 45% of a walk - 55% slower)
+    0.45e vr-settings vr.sneak-speed sf!       \ (the crouch walk: 45% of a walk - 55% slower)
+    1 vr-settings vr.audio3d l!                \ (placed sounds through the headset's HRTF: on)
+    1 vr-settings vr.occlusion l! ;            \ (a wall or a shut door between: muffled: on)
 
 \ the options written out as Forth, read back at start-up (each line runs)
 : save-vr-options ( -- )
@@ -66,6 +68,8 @@ PRIVATE>
     vr-settings vr.crouch-on sf@ 6 f>s$ type         ."  vr-settings vr.crouch-on sf!" cr
     vr-settings vr.crouch-off sf@ 6 f>s$ type        ."  vr-settings vr.crouch-off sf!" cr
     vr-settings vr.sneak-speed sf@ 6 f>s$ type       ."  vr-settings vr.sneak-speed sf!" cr
+    vr-settings vr.audio3d l@ n>s type               ."  vr-settings vr.audio3d l!" cr
+    vr-settings vr.occlusion l@ n>s type             ."  vr-settings vr.occlusion l!" cr
     end-file  ." saved " settings-file type cr ;
 
 : load-vr-options ( -- )

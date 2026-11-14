@@ -52,3 +52,36 @@ version is CMake's `project(OpenHuey VERSION ...)`; the release builds carry it 
 
 Tests: `tests/test_*.fs` are the language and the kernel (the `forth` tool, no game data);
 `tests/<subsystem>/test_*.fs` run inside the game headless (`openhuey --test`), with the game's data.
+
+## 3-D audio (Steam Audio)
+
+Placed sounds (footsteps, voices, doors, impacts) are rendered binaurally through Valve's Steam
+Audio HRTF, from their world point to the headset's own pose, so a stalker can be heard behind,
+above or through a wall (`docs/subsystems/audio3d.md`). Music, the menus and a cutscene's movie
+sound stay stereo as they were.
+
+The SDK is **optional**: without it the game builds exactly as before and plays its own left /
+right placement.
+
+1. Download `steamaudio_<version>.zip` from
+   <https://github.com/ValveSoftware/steam-audio/releases> (4.8.1 is what this was built with).
+2. From it copy `include/phonon.h`, `include/phonon_version.h` and
+   `lib/windows-x64/phonon.lib`, `lib/windows-x64/phonon.dll` into
+   `openhuey-src/external/steamaudio/`:
+   ```
+   external/steamaudio/include/phonon.h
+   external/steamaudio/include/phonon_version.h
+   external/steamaudio/lib/windows-x64/phonon.lib
+   external/steamaudio/lib/windows-x64/phonon.dll
+   ```
+   (that folder is git-ignored). Or point CMake at it:
+   `cmake -S openhuey-src -B build -DHGA_STEAMAUDIO_DIR=D:/steamaudio`.
+3. Configure and build: CMake prints `Steam Audio: ... (binaural 3-D audio on)` and copies
+   `phonon.dll` beside `openhuey.exe` (and `spu-check.exe`). `phonon.dll` must ship with the game.
+
+The **VR options page** (the title's `VR OPTIONS`, or the sub screen's last page) has
+**3D Audio** and **Occlusion**, both on by default and kept in `user/vr-options.fs`; off, the
+game plays its original mono / stereo / Pro Logic mix (no environment variable is needed: the
+option is the switch). `HGA_AUDIO3D_STATS=1` prints the HRTF's cost to stderr every five seconds
+of audio (16 voices ≈ 11 ms of CPU a second, about 1% of a core).
+

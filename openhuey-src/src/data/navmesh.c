@@ -687,7 +687,7 @@ static float seg_cross(Vec3 p, Vec3 q, Vec3 a, Vec3 b) {
     return t >= 0.0f && u >= -1e-4f && u <= 1.0f + 1e-4f ? t : -1.0f;
 }
 
-int navmesh_wall(const NavMesh *n, int from, Vec3 a, Vec3 b, float *yaw) {
+int navmesh_wall_masked(const NavMesh *n, int from, Vec3 a, Vec3 b, float *yaw, uint32_t mask) {
     int t = from, came = -1, steps;
     float w[3];
 
@@ -716,16 +716,22 @@ int navmesh_wall(const NavMesh *n, int from, Vec3 a, Vec3 b, float *yaw) {
         if (cross < 0) {
             return 0;
         }
-        if (tr->next[cross] < 0 || (n->tris[tr->next[cross]].flags & n->block)) {
-            Vec3 p0 = tr->v[cross], p1 = tr->v[(cross + 1) % 3];
+        if (tr->next[cross] < 0 || (n->tris[tr->next[cross]].flags & mask)) {
+            if (yaw != NULL) {
+                Vec3 p0 = tr->v[cross], p1 = tr->v[(cross + 1) % 3];
 
-            *yaw = atan2f(p1.x - p0.x, p1.z - p0.z);
+                *yaw = atan2f(p1.x - p0.x, p1.z - p0.z);
+            }
             return 1;
         }
         came = t;
         t = tr->next[cross];
     }
     return 0;
+}
+
+int navmesh_wall(const NavMesh *n, int from, Vec3 a, Vec3 b, float *yaw) {
+    return navmesh_wall_masked(n, from, a, b, yaw, n->block);
 }
 
 int navmesh_walk(const NavMesh *n, int from, Vec3 a, Vec3 b, float *reach) {

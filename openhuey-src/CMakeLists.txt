@@ -109,6 +109,36 @@ endforeach()
 
 # ---- the game ----
 find_package(SDL3 REQUIRED CONFIG)
+
+# ---- Steam Audio (3-D audio: HRTF binaural rendering) - an optional prebuilt SDK ------------
+# Not a submodule: drop the official release zip's `steamaudio/` here (or point
+# HGA_STEAMAUDIO_DIR at it): include/phonon.h, lib/windows-x64/phonon.lib, phonon.dll. Without
+# it src/platform/saudio.c compiles to no-ops and the game is exactly as it was, so a missing SDK
+# never blocks a build. docs/subsystems/audio3d.md and the README say how.
+set(HGA_STEAMAUDIO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/steamaudio" CACHE PATH
+    "Steam Audio SDK: include/phonon.h, lib/windows-x64/phonon.lib and phonon.dll")
+find_path(HGA_PHONON_INCLUDE NAMES phonon.h HINTS "${HGA_STEAMAUDIO_DIR}/include" NO_DEFAULT_PATH)
+find_library(HGA_PHONON_LIB NAMES phonon HINTS "${HGA_STEAMAUDIO_DIR}/lib/windows-x64" NO_DEFAULT_PATH)
+find_file(HGA_PHONON_DLL NAMES phonon.dll HINTS "${HGA_STEAMAUDIO_DIR}/lib/windows-x64" NO_DEFAULT_PATH)
+if(HGA_PHONON_INCLUDE AND HGA_PHONON_LIB)
+    message(STATUS "Steam Audio: ${HGA_PHONON_INCLUDE} (binaural 3-D audio on)")
+    if(HGA_PHONON_DLL)
+        add_library(hga_phonon SHARED IMPORTED)
+        set_target_properties(hga_phonon PROPERTIES
+            IMPORTED_LOCATION "${HGA_PHONON_DLL}"
+            IMPORTED_IMPLIB "${HGA_PHONON_LIB}"
+            INTERFACE_INCLUDE_DIRECTORIES "${HGA_PHONON_INCLUDE}")
+    else()
+        add_library(hga_phonon UNKNOWN IMPORTED)
+        set_target_properties(hga_phonon PROPERTIES
+            IMPORTED_LOCATION "${HGA_PHONON_LIB}"
+            INTERFACE_INCLUDE_DIRECTORIES "${HGA_PHONON_INCLUDE}")
+        message(WARNING "Steam Audio: phonon.dll not found beside phonon.lib: it must be copied beside openhuey.exe by hand")
+    endif()
+    set(HGA_HAVE_STEAMAUDIO ON)
+else()
+    message(STATUS "Steam Audio: not in ${HGA_STEAMAUDIO_DIR} (building without 3-D audio)")
+endif()
 # the game's data: its files (the disc, the library, the mods' layer), the formats and the
 # library's conversions - the engine's and the checks' (tests/*_check.c)
 add_library(hgadata STATIC
@@ -124,12 +154,17 @@ endif()
 
 add_executable(hga
     src/main.c
-    src/platform/gl.c src/platform/platform.c src/platform/vr.c src/platform/voice.c src/platform/update.c src/platform/sound.c src/platform/movie.c src/platform/music.c src/platform/seq.c src/platform/spu.c src/platform/snddrv.c
+    src/platform/gl.c src/platform/platform.c src/platform/vr.c src/platform/voice.c src/platform/update.c src/platform/sound.c src/platform/movie.c src/platform/music.c src/platform/seq.c src/platform/spu.c src/platform/snddrv.c src/platform/saudio.c
     src/render/render.c src/render/post.c
     src/game/room.c src/game/console.c src/game/actor.c src/game/doglegs.c src/game/humanlegs.c src/game/vrhands.c src/game/loot.c src/game/chair.c src/game/cloth.c src/game/world.c
     src/game/camdirector.c src/game/areas.c src/game/exits.c src/game/messages.c src/game/cutscene.c src/game/placed.c src/game/sprites.c src/game/mods.c src/game/particles.c src/game/things.c src/game/obstacles.c src/game/swimpath.c src/game/rumble.c src/game/props.c
+    src/game/sound3d.c
     src/forth/bind_engine.c)
 target_link_libraries(hga PRIVATE hgadata forth gamestate hactor SDL3::SDL3 whisper)
+if(HGA_HAVE_STEAMAUDIO)
+    target_link_libraries(hga PRIVATE hga_phonon)
+    target_compile_definitions(hga PRIVATE HGA_STEAMAUDIO)
+endif()
 if(WIN32)
     target_link_libraries(hga PRIVATE ole32 uuid)
 endif()
@@ -233,8 +268,12 @@ add_test(NAME sound_check COMMAND sound-check "${DEFAULT_DATA}")
 set_tests_properties(sound_check PROPERTIES SKIP_RETURN_CODE 77)
 
 # the SPU's voices: a sample set on a playing voice waits for its key on (a kept loop plays on)
-add_executable(spu-check tests/spu_check.c src/platform/spu.c)
+add_executable(spu-check tests/spu_check.c src/platform/spu.c src/platform/saudio.c)
 target_link_libraries(spu-check PRIVATE hgadata)
+if(HGA_HAVE_STEAMAUDIO)
+    target_compile_definitions(spu-check PRIVATE HGA_STEAMAUDIO)
+    target_link_libraries(spu-check PRIVATE hga_phonon)
+endif()
 add_test(NAME spu_check COMMAND spu-check)
 
 # the hands' wall sweep: a hand's path across a room's wall is found, a floor's isn't (detection only)

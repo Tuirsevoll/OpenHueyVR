@@ -69,10 +69,12 @@ in, reachable without a keyboard:
   are read from the VR stick in a headset (`read-arrows`), so every page of the sub screen - the
   lists, the map, the files, the options - and this one are worked with the controllers: the
   movement stick moves, A answers, a grip backs out.
-- **Its rows**, nine of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
+- **Its rows**, twelve of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
   Comfort vignette (Off, Low, Med, High), Teleport movement (Off, Fixed, Dynamic),
   Calibrate height (the measurement, or Not set), Seated mode (Off, On), View height offset
-  (5 cm a step), Whisper (PTT, Open Mic) and Whisper Subtitles (Off, On, Debug). A label on the
+  (5 cm a step), Whisper (PTT, Open Mic), Whisper Subtitles (Off, On, Debug), 3D Audio (Off, On)
+  and Occlusion (Off, On) - the last two the binaural HRTF and its muffling
+  (docs/subsystems/audio3d.md). A label on the
   left, its value on the right, the row chosen drawn in a lit bar:
   up / down choose, left / right step the row (a choice round its words, a number by its step),
   and the cross steps it too - on Calibrate height the cross is the measurement itself
@@ -279,7 +281,7 @@ PTT, Open Mic) and **its subtitles** (`vr.whisper-debug`: Off, On, Debug - Off n
 Hewie heard, capitalised and with an exclamation mark, and nothing when the words made no command;
 Debug the command and the words Whisper heard in brackets, or `UNRECOGNISED:` and the words, in the
 message window's panel at the bottom of the screen), and **the VR options page**
-(`scripts/subscreen/vr.fs`, nine rows): the title's `VR OPTIONS` row and, in a game, the sub
+(`scripts/subscreen/vr.fs`, twelve rows): the title's `VR OPTIONS` row and, in a game, the sub
 screen's page after the options - both worked with the controllers, the sub screen's arrows read
 from the VR stick in a headset.
 

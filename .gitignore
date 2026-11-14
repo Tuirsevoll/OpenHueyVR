@@ -16,6 +16,8 @@ build.ninja
 tools/ps2dev/
 tools/m2c/
 __pycache__/
+# The prebuilt Steam Audio SDK dropped in by hand (openhuey-src/CMakeLists.txt; ~50 MB)
+openhuey-src/external/steamaudio/
 
 # The game's own files (the extracted disc, its data) -- never commit
 /data/

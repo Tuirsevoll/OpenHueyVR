@@ -35,8 +35,10 @@ int snddrv_bank_loaded(int k);
 void snddrv_play(uint32_t id, int k);
 /* placed at a point seen from the listener, both in the camera's view (x right, z ahead):
  * SndDriver_PlayPlaced with Sound_SetPosition's block. vol, pitch: offsets (vol: x / 128 more
- * or less; pitch: semitones); id bit 30: softer by the scripts' scale too */
-void snddrv_play_placed(uint32_t id, int k, int vol, int pitch, const float at[3], const float ahead[3]);
+ * or less; pitch: semitones); id bit 30: softer by the scripts' scale too. `world` is the same
+ * point in the world, for the 3-D audio (saudio.h) - `at` still drives the original pans. */
+void snddrv_play_placed(uint32_t id, int k, int vol, int pitch, const float world[3], const float at[3],
+                        const float ahead[3]);
 /* stop sound `id` of bank k (its voices release) */
 void snddrv_stop(uint32_t id, int k);
 /* the voices in the masks off (core 0's 24, core 1's 24) */

@@ -2,6 +2,7 @@
 #include "snddrv.h"
 
 #include "../data/soundbank.h"
+#include "saudio.h"
 #include "spu.h"
 
 #include <math.h>
@@ -29,6 +30,11 @@ typedef struct VoiceRec {
     int vol;            /* its volume (14 bits) */
     int chvol;          /* the voice's own volume (0..255) */
     int last_l, last_r; /* the volumes set */
+    /* the 3-D audio (saudio.h): where a placed sound is in the world, and a key-on count so a
+     * new sound there snaps instead of gliding from the last one's point */
+    float world[3];
+    int spatial;
+    uint32_t gen;
 } VoiceRec;
 
 static struct {
@@ -70,6 +76,7 @@ static void init(void) {
         D.v[v].chvol = 0xFF;
         D.v[v].bank = D.v[v].entry = -1;
         D.v[v].pan = 0x40;
+        D.v[v].spatial = 0;
     }
     spu_start();
 }
@@ -280,6 +287,7 @@ static void voices_sweep(void) {
             r->entry = -1;
             r->vol = 0;
             r->pan = r->placed == 1 ? 0 : 0x40;
+            r->spatial = 0;   /* (its world point was the sound's: gone with it) */
         } else {
             r->busy = 1;
         }
@@ -309,6 +317,27 @@ static void voice_lr(int v, int vol14, int *l, int *r) {
         *l = x * (0x100 - pan * 2) >> 7;
     } else {
         *l = *r = x;
+    }
+}
+
+/* the voice's source, told to the 3-D audio (saudio.h): its world point and the amplitude its two
+ * volumes give (their energy - the placement's own curves, untouched) - or taken back when the
+ * voice is not a placed sound. Called with the SPU's lock held, as everything here. */
+static void voice_place(int v, int l, int r) {
+    VoiceRec *rec = &D.v[v];
+
+    if (rec->spatial) {
+        float x, y;
+
+        /* the volumes the SPU actually takes (its own clamp), as one amplitude: full scale a side
+         * is 0x4000, so a centred full-volume sound is 1.0 */
+        l = l > 0x3FFF ? 0x3FFF : l < -0x4000 ? -0x4000 : l;
+        r = r > 0x3FFF ? 0x3FFF : r < -0x4000 ? -0x4000 : r;
+        x = (float)l;
+        y = (float)r;
+        saudio_source(v, 1, rec->world, sqrtf(x * x + y * y) / 23170.48f, rec->gen);
+    } else {
+        saudio_source(v, 0, NULL, 0.0f, rec->gen);
     }
 }
 
@@ -359,8 +388,9 @@ static int tone_volume(int p, int s, int q, int ev) {
  * placement's left << 16 | right. Flags: 0x80000000 key the voices (else a playing sound's
  * settings change), 0x20000000 the extended ones apply: 0x08000000 placed, 0x400000 pitch
  * offset, 0x200000 pitch set, 0x100000 volume scaled, 0x80000 volume offset, 0x40000 volume
- * set, 0x20000 pan offset, 0x10000 pan set */
-static void play_sound(int bank, uint32_t w, uint32_t arg, uint32_t place) {
+ * set, 0x20000 pan offset, 0x10000 pan set. `world` (NULL: not a placed sound) is the same point
+ * in the world, for the 3-D audio (saudio.h). */
+static void play_sound(int bank, uint32_t w, uint32_t arg, uint32_t place, const float *world) {
     unsigned id = w & 0xFFFF;
     int ext = (w & 0x20000000) != 0;
     const SoundBank *b;
@@ -406,6 +436,9 @@ static void play_sound(int bank, uint32_t w, uint32_t arg, uint32_t place) {
             keys |= 1ull << (v0 + l);
         }
         if (w & 0x80000000) {   /* the old sounds off first */
+            for (l = 0; l < layers && v0 + l < NV; l++) {
+                D.v[v0 + l].gen++;   /* (a new sound: the HRTF snaps to its point, saudio.h) */
+            }
             spu_key_off(keys);
         }
         for (l = 0; l < layers && v0 + l < NV; l++) {
@@ -461,9 +494,14 @@ static void play_sound(int bank, uint32_t w, uint32_t arg, uint32_t place) {
             if (ext && (w & 0x08000000)) {
                 D.v[v].placed = 1;
                 D.v[v].pan = (int)place;
+                D.v[v].spatial = world != NULL;
+                if (world != NULL) {
+                    memcpy(D.v[v].world, world, sizeof(D.v[v].world));
+                }
             } else {
                 D.v[v].placed = 0;
                 D.v[v].pan = pan;
+                D.v[v].spatial = 0;
             }
             voice_lr(v, vol, &L, &R);
             if (ext && (w & 0x08000000) && !(w & 0x80000000) && ((L ^ D.v[v].last_l) & 0x80000000)) {
@@ -471,6 +509,7 @@ static void play_sound(int bank, uint32_t w, uint32_t arg, uint32_t place) {
                 R = (R + D.v[v].last_r) / 2;
             }
             spu_voice_volume(v, L, R);
+            voice_place(v, L, R);   /* (the 3-D audio: where it is, how loud) */
             D.v[v].last_l = L;
             D.v[v].last_r = R;
             D.v[v].pri = e.pri;
@@ -582,6 +621,8 @@ int snddrv_bank(int k, const char *name) {
         for (v = 0; v < NV; v++) {
             if (D.v[v].bank == k) {
                 D.v[v].bank = D.v[v].entry = -1;
+                D.v[v].spatial = 0;
+                saudio_source_off(v);
             }
         }
     }
@@ -641,17 +682,18 @@ void snddrv_play(uint32_t id, int k) {
     spu_lock();
     init();
     voices_sweep();
-    play_sound(k, (id & 0xFFFFFF) | 0x04000000 | (id & 0x80000000 ? 0 : 0x80000000), 0x7840, 0);
+    play_sound(k, (id & 0xFFFFFF) | 0x04000000 | (id & 0x80000000 ? 0 : 0x80000000), 0x7840, 0, NULL);
     spu_unlock();
 }
 
 /* SndDriver_PlayPlaced, the block as Sound_SetPosition fills it; SndLib_Call places it with the
- * sound's curve */
-void snddrv_play_placed(uint32_t id, int k, int vol, int pitch, const float at[3], const float ahead[3]) {
+ * sound's curve. `world` the same point in the world, for the 3-D audio (saudio.h) */
+void snddrv_play_placed(uint32_t id, int k, int vol, int pitch, const float world[3], const float at[3],
+                        const float ahead[3]) {
     Place p;
     uint32_t w, arg;
 
-    if (k < 0 || k >= NBANK || D.bank[k].b.sdt == NULL || !D.have_tables) {
+    if (k < 0 || k >= NBANK || D.bank[k].b.sdt == NULL || !D.have_tables || world == NULL) {
         return;
     }
     memset(&p, 0, sizeof(p));
@@ -666,7 +708,7 @@ void snddrv_play_placed(uint32_t id, int k, int vol, int pitch, const float at[3
     spu_lock();
     init();
     voices_sweep();
-    play_sound(k, w, arg, place(&p));
+    play_sound(k, w, arg, place(&p), world);
     spu_unlock();
 }
 
@@ -717,6 +759,7 @@ void snddrv_placed_volume(int s) {
         D.v[v].chvol = s & 0xFF;
         voice_lr(v, D.v[v].vol, &L, &R);
         spu_voice_volume(v, L, R);
+        voice_place(v, L, R);
     }
     spu_unlock();
 }
@@ -749,6 +792,7 @@ void snddrv_volume(float sound, float master) {
 
             voice_lr(v, D.v[v].vol, &L, &R);
             spu_voice_volume(v, L, R);
+            voice_place(v, L, R);
         }
     }
     spu_unlock();

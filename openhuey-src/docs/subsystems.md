@@ -33,6 +33,7 @@ only points there.
 | Creatures | spirits and homunculi | `creatures.fs`, `creatures/` | `creature.c` | [creatures](subsystems/creatures.md) |
 | Cast | the story's other characters: the crows, the figures in scenes | `cast.fs` | `story_chars.c`, `char_load.c` | [cast](subsystems/cast.md) |
 | Acoustics | the noises made this frame, and who hears them | `acoustics.fs` | `Noise_Make`, `Character_Hearing` | [acoustics](subsystems/acoustics.md) |
+| 3-D audio | placed sounds binaurally through an HRTF, with occlusion | `saudio.c`, `sound3d.c` | - (hga's own) | [audio3d](subsystems/audio3d.md) |
 | Danger | calm / followed / chased | `danger.fs` | `SceneGame_Danger` | [danger](subsystems/danger.md) |
 | Music | the background track, the stage music, volumes and fades | `music.fs` | `music.c`, `MusicDir_*` | [music](subsystems/music.md) |
 | Screen | the fade to and from black | `screen.fs` | `Events_Fade` | [screen](subsystems/screen.md) |

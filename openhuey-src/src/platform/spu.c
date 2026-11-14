@@ -2,11 +2,13 @@
  * hardware does them: psx-spx.) */
 #include "spu.h"
 
+#include "saudio.h"
 #include "sound.h"
 #include "../data/samples.h"
 #include "../data/vag.h"
 
 #include <SDL3/SDL.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +31,9 @@ typedef struct Voice {
 
 #define HOOKS 4
 #define SLICE 192   /* 4 ms: how often the hooks (the sequencer) run */
+#if SLICE != SAUDIO_FRAME
+#error "spu.c: SLICE is the block the HRTF is applied to (saudio.h SAUDIO_FRAME)"
+#endif
 
 /* a core's reverb (psx-spx "SPU Reverb Formula"): its work area a ring of samples */
 typedef struct Reverb {
@@ -356,6 +361,7 @@ static void reverb_mix(float *out, float wet[2][SLICE * 2], int frames) {
 /* ---- mixing ---- */
 
 static void render(float *out, float wet[2][SLICE * 2], int frames) {
+    float mono[SLICE];
     int n, i;
 
     for (n = 0; n < SPU_VOICES; n++) {
@@ -364,7 +370,25 @@ static void render(float *out, float wet[2][SLICE * 2], int frames) {
         float dl = v->mix & 1 ? gl : 0.0f, dr = v->mix & 2 ? gr : 0.0f;
         float wl = v->mix & 4 ? gl : 0.0f, wr = v->mix & 8 ? gr : 0.0f;
         float *w = wet[n / 24];
+        float bi = 0.0f, gain = 0.0f, keep = 1.0f;
 
+        if (v->env == ENV_OFF) {
+            continue;
+        }
+        /* a placed sound through the HRTF (saudio.c): its two volumes' energy as one source, the
+         * left / right mix faded out by the same share. Not such a voice, or 3-D audio off: the
+         * original path, untouched. */
+        bi = saudio_voice_weight(n);
+        if (bi > 0.0f) {
+            /* (a sample with no dry side - a reverb-only send - stays silent, as it was) */
+            float dl0 = v->mix & 1 ? 1.0f : 0.0f, dr0 = v->mix & 2 ? 1.0f : 0.0f;
+
+            gain = sqrtf(gl * gl * dl0 + gr * gr * dr0) * 0.70710678f;
+            if (gain > 4.0f) {
+                gain = 4.0f;
+            }
+            keep = 1.0f - bi;
+        }
         for (i = 0; i < frames && v->env != ENV_OFF; i++) {
             float s;
 
@@ -387,11 +411,19 @@ static void render(float *out, float wet[2][SLICE * 2], int frames) {
                 break;
             }
             s = (v->prev + (v->cur - v->prev) * (v->pos / 4096.0f)) / 32768.0f * (v->level / 32767.0f);
-            out[2 * i] += s * dl;
-            out[2 * i + 1] += s * dr;
-            w[2 * i] += s * wl;
+            if (bi > 0.0f) {
+                mono[i] = s;
+            }
+            if (keep > 0.0f) {
+                out[2 * i] += s * dl * keep;
+                out[2 * i + 1] += s * dr * keep;
+            }
+            w[2 * i] += s * wl;   /* (the room's reverb as it was: the PS2's, from the pans) */
             w[2 * i + 1] += s * wr;
             env_tick(v);
+        }
+        if (bi > 0.0f && i > 0) {
+            saudio_voice_render(n, mono, i, gain, out);
         }
     }
 }
@@ -409,6 +441,7 @@ static void mix(int16_t *out, int frames) {
                 S.hook[h]((double)n / SOUND_RATE);
             }
         }
+        saudio_block(n);   /* the HRTF's ramp, the sources' positions and the 16 voices */
         memset(buf, 0, sizeof(buf));
         memset(wet, 0, sizeof(wet));
         render(buf, wet, n);

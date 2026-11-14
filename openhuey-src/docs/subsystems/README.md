@@ -13,4 +13,4 @@ notes, and is updated whenever the subsystem changes. Every page has these secti
 - **Status**: spec / built / checked, and what is left.
 
 The pages: [hands.md](hands.md) records the VR hands, [comfort.md](comfort.md) the VR comfort and
-accessibility options.
+accessibility options, [audio3d.md](audio3d.md) the binaural 3-D audio and its occlusion.

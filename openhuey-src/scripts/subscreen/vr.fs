@@ -7,8 +7,8 @@
 IN: subscreen.vr
 USING: engine ps2-screen subscreen.state subscreen.art subscreen.input vr-options ;
 
-enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-offset vr-whisper vr-whisper-debug ;
-: #vr-rows ( -- n )  vr-whisper-debug 1+ ;
+enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-offset vr-whisper vr-whisper-debug vr-audio3d vr-occlusion ;
+: #vr-rows ( -- n )  vr-occlusion 1+ ;
 
 variable vr-at   0 vr-at !
 
@@ -58,6 +58,8 @@ variable vr-at   0 vr-at !
           vr-offset of  s" View height offset"  endof
           vr-whisper of  s" Whisper"  endof
           vr-whisper-debug of  s" Whisper Subtitles"  endof
+          vr-audio3d of  s" 3D Audio"  endof
+          vr-occlusion of  s" Occlusion"  endof
           >r s" Calibrate height" r>  endcase ;
 : vr-row-value ( i -- addr len )
     case
@@ -70,9 +72,11 @@ variable vr-at   0 vr-at !
         vr-offset of  vr-settings vr.seated-offset sf@ 2 f>s$  endof
         vr-whisper of  whisper$  endof
         vr-whisper-debug of  subtitles$  endof
+        vr-audio3d of  vr-settings vr.audio3d l@ on-off$  endof
+        vr-occlusion of  vr-settings vr.occlusion l@ on-off$  endof
         >r  vr-settings vr.snap-degrees sf@ f>s n>s  r>
     endcase ;
-: vr-row-y ( i -- y )  $20 * $50 + ;
+: vr-row-y ( i -- y )  $18 * $50 + ;   \ (twelve rows now: 24 apart, clear of the footer)
 fvariable vr-was
 variable vr-step
 \ a change: a choice steps on a level (round, the last back to the first), a flag turns over, a
@@ -111,6 +115,12 @@ variable vr-step
         vr-whisper-debug of
             subtitles-level vr-step @ + 3 + 3 mod vr-settings vr.whisper-debug l!
             se-decide  save-vr-options endof
+        vr-audio3d of
+            vr-settings vr.audio3d l@ 0= 1 and vr-settings vr.audio3d l!
+            se-decide  save-vr-options endof
+        vr-occlusion of
+            vr-settings vr.occlusion l@ 0= 1 and vr-settings vr.occlusion l!
+            se-decide  save-vr-options endof
         >r  vr-settings vr.turn-snap l@ 0= if  1  else  0  then  vr-settings vr.turn-snap l!
             se-decide  save-vr-options
         r>
@@ -134,7 +144,7 @@ variable vr-step
     s" VIRTUAL REALITY"  256 $34 centred
     #vr-rows 0 do
         i vr-at @ = if
-            art-layer  $30 sx  i vr-row-y 2 - sy  $1C0 sw  $20 sy
+            art-layer  $30 sx  i vr-row-y 2 - sy  $1C0 sw  $16 sy
             $40 openness @ * 128 /  $40405000 or  ui-rect
         then
         i vr-row-label  $48  i vr-row-y 6 +  i vr-at @ =  text

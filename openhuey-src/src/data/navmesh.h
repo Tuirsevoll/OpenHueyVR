@@ -83,7 +83,10 @@ int navmesh_curve(const NavMesh *n, int from, Vec3 a, const Vec3 *pts, int npts,
  * flags (the start excepted): the triangle b is on, or -1 if a wall comes first (the original's
  * Actor_TriTo / NavMesh_Walk). *reach (if given): how far along it got */
 /* the wall a straight walk from a (on `from`) toward b meets (an edge with nothing beyond, or a
- * blocked triangle): its direction as a heading; 0 if b is reached first */
+ * triangle with any of `mask`'s flags): its direction as a heading (*yaw, if given); 0 if b is
+ * reached first. (navmesh_wall is this with the mesh's own block mask; the 3-D audio walks a
+ * sound's path with the walls and the shut doors, sound3d.c.) */
+int navmesh_wall_masked(const NavMesh *n, int from, Vec3 a, Vec3 b, float *yaw, uint32_t mask);
 int navmesh_wall(const NavMesh *n, int from, Vec3 a, Vec3 b, float *yaw);
 int navmesh_walk(const NavMesh *n, int from, Vec3 a, Vec3 b, float *reach);
 /* from a (on `from`) straight toward b: whether a triangle on the way (from's too, up to b's or

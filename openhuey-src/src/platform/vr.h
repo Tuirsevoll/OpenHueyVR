@@ -40,6 +40,10 @@ typedef struct VrOptions {
     float crouch_on;          /* the hide flag on at this drop */
     float crouch_off;         /* ... and off only above this one (the hysteresis) */
     float sneak_speed;        /* the crouch walk's share of a walk, and its animation rate (0.45) */
+    /* the 3-D audio (platform/saudio.*): binaural effects through the headset's HRTF, and the
+     * muffling of what a wall or a shut door is between (0: the game's own left / right, as it was) */
+    int32_t audio3d;          /* 1: placed sounds through the HRTF (off: the original stereo) */
+    int32_t occlusion;        /* 1: a wall / a shut door / hidden in a wardrobe muffles them */
 } VrOptions;
 extern VrOptions gVrOptions;
 

@@ -26,9 +26,11 @@
 #include "../platform/music.h"
 #include "../platform/seq.h"
 #include "../platform/vr.h"
+#include "../platform/saudio.h"
 #include "../platform/voice.h"
 #include "../game/vrhands.h"
 #include "../game/loot.h"
+#include "../game/sound3d.h"
 
 #include "../core/files.h"
 #include "../core/zip.h"
@@ -2367,19 +2369,33 @@ static void bank_want(int bank) {
 static Mat4 sEar;
 static int sEarOn;
 
+static int cutscene_heard(const Engine *e);
+
 void engine_set_ear(const Mat4 *view) {
+    Mat4 ear;
+
     if (view == NULL) {
         sEarOn = 0;
-        return;
+        ear = camera_view(&gEngine.camera);
+    } else {
+        sEar = *view;
+        sEarOn = 1;
+        ear = *view;
     }
-    sEar = *view;
-    sEarOn = 1;
+    /* the 3-D audio's listener is the headset's own pose (the same matrix the eyes are drawn with),
+     * and its options: a cutscene's sound is the movie's, mixed in stereo (saudio.h) */
+    saudio_set_enabled(gVrOptions.audio3d && !gEngine.testing && !cutscene_heard(&gEngine),
+                       gVrOptions.occlusion);
+    saudio_listener(&ear);
 }
 
-static void view_point(float x, float y, float z, float at[3], float ahead[3]) {
+static void view_point(float x, float y, float z, float world[3], float at[3], float ahead[3]) {
     Mat4 view = sEarOn ? sEar : camera_view(&gEngine.camera);
     Vec3 v = mat4_point(&view, vec3(x, y, z));
 
+    world[0] = x;
+    world[1] = y;
+    world[2] = z;
     at[0] = v.x;
     at[1] = v.y;
     at[2] = -v.z;
@@ -2397,30 +2413,30 @@ PRIM(p_bank_sound) {   /* ( id bank -- ) a sound heard plainly (SndDriver_Play) 
 PRIM(p_sound_at) {   /* ( id bank vol pitch -- ) ( F: x y z -- ) a sound at a point of the room
                       * (Actor_PlaySound: louder or softer by vol / 128, pitch semitones up) */
     Cell pitch = POP(), vol = POP(), bank = POP(), id = POP();
-    float z = (float)FPOP(), y = (float)FPOP(), x = (float)FPOP(), at[3], ahead[3];
+    float z = (float)FPOP(), y = (float)FPOP(), x = (float)FPOP(), world[3], at[3], ahead[3];
 
     bank_want((int)bank);
-    view_point(x, y, z, at, ahead);
+    view_point(x, y, z, world, at, ahead);
     sound_log((uint32_t)id, (int)bank);
-    snddrv_play_placed((uint32_t)id, (int)bank, (int)vol, (int)pitch, at, ahead);
+    snddrv_play_placed((uint32_t)id, (int)bank, (int)vol, (int)pitch, world, at, ahead);
 }
 /* a sound at a point of the room, as it is (for the engine's own: the effects') */
 void engine_sound_at(uint32_t id, int bank, Vec3 at) {
-    float a[3], ahead[3];
+    float world[3], a[3], ahead[3];
 
     bank_want(bank);
-    view_point(at.x, at.y, at.z, a, ahead);
+    view_point(at.x, at.y, at.z, world, a, ahead);
     sound_log(id, bank);
-    snddrv_play_placed(id, bank, 0, 0, a, ahead);
+    snddrv_play_placed(id, bank, 0, 0, world, a, ahead);
 }
 PRIM(p_bank_sound_at) {   /* ( id bank -- ) ( F: x y z -- ) a sound at a point, as it is */
     Cell bank = POP(), id = POP();
-    float z = (float)FPOP(), y = (float)FPOP(), x = (float)FPOP(), at[3], ahead[3];
+    float z = (float)FPOP(), y = (float)FPOP(), x = (float)FPOP(), world[3], at[3], ahead[3];
 
     bank_want((int)bank);
-    view_point(x, y, z, at, ahead);
+    view_point(x, y, z, world, at, ahead);
     sound_log((uint32_t)id, (int)bank);
-    snddrv_play_placed((uint32_t)id, (int)bank, 0, 0, at, ahead);
+    snddrv_play_placed((uint32_t)id, (int)bank, 0, 0, world, at, ahead);
 }
 PRIM(p_sound_reverb) {   /* ( core v -- ) core 0 (music) / 1 (effects)'s reverb level, 0..0x3FFF */
     Cell v = POP(), k = POP();
@@ -4023,6 +4039,7 @@ void engine_tick(Engine *e) {
         }
         freecam_tick(e);
         render_look_tick();
+        sound3d_tick(e);
         cutscene_audio(0, 0);   /* the menu set its own volumes; don't put the scene's mix back */
         return;
     }
@@ -4036,6 +4053,7 @@ void engine_tick(Engine *e) {
     if (e->still) {   /* (the game over: the world stands still behind it, its actors running) */
         freecam_tick(e);
         render_look_tick();
+        sound3d_tick(e);
         cutscene_audio(cutscene_heard(e), 1);
         return;
     }
@@ -4053,16 +4071,17 @@ void engine_tick(Engine *e) {
         const RoomDoor *d = &e->room.doors[i];
 
         if (d->present && d->sound != 0) {
-            float at[3], ahead[3];
+            float world[3], at[3], ahead[3];
 
             bank_want(5);
-            view_point(d->pos.x, d->pos.y, d->pos.z, at, ahead);
-            snddrv_play_placed((uint32_t)d->sound, 5, 0, 0, at, ahead);
+            view_point(d->pos.x, d->pos.y, d->pos.z, world, at, ahead);
+            snddrv_play_placed((uint32_t)d->sound, 5, 0, 0, world, at, ahead);
         }
     }
     vrhands_tick(e);   /* grip grabs and doors, after the room has swung them itself */
     freecam_tick(e);   /* (last: over the shots and the cutscenes) */
     render_look_tick();
+    sound3d_tick(e);   /* (the 3-D audio's occlusion: after everything moved this tick) */
     cutscene_audio(cutscene_heard(e), 1);
 }
 
@@ -4828,6 +4847,8 @@ void bind_engine(Forth *f) {
     field(f, "vr.crouch-on", offsetof(VrOptions, crouch_on));
     field(f, "vr.crouch-off", offsetof(VrOptions, crouch_off));
     field(f, "vr.sneak-speed", offsetof(VrOptions, sneak_speed));
+    field(f, "vr.audio3d", offsetof(VrOptions, audio3d));
+    field(f, "vr.occlusion", offsetof(VrOptions, occlusion));
     forth_set_current(f, saved);
 }
 
