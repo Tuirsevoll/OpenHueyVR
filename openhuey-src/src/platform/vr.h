@@ -43,6 +43,17 @@ void vr_close(void);
 /* seated (vr.seated): how far the view rides above (positive) or below her own eyes, in room
  * units - the camera and the hands' anchor together (0: none) */
 float vr_seat_lift(void);
+/* crouching by the headset (story/crouch.fs): how far it is below her standing eyes, in metres
+ * (the floor's own measurement, so a recenter keeps it); 0 seated, out of a headset, or before a
+ * height is measured */
+float vr_crouch_depth(void);
+/* ... and how far the eyes have lowered from the neutral pose, in metres: what vr_body_view adds
+ * below the camera (0 or less: 0 here) */
+float vr_crouch_view(void);
+/* the body's crouch has taken this much of that fall (metres): fiona_view lifts her eyes by it, so
+ * the view rides at her head rather than sinking through it. The scripts keep it (0 when standing) */
+void vr_set_crouch(float metres);
+float vr_crouch_lift(void);
 int vr_active(void);
 
 /* one headset frame. 0: the session ended (do not draw, do not vr_end_frame) */

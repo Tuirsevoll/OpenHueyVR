@@ -52,7 +52,7 @@ This page is OpenHuey's side: its words, its scripts, its tests.
 | `prop-load` ... `prop-free`, `data-file?` | (docs/modding.md "Props") | a mod's own glTF models: placed, turned, scaled, shown |
 | `actor` | `id -- addr` | with `act.x act.y act.z act.yaw act.scale act.frame act.rate` (sf@) and `act.loop act.visible` (l@) |
 | `motion!`, `motion@` | `id motion --`, `id -- motion` | play a motion by the game's number (`fiona @ $200 motion!`) |
-| `motion-done?`, `motion-frames`, `.motions` | | |
+| `motion-done?`, `motion-frames`, `motion-hold`, `.motions` | `id -- flag`, `id -- frames`, `id motion F: frame --`, `id --` | its motion's end, its frames; a motion put at a frame and held there, no time of its own (the headset crouch's scrub: story/crouch.fs) |
 | `key:` | `"name" -- scancode` | `key: W`, `key: Left_Shift` (SDL key names, `_` for spaces) |
 | `key-down?`, `key-pressed?` | `scancode -- flag` | held now / went down this tick |
 | `key-hold` | `scancode flag --` | hold a key from a script (demos, tests) |
@@ -71,6 +71,7 @@ This page is OpenHuey's side: its words, its scripts, its tests.
 | `vr-settings` | `-- addr` | the VR comfort and accessibility options (docs/subsystems/comfort.md): `vr.turn-snap vr.comfort vr.teleport vr.teleport-mode vr.seated vr.left-handed vr.calibrate-start vr.cutscene-first-person vr.calibrated` (l@ l!, 0/1), `vr.snap-degrees vr.comfort-strength vr.teleport-reach vr.seated-height vr.seated-offset vr.eye-height vr.body-scale` (sf@ sf!) |
 | `vr-snap`, `hand-stops-clear`, `vr-tracking?` | `F: -- radians`, `--`, `-- flag` | the turn stick's snap turn waiting, taken; the arms' stops dropped (a snap turn); the headset's pose is found (a calibration can measure it) |
 | `vr-haptic` | `F: amplitude seconds --` | a pulse on both controllers (amplitude 0..1; the panic's heartbeat) |
+| `vr-crouch`, `vr-crouch-lift!`, `vr-crouch-lift` | `--` `F: -- depth view`, `F: metres --`, `--` `F: -- room units` | the headset below her standing eyes, and the eyes' own fall from the neutral pose (metres); her body's crouch has taken this much of the fall; the lift `fiona_view` adds to her eyes (story/crouch.fs) |
 | `room-look`, `room-look-reset` | `-- addr` | the room's look now (`look.fog look.fog-early look.tint look.bloom look.dof look.bloom-mode` l@, `look.fog-near look.fog-far` sf@, `look.fog-near-color look.fog-far-color look.tint-glow look.tint-contrast look.bloom-color look.dof-range`: 4 floats); back to the file's |
 | `on-draw`, `off-draw` | `xt --` | run a word every frame to draw 2D |
 | `pen-color`, `pen-scale` | `rgba --`, `n --` | colour (0xRRGGBBAA) and text size for the drawing words |

@@ -635,6 +635,47 @@ and it waits for the tick that turns her; the arms' stops are dropped with it
 and over counts as a cut and is instant.
 
 
+## Crouching by the headset (`scripts/story/crouch.fs`)
+
+The L1 crouch is the original's and is left out in VR (`may-crouch?` and the Chaos Forest's
+`bush-frame` ask `vr?`): there the headset's own height is the crouch.
+
+- **The fall**: `vr_crouch_depth` (`src/platform/vr.c`) measures the headset above the runtime's
+  floor against `vr.eye-height`, the standing calibration, so a recenter does not lose it; 0
+  seated, out of a headset, or before a height is measured. `vr_crouch_view` is the same fall as
+  `vr_body_view` applies from the neutral pose (the eyes' own lowering, 0 or less). The script
+  reads both with `vr-crouch` and, in a test (`testing?`), leaves them where the test put them.
+- **Engaging**: lower than `vr-crouch-engage` (0.12 m) and she free - `fiona-idle?`, standing
+  (`fiona-sub-now` 0), not held, no panic, no scene, no fade, the world going, not struck
+  (`struck-by-now`), not hidden - starts one doing (`vr-crouches`) that holds her (as the L1
+  crouch holds her: she does not walk while crouched). It snaps to the depth already there, so
+  the engagement does not jump, then scrubs at `vr-crouch-step` (0.04 a tick, about 0.8 s for the
+  whole crouch). `k` is `depth / vr-crouch-full`, clamped 0..1 (so the animation's fall follows
+  the headset's), and 0 below `vr-crouch-release` (0.10 m), where the scrub lets go once she is
+  standing again; below `vr-crouch-engage` (0.12 m) no crouch starts.
+- **The animation**: `crouch-down-anim` ($800) is started once and its frame is
+  `k * (frames - 1)`, `k` 0 at standing and 1 at its lowest point; `motion-hold`
+  (`bind_engine.c`) puts the body and its parts there with no time of their own, so only the
+  scrub moves them. Going back up scrubs the same animation backwards - no `crouching-anim` loop
+  or `crouch-up-anim` - and at 0 she is released to her own idle.
+- **The flag**: `fiona-half-hidden` is set once `k` is over 0.15, as the L1 crouch sets it, and
+  cleared on the way up: the stalker's sight mask and reach (10 instead of 20, `stalker/senses.fs`)
+  treat her as crouched. `fiona-hidden` is not set (that is a hiding place's).
+- **The view**: `fiona_view` (`main.c`) adds `vr_crouch_lift` to her eyes: the scripts give
+  `vr-crouch-lift!` the headset's own fall (`vr_crouch_view`, metres), turned into room units by
+  the world scale. That cancels the offset `vr_body_view` applies, so the eyes ride at her
+  animated head while the body is scrubbed - rather than the physical fall lowering the view
+  through an upright body. Standing, the headset's fall and the lift go to 0 at once; the view
+  stays at her head as `k` scrubs back to 0 and she comes up.
+- **Out**: back up (`vr-crouch-k` 0 and the headset at or below `vr-crouch-release`, 0.10 m), a
+  panic, a scene, a fade, the world held or frozen, a strike or catch, full hiding, or a doing that
+  has taken her ends it at once; the flag and the lift are put right, and a task stopped by a room
+  change is put right by the next frame (`vr-crouch-was`).
+- **Seated** (`vr.seated`): no crouch: the headset's height is the seated one, not the floor's.
+- Tested headless (`tests/story/test_vr_crouch.fs`): the animation at a depth, deeper to its last
+  frame, up again free; the L1 paths in VR are `tests/story/test_crouch.fs` and
+  `tests/places/test_chaos_forest_vr_crouch.fs`.
+
 **Read again, 2026-11 (0.2.42).** Against fiona.c: steering after a camera cut faced the mirrored
 heading (atan2 z x; Hewie's too) - now atan2 x z as she walks; struck or in her panic's fall she is
 out of reach (+0x2D) till down or up, so the stalker can't take her mid-fall; seized only moving

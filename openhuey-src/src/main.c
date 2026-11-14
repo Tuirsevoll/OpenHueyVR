@@ -911,9 +911,11 @@ static int fiona_view(Engine *e, Camera *out) {
         Vec3 bone = pick->head.head > 0 ? actor_bone(pick, pick->head.head)
                                         : vec3(pick->pos.x, pick->pos.y + 14.0f, pick->pos.z);
 
-        /* height from the head, but not its walk-cycle sway: that yaw is the old camera's fight */
+        /* height from the head, but not its walk-cycle sway: that yaw is the old camera's fight.
+         * A headset crouch (vr_crouch_lift) is added back: the view rides at her head as the
+         * crouch is scrubbed, not down through her body. */
         out->pos.x = pick->pos.x + sinf(sAlign);
-        out->pos.y = bone.y + 1.5f + vr_seat_lift();   /* (seated: the view within her body) */
+        out->pos.y = bone.y + 1.5f + vr_seat_lift() + vr_crouch_lift();   /* (seated: the view within her body) */
         out->pos.z = pick->pos.z - cosf(sAlign);
     }
     vr_anchor_set(1, out->pos, out->yaw);

@@ -5,7 +5,7 @@
 \ The kit runs `every-room` each frame and hands item uses to `item-used` (story/kit.fs).
 IN: story.common
 USING: engine game-state actors messages common vectors facts flag-names story-names floor-flags keys
-    story.kit fiona.anims fiona.sounds hewie.sounds ;
+    story.kit story.crouch fiona.anims fiona.sounds hewie.sounds ;
 
 \ ---- where they are to each other ----
 : touching? ( a b -- flag )   \ close by b's own margins (its radius across, its height up: conds 0x47 / 0x58)
@@ -48,12 +48,13 @@ $23 constant drink-sound   $2D constant crouch-recovery
     fiona-half-hidden state-off  fiona follow  fiona crouch-up-anim play ;
 : ducks ( -- )   \ ($87: too low here - down and up)
     fiona hold  fiona wait-move  fiona crouch-down-anim start-anim  5 frames  fiona crouch-up-anim 10 play-blend ;
-: may-crouch? ( -- flag )   \ (L1 pressed, she idle - not backing off - and no script's, the screen still, the world going on)
+: may-crouch? ( -- flag )   \ (L1 pressed, she idle - not backing off - and no script's, the screen still, the world going on - not in the headset: there its height crouches her)
     hewie-played? 0=  no-flee state? 0= and  request-now @ spirit-request <> and
     fiona-doing-now @ backstep-doing <> and   \ (the built-in's cond 0x3F $D)
-    l1 button-pressed? and  fiona-idle? and  fiona-p holder-of @ 0< and   \ (0x3D: Fiona_IsIdle, not panicking; 0x05: not scripted)
+    l1 button-pressed? and  vr? 0= and  fiona-idle? and  fiona-p holder-of @ 0< and   \ (0x3D: Fiona_IsIdle, not panicking; 0x05: not scripted)
     fading @ 0= and  world-held state? 0= and  world-frozen state? 0= and ;
 : crouching ( -- )
+    vr? if  vr-crouching  exit  then   \ (the headset's height is the crouch: story/crouch.fs)
     may-crouch? 0= if  exit  then
     chased?  tremor-warned-2 fact? 0= and  70e noticed-near? and if  stalker 30 head-on exit  then   \ (found and near him: she only looks)
     fiona low-floor on-floor-of? if  ['] ducks  else  ['] crouches  then  start drop ;

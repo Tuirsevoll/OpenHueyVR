@@ -57,7 +57,11 @@ has one.
   `may-crouch?` (story/common.fs) and
   `bush-frame` (story/places/forest.fs) ask the headset as well, so no crouch animation plays,
   `fiona-half-hidden` is not set, and L1 does not put her in a Chaos Forest bush (her examine
-  still offers it).
+  still offers it). **The headset's height is the crouch instead** (story/crouch.fs): lowered
+  past 0.12 m it crouches her - `crouch-down-anim` scrubbed by how far it is down, up and down
+  again, `fiona-half-hidden` set as the L1 crouch sets it - and as it rises she stands again. The
+  view rides at her animated head, so it does not sink through her body (docs/subsystems/fiona.md
+  "Crouching by the headset").
 - **Offers**: what she may do where she stands - `offer` (an activity, Fiona held for it),
   `offer-remark` - the first offered in a frame wins; `unhurried` (the scripts' 0x0A kind 0),
   `any-time` (1), `calm-hewie-up` (3), `calm-only` (4: an examining), `hiding-spot` (5 / 6),
@@ -193,7 +197,7 @@ clear-up never kills an actor that took its id). A point on the screen: `point-s
   torture chamber, the golem race).
 - the Chaos Forest (every room a place; `story/places/forest.fs` what they share - the maze dealt
   anew, as she comes in to a room never dealt and as her panic sets in; the bushes of -4 .. -7 to
-  crouch in (L1, or her examine - not L1 in the headset), the stalker's search of them by the odds,
+  crouch in (L1, or her examine - not L1 in the headset; the headset's own crouch is hers, story/crouch.fs, not the bush's hiding), the stalker's search of them by the odds,
   their leaves; the wisp startled by a noise or someone near; the rabbit): its edge (the hopper,
   the Forest Map), the clearing (Hewie found, seven crates, the sundial), the lake, the crossing,
   the way to its heart, Hewie shot (his hurt face, the bandage scene), the heart (Riccardo;

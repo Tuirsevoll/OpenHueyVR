@@ -226,8 +226,10 @@ create shot-at /vec allot
     shot-t @ 0= if  exit  then  -1 shot-t +!  shot-t @ 0= if  body-point-off  then ;
 \ at her (Riccardo_StateBlowFiona): a target by her takes it; Hewie in the way takes it; crouched
 \ under it, it passes over
-: crouched? ( -- flag )   \ (her top below his gun, near)
-    d-her 20e f<  fiona body-at v.y sf@ fiona body-dims fswap fdrop f+  my-at v.y sf@ 5e f+ f< and ;
+: crouched? ( -- flag )   \ (her top below his gun, near - or the shared crouch's half-hidden, near)
+    d-her 20e f< 0= if  false exit  then
+    fiona-half-hidden state-flag? if  true exit  then
+    fiona body-at v.y sf@ fiona body-dims fswap fdrop f+  my-at v.y sf@ 5e f+ f< ;
 : blowing-her ( -- )
     blow-key? if
         0 blow-aim !

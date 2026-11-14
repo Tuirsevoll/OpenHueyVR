@@ -67,6 +67,10 @@ int vr_head_view(int eye, Mat4 *view) { (void)eye; (void)view; return 0; }
 void vr_comfort_preview(void) {}
 int vr_comfort_previewing(void) { return 0; }
 int vr_tracking(void) { return 0; }
+float vr_crouch_depth(void) { return 0.0f; }
+float vr_crouch_view(void) { return 0.0f; }
+void vr_set_crouch(float metres) { (void)metres; }
+float vr_crouch_lift(void) { return 0.0f; }
 int vr_body_view(Mat4 *view) { (void)view; return 0; }
 int vr_eye_body(int eye, Mat4 *view) { (void)eye; (void)view; return 0; }
 float vr_head_yaw(void) { return 0.0f; }
@@ -211,6 +215,7 @@ static VrHandSlot sHand[2];
 static int sAnchorOn;
 static Vec3 sAnchorEye;
 static float sAnchorYaw;
+static float sCrouchMetres;   /* the body's crouch: how far the view rides up to her head (fiona_view) */
 static float sStickX, sStickY, sRightX;
 static float sMoveYaw, sFaceYaw, sTurn;
 static int sDown[8], sPressed[8], sRun, sClickWas, sRecenterReq, sAlignRecenter, sTalk;
@@ -588,6 +593,41 @@ void vr_body(float *height_m, float *scale) {
     if (scale != NULL) {
         *scale = body_scale();   /* the one in use: seated's, or the calibration's */
     }
+}
+
+/* The crouch (scripts/story/crouch.fs). Depth is the headset's own height lost against the
+ * standing calibration, measured above the runtime's floor so a recenter does not lose it. View
+ * is the same fall as vr_body_view applies from the neutral pose: the scripts add it back to the
+ * camera, so the eyes ride at her head while her crouch is scrubbed. */
+float vr_crouch_depth(void) {
+    float h;
+
+    if (gVrOptions.seated || !(gVrOptions.calibrated || sEyeSet || sEyeManual) || !floor_height(&h)) {
+        return 0.0f;
+    }
+    h = gVrOptions.eye_height - h;
+    return h > 0.0f ? h : 0.0f;
+}
+
+float vr_crouch_view(void) {
+    float d;
+
+    if (!sHaveOrigin || sViewCount <= 0 || gVrOptions.seated) {
+        return 0.0f;
+    }
+    d = -head_look().position.y;
+    return d > 0.0f ? d : 0.0f;
+}
+
+void vr_set_crouch(float metres) {
+    sCrouchMetres = metres > 0.0f ? metres : 0.0f;
+}
+
+float vr_crouch_lift(void) {
+    if (sCrouchMetres <= 0.0f) {
+        return 0.0f;
+    }
+    return sCrouchMetres * VR_UNITS_PER_METER / body_scale();
 }
 
 static float quat_yaw(XrQuaternionf q);
