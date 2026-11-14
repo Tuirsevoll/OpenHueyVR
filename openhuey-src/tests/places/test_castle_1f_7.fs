@@ -5,7 +5,7 @@
 \   build/openhuey-src/openhuey --test openhuey-src/tests/places/test_castle_1f_7.fs
 IN: test-castle-1f-7
 USING: tester engine game-state actors messages keys room-names game debug facts flag-names story-names
-    floor-flags fiona.state story.kit story.places.castle-1f-7 doors items.names ;
+    floor-flags fiona.state story.kit story.places.castle-1f-7 doors items.names hewie-names ;
 
 : window-shown ( -- msg )  game:window enter  window:shown @  leave-actor ;
 : soon ( xt n -- flag )  0 ?do  dup execute if  drop true unloop exit  then  game-tick  loop  drop false ;
@@ -58,8 +58,19 @@ T{ breaker-area -90 at  said -> breaker-msg }T
 T{ breaker-lowered story-flag?  breaker-door doors:door-locked?  spark-part part?  breaker-file $7FFF and filed? -> -1 0 0 0 }T
 T{ breaker-area -90 at  said -> lowered-msg }T
 
-testing the gate held up as she comes by castle-1f-4's way (exit 1, the plate pressed): the fact kept, the gate stays up
-floor-plate-pressed story-flag-set  1 by-exit
+testing the gate held up as she comes by castle-1f-4's way (exit 1, Hewie waiting on the plate): up as she arrives, and while he waits
+$D constant plate-area
+: plate-middle ( F: -- x y z )  plate-area area-middle drop ;
+: on-the-plate ( -- )   \ (Hewie put on castle-1f-4's plate and told to stay)
+    hewie-freed story-flag-set  hewie-commandable state-flag-set
+    castle-1f-4 room!  60 run-frames
+    castle-1f-4 plate-middle nav-tri 0 game:hewie send hewie-place  30 run-frames
+    plate-middle f>cell f>cell f>cell swap rot 0 game:hewie send place  5 run-frames
+    stay-act 0 game:hewie send do-action  60 run-frames ;
+: tap ( key -- )  dup true key-hold  game-tick  false key-hold  game-tick ;
+on-the-plate
+T{ floor-plate-pressed story-flag? -> -1 }T
+1 by-exit
 T{ floor-plate-pressed story-flag?  gate-floor barred? 0=  gate-y fabs 0.01e f< -> -1 -1 -1 }T
 120 run-frames
 T{ floor-plate-pressed story-flag?  gate-y fabs 0.01e f<  gate-rising story-flag? -> -1 -1 0 }T
@@ -91,17 +102,16 @@ circle press  locked-msg until-shown
 T{ free-after-text  dup 0>= swap 11 < and  any-act? -> -1 -1 }T
 0 vr!
 
-testing Hewie told to stay on castle-1f-4's plate as she goes through: the gate held up from her first frame in here, till his wait is out
-$D constant plate-area   2 constant stay-act
-: plate-middle ( F: -- x y z )  plate-area area-middle drop ;
-breaker-lowered story-flag-set  castle-1f-4 room!  60 run-frames
-castle-1f-4 plate-middle nav-tri 0 game:hewie send hewie-place  30 run-frames
-plate-middle f>cell f>cell f>cell swap rot 0 game:hewie send place  5 run-frames
-stay-act 0 game:hewie send do-action  60 run-frames
+testing Hewie told to stay on castle-1f-4's plate: called away, the plate lets go and the gate falls
+on-the-plate
 T{ floor-plate-pressed story-flag? -> -1 }T
 castle-1f-7 1 rooms send go-to-room  100 run-frames
 T{ floor-plate-pressed story-flag?  gate-y f0=  gate-floor barred? -> -1 -1 0 }T
-T{ [: gate-y -25.3e f- fabs 0.01e f< ;] 900 soon  gate-floor barred? -> -1 -1 }T
+900 run-frames
+T{ floor-plate-pressed story-flag?  gate-y f0=  gate-floor barred? -> -1 -1 0 }T   \ (he waits on: still up)
+breaker-area -90 at   \ (away from the gate, as after the breaker)
+key: K tap  20 run-frames   \ (her "come back", right stick down: he leaves the plate)
+T{ [: gate-y -25.3e f- fabs 0.01e f< ;] 900 soon  gate-floor barred?  floor-plate-pressed story-flag? -> -1 -1 0 }T
 
 testing brought back in by the forced way: the gate rattling shut, and back to castle-1f-4
 castle-1f-7 forced-exit rooms send go-to-room

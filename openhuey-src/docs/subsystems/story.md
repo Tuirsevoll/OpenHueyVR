@@ -393,8 +393,9 @@ Places, each with its test in `tests/places/`:
   Powder behind two), the Viride Medallion Hewie finds, the door unlocked from this side, the map's
   page at the stairs, the walls' shade, the other game's creature, brought here caught (Lorenzo's
   scene, the game over), the replay.
-- castle-1f-7, the breaker room (21): the gate held up from castle-1f-4's plate and falling once
-  let go (nobody under it), the breaker lowered (the hum, the door unlocked, the other game's
+- castle-1f-7, the breaker room (21): the gate held up while Hewie waits (or lies hurt) on
+  castle-1f-4's plate - the original's Room15_Cond00 - and falling once he is called away from it
+  (nobody under it), the breaker lowered (the hum, the door unlocked, the other game's
   file), the locked door tried, the stabbed doll in turn, Hewie barking at the breaker, brought
   back in by the forced way (the gate rattling, sent back), in among the wires (the game over:
   played through), the replay.

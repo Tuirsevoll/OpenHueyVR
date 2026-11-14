@@ -1,7 +1,9 @@
 \ story/places/castle-1f-7.fs - the breaker room in Belli Castle's 1F ($15): the gate (a lid,
-\ "kousi") over the way in, held up while castle-1f-4's floor plate stays pressed. That fact is
-\ kept across the room change, so coming in does not drop the gate; the breaker box humming - in among its wires before its
-\ handle is lowered, she is killed (a game over); lowered, the door (9) unlocked; the stabbed doll;
+\ "kousi") over the way in, held up while Hewie waits (or lies hurt) on castle-1f-4's floor plate -
+\ the original's Room15_Cond00; she comes in with that fact kept, the gate up, and only when he is
+\ called away (he leaves the plate) does it fall, unless someone is under it. The breaker box
+\ humming - in among its wires before its handle is lowered, she is killed (a game over); lowered,
+\ the door (9) unlocked; the stabbed doll;
 \ Hewie barking at the breaker; brought back in by the forced way, the gate rattles shut on her and
 \ she is sent back. A place (story/kit.fs). The original's scripts, for checking:
 \ story/rooms-ref/castle-1f-7.fs in the history (converted from the game's; gone with the old
@@ -81,14 +83,27 @@ $30 constant not-landed   $34 constant speed   -25.3e fconstant shut-y
         lever-object object-show  handle-part hide-part  spark-part show-part  breaker-floor keeps-hewie-off floor-on
     then ;
 
-\ ---- the gate: held up for as long as castle-1f-4's plate fact stays set. Coming in does not
-\ clear that fact or start the gate down. The plate room clears it when the plate is actually let go. ----
+\ ---- the gate: held up while Hewie waits (or lies hurt) on castle-1f-4's plate - the original's
+\ Room15_Cond00: he is in castle-1f-4 in state 0x2F (wait-a-while) or 0x52 (knocked down). Called
+\ away, he leaves it, the plate lets go, and the gate falls (unless someone is under it - he is
+\ then kept out until they move). Coming in with the plate's fact kept holds it up as she arrives. ----
+: hewie-on-plate? ( -- flag )
+    hewie body? 0= if  false exit  then  hewie body-room castle-1f-4 <> if  false exit  then
+    hewie-act-now @ dup wait-a-while-act = swap knocked-down-act = or ;
+: someone-under? ( -- flag )
+    fiona gate-floor on-group?  hewie gate-floor on-group? or  stalker gate-floor on-group? or ;
 : gate-down ( -- )  gate-rising fact!  gate-sound gate-at room-sound  gate-falls ;
 : gate-watch ( -- )
-    floor-plate-pressed fact? if
+    hewie-on-plate? if
+        floor-plate-pressed fact!
         -1 gate-held !
         gate-floor barred-floor floor-off
     else
+        gate-held @ if   \ (held up until now: the plate has been let go)
+            someone-under? if  castle-1f-7 hewie-slot 1 doors-into
+            else  floor-plate-pressed fact-off  gate-floor barred-floor floor-on  ['] gate-down start drop
+            then
+        then
         0 gate-held !
         castle-1f-7 hewie-slot 0 doors-into
     then ;
