@@ -69,6 +69,12 @@ T{ story.kit:another-clock-msg story.kit:clock-msg -> $8017 $8014 }T
 testing the moves a place lets her out of (the headset's let-go, `move-doing?`): an animation, a walk, a turn - not her own door use, nor a run (it idles her itself)
 T{ anim-doing story.kit:move-doing?  walk-to-doing story.kit:move-doing?  walk-path-doing story.kit:move-doing?  turn-who-doing story.kit:move-doing?  turn-heading-doing story.kit:move-doing?  walk-anim-doing story.kit:move-doing? -> -1 -1 -1 -1 -1 -1 }T
 T{ free-doing story.kit:move-doing?  door-doing story.kit:move-doing?  run-to-doing story.kit:move-doing?  run-path-doing story.kit:move-doing? -> 0 0 0 0 }T
+testing a doing with her in it keeps her (`fiona-act?`), another's does not
+T{ [: 0 story.kit:acting !  story.kit:hers  1 0 story.kit:act-slot !  2 1 story.kit:act-slot !
+      story.kit:fiona-act?
+      0 0 story.kit:act-slot !  0 1 story.kit:act-slot !  0 0 story.kit:act-fiona + !  -1 story.kit:acting ! ;] in-place -> -1 }T
+T{ [: 1 0 story.kit:act-slot !  2 1 story.kit:act-slot !  story.kit:fiona-act?
+      0 0 story.kit:act-slot !  0 1 story.kit:act-slot ! ;] in-place -> 0 }T
 full-suite   \ (on: waits, scenes, walks - the full run's)
 
 test-summary

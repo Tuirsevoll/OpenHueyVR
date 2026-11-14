@@ -108,6 +108,17 @@ crows-in  castle-1f-13 forced-exit rooms send go-to-room  5 run-frames
 T{ [: movie-skipped state-flag-set  found-file-227 story-flag? ;] 1500 soon -> -1 }T
 T{ [: doing-busy? 0= ;] 900 soon  crows-file filed?  game:debilitas body-room -> -1 -1 castle-1f-13 }T
 game:debilitas send stalker-out  60 run-frames
+testing in the headset: after the balcony falls she is let go (Hewie kept out of the way, Debilitas above, still doing)
+: any-act? ( -- flag )  [: 0 8 0 do  i cells acts + @ 0<> if  1+  then  loop ;] in-place 0<> ;
+found-file-227 story-flag-clear  found-file-227-2 story-flag-clear
+hewie-freed story-flag-set  hewie-commandable state-flag-set
+room-afresh  -254.5e 0e -90e hewie-here
+2 story.base:partner-load  5 run-frames
+crows-in  -1 vr!  castle-1f-13 forced-exit rooms send go-to-room  5 run-frames
+T{ [: movie-skipped state-flag-set  found-file-227 story-flag? ;] 1500 soon -> -1 }T
+T{ [: doing-busy? 0= ;] 900 soon  [: her-mode @ ;] as-her  any-act? -> -1 own-mode -1 }T
+0 vr!
+game:debilitas send stalker-out  60 run-frames
 testing ... again: she just comes to
 crows-in  castle-1f-13 forced-exit rooms send go-to-room  5 run-frames
 T{ [: doing-busy? 0= ;] 300 soon  scene-locked state-flag? -> -1 0 }T

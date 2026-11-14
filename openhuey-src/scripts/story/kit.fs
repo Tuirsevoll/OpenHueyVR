@@ -39,6 +39,7 @@ state: place-state
   #activities cells field acts       \ each activity's task (0: none)
   #activities cells field act-xts    \ and the word it runs
   #activities cells field act-lost   \ one of its characters taken by another: it ends (the original's action replaced)
+  #activities cells field act-fiona  \ a doing with Fiona in it (it moves, places or holds her): she waits for it
   #people cells field holder         \ which activity holds each character (-1: none)
   #people cells field move-done      \ each one's move done, as it last told (moving)
   #people cells field asked          \ a move asked of each since it was held (wait-move waits on that only)
@@ -170,13 +171,13 @@ variable acting   -1 acting !   \ the activity being run (-1: none)
     #people 0 do  i holder-of @ over = if  i let-go-person  then  loop  drop ;
 : not-scene's ( k -- )  1 swap lshift invert scene-acts @ and scene-acts ! ;
 : stop-act ( k -- )   \ an activity stopped: its task killed, what it held let go (her posing over with it)
-    dup act-slot @ ?dup if  stop-task  then  0 over act-slot !
+    dup act-slot @ ?dup if  stop-task  then  0 over act-slot !  0 over cells act-fiona + !
     dup fiona-p holder-of @ = if  0 pose-her!  0 skip-her!  then   \ (the headset: her posing, and a doing's skip, over with it)
     dup not-scene's  let-go-all ;
 : stop-all ( -- )  #activities 0 do  i stop-act  loop ;
 : start ( xt -- k | -1 )   \ an activity started (none free: not started)
     leaving @ if  drop -1 exit  then
-    #activities 0 do  i act-slot @ 0= if  dup i cells act-xts + !  start-held-task i act-slot !  i unloop exit  then  loop
+    #activities 0 do  i act-slot @ 0= if  dup i cells act-xts + !  0 i cells act-fiona + !  start-held-task i act-slot !  i unloop exit  then  loop
     drop -1 ;
 : running? ( xt -- flag )
     #activities 0 do  i act-slot @  over i cells act-xts + @ = and if  drop true unloop exit  then  loop  drop false ;
@@ -188,6 +189,14 @@ variable acting   -1 acting !   \ the activity being run (-1: none)
 : along-scene ( xt -- )  start dup 0< if  drop exit  then  1 swap lshift scene-acts @ or scene-acts ! ;
 : scene-acts-end ( -- )  #activities 0 do  scene-acts @ i rshift 1 and if  i stop-act  then  loop  0 scene-acts ! ;
 : start-only ( xt -- )  dup running? if  drop  else  start drop  then ;   \ (once, if it isn't already running)
+\ how far the scene a doing asked for is (scenes.fs): none, being made ready, ready, playing, over
+enum: scene-progress  no-scene-yet scene-loading scene-is-ready scene-running scene-ended ;
+: hers ( -- )   \ the doing being resumed has her in it: she waits for it (the headset: `hold` refuses her, so it says so here)
+    acting @ dup 0< if  drop exit  then  cells act-fiona + -1 swap ! ;
+: fiona-act? ( -- flag )   \ a doing with her in it is still running
+    false #activities 0 do
+        i act-slot @ if  i cells act-fiona + @ if  drop true unloop exit  then  then
+    loop ;
 : move-doing? ( doing -- flag )   \ a doing's last move, hers until she is let go (fiona/moves.fs start-move)
     {: d :}
     d anim-doing =  d walk-to-doing walk-path-doing 1+ within  or
@@ -196,19 +205,22 @@ variable acting   -1 acting !   \ the activity being run (-1: none)
     #activities 0 do
         i cells act-lost + @ if  0 i cells act-lost + !  i stop-act  then
         i act-slot @ ?dup if
-            i acting !  resume 0= if  0 i act-slot !  i not-scene's  i let-go-all  then  -1 acting !
+            i acting !  resume 0= if  0 i act-slot !  0 i cells act-fiona + !  i not-scene's  i let-go-all  then  -1 acting !
         then
     loop
     \ the last doing over: a move she was left in is hers again - in the headset `hold` refused her,
     \ so nothing told her `scripted 0`; the same call a hiding place's exit makes (out-and-free).
     \ A walk's `to-spot` only says the move is done, so every move a doing can end in is here: an
-    \ animation, a walk, a turn. Her own door use is `door-doing`; a run's `path-to` idles her itself
-    #activities 0 do  i act-slot @ if  unloop exit  then  loop
+    \ animation, a walk, a turn. Her own door use is `door-doing`; a run's `path-to` idles her itself.
+    \ Another's doing - Debilitas above the balcony, Hewie sent off or barking - is no reason to keep
+    \ her; one of hers, or a scene still playing, is
+    scene-step @ scene-running =  fiona-act?  or if  exit  then
     fiona-doing-now @ move-doing?  fiona-p holder-of @ 0<  and if  fiona-p 0 tell-held  then ;
 : lost ( -- )  -1 acting @ cells act-lost + !  begin  yield  again ;   \ (this activity ends: run-acts stops it)
 
 \ ---- holding a person: a place moves only those its activity holds ----
 : hold ( id -- )   \ (taken from any other activity holding it: the original's forced actions)
+    dup fiona = if  hers  then   \ (even in the headset, where it is refused: the doing has her)
     vr? over fiona = and posed-in-vr @ 0= and if  drop exit  then   \ (headset: she is never taken from the player)
     person-of dup 0< if  drop exit  then  acting @ 0< abort" hold: not in an activity"
     dup holder-of @ acting @ = if  drop exit  then
@@ -242,6 +254,7 @@ create mv-at /vec allot
 : move ( id kind a b F: x y z yaw -- )
     {: id kind a b F: x y z yaw | i :}  id person-of to i
     i 0< if  exit  then
+    i fiona-p = if  hers  then   \ (the doing has her: she waits for it, in the headset too)
     id skips-her?  kind open-door-move <> and  kind shut-door-move <> and if   \ (headset: the doing skips her; the event goes on. a story door still opens)
         -1 i cells move-done + !  -1 i cells anim-ended + !  exit
     then
@@ -300,7 +313,8 @@ variable hand-pick   \ a gripped item's pickup: Fiona does not play her bend or 
 : look-at ( id who -- )   \ (her head on who; -1 nobody)
     {: id who :}  id look-move who who person-of  0e 0e 0e 0e  move ;
 : place-at ( id tri face F: x z -- )   \ put there at once (the triangle's height)
-    {: id tri face F: x z :}  tri x z floor-at  face deg>yaw  {: F: px py pz yaw :}
+    {: id tri face F: x z :}  id fiona = if  hers  then   \ (the doing has her)
+    tri x z floor-at  face deg>yaw  {: F: px py pz yaw :}
     px f>cell py f>cell pz f>cell yaw f>cell  id send place  tri id send on-triangle ;
 : place-on-tri ( id tri face -- )  {: id tri face :}  id tri face  tri tri-center fswap fdrop  place-at ;
 : on-floor-of? ( id flags -- flag )   \ standing on a triangle with any of these flags
@@ -480,10 +494,10 @@ $80000000 constant keep-playing   \ (a sound's id bit: one already playing kept 
     {: id who :}  id keep-playing or room-bank who sound-by ;
 
 \ ---- scenes (scenes.fs): made ready while the screen is black, then played ----
-enum: scene-progress  no-scene-yet scene-loading scene-is-ready scene-running scene-ended ;
 : scenes ( -- id )  s" scenes" actor-named ;
 : load-scene ( movie class cutscene -- movie? )   \ (the movie and cutscene: room strings; class: scenes.fs's movie-class)
-    {: movie cls cut :}  scene-acts-end  scene-loading scene-step !  this-room @ movie cls cut  scenes send scene-load
+    {: movie cls cut :}  hers   \ (a scene has her until the doing that runs it is over)
+    scene-acts-end  scene-loading scene-step !  this-room @ movie cls cut  scenes send scene-load
     begin  scene-step @ scene-loading = while  yield  repeat
     scene-movie @ dup 0= if  0 broadcast scene  then ;   \ (not played: she was marked in it as it loaded)
 : run-scene ( subtitles -- )   \ played through (or skipped); subtitles: a message, or -1
@@ -722,7 +736,7 @@ $8024 constant clock-alone-msg    \ (shown when Hewie can't reach her: a system 
 \ effect k: a sparkle - an item's (its table's) told to mods with where it lies (item-placed), and
 \ not drawn while a mod shows the items itself (mods:item-sparkles!)
 : flicker-at ( k F: x y z -- )
-    vr? if  loot-sparkle drop  then
+    vr? if  loot-sparkle  then   \ (its point kept for the prop: `loot-sparkle` leaves k)
     {: k F: x y z :}
     k spot-of 0= if  x y z 0 effects:flicker k effect!  exit  then  drop {: item :}
     item-sparkles? if  x y z 0 effects:flicker k effect!  else  k effect-off  then
@@ -1750,7 +1764,7 @@ behaviour placing
       over room-id <> if  2drop exit  then
       came-by !  dup this-room !  place-of desc !  -1 entered !
       -1 going !  -1 shown-msg !  #people 0 do  -1 i holder-of !  -1 i cells move-done + !  loop   \ (none held, none moving)
-      0 pose-her!  0 skip-her!   \ (the headset: no doing of this room's takes her or skips her yet)
+      0 pose-her!  0 skip-her!  act-fiona #activities cells 0 fill   \ (the headset: no doing of this room's takes her or skips her yet)
       self subscribe tick  self subscribe frame-end  self subscribe moving  self subscribe danger
       self subscribe panic  self subscribe fiona-doing  self subscribe hewie-doing
       self subscribe stalker-doing  self subscribe creature-doing  self subscribe panic-onset  self subscribe hewie-came  -1 hewie-came-now !  self subscribe hewie-gesture  -1 gesture-now !  self subscribe stalker-blow  -1 st-blow-now !  self subscribe stalker-sees  0 st-sees-now !

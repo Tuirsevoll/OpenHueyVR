@@ -70,6 +70,27 @@ room-afresh  game:hewie send join-fiona  castle-1f-7 room!  60 run-frames
 T{ [: c1f-7-flag1 story-flag? ;] 900 soon -> -1 }T
 300 run-frames
 
+testing in the headset: the locked door's remark lets her go (another doing still runs: not hers)
+: any-act? ( -- flag )  [: 0 8 0 do  i cells acts + @ 0<> if  1+  then  loop ;] in-place 0<> ;
+: until-shown ( msg -- )  {: m :}  600 0 ?do  window-shown m = if  leave  then  game-tick  loop ;
+variable let-go-t
+: free-after-text ( -- n )   \ (frames from the press till she is let go, closing the pages meanwhile)
+    -1 let-go-t !
+    200 0 do
+        window-shown 0< 0= if  cross press  then
+        game-tick
+        let-go-t @ 0< if  [: her-mode @ own-mode = ;] as-her if  i 1+ let-go-t !  then  then
+    loop  let-go-t @ ;
+breaker-lowered story-flag-clear  c1f-7-flag1 story-flag-clear  hewie-freed story-flag-set  hewie-commandable state-flag-set
+breaker-door s" doors" actor-named send lock
+room-afresh  game:hewie send join-fiona  castle-1f-7 room!  60 run-frames
+[: [: 900 frames ;] start drop ;] in-place  10 run-frames   \ (a long doing, not hers)
+-1 vr!
+0 0 door-user-spot drop fdrop spot vec!  spot vec@ tp  10 run-frames
+circle press  locked-msg until-shown
+T{ free-after-text  dup 0>= swap 11 < and  any-act? -> -1 -1 }T
+0 vr!
+
 testing Hewie told to stay on castle-1f-4's plate as she goes through: the gate held up from her first frame in here, till his wait is out
 $D constant plate-area   2 constant stay-act
 : plate-middle ( F: -- x y z )  plate-area area-middle drop ;
