@@ -56,7 +56,7 @@ create stage-levels  0 , 60 , 75 , 90 , 100 , 100 ,   \ (a stage set: its level)
 
 \ ---- her breath (Panic_Breath, softer at the lower stages) and the pad's beat with it: a swell
 \ over 3 frames, harder by the stage; panicking then full a moment, calming down the small motor
-\ with the swell ----
+\ with the swell. The VR controllers beat with it: the same strength, over the swell's 3 frames ----
 begin-structure /breath  field: breath-volume  field: breath-strength  end-structure
 create breaths   \ (shaken .. calming down)
     -56 ,  96 ,   -40 , 144 ,   -16 , 192 ,   0 , 224 ,   0 , 224 ,
@@ -65,10 +65,15 @@ create breaths   \ (shaken .. calming down)
     rumble-sequence-clear
     dup calming-down =  0  rot breath-of breath-strength @  3 rumble-step
     stage @ panicking = if  0 255 255 3 rumble-step  then ;
+: breath-haptic ( stage -- )   \ (both controllers: as hard as the pad's beat for that stage)
+    dup panicking = if  drop 1e
+    else  breath-of breath-strength @ s>f 255 s>f f/  then
+    0.1e vr-haptic ;   \ (the swell's 3 frames at the game's 30 a second)
 : breath ( -- )   \ (only with the screen fade full: not while the world is held, nor in a fade)
     fade f@ 1e f= 0= if  exit  then
     stage @ shaken calming-down 1+ within 0= if  exit  then
     stage @ breath-rumble
+    stage @ breath-haptic
     breath-sound  stage @ breath-of breath-volume @  her-sound ;
 
 \ ---- Panic_Stage ----
