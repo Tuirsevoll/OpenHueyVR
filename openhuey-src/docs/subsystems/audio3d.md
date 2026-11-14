@@ -64,29 +64,45 @@ each tick from the room's nav mesh and `gProgress`'s `fiona-hidden`).
    lean, duck, the seated offset - not the game camera. Steam Audio's axes are the view
    matrix's (x right, y up, z behind), so a point maps with no flip. Units do not matter to a
    direction, so the world's 12.5 units a metre never enter.
-4. **Smoothing.** A source's point and gain glide (45 ms and 30 ms) to what the scripts last
-   said, so their 30 Hz updates are not steps; a new sound snaps. The HRTF is interpolated
-   bilinearly, so a head turn is a glide too. Occlusion eases in over 120 ms and out over 350 ms.
-   The option itself fades over 100 ms.
-5. **Occlusion.** `sound3d_tick` walks the game's own line of walk from the ears to each spatial
+4. **Smoothing.** A source's gain and occlusion glide **a sample at a time** (30 ms and 120 / 350 ms
+   one-poles) - a step once a block would be a 4 ms staircase, heard as a buzz. Its point glides a
+   block at a time (45 ms), which is all the HRTF can use: it takes one direction a block. The
+   low-pass's state is per voice and continuous; only its coefficient is refreshed a block. A new
+   sound snaps. The HRTF is interpolated bilinearly, so a head turn is a glide too. The option
+   itself fades over 100 ms.
+5. **The effect's frame.** Steam Audio's binaural effect processes exactly `frameSize` samples a
+   call and ignores `numSamples` (its overlap-add convolution reads and writes `mFrameSize`), so
+   `saudio` never hands it a partial frame: each voice's samples are gathered until 192 are there,
+   and its two ears' output waits in a FIFO. That is a constant **192-sample (4 ms) latency** on
+   the binaural path, one effect per voice, never reset except on a true key-on. (Passing a short
+   block straight through was the first version's bug: every 1024-frame SDL buffer is five
+   192-sample slices and one of 64, so a quarter of the stream was convolved with stale data and
+   discarded - a loud 250 Hz buzz.)
+6. **Occlusion.** `sound3d_tick` walks the game's own line of walk from the ears to each spatial
    sound over the room's nav mesh (`navmesh_wall_masked`: navmesh.c), with the flags a sound
    cannot pass - a wall (0x4000) and a shut door's passage flags (0x60000, which `Doors_RoomIn`
    moves as the door swings). A wall, a shut door, or a sound off this room's mesh (another
    room) is blocked: its gain x 0.55 and a one-pole low-pass from 12 kHz to 900 Hz. Hidden in a
    wardrobe (`fiona-hidden`, `gProgress` bit 9) blocks everything but her own body's sounds
    (within 0.5 m). The ears off the floor (a ladder) leave a sound clear, not blocked.
-6. **The cap.** The HRTF runs for 16 voices at once: the loudest and nearest
+7. **The cap.** The HRTF runs for 16 voices at once: the loudest and nearest
    (`gain * 1000 / (100 + distance)`). A voice outside those, or within the 0.75 m of the ears,
    keeps the driver's original left / right mix for that block - so nothing is lost, only less
    precisely placed. The choice is recomputed every 4 ms block.
-7. **Cutscenes.** `engine_set_ear` turns 3-D audio off while `cutscene_heard` (a scene's shot or
+8. **Cutscenes.** `engine_set_ear` turns 3-D audio off while `cutscene_heard` (a scene's shot or
    a movie playing): the scene's sound is the movie's, in stereo, and the engine mutes the
    effects anyway. The 100 ms ramp keeps it from clicking.
-8. **Cost.** One HRTF filter per spatial voice per 4 ms block. Measured (Steam Audio 4.8.1, a
-   desktop CPU, 48 kHz, 192-sample blocks, bilinear): **16 voices = about 10.7 ms of CPU a second
-   of audio - 1.1% of one core** (2.7 us a voice a block); nearest-neighbour interpolation is
-   about a third of that. The occlusion rays run on the game thread at 30 Hz.
+9. **Cost and level.** One HRTF filter per spatial voice per 4 ms block. Measured (Steam Audio
+   4.8.1, a desktop CPU, 48 kHz, 192-sample blocks, bilinear): **16 voices = about 10.7 ms of CPU a
+   second of audio - 1.1% of one core** (2.7 us a voice a block); nearest-neighbour interpolation
+   is about a third of that. The occlusion rays run on the game thread at 30 Hz.
    `HGA_AUDIO3D_STATS=1` prints the real thing every five seconds of audio.
+   The HRTF's own gain peaks about 1.37x for a full-scale sound (measured), so the binaural path
+   is scaled by `SAUDIO_HEADROOM` (0.8, -1.9 dB): a 3-D sound is within 1 dB of the original pan's
+   loudness and the mixer's clamp is not reached by one voice.
+   `HGA_AUDIO3D_SELFTEST=<file.wav>` renders six seconds of a 440 Hz sine through one voice, in
+   the game's own call pattern (five 192-sample slices and a 64 a callback), and prints the largest
+   step inside a call and at a call's edge - equal means no discontinuity.
 
 ## Design notes
 
@@ -99,6 +115,11 @@ each tick from the room's nav mesh and `gProgress`'s `fiona-hidden`).
   audio (or the caller) changing.
 - The listener matrix is the one `engine_set_ear` already had for the original pans, so the two
   can never disagree about where the ears are.
+- The 192-sample FIFO is the effect's own frame, not an arbitrary buffer: Steam Audio 4.8's
+  `OverlapAddConvolutionEffect::apply` ignores `numSamples` and does `memcpy(..., in[i],
+  mFrameSize * sizeof(float))` both ways, so a shorter buffer is read past its end and its output
+  cut in half. Whatever calls `saudio_voice_render` may pass any number up to 192; the voice's
+  FIFOs make that invisible (and cost 4 ms of latency, one frame, on the binaural path only).
 - The driver's `VoiceRec` keeps the world point only while the sound is placed: `voices_sweep`
   and a bank going clear it.
 

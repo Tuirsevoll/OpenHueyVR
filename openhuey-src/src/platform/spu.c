@@ -423,7 +423,7 @@ static void render(float *out, float wet[2][SLICE * 2], int frames) {
             env_tick(v);
         }
         if (bi > 0.0f && i > 0) {
-            saudio_voice_render(n, mono, i, gain, out);
+            saudio_voice_render(n, mono, i, gain, out, bi);
         }
     }
 }

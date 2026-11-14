@@ -19,8 +19,11 @@
 
 #include "../core/mathx.h"
 
-/* the longest block the HRTF is applied to: the SPU's slice (spu.c SLICE). A shorter one (the
- * end of a callback's buffer) goes through as it is, so the filter's history stays continuous. */
+/* The effect's frame: Steam Audio's binaural effect processes exactly this many samples a call
+ * and ignores numSamples (its overlap-add convolution reads and writes mFrameSize), so saudio
+ * hands it whole frames from a per-voice FIFO -- a shorter call's samples wait for the next one,
+ * and the effect's output waits for the caller. 192 samples (4 ms) of constant latency, and no
+ * sample ever read twice or dropped. It is the SPU's slice (spu.c SLICE). */
 #define SAUDIO_FRAME 192
 
 /* 1: a binaural path is possible (the SDK is in this build); 0: everything below does nothing */
@@ -51,10 +54,12 @@ void saudio_source_off(int voice);
 /* the audio thread: the block's ramp and the 16 loudest/nearest voices (call before
  * saudio_voice_weight), then, for a voice with a weight, its raw mono samples (the envelope
  * applied, no volumes) through the HRTF into interleaved stereo `out` (added). `gain` is the
- * placement's amplitude (the original left/right pair's energy): the distance curves, untouched. */
+ * placement's amplitude (the original left/right pair's energy): the distance curves, untouched.
+ * `weight` is the share saudio_voice_weight gave for this block, so the caller's dry mix and the
+ * binaural one are always the same number even if a source changes in between. */
 void saudio_block(int frames);
 float saudio_voice_weight(int voice);
-void saudio_voice_render(int voice, const float *mono, int frames, float gain, float *out);
+void saudio_voice_render(int voice, const float *mono, int frames, float gain, float *out, float weight);
 
 /* occlusion, 0 clear .. 1 blocked (sound3d.c, once a tick): muffled and attenuated, eased over
  * time here */

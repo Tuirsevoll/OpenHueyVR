@@ -27,6 +27,9 @@
 #define SAUDIO_LP_CLEAR 12000.0f /* Hz: unobstructed */
 #define SAUDIO_LP_BLOCKED 900.0f /* Hz: through a wall */
 #define SAUDIO_OCCL_GAIN 0.55f   /* the muffling as well as the low-pass */
+#define SAUDIO_HEADROOM 0.8f     /* the HRTF's own gain peaks about 1.37x for a full-scale sound
+                                  * (the self-test measures it): this leaves a little room in the
+                                  * mix, and keeps 3-D loudness within 1 dB of the original pans */
 #define SAUDIO_UNITS_PER_METER 12.5f
 #define SAUDIO_NEAR (0.75f * SAUDIO_UNITS_PER_METER)   /* at the ears: not placed, as the game had it */
 
@@ -40,6 +43,14 @@ typedef struct Source {
     float occl, occl_target;
     float lp, lp_coef;
     float weight;                /* this block's binaural share (0: the original left / right) */
+    /* The effect processes exactly frameSize samples a call and nothing less
+     * (OverlapAddConvolutionEffect::apply ignores numSamples: it reads and writes mFrameSize).
+     * So the voice's samples are gathered until a whole frame is there, and the effect's output
+     * waits in a FIFO: 192 samples of latency, constant, and no sample ever lost or stitched. */
+    float in_fifo[SAUDIO_FRAME];
+    int in_n;
+    float out_fifo[2][SAUDIO_FRAME * 2];
+    int out_n;
 } Source;
 
 static struct {
@@ -63,6 +74,8 @@ static struct {
     double stat_ticks;
     long stat_applies, stat_frames, stat_voices, stat_blocks;
     double stat_freq;
+    /* the smoothing, as per-sample factors (fixed once, from the constants above) */
+    float k_gain, k_occl_in, k_occl_out, k_pos;
 } S;
 static void stats_print(void) {
     double sec = S.stat_freq > 0.0 ? S.stat_ticks / S.stat_freq : 0.0;
@@ -79,6 +92,124 @@ static void stats_print(void) {
     S.stat_voices = 0;
     S.stat_blocks = 0;
 }
+
+/* ---- the self-test: a pure 440 Hz sine through one spatial voice ----
+ * HGA_AUDIO3D_SELFTEST=<file.wav> writes six seconds of it, driven exactly as spu.c drives the
+ * HRTF - the game's call pattern, because an SDL buffer of 1024 frames is five 192-sample slices
+ * and one of 64. A buzz is a step between two samples at such a call's edge far larger than the
+ * tone's own slope; the largest step inside a call and at its edges are printed, and the stream
+ * is saved to listen to. (Runs once, at start-up, before the game makes a sound.) */
+static void le32(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
+}
+
+static void selftest(const char *path) {
+    static const int pattern[6] = {192, 192, 192, 192, 192, 64};   /* (1024 frames a callback) */
+    const long frames = (long)SOUND_RATE * 6;
+    float mono[SAUDIO_FRAME], out[SAUDIO_FRAME * 2];
+    uint8_t head[44];
+    double phase = 0.0, step = 6.28318530718 * 440.0 / (double)SOUND_RATE;
+    double peak = 0.0, max_in = 0.0, max_edge = 0.0, rms = 0.0;
+    long n = 0, stat_from = 0, edges = 0;
+    float prev = 0.0f;
+    int have_prev = 0, k, i;
+    FILE *f;
+
+    if (path == NULL || path[0] == 0 || (f = fopen(path, "wb")) == NULL) {
+        fprintf(stderr, "audio3d: selftest: can't write %s\n", path);
+        return;
+    }
+    memset(head, 0, sizeof(head));
+    memcpy(head, "RIFF", 4);
+    le32(head + 4, (uint32_t)(36 + frames * 4));
+    memcpy(head + 8, "WAVEfmt ", 8);
+    le32(head + 16, 16);
+    head[20] = 1;
+    head[22] = 2;
+    le32(head + 24, SOUND_RATE);
+    le32(head + 28, (uint32_t)SOUND_RATE * 4u);
+    head[32] = 4;
+    head[34] = 16;
+    memcpy(head + 36, "data", 4);
+    le32(head + 40, (uint32_t)(frames * 4));
+    fwrite(head, 1, sizeof(head), f);
+
+    saudio_set_enabled(1, 0);   /* (no occlusion: the tone itself) */
+    {
+        Mat4 view = mat4_identity();
+
+        saudio_listener(&view);
+    }
+    {
+        float at[3] = {120.0f, 20.0f, -40.0f};   /* ~8 m right, a little up and ahead */
+
+        saudio_source(0, 1, at, 1.0f, 1u);
+    }
+    while (n < frames) {
+        for (k = 0; k < 6 && n < frames; k++) {
+            int len = pattern[k];
+
+            if (n + len > frames) {
+                len = (int)(frames - n);
+            }
+            for (i = 0; i < len; i++, n++) {
+                mono[i] = (float)(0.25 * sin(phase));
+                phase += step;
+            }
+            memset(out, 0, sizeof(float) * 2 * (size_t)len);
+            saudio_block(len);
+            {
+                float w = saudio_voice_weight(0);
+
+                if (w > 0.0f) {
+                    saudio_voice_render(0, mono, len, 1.0f, out, w);
+                }
+            }
+            for (i = 0; i < len; i++) {
+                float l = out[2 * i], r = out[2 * i + 1];
+                int16_t pcm[2];
+                double d;
+
+                if (n - len + i < stat_from) {   /* (the effect's first blocks: silence) */
+                    prev = l;
+                    have_prev = 1;
+                    continue;
+                }
+                if (have_prev) {
+                    d = fabs((double)l - (double)prev);
+                    if (i == 0) {
+                        if (d > max_edge) {
+                            max_edge = d;
+                        }
+                        edges++;
+                    } else if (d > max_in) {
+                        max_in = d;
+                    }
+                }
+                prev = l;
+                have_prev = 1;
+                if (fabs((double)l) > peak) {
+                    peak = fabs((double)l);
+                }
+                if (fabs((double)r) > peak) {
+                    peak = fabs((double)r);
+                }
+                rms += (double)l * l + (double)r * r;
+                pcm[0] = (int16_t)(l > 1.0f ? 32767 : l < -1.0f ? -32768 : (int)(l * 32767.0f));
+                pcm[1] = (int16_t)(r > 1.0f ? 32767 : r < -1.0f ? -32768 : (int)(r * 32767.0f));
+                fwrite(pcm, 2, 2, f);
+            }
+        }
+    }
+    fclose(f);
+    rms = sqrt(rms / (double)(2 * (frames - stat_from)));
+    fprintf(stderr, "audio3d: selftest %s: peak %.3f, rms %.3f, step inside a call %.4f, "
+                    "at a call's edge %.4f (over %ld edges)\n", path, peak, rms, max_in, max_edge, edges);
+}
+
 
 static void release_sdk(void) {
     int v;
@@ -146,7 +277,7 @@ int saudio_start(void) {
     memset(&hs, 0, sizeof(hs));
     hs.type = IPL_HRTFTYPE_DEFAULT;
     hs.volume = 1.0f;
-    hs.normType = IPL_HRTFNORMTYPE_NONE;
+    hs.normType = IPL_HRTFNORMTYPE_NONE;   /* (the HRTF's own level by direction: its ILD) */
     if (iplHRTFCreate(S.ctx, &as, &hs, &S.hrtf) != IPL_STATUS_SUCCESS) {
         fprintf(stderr, "audio: Steam Audio: no HRTF\n");
         release_sdk();
@@ -171,10 +302,25 @@ int saudio_start(void) {
         S.stats = SDL_getenv("HGA_AUDIO3D_STATS") != NULL;
         S.stat_freq = (double)SDL_GetPerformanceFrequency();
     }
+    /* the smoothing as a factor a sample (or a block, for the position - the HRTF takes one
+     * direction a block, so nothing finer can matter to it) */
+    S.k_gain = 1.0f - expf(-1.0f / (SAUDIO_GAIN_TAU * (float)SOUND_RATE));
+    S.k_occl_in = 1.0f - expf(-1.0f / (SAUDIO_OCCL_IN * (float)SOUND_RATE));
+    S.k_occl_out = 1.0f - expf(-1.0f / (SAUDIO_OCCL_OUT * (float)SOUND_RATE));
+    S.k_pos = 1.0f - expf(-(float)SAUDIO_FRAME / (SAUDIO_POS_TAU * (float)SOUND_RATE));
     SDL_LockMutex(S.lock);   /* (the audio thread reads ready under it) */
     S.ready = 1;
     SDL_UnlockMutex(S.lock);
     fprintf(stderr, "audio: Steam Audio HRTF on, up to %d voices (%d Hz)\n", SAUDIO_MAX_BINAURAL, SOUND_RATE);
+    {
+        const char *self = SDL_getenv("HGA_AUDIO3D_SELFTEST");
+
+        if (self != NULL && self[0] != 0) {   /* (HGA_AUDIO3D_SELFTEST=<file.wav>: a tone, once) */
+            selftest(self);
+            saudio_source_off(0);
+            saudio_set_enabled(0, 1);
+        }
+    }
     return 1;
 }
 
@@ -270,6 +416,10 @@ void saudio_source(int voice, int spatial, const float world[3], float gain, uin
         s->gen = gen;
         s->gain = s->gain_target;
         s->occl = s->occl_target;
+        s->lp = 0.0f;
+        s->in_n = 0;
+        s->out_n = SAUDIO_FRAME;   /* (the latency: a frame of silence, then the effect's output) */
+        memset(s->out_fifo, 0, sizeof(s->out_fifo));
         if (S.ready && S.effect[voice] != NULL) {
             iplBinauralEffectReset(S.effect[voice]);
         }
@@ -349,13 +499,11 @@ void saudio_block(int frames) {
         if (!s->on) {
             continue;
         }
-        k = dt / (s->occl_target > s->occl ? SAUDIO_OCCL_IN : SAUDIO_OCCL_OUT);
-        if (k > 1.0f) {
-            k = 1.0f;
-        }
-        s->occl += (s->occl_target - s->occl) * k;
+        /* the low-pass's coefficient for a sample, from the occlusion as it is now: the occlusion
+         * itself is smoothed a sample at a time as the samples go by (saudio_voice_render), and
+         * the filter's state is continuous, so nothing here steps. */
         fc = SAUDIO_LP_CLEAR + (SAUDIO_LP_BLOCKED - SAUDIO_LP_CLEAR) * s->occl;
-        s->lp_coef = 1.0f - expf(-6.2831853f * fc * dt);
+        s->lp_coef = 1.0f - expf(-6.2831853f * fc / (float)SOUND_RATE);
     }
     /* the 16 loudest / nearest of them; the others keep the original placement this block */
     if (S.ready && S.mix > 0.0f && S.have_ear) {
@@ -414,35 +562,22 @@ float saudio_voice_weight(int voice) {
     return w;
 }
 
-void saudio_voice_render(int voice, const float *mono, int frames, float gain, float *out) {
-    Source *s;
+/* one whole frame of a source through its effect: exactly SAUDIO_FRAME samples (the effect
+ * processes that many and no fewer), its direction from the point it has glided to, and the two
+ * ears' result waiting in the voice's output FIFO. Called with the lock held. */
+static void apply_block(int voice) {
+    Source *s = &S.src[voice];
     IPLBinauralEffectParams p;
     Vec3 rel;
-    float dt, k, dist, og;
+    float dist;
     int i;
     Uint64 t0 = 0;
 
-    if (voice < 0 || voice >= SAUDIO_VOICES || mono == NULL || out == NULL || frames <= 0 ||
-        frames > SAUDIO_FRAME) {
-        return;
-    }
-    if (S.lock == NULL) {
-        return;
-    }
-    SDL_LockMutex(S.lock);
-    s = &S.src[voice];
-    if (!S.ready || s->weight <= 0.0f) {
-        SDL_UnlockMutex(S.lock);
-        return;
-    }
-    dt = (float)frames / (float)SOUND_RATE;
-    s->gain_target = gain;
-    k = 1.0f - expf(-dt / SAUDIO_POS_TAU);
-    s->pos.x += (s->target.x - s->pos.x) * k;
-    s->pos.y += (s->target.y - s->pos.y) * k;
-    s->pos.z += (s->target.z - s->pos.z) * k;
-    k = 1.0f - expf(-dt / SAUDIO_GAIN_TAU);
-    s->gain += (s->gain_target - s->gain) * k;
+    /* (the point glides a block at a time: the HRTF takes one direction a block, so nothing
+     * finer than that could reach it) */
+    s->pos.x += (s->target.x - s->pos.x) * S.k_pos;
+    s->pos.y += (s->target.y - s->pos.y) * S.k_pos;
+    s->pos.z += (s->target.z - s->pos.z) * S.k_pos;
     /* the ear space is Steam Audio's already: +x right, +y up, +z behind the head */
     rel = mat4_point(&S.ear, s->pos);
     dist = sqrtf(rel.x * rel.x + rel.y * rel.y + rel.z * rel.z);
@@ -455,21 +590,11 @@ void saudio_voice_render(int voice, const float *mono, int frames, float gain, f
         p.direction.y = rel.y / dist;
         p.direction.z = rel.z / dist;
     }
-    og = 1.0f - s->occl * (1.0f - SAUDIO_OCCL_GAIN);
-    for (i = 0; i < frames; i++) {   /* (a short block at a callback's end: exactly its samples,
-                                      * so the filter's history runs on into the next block) */
-        float x = mono[i] * s->gain * og;
-
-        if (s->occl > 0.001f) {
-            s->lp += (x - s->lp) * s->lp_coef;
-            x = s->lp;
-        } else {
-            s->lp = x;   /* (following it: no jump when a wall comes between again) */
-        }
-        S.in.data[0][i] = x;
+    for (i = 0; i < SAUDIO_FRAME; i++) {
+        S.in.data[0][i] = s->in_fifo[i];
     }
-    S.in.numSamples = frames;
-    S.out.numSamples = frames;
+    S.in.numSamples = SAUDIO_FRAME;
+    S.out.numSamples = SAUDIO_FRAME;
     p.interpolation = IPL_HRTFINTERPOLATION_BILINEAR;
     p.spatialBlend = 1.0f;
     p.hrtf = S.hrtf;
@@ -481,14 +606,71 @@ void saudio_voice_render(int voice, const float *mono, int frames, float gain, f
     if (S.stats && t0 != 0) {
         S.stat_ticks += (double)(SDL_GetPerformanceCounter() - t0);
         S.stat_applies++;
-        S.stat_frames += frames;
+        S.stat_frames += SAUDIO_FRAME;
         if (S.stat_frames >= (long)SOUND_RATE * 5) {
             stats_print();
         }
     }
+    for (i = 0; i < SAUDIO_FRAME; i++) {
+        s->out_fifo[0][s->out_n + i] = S.out.data[0][i] * SAUDIO_HEADROOM;
+        s->out_fifo[1][s->out_n + i] = S.out.data[1][i] * SAUDIO_HEADROOM;
+    }
+    s->out_n += SAUDIO_FRAME;
+}
+
+void saudio_voice_render(int voice, const float *mono, int frames, float gain, float *out, float weight) {
+    Source *s;
+    int i;
+
+    if (voice < 0 || voice >= SAUDIO_VOICES || mono == NULL || out == NULL || frames <= 0 ||
+        frames > SAUDIO_FRAME || weight <= 0.0f) {
+        return;
+    }
+    if (S.lock == NULL) {
+        return;
+    }
+    SDL_LockMutex(S.lock);
+    s = &S.src[voice];
+    if (!S.ready || s->weight <= 0.0f) {   /* (off since the caller asked: nothing to add) */
+        SDL_UnlockMutex(S.lock);
+        return;
+    }
+    s->gain_target = gain;
     for (i = 0; i < frames; i++) {
-        out[2 * i] += S.out.data[0][i] * s->weight;
-        out[2 * i + 1] += S.out.data[1][i] * s->weight;
+        float x, og;
+
+        /* a sample at a time: the gain and the occlusion glide (no step at a block's edge to
+         * buzz at), and the low-pass follows its input continuously */
+        s->gain += (s->gain_target - s->gain) * S.k_gain;
+        s->occl += (s->occl_target - s->occl) *
+                   (s->occl_target > s->occl ? S.k_occl_in : S.k_occl_out);
+        og = 1.0f - s->occl * (1.0f - SAUDIO_OCCL_GAIN);
+        x = mono[i] * s->gain * og;
+        if (s->occl > 0.001f) {
+            s->lp += (x - s->lp) * s->lp_coef;
+            x = s->lp;
+        } else {
+            s->lp = x;   /* (following it: no jump when a wall comes between again) */
+        }
+        s->in_fifo[s->in_n++] = x;
+        if (s->in_n >= SAUDIO_FRAME) {   /* (a whole frame: the effect's own size, no less) */
+            s->in_n = 0;
+            apply_block(voice);
+        }
+    }
+    /* what the effect made, a frame behind what went in (out_n - in_n is always the frame, so
+     * there are always this call's samples waiting) */
+    for (i = 0; i < frames; i++) {
+        out[2 * i] += s->out_fifo[0][i] * weight;
+        out[2 * i + 1] += s->out_fifo[1][i] * weight;
+    }
+    if (s->out_n > frames) {
+        memmove(&s->out_fifo[0][0], &s->out_fifo[0][frames], sizeof(float) * (size_t)(s->out_n - frames));
+        memmove(&s->out_fifo[1][0], &s->out_fifo[1][frames], sizeof(float) * (size_t)(s->out_n - frames));
+        s->out_n -= frames;
+    } else {
+        s->out_n = 0;
+        s->in_n = 0;
     }
     SDL_UnlockMutex(S.lock);
 }
@@ -530,11 +712,12 @@ float saudio_voice_weight(int voice) {
     (void)voice;
     return 0.0f;
 }
-void saudio_voice_render(int voice, const float *mono, int frames, float gain, float *out) {
+void saudio_voice_render(int voice, const float *mono, int frames, float gain, float *out, float weight) {
     (void)voice;
     (void)mono;
     (void)frames;
     (void)gain;
     (void)out;
+    (void)weight;
 }
 #endif

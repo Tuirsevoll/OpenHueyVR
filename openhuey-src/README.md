@@ -83,5 +83,8 @@ The **VR options page** (the title's `VR OPTIONS`, or the sub screen's last page
 **3D Audio** and **Occlusion**, both on by default and kept in `user/vr-options.fs`; off, the
 game plays its original mono / stereo / Pro Logic mix (no environment variable is needed: the
 option is the switch). `HGA_AUDIO3D_STATS=1` prints the HRTF's cost to stderr every five seconds
-of audio (16 voices ≈ 11 ms of CPU a second, about 1% of a core).
+of audio (16 voices ≈ 11 ms of CPU a second, about 1% of a core), and
+`HGA_AUDIO3D_SELFTEST=out.wav` writes a six-second 440 Hz tone through one spatial voice, in the
+game's own block pattern, and prints the largest step between samples at a block's edge - equal to
+one inside a block means no discontinuity (`docs/subsystems/audio3d.md`).
 
