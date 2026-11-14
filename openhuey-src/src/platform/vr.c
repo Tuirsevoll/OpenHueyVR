@@ -31,7 +31,7 @@ VrOptions gVrOptions = {
     2.5f,     /* teleport_reach: metres */
     0,        /* seated */
     1.6f,     /* seated_height: as standing */
-    0.0f,     /* seated_offset */
+    0.0f,     /* seated_offset (retired: an older options file may still set it) */
     0,        /* left_handed */
     0,        /* whisper_open: B holds the microphone */
     0,        /* whisper_debug: subtitles off */
@@ -45,15 +45,6 @@ VrOptions gVrOptions = {
     0.18f,    /* crouch_off: ... and its release */
     0.45f     /* sneak_speed: 45% of a walk */
 };
-
-/* seated (vr.seated): how far the view rides above (positive) or below her own eyes, in room units -
- * the camera and the hands' anchor together, so the first-person rig stays one piece */
-float vr_seat_lift(void) {
-    if (!gVrOptions.seated || gVrOptions.seated_offset == 0.0f) {
-        return 0.0f;
-    }
-    return gVrOptions.seated_offset * VR_UNITS_PER_METER;
-}
 
 #if !defined(_WIN32)
 

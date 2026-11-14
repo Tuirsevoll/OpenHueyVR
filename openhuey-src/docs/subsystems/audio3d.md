@@ -22,7 +22,7 @@ stereo, untouched.
 | Function | Meaning |
 |---|---|
 | `saudio_available()` / `saudio_start()` / `saudio_stop()` | the SDK in this build / make the context, HRTF and 48 binaural effects / drop them |
-| `saudio_set_enabled(on, occlusion)` | the options, and a cutscene's bypass; ramped over 100 ms |
+| `saudio_set_enabled(on)` | 3-D audio on / off (occlusion comes with it), and a cutscene's bypass; ramped over 100 ms |
 | `saudio_on()` | it is on now (the occlusion work is skipped when it isn't) |
 | `saudio_listener(world_to_ear)` | the listener: the world -> ear matrix `engine_set_ear` is given (the headset's pose over Fiona's head, or the camera flat) |
 | `saudio_listener_at(at)` | where the ears are, world units |

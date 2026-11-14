@@ -32,9 +32,10 @@ int saudio_available(void);
  * can't (no SDK, no memory): the game stays on its original placement */
 int saudio_start(void);
 void saudio_stop(void);
-/* the options (vr.audio3d, vr.occlusion) and the cutscene's bypass: read live, ramped over 100 ms.
+/* 3-D audio (vr.audio3d) and the cutscene's bypass, read live and ramped over 100 ms: on, the
+ * placed sounds are binaural *and* occluded - there is no switch of its own for the occlusion.
  * start() is tried the first time it is switched on. */
-void saudio_set_enabled(int on, int occlusion);
+void saudio_set_enabled(int on);
 int saudio_on(void);
 
 /* the listener: the world -> ear matrix (engine_set_ear's), every frame. Its axes are Steam

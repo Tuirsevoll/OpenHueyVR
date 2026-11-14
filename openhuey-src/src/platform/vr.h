@@ -22,7 +22,8 @@ typedef struct VrOptions {
     float teleport_reach;     /* how far a teleport goes, or the furthest it grows to, metres */
     int32_t seated;           /* seated: her eye height is the seated one, never the floor's */
     float seated_height;      /* the eye height seated play is sized to, metres (1.6: as standing) */
-    float seated_offset;      /* the view raised or lowered within her body, metres */
+    float seated_offset;      /* retired: kept so an older options file still loads (the view's
+                               * height offset row is gone; nothing reads it any more) */
     int32_t left_handed;      /* the sticks and the face buttons swapped between the hands */
     int32_t whisper_open;     /* the microphone: 0 B holds it (PTT), 1 open mic */
     int32_t whisper_debug;    /* the speech subtitles: 0 off, 1 the command alone, 2 the command and
@@ -40,18 +41,16 @@ typedef struct VrOptions {
     float crouch_on;          /* the hide flag on at this drop */
     float crouch_off;         /* ... and off only above this one (the hysteresis) */
     float sneak_speed;        /* the crouch walk's share of a walk, and its animation rate (0.45) */
-    /* the 3-D audio (platform/saudio.*): binaural effects through the headset's HRTF, and the
-     * muffling of what a wall or a shut door is between (0: the game's own left / right, as it was) */
-    int32_t audio3d;          /* 1: placed sounds through the HRTF (off: the original stereo) */
-    int32_t occlusion;        /* 1: a wall / a shut door / hidden in a wardrobe muffles them */
+    /* the 3-D audio (platform/saudio.*): binaural effects through the headset's HRTF - and, with
+     * them, the muffling of what a wall or a shut door is between (0: the game's own left / right,
+     * as it was) */
+    int32_t audio3d;          /* 1: placed sounds through the HRTF, occlusion included (off: the
+                               * original stereo) */
 } VrOptions;
 extern VrOptions gVrOptions;
 
 int vr_open(void);          /* the session, ready to draw; 0 on failure */
 void vr_close(void);
-/* seated (vr.seated): how far the view rides above (positive) or below her own eyes, in room
- * units - the camera and the hands' anchor together (0: none) */
-float vr_seat_lift(void);
 /* crouching by the headset (story/crouch.fs): how far it is below her standing eyes, in metres
  * (the floor's own measurement, so a recenter keeps it); 0 seated, out of a headset, or before a
  * height is measured */

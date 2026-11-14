@@ -2384,8 +2384,7 @@ void engine_set_ear(const Mat4 *view) {
     }
     /* the 3-D audio's listener is the headset's own pose (the same matrix the eyes are drawn with),
      * and its options: a cutscene's sound is the movie's, mixed in stereo (saudio.h) */
-    saudio_set_enabled(gVrOptions.audio3d && !gEngine.testing && !cutscene_heard(&gEngine),
-                       gVrOptions.occlusion);
+    saudio_set_enabled(gVrOptions.audio3d && !gEngine.testing && !cutscene_heard(&gEngine));
     saudio_listener(&ear);
 }
 
@@ -4834,7 +4833,7 @@ void bind_engine(Forth *f) {
     field(f, "vr.teleport-reach", offsetof(VrOptions, teleport_reach));
     field(f, "vr.seated", offsetof(VrOptions, seated));
     field(f, "vr.seated-height", offsetof(VrOptions, seated_height));
-    field(f, "vr.seated-offset", offsetof(VrOptions, seated_offset));
+    field(f, "vr.seated-offset", offsetof(VrOptions, seated_offset));   /* (retired: an older options file still loads) */
     field(f, "vr.left-handed", offsetof(VrOptions, left_handed));
     field(f, "vr.whisper-open", offsetof(VrOptions, whisper_open));
     field(f, "vr.whisper-debug", offsetof(VrOptions, whisper_debug));
@@ -4848,7 +4847,6 @@ void bind_engine(Forth *f) {
     field(f, "vr.crouch-off", offsetof(VrOptions, crouch_off));
     field(f, "vr.sneak-speed", offsetof(VrOptions, sneak_speed));
     field(f, "vr.audio3d", offsetof(VrOptions, audio3d));
-    field(f, "vr.occlusion", offsetof(VrOptions, occlusion));
     forth_set_current(f, saved);
 }
 

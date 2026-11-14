@@ -141,15 +141,10 @@ testing down to the calibration: without a headset it measures nothing
 key: Down tap
 key: X tap
 T{ vr-settings vr.calibrated l@ -> 0 }T
-testing seated play: the cross turns it on, the offset row steps
+testing seated play: the cross turns it on
 key: Down tap
 key: X tap
 T{ vr-settings vr.seated l@ -> 1 }T
-key: Down tap
-key: Right tap
-T{ vr-settings vr.seated-offset sf@ 1000e f* fround f>s -> 50 }T
-key: Left tap
-T{ vr-settings vr.seated-offset sf@ 1000e f* fround f>s -> 0 }T
 testing the whisper rows below it: PTT to open mic, then the subtitles off, on and debug
 key: Down tap
 T{ vr-settings vr.whisper-open l@  vr-settings vr.whisper-debug l@ -> 0 0 }T

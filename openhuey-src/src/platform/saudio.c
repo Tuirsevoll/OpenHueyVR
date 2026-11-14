@@ -56,8 +56,7 @@ typedef struct Source {
 static struct {
     SDL_Mutex *lock;
     int tried, ready;
-    int enabled;                 /* the options (and not a cutscene's bypass) */
-    int occlusion;
+    int enabled;                 /* the option (and not a cutscene's bypass) */
     float mix, mix_target;       /* the ramp */
     Mat4 ear;                    /* world -> ear space (Steam Audio's axes) */
     Vec3 listener;
@@ -137,7 +136,7 @@ static void selftest(const char *path) {
     le32(head + 40, (uint32_t)(frames * 4));
     fwrite(head, 1, sizeof(head), f);
 
-    saudio_set_enabled(1, 0);   /* (no occlusion: the tone itself) */
+    saudio_set_enabled(1);   /* (the tone itself: its source is in the open) */
     {
         Mat4 view = mat4_identity();
 
@@ -318,7 +317,7 @@ int saudio_start(void) {
         if (self != NULL && self[0] != 0) {   /* (HGA_AUDIO3D_SELFTEST=<file.wav>: a tone, once) */
             selftest(self);
             saudio_source_off(0);
-            saudio_set_enabled(0, 1);
+            saudio_set_enabled(0);
         }
     }
     return 1;
@@ -334,9 +333,7 @@ void saudio_stop(void) {
         SDL_UnlockMutex(S.lock);
     }
 }
-void saudio_set_enabled(int on, int occlusion) {
-    int v;
-
+void saudio_set_enabled(int on) {
     if (on && !S.ready) {
         saudio_start();   /* (the main thread, once: the HRTF is slow to make) */
     }
@@ -346,12 +343,6 @@ void saudio_set_enabled(int on, int occlusion) {
     SDL_LockMutex(S.lock);
     S.enabled = on != 0;
     S.mix_target = S.enabled && S.ready ? 1.0f : 0.0f;
-    S.occlusion = occlusion != 0;
-    if (!S.occlusion) {
-        for (v = 0; v < SAUDIO_VOICES; v++) {
-            S.src[v].occl_target = 0.0f;
-        }
-    }
     SDL_UnlockMutex(S.lock);
 }
 
@@ -679,10 +670,7 @@ void saudio_voice_render(int voice, const float *mono, int frames, float gain, f
 int saudio_available(void) { return 0; }
 int saudio_start(void) { return 0; }
 void saudio_stop(void) {}
-void saudio_set_enabled(int on, int occlusion) {
-    (void)on;
-    (void)occlusion;
-}
+void saudio_set_enabled(int on) { (void)on; }
 int saudio_on(void) { return 0; }
 void saudio_listener(const Mat4 *world_to_ear) { (void)world_to_ear; }
 int saudio_listener_at(Vec3 *out) {

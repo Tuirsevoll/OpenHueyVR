@@ -69,12 +69,11 @@ in, reachable without a keyboard:
   are read from the VR stick in a headset (`read-arrows`), so every page of the sub screen - the
   lists, the map, the files, the options - and this one are worked with the controllers: the
   movement stick moves, A answers, a grip backs out.
-- **Its rows**, twelve of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
+- **Its rows**, ten of them: Turning (Smooth, Snap 45, Snap 90), Left-handed (Off, On),
   Comfort vignette (Off, Low, Med, High), Teleport movement (Off, Fixed, Dynamic),
-  Calibrate height (the measurement, or Not set), Seated mode (Off, On), View height offset
-  (5 cm a step), Whisper (PTT, Open Mic), Whisper Subtitles (Off, On, Debug), 3D Audio (Off, On)
-  and Occlusion (Off, On) - the last two the binaural HRTF and its muffling
-  (docs/subsystems/audio3d.md). A label on the
+  Calibrate height (the measurement, or Not set), Seated mode (Off, On), Whisper (PTT, Open Mic),
+  Whisper Subtitles (Off, On, Debug) and 3D Audio (Off, On) - the last the binaural HRTF, its
+  occlusion coming with it (docs/subsystems/audio3d.md). A label on the
   left, its value on the right, the row chosen drawn in a lit bar:
   up / down choose, left / right step the row (a choice round its words, a number by its step),
   and the cross steps it too - on Calibrate height the cross is the measurement itself
@@ -182,9 +181,9 @@ keyboard remains beside them.
 - **Seated play** (`vr.seated`): the world is sized to `vr.seated-height` instead of a floor
   measurement (1.6 / height, clamped), so the virtual floor stays at the player's own; the first
   run's calibration is not asked for (`scripts/opening.fs` `calibrate-wanted?`) and a standing
-  calibration kept is left as it is. `vr.seated-offset` lifts (+) or dips (-) the view within her
-  body - the camera and the hands' anchor together (`vr_seat_lift`, `main.c` `fiona_view`), so the
-  first-person rig stays one piece; up to 0.3 m either way, and the drawn body stays where it is.
+  calibration kept is left as it is. The view sits at her own eyes: there is no manual height
+  offset any more (`vr.seated-offset` is retired - an older options file may still set it and
+  nothing reads it), so the camera and the hands' anchor stay at the calibrated height.
 - **The world's size, and why the view must not warp** (`vr.c` `body_scale`, `vr_body_view`,
   `vr_eye_body`, `proj_fov`): a measured height reads as a *scale*, `s = 1.6 / height` - what a
   metre of head motion is worth in the world, and what the eyes' separation is worth. Those two
@@ -271,8 +270,7 @@ written on change), **turning** (Smooth, Snap 45, Snap 90), **the comfort vignet
 Med, High - 25, 50, 75 per cent of the corners, its own ring over the picture), **the height
 calibration** (kept in the options, a first run's screen on the title, the page's row for later,
 a save's load measuring without a prompt, one action: the height, the world's size and the view's
-origin together), **seated play**
-(`vr.seated`, with `vr.seated-offset` for the view's height in the body), **teleporting**
+origin together), **seated play** (`vr.seated`), **teleporting**
 (`vr.teleport`: Off, Fixed, Dynamic - the stick flick, its aim walking out until something stops
 it, facing the way it went, a glow for the landing), **left-handed play** (`vr.left-handed`: the
 sticks, face buttons and triggers over, the hands and the pause button as they are), **the

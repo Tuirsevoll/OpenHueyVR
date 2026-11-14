@@ -27,7 +27,6 @@ PRIVATE>
     2.5e vr-settings vr.teleport-reach sf!
     0 vr-settings vr.seated l!
     1.6e vr-settings vr.seated-height sf!
-    0e vr-settings vr.seated-offset sf!
     0 vr-settings vr.left-handed l!                \ (the microphone and its transcript: vr.h VrOptions)
     0 vr-settings vr.whisper-open l!               \ (B holds it, as the game had it)
     0 vr-settings vr.whisper-debug l!              \ (the subtitles off: the page steps Off, On, Debug)
@@ -37,8 +36,7 @@ PRIVATE>
     0.25e vr-settings vr.crouch-on sf!         \ (the hide flag on at 25% ...)
     0.18e vr-settings vr.crouch-off sf!        \ (... and off only above 18%)
     0.45e vr-settings vr.sneak-speed sf!       \ (the crouch walk: 45% of a walk - 55% slower)
-    1 vr-settings vr.audio3d l!                \ (placed sounds through the headset's HRTF: on)
-    1 vr-settings vr.occlusion l! ;            \ (a wall or a shut door between: muffled: on)
+    1 vr-settings vr.audio3d l! ;              \ (placed sounds through the headset's HRTF, occluded: on)
 
 \ the options written out as Forth, read back at start-up (each line runs)
 : save-vr-options ( -- )
@@ -55,7 +53,6 @@ PRIVATE>
     vr-settings vr.teleport-reach sf@ 6 f>s$ type     ."  vr-settings vr.teleport-reach sf!" cr
     vr-settings vr.seated l@ n>s type                ."  vr-settings vr.seated l!" cr
     vr-settings vr.seated-height sf@ 6 f>s$ type     ."  vr-settings vr.seated-height sf!" cr
-    vr-settings vr.seated-offset sf@ 6 f>s$ type     ."  vr-settings vr.seated-offset sf!" cr
     vr-settings vr.left-handed l@ n>s type           ."  vr-settings vr.left-handed l!" cr
     vr-settings vr.whisper-open l@ n>s type          ."  vr-settings vr.whisper-open l!" cr
     vr-settings vr.whisper-debug l@ n>s type         ."  vr-settings vr.whisper-debug l!" cr
@@ -69,7 +66,6 @@ PRIVATE>
     vr-settings vr.crouch-off sf@ 6 f>s$ type        ."  vr-settings vr.crouch-off sf!" cr
     vr-settings vr.sneak-speed sf@ 6 f>s$ type       ."  vr-settings vr.sneak-speed sf!" cr
     vr-settings vr.audio3d l@ n>s type               ."  vr-settings vr.audio3d l!" cr
-    vr-settings vr.occlusion l@ n>s type             ."  vr-settings vr.occlusion l!" cr
     end-file  ." saved " settings-file type cr ;
 
 : load-vr-options ( -- )

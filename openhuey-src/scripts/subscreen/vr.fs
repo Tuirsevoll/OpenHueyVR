@@ -7,8 +7,8 @@
 IN: subscreen.vr
 USING: engine ps2-screen subscreen.state subscreen.art subscreen.input vr-options ;
 
-enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-offset vr-whisper vr-whisper-debug vr-audio3d vr-occlusion ;
-: #vr-rows ( -- n )  vr-occlusion 1+ ;
+enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-whisper vr-whisper-debug vr-audio3d ;
+: #vr-rows ( -- n )  vr-audio3d 1+ ;
 
 variable vr-at   0 vr-at !
 
@@ -55,11 +55,9 @@ variable vr-at   0 vr-at !
           vr-teleport of  s" Teleport movement"  endof
           vr-cal of  s" Calibrate height"  endof
           vr-seated of  s" Seated mode"  endof
-          vr-offset of  s" View height offset"  endof
           vr-whisper of  s" Whisper"  endof
           vr-whisper-debug of  s" Whisper Subtitles"  endof
           vr-audio3d of  s" 3D Audio"  endof
-          vr-occlusion of  s" Occlusion"  endof
           >r s" Calibrate height" r>  endcase ;
 : vr-row-value ( i -- addr len )
     case
@@ -69,18 +67,14 @@ variable vr-at   0 vr-at !
         vr-teleport of  teleport$  endof
         vr-cal of  vr-settings vr.calibrated l@ if  vr-settings vr.eye-height sf@ 2 f>s$  else  s" Not set"  then  endof
         vr-seated of  vr-settings vr.seated l@ on-off$  endof
-        vr-offset of  vr-settings vr.seated-offset sf@ 2 f>s$  endof
         vr-whisper of  whisper$  endof
         vr-whisper-debug of  subtitles$  endof
         vr-audio3d of  vr-settings vr.audio3d l@ on-off$  endof
-        vr-occlusion of  vr-settings vr.occlusion l@ on-off$  endof
         >r  vr-settings vr.snap-degrees sf@ f>s n>s  r>
     endcase ;
-: vr-row-y ( i -- y )  $18 * $50 + ;   \ (twelve rows now: 24 apart, clear of the footer)
-fvariable vr-was
+: vr-row-y ( i -- y )  $20 * $50 + ;
 variable vr-step
-\ a change: a choice steps on a level (round, the last back to the first), a flag turns over, a
-\ number steps (the view's offset by 5 cm)
+\ a change: a choice steps on a level (round, the last back to the first), a flag turns over
 : vr-row-change ( dir -- )   ( dir -1 or 1: a level goes back or on; the flags only turn over )
     vr-step !
     vr-at @ case
@@ -104,11 +98,6 @@ variable vr-step
         vr-seated of
             vr-settings vr.seated l@ 0= 1 and vr-settings vr.seated l!
             se-decide  save-vr-options endof
-        vr-offset of
-            vr-settings vr.seated-offset sf@ vr-was f!
-            vr-was f@ vr-step @ s>f 0.05e f* f+  -0.3e fmax  0.3e fmin
-            vr-settings vr.seated-offset sf!
-            vr-settings vr.seated-offset sf@ vr-was f@ f= 0= if  se-cursor  save-vr-options  then endof
         vr-whisper of
             vr-settings vr.whisper-open l@ 0= 1 and vr-settings vr.whisper-open l!
             se-decide  save-vr-options endof
@@ -117,9 +106,6 @@ variable vr-step
             se-decide  save-vr-options endof
         vr-audio3d of
             vr-settings vr.audio3d l@ 0= 1 and vr-settings vr.audio3d l!
-            se-decide  save-vr-options endof
-        vr-occlusion of
-            vr-settings vr.occlusion l@ 0= 1 and vr-settings vr.occlusion l!
             se-decide  save-vr-options endof
         >r  vr-settings vr.turn-snap l@ 0= if  1  else  0  then  vr-settings vr.turn-snap l!
             se-decide  save-vr-options
@@ -144,7 +130,7 @@ variable vr-step
     s" VIRTUAL REALITY"  256 $34 centred
     #vr-rows 0 do
         i vr-at @ = if
-            art-layer  $30 sx  i vr-row-y 2 - sy  $1C0 sw  $16 sy
+            art-layer  $30 sx  i vr-row-y 2 - sy  $1C0 sw  $20 sy
             $40 openness @ * 128 /  $40405000 or  ui-rect
         then
         i vr-row-label  $48  i vr-row-y 6 +  i vr-at @ =  text
