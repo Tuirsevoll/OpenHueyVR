@@ -423,7 +423,8 @@ static int whole(const char *text, const char *phrase) {
     return 0;
 }
 
-/* his name, and the ways Whisper mishears it. Longer ones first. */
+/* his name, and the ways Whisper mishears it. Longer ones first. "queep" is the usual quick
+ * "Hewie" (an accent's short e): taken as his name wherever it repeats. */
 static const char *const kDog[] = {
     "who me", "you e", "pukui", "queep", "wooee", "wooey", "queen", "hewey", "hewie", "huey",
     "hooey", "hooee", "kiwi", "hee", "hui", "hew", "cut"
@@ -471,6 +472,40 @@ static void strip_names(char *s) {
     }
 }
 
+/* Whisper's last token, when it loops, can be a name cut short ("que" for "queep"): the end of
+ * the transcript, so it would otherwise match neither the name nor a command */
+static int name_start(const char *word, size_t n) {
+    int i;
+
+    if (n < 2) {
+        return 0;
+    }
+    for (i = 0; i < (int)(sizeof(kDog) / sizeof(kDog[0])); i++) {
+        if (n < strlen(kDog[i]) && strncmp(word, kDog[i], n) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void strip_cut_name(char *s) {
+    int again = 1;
+
+    while (again) {
+        char *space = strrchr(s, ' ');
+        char *word = space != NULL ? space + 1 : s;
+
+        again = name_start(word, strlen(word));
+        if (again) {
+            if (space != NULL) {
+                *space = 0;
+            } else {
+                s[0] = 0;
+            }
+        }
+    }
+}
+
 static int phrase_kind(const char *text) {
     static const struct { const char *phrase; int kind; } table[] = {
         {"come here", VOICE_COME}, {"here boy", VOICE_COME}, {"come boy", VOICE_COME},
@@ -500,6 +535,7 @@ static int phrase_kind(const char *text) {
 
     snprintf(bare, sizeof(bare), "%s", text);
     strip_names(bare);
+    strip_cut_name(bare);
     if (bare[0] == 0) {
         return VOICE_COME;   /* just his name, or a mishearing of it */
     }
@@ -543,6 +579,14 @@ static void normalize(char *dst, int cap, const char *src) {
                 dst[j++] = ' ';
                 sp = 1;
             }
+        }
+    }
+    if (src != NULL && *src != 0 && *src != ' ' && *src != '.' && *src != ',' && *src != '!' &&
+        *src != '?' && *src != '-') {
+        /* (the cap cut the last word: drop the fragment - a repeated "queep queep ..." otherwise
+         * ends in "quee", which is neither his name nor a command) */
+        while (j > 0 && dst[j - 1] != ' ') {
+            j--;
         }
     }
     while (j > 0 && dst[j - 1] == ' ') {
