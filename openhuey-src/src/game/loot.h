@@ -39,6 +39,9 @@ void loot_draw_held(int item, int side, const Mat4 *world, const Mat4 *view_proj
 int loot_item_prop_loaded(int item, int side);
 /* the cache slot that model is in (a check of the by-file cache): -1 none */
 int loot_item_prop_slot(int item, int side);
+/* load the model a hand will hold (and the debug axes) off the render pass; the cache makes it
+ * cheap once done. Called by a grab and by the equipped item's tick. */
+void loot_preload_held(int item, int side);
 
 int loot_nearest(Vec3 hand, int skip, float *d2);
 void loot_grab(int index, int side);

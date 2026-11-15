@@ -60,6 +60,7 @@ int main(void) {
     CHECK("a zero quaternion is not a turn", itemprops_parse_line("39 46 0 0 0 0 0 0 0", &g) == 0);
     CHECK("too few words", itemprops_parse_line("39 46 0 0 0 0 0 0", &g) == 0);
     CHECK("a tint needs three numbers", itemprops_parse_line("39 46 0 0 0 0 0 0 1 1 0.5", &g) == 0);
+    CHECK("too many words", itemprops_parse_line("39 46 0 0 0 0 0 0 1 a b c d e f g h", &g) == 0);
 
     CHECK("a turn of length 2 is normalized", itemprops_parse_line("39 46 0 0 0 0 0 0 2", &g) == 1 &&
                                                  near(g.rot[3], 1.0f));

@@ -97,7 +97,7 @@ int itemprops_parse_line(const char *line, ItemGrip *out) {
     }
     memset(&g, 0, sizeof(g));
     nt = grip_tokens(line, tok);
-    if (nt < 9) {
+    if (nt < 9 || nt > GRIP_TOKENS) {
         return 0;
     }
     if (!parse_int(tok[0], &g.item) || g.item < 0 || g.item >= ITEMPROPS_ITEMS) {

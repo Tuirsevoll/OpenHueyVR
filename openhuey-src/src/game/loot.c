@@ -107,7 +107,8 @@ static int sIconN;
 
 /* A held item's model, cached by its file (several items may name one) and never the shared
  * MAX_PROPS pool the mods' props use. `state` 0 a free slot, 1 loaded, -1 its file could not be
- * read. Loaded once when an item is first held (loot_grab), so the draw only reads it. */
+ * read. Loaded once when an item is first held (loot_grab), so the draw only reads it. Nothing
+ * frees these: a mod's prop-free/item-cleared can never free a held model. */
 #define ITEM_PROP_BONE_LEFT 30
 #define ITEM_PROP_BONE_RIGHT 46
 #define ITEM_MODEL_SLOTS 256   /* (the 192 items' own names and the shared files; about 45 loaded) */
@@ -695,6 +696,19 @@ static void item_axes_draw(const Mat4 *at, const Mat4 *view_proj) {
     mvp = mat4_mul(*view_proj, *at);
     render_mesh_tint(1.0f, 1.0f, 1.0f, 1.0f);
     render_mesh(&sItemAxes, &mvp, &sItemAxisDraw, 1, NULL, 0, all);
+}
+
+/* load (once) the model a hand will hold, and make the debug axes, off the render pass: a model
+ * loaded during a draw can leave the renderer's state to the driver's timing, and the axes are
+ * uploaded once rather than in the middle of a scene */
+void loot_preload_held(int item, int side) {
+    char path[128];
+
+    if (gVrOptions.item_prop_debug && !sItemAxesReady) {
+        item_axes_make();
+    }
+    item_model_path_for(item, side, path, sizeof(path));
+    (void)item_model_ensure(path);
 }
 
 /* the item's mod model in the hand: 1 when it was drawn (the fallback then stays out of it) */
@@ -2155,12 +2169,7 @@ void loot_grab(int index, int side) {
         return;
     }
     p = &sProp[index];
-    {
-        char path[128];
-
-        item_model_path_for(p->item, side, path, sizeof(path));
-        (void)item_model_ensure(path);   /* (loaded now, off the render pass: the hand's draw only reads it) */
-    }
+    loot_preload_held(p->item, side);   /* (loaded now, off the render pass: the hand's draw only reads it) */
     p->holders |= 1 << side;
     if (p->style == ST_PART) {
         group_set(p->group, 0);

@@ -230,6 +230,21 @@ int main(void) {
         loot_draw(&vp, 1);
         CHECK("a held item's own model is loaded and drawn", loot_item_prop_loaded(148, 1) && sLightsAt == 1);
 
+        /* the mod's own ground prop, loaded into the shared pool and freed as item-cleared does:
+         * the held model must not share its storage */
+        {
+            int shared = props_load("PROPS/item.gltf");
+
+            CHECK("the mod's ground prop loads in the shared pool", shared >= 0);
+            if (shared >= 0) {
+                props_free(shared);
+            }
+            sLightsAt = 0;
+            loot_draw(&vp, 1);
+            CHECK("the held model survives the ground prop's free",
+                  loot_item_prop_loaded(148, 1) && sLightsAt == 1);
+        }
+
         sLightsAt = 0;
         loot_draw_held(145, 1, &vp, &vp);   /* (the equipped antimony path) */
         CHECK("an equipped item's own model is drawn", loot_item_prop_loaded(145, 1) && sLightsAt == 1);
@@ -257,6 +272,46 @@ int main(void) {
             }
             CHECK("held item models are not in the shared props pool", shared == 0);
         }
+    }
+
+    /* grab -> let go -> the pickup's queue -> inventory, with the held model loaded; then the
+     * same item again: the cache must survive and the release must not leave a dangling prop */
+    {
+        int got_item = -1, got_fact = -1, got_fx = -1, got_mode = -1;
+        void *got_xt = NULL;
+        Mat4 vp = mat4_identity();
+        float d2 = 0.0f;
+        int before = loot_item_prop_slot(148, 1);
+
+        loot_let_go(item, 1);
+        CHECK("a released modelled item is queued", loot_waiting() == 1);
+        CHECK("the pickup queue has it", loot_take(&got_item, &got_fact, &got_fx, &got_mode, &got_xt) == 1);
+        loot_consume();   /* (as takes-up: given, then loot-got retires it) */
+        loot_idle();
+        CHECK("it is gone after the pickup", loot_nearest(vec3(0.0f, 0.0f, 0.0f), -1, &d2) < 0);
+
+        loot_at(148, 0.0f, 0.0f, 0.0f);
+        item = loot_nearest(vec3(0.0f, 0.0f, 0.0f), -1, &d2);
+        loot_grab(item, 1);
+        sLightsAt = 0;
+        loot_draw(&vp, 1);
+        CHECK("the same item again draws its model", loot_item_prop_loaded(148, 1) && sLightsAt == 1);
+        CHECK("the model cache slot is the same", loot_item_prop_slot(148, 1) == before);
+
+        /* the equipped/defensive path, released and drawn again */
+        loot_let_go(item, 1);
+        (void)loot_waiting();
+        if (loot_take(&got_item, &got_fact, &got_fx, &got_mode, &got_xt)) {
+            loot_consume();
+        }
+        loot_idle();
+        loot_at(145, 0.0f, 0.0f, 0.0f);
+        item = loot_nearest(vec3(0.0f, 0.0f, 0.0f), -1, &d2);
+        loot_grab(item, 1);
+        sLightsAt = 0;
+        loot_draw(&vp, 1);
+        loot_draw_held(145, 1, &vp, &vp);
+        CHECK("the equipped item still draws after a release", loot_item_prop_loaded(145, 1) && sLightsAt == 1);
     }
 
     printf("loot frame: %d failed\n", fails);

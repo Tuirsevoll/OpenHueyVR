@@ -305,7 +305,9 @@ In a headset, a hand that has taken an item draws the model its grip names, or i
 `antimony-powder` is `$91`, 145). Without either file the item keeps the game's own card / key /
 powder / ball, as before. Models are cached by file, not by item: several items can name one file
 and give it different tints. The cache is the held-item cache (its own, not the mod props' 64-slot
-pool); a file is loaded once, the first time a hand takes an item that names it.
+pool); a file is loaded once, the first time a hand takes an item that names it. A mod's
+`prop-free` (or `item-cleared`) never frees these models: taking, letting go and taking an item
+again keeps the same loaded model.
 
 Its place comes only from `library/data/PROPS/grips.txt`. An item may have up to two lines, one
 for each hand:

@@ -142,8 +142,10 @@ not read there and her root motion is not used (`scripts/fiona/ladder.fs`, `vr-c
   is mirrored across her body (offset x negated, quaternion `(x, -y, -z, w)`), and a second line
   for the same item overrides that mirror. The equipped magnesia/antimony follows the same rule.
   A `model=<file>` word names a file shared by several items; the held models' cache is by file,
-  not by item. A tint in the grip line multiplies the model's colours, and the
-  `vr.item-prop-debug` option draws RGB axes at the model and the wrist.
+  not by item, and outlives a grab: letting go and taking the item again reuses it, and a mod's
+  `prop-free` never frees it. The model and debug axes are loaded off the render pass (on the grab,
+  or on the equipped item's tick), not while drawing. A tint in the grip line multiplies the
+  model's colours, and the `vr.item-prop-debug` option draws RGB axes at the model and the wrist.
 - **A grip lets an equipped thing go at once** (`scripts/fiona/letgo.fs`: `hand-defense`). With a
   magnesia, antimony (or a ball, the doll, the stone) in the equipment's slot 2, a grip pressed and
   released - `vrhands_defense_take`, armed by a close after the model is in the hand - makes the

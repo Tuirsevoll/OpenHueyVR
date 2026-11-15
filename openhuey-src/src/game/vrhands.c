@@ -3023,6 +3023,7 @@ static void defense_tick(void) {
             sDef.histN = 0;
         }
     }
+    loot_preload_held(item, side);   /* (its model and the debug axes, off the render pass) */
     place = defense_place(at, up, fwd);
     sDef.at = place;
     sDef.right = right;
