@@ -96,8 +96,9 @@ void room_door_passage(Room *r, int exit, int open, uint32_t locks) {
 
 void loot_maintain(void) {}
 
-void loot_draw_held(int item, const Mat4 *world, const Mat4 *view_proj) {
+void loot_draw_held(int item, int side, const Mat4 *world, const Mat4 *view_proj) {
     (void)item;
+    (void)side;
     (void)world;
     (void)view_proj;
 }

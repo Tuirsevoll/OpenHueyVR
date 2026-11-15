@@ -3083,7 +3083,7 @@ void vrhands_defense_draw(const Mat4 *view_proj) {
     m.m[12] = at.x;
     m.m[13] = at.y;
     m.m[14] = at.z;
-    loot_draw_held(sDef.item, &m, view_proj);
+    loot_draw_held(sDef.item, sDef.side, &m, view_proj);
 }
 
 int vrhands_defense_take(int *kind, float *x, float *y, float *z, float *vx, float *vy, float *vz) {

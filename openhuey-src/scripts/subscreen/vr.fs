@@ -10,7 +10,7 @@ IN: subscreen.vr
 USING: engine ps2-screen subscreen.state subscreen.art subscreen.input vr-options ;
 
 \ the items a row can be (which page shows it is below)
-enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-whisper vr-whisper-debug vr-audio3d vr-hide-door
+enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-whisper vr-whisper-debug vr-audio3d vr-hide-door vr-item-prop-debug
               vr-comfort-open vr-hewie-open vr-enhance-open vr-panic-open vr-panic-preset
               vr-panic-tint vr-panic-smear vr-panic-zoom vr-panic-negative vr-panic-shake vr-panic-stumbles vr-panic-haptics ;
 
@@ -25,7 +25,7 @@ variable vr-return-at  0 vr-return-at !
 create main-rows     vr-cal , vr-hand , vr-comfort-open , vr-hewie-open , vr-enhance-open , vr-panic-open ,
 create comfort-rows  vr-turn , vr-comfort , vr-teleport , vr-seated ,
 create hewie-rows    vr-whisper , vr-whisper-debug ,
-create enhance-rows  vr-audio3d , vr-hide-door ,
+create enhance-rows  vr-audio3d , vr-hide-door , vr-item-prop-debug ,
 create panic-rows    vr-panic-preset , vr-panic-tint , vr-panic-smear , vr-panic-zoom ,
                      vr-panic-negative , vr-panic-shake , vr-panic-stumbles , vr-panic-haptics ,
 : page-rows ( -- addr )
@@ -40,7 +40,7 @@ create panic-rows    vr-panic-preset , vr-panic-tint , vr-panic-smear , vr-panic
     vr-page @ case
         vp-comfort of  4  endof
         vp-hewie of    2  endof
-        vp-enhance of  2  endof
+        vp-enhance of  3  endof
         vp-panic of    8  endof
         >r 6 r>
     endcase ;
@@ -102,6 +102,7 @@ create panic-rows    vr-panic-preset , vr-panic-tint , vr-panic-smear , vr-panic
           vr-whisper-debug of  s" Whisper Subtitles"  endof
           vr-audio3d of  s" 3D Audio"  endof
           vr-hide-door of  s" Hiding Spot Door Transparency"  endof
+          vr-item-prop-debug of  s" Held Item Debug Axes"  endof
           vr-comfort-open of  s" Comfort Options"  endof
           vr-hewie-open of  s" Hewie"  endof
           vr-enhance-open of  s" VR Enhancements"  endof
@@ -127,6 +128,7 @@ create panic-rows    vr-panic-preset , vr-panic-tint , vr-panic-smear , vr-panic
         vr-whisper-debug of  subtitles$  endof
         vr-audio3d of  vr-settings vr.audio3d l@ on-off$  endof
         vr-hide-door of  vr-settings vr.hide-door l@ on-off$  endof
+        vr-item-prop-debug of  vr-settings vr.item-prop-debug l@ on-off$  endof
         vr-comfort-open of  s" Open"  endof
         vr-hewie-open of  s" Open"  endof
         vr-enhance-open of  s" Open"  endof
@@ -179,6 +181,9 @@ variable vr-step
             se-decide  save-vr-options endof
         vr-hide-door of
             vr-settings vr.hide-door l@ 0= 1 and vr-settings vr.hide-door l!
+            se-decide  save-vr-options endof
+        vr-item-prop-debug of
+            vr-settings vr.item-prop-debug l@ 0= 1 and vr-settings vr.item-prop-debug l!
             se-decide  save-vr-options endof
         vr-comfort-open of  vp-comfort open-vr-page  endof
         vr-hewie-open of    vp-hewie open-vr-page  endof

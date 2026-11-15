@@ -418,6 +418,19 @@ static void use_lights(Engine *e, const Actor *a) {
     lights_for(e, a->lights, light_root(a));
 }
 
+void engine_lights_at(Vec3 at) {
+    int idx[3] = {-1, -1, -1};
+
+    if (gEngine.nstage > 0) {
+        idx[0] = 0;
+        idx[1] = gEngine.nstage > 1 ? 1 : -1;
+        idx[2] = gEngine.nstage > 2 ? 2 : -1;
+    } else {
+        room_lights_at(&gEngine.room, at, idx);
+    }
+    lights_for(&gEngine, idx, at);
+}
+
 /* the characters again, mirrored in each reflecting quad's plane (Reflection_Draw: those on the
  * eye's side of it; drawn faded by its strength, without their contact shadows) */
 /* the side panels of castle 2F's reflecting door and window (Reflection_SidePanels): by kind (the

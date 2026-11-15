@@ -3,8 +3,13 @@
 \ button by it - or a mod may take it for her (take-item-at, as a VR hand would).
 \
 \ The models: library/data/PROPS/item-<id>.gltf for the item of that id (decimal, items.names:
-\ medallion 39 ...), else library/data/PROPS/item.gltf - any glTF or .glb, Y up, one unit a game
-\ unit (Fiona stands about 15 tall). This sample has only the one: a small gold cube.
+\ medallion 112, antimony-powder 145 ...), else library/data/PROPS/item.gltf - any glTF or .glb, Y
+\ up, one unit a game unit (Fiona stands about 15 tall). This sample has only the one: a small gold
+\ cube.
+\ The engine also draws a taken item's model in the hand, placed by library/data/PROPS/grips.txt
+\ (docs/modding.md "Held items"): one line an item, mirrored to the other hand, or a second line
+\ for the other hand to override the mirror; model= may share one file among items. This sample
+\ shows the ones lying about.
 IN: item-props
 USING: engine actors messages mods ;
 

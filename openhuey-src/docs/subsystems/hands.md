@@ -135,6 +135,15 @@ not read there and her root motion is not used (`scripts/fiona/ladder.fs`, `vr-c
   the game keeps (`loot_follow`), which is what the pickup, `loot_nearest` and the placed-object code
   read. A hand not tracked (a menu, a scene with no anchor, no headset) leaves the thing where the
   tick has it.
+- **A held item may be a mod's model** (`PROPS/item-<id>.gltf`, `PROPS/grips.txt`;
+  docs/modding.md, "Held items"). It is placed at the holding hand's wrist bone (`Actor.bones` /
+  `bone_axes`: 30 her left, 46 her right), turned by the grip's offset and quaternion; the game's
+  own card / key / powder / ball is kept when the mod has no model. A line made for the other hand
+  is mirrored across her body (offset x negated, quaternion `(x, -y, -z, w)`), and a second line
+  for the same item overrides that mirror. The equipped magnesia/antimony follows the same rule.
+  A `model=<file>` word names a file shared by several items; the held models' cache is by file,
+  not by item. A tint in the grip line multiplies the model's colours, and the
+  `vr.item-prop-debug` option draws RGB axes at the model and the wrist.
 - **A grip lets an equipped thing go at once** (`scripts/fiona/letgo.fs`: `hand-defense`). With a
   magnesia, antimony (or a ball, the doll, the stone) in the equipment's slot 2, a grip pressed and
   released - `vrhands_defense_take`, armed by a close after the model is in the hand - makes the

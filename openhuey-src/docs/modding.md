@@ -264,7 +264,8 @@ mod's folders). The model:
   factor, its vertex colours; `OPAQUE`, `MASK` (the texture's alpha cuts it) or `BLEND` as the
   material says. Lit by the room's lights as the characters are (their nearest three about its
   middle), normals as the file has them (made from the triangles if it has none).
-- 64 props at most at once; they go with a new game (the mod's scripts load them again).
+- 64 props at most at once; they go with a new game (the mod's scripts load them again). A held
+  item's own model is outside this pool ("Held items" below).
 
 | Word | Stack | What |
 |---|---|---|
@@ -296,6 +297,51 @@ and as it goes, so a mod can show it its own way (a prop of it where it lies) an
 A room's item ids are `items.names`' (`medallion`, `antimony-tube` ...). The sample,
 `examples/mods/item-props`, shows each one as a turning model - `PROPS/item-<id>.gltf` if the mod
 has one, else its gold cube - instead of its sparkle (`openhuey --mod examples/mods/item-props`).
+
+### Held items (API 1.5, `PROPS/grips.txt`)
+
+In a headset, a hand that has taken an item draws the model its grip names, or its own
+`library/data/PROPS/item-<id>.gltf` when it names none (the id decimal: `medallion` is `$70`, 112;
+`antimony-powder` is `$91`, 145). Without either file the item keeps the game's own card / key /
+powder / ball, as before. Models are cached by file, not by item: several items can name one file
+and give it different tints. The cache is the held-item cache (its own, not the mod props' 64-slot
+pool); a file is loaded once, the first time a hand takes an item that names it.
+
+Its place comes only from `library/data/PROPS/grips.txt`. An item may have up to two lines, one
+for each hand:
+
+```
+item  bone  ox oy oz  qx qy qz qw  [grip-pose-name]  [model=<file>]  [r g b]
+148   46    1 0.5 0   0 0 0 1      SampleGrip        model=antimony.gltf  1 0.75 0.75
+145   46    0 0 0     0 0 0 1                        model=antimony.gltf  0.55 0.55 0.55
+145   30    0 0.2 0   0 0.70710678 0 0.70710678      model=antimony.gltf  0.3 0.3 0.3
+```
+
+- `item`: the item's id, decimal, 0 .. 191.
+- `bone`: 30 (her left hand, +x) or 46 (her right, -x).
+- The hand holding the item uses its own line when there is one. With only the other hand's line,
+  that line is mirrored across her body: the offset's x is negated and the quaternion becomes
+  `(x, -y, -z, w)`. A second line for the same item and the other bone overrides the mirror. This
+  is the same for a thing her hand takes and the equipped magnesia / antimony.
+- `ox oy oz`: the model's origin from the wrist, in the wrist bone's own axes, game units (Fiona is
+  about 15 tall, Y up).
+- `qx qy qz qw`: the model's turn about that origin, a unit quaternion (x y z w).
+- `grip-pose-name`: kept for the mod; the game does not change her hand's shape from it (her hand
+  shapes stay the animations').
+- `model=<file>`: a model in `PROPS/` (for example `model=antimony.gltf`), shared by every item
+  that names it. A name already starting with `PROPS/` is used as it is. Without this the item's
+  own `PROPS/item-<id>.gltf` is used.
+- `r g b`: multiplies the model's colours (1 1 1: as authored), so one model can serve recolour
+  variants.
+- The optional words may be in any order. A comment starts with `#`, `;` or `//`. A line with too
+  few or too many words is skipped. A second line for the same item and the same hand is ignored
+  (the first is kept).
+- An item with a model but no line sits at the wrist as it is: the model's origin at the wrist, no
+  offset and no turn.
+
+The model keeps its authored size and shading and is drawn in the room's 3D pass with the things
+lying about. The `vr.item-prop-debug` option (VR Options, VR Enhancements, off by default) draws
+small RGB axes at the model's origin and the wrist bone while a held item has one.
 
 A typical VR pickup: on `item-placed` load and place the item's prop (remember k and the room's
 id: the sender); as the hand grabs it, carry the prop (`-1` room: it follows her through doors);

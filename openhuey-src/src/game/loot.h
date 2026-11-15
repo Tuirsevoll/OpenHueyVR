@@ -31,8 +31,14 @@ int loot_keep(float *x, float *y, float *z, int *fx);
 void loot_got(int item);
 /* room parts that are picked up with the action button (no sparkle of their own). */
 void loot_maintain(void);
-/* an equipped item, in the hand: its model, or the thrown sprite when that is its art. */
-void loot_draw_held(int item, const Mat4 *world, const Mat4 *view_proj);
+/* an equipped item, in the hand (`side` 0 the left, 1 the right): its model, or the thrown sprite
+ * when that is its art. */
+void loot_draw_held(int item, int side, const Mat4 *world, const Mat4 *view_proj);
+/* 1 when the item's own held model is loaded in its private, by-file cache (a check; not the
+ * shared props) */
+int loot_item_prop_loaded(int item, int side);
+/* the cache slot that model is in (a check of the by-file cache): -1 none */
+int loot_item_prop_slot(int item, int side);
 
 int loot_nearest(Vec3 hand, int skip, float *d2);
 void loot_grab(int index, int side);

@@ -83,6 +83,9 @@ void engine_tick(Engine *e);
 float doorway_faded(const Engine *e, const Actor *a);
 /* a sound at a point of the room, as it is (Sound_PlayBankAt: the effects' own) */
 void engine_sound_at(uint32_t id, int bank, Vec3 at);
+/* the lights on a point of the room, for the next lit draws (a mod's held item, as the props in
+ * the room): the room's nearest three, or a scene's own */
+void engine_lights_at(Vec3 at);
 /* the scripts' 2D drawing for this frame (the on-draw hooks) */
 void engine_draw_2d(Engine *e);
 /* a debugging aid: OPENHUEY_SKIP=loot,props,refl,... switches one draw pass off, to find which one

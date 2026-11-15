@@ -4902,6 +4902,7 @@ void bind_engine(Forth *f) {
     field(f, "vr.panic-shake", offsetof(VrOptions, panic_shake));
     field(f, "vr.panic-stumbles", offsetof(VrOptions, panic_stumbles));
     field(f, "vr.panic-haptics", offsetof(VrOptions, panic_haptics));
+    field(f, "vr.item-prop-debug", offsetof(VrOptions, item_prop_debug));
     forth_set_current(f, saved);
 }
 

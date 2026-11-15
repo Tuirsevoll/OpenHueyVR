@@ -1,0 +1,8 @@
+# item-props: where a held item's own model sits in the hand (docs/modding.md, "Held items").
+# item bone ox oy oz qx qy qz qw [grip-pose-name] [model=<file>] [tint r g b]
+# Bone 30 is her left hand (+x), bone 46 her right (-x). The item ids are decimal.
+# One line: the other hand's place is its mirror. A second line for the same item overrides it.
+# model= names a file in PROPS/; several items may share one model, each with its own tint.
+148 46  1 0.5 0   0 0 0 1  sample-grip  model=antimony.gltf  1 0.75 0.75
+145 46  0 0 0     0 0 0 1               model=antimony.gltf  0.55 0.55 0.55
+145 30  0 0.2 0   0 0.70710678 0 0.70710678  model=antimony.gltf  0.3 0.3 0.3

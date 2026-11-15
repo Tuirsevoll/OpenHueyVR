@@ -10,19 +10,31 @@
 #include <string.h>
 
 #include "game/engine.h"
+#include "game/itemprops.h"
 #include "game/loot.h"
 #include "game/placed.h"
 #include "game/progress.h"
+#include "game/props.h"
 #include "game/room.h"
 #include "game/things.h"
 #include "hactor/hactor.h"
+#include "platform/vr.h"
 #include "render/render.h"
+#include "core/files.h"
 
 /* ---- the little of the game loot.c reads when nothing is picked up ---- */
 Engine gEngine;
 Progress gProgress;
+VrOptions gVrOptions;   /* (the debug axes are off here) */
 
 int vr_active(void) { return 1; }
+
+static int sLightsAt;
+
+void engine_lights_at(Vec3 at) {
+    (void)at;
+    sLightsAt = 1;
+}
 
 /* the hand, as the check puts it: `sHandOn` 0 no hand is tracked */
 static int sHandOn = 1;
@@ -55,6 +67,14 @@ void render_mesh_upload(GpuMesh *m, const MeshVertex *v, int nv) {
     (void)m;
     (void)v;
     (void)nv;
+}
+
+void render_mesh_free(GpuMesh *m) {
+    (void)m;
+}
+
+void render_texture_free(GpuTexture t) {
+    (void)t;
 }
 
 void render_mesh_tint(float r, float g, float b, float a) {
@@ -180,6 +200,64 @@ int main(void) {
     loot_draw_from_hands();
     loot_drawn_frame(item, &pos, &r, &u, &f);
     CHECK("a thing no hand has is drawn where the world has it", pos.z > 0.999f && pos.z < 1.001f);
+
+    /* a held item's own model (the sample mod's shared PROPS/antimony.gltf): loaded through the
+     * files layer when the hand takes it, and drawn from the wrist bone on the next draw */
+    {
+        Actor *f = &gEngine.actors[0];
+        Mat4 vp = mat4_identity();
+        float d2 = 0.0f;
+        int slot;
+
+        files_layer_add(ITEMPROPS_SAMPLE_DIR);
+        itemprops_reset();   /* (the earlier item's grab looked for a grips.txt before this layer) */
+        memset(f, 0, sizeof(*f));
+        f->used = 1;
+        snprintf(f->name, sizeof(f->name), "O_FIN/FIN_000");
+        f->model.nbones = 47;
+        f->bones[30] = vec3(0.0f, 0.0f, 0.0f);
+        f->bone_axes[30][0] = vec3(1.0f, 0.0f, 0.0f);
+        f->bone_axes[30][1] = vec3(0.0f, 1.0f, 0.0f);
+        f->bone_axes[30][2] = vec3(0.0f, 0.0f, 1.0f);
+        f->bones[46] = vec3(0.0f, 0.0f, 0.0f);
+        f->bone_axes[46][0] = vec3(1.0f, 0.0f, 0.0f);
+        f->bone_axes[46][1] = vec3(0.0f, 1.0f, 0.0f);
+        f->bone_axes[46][2] = vec3(0.0f, 0.0f, 1.0f);
+        loot_at(148, 0.0f, 0.0f, 0.0f);
+        item = loot_nearest(vec3(0.0f, 0.0f, 0.0f), -1, &d2);
+        loot_grab(item, 1);
+        sLightsAt = 0;
+        loot_draw(&vp, 1);
+        CHECK("a held item's own model is loaded and drawn", loot_item_prop_loaded(148, 1) && sLightsAt == 1);
+
+        sLightsAt = 0;
+        loot_draw_held(145, 1, &vp, &vp);   /* (the equipped antimony path) */
+        CHECK("an equipped item's own model is drawn", loot_item_prop_loaded(145, 1) && sLightsAt == 1);
+
+        slot = loot_item_prop_slot(148, 1);
+        CHECK("two items naming one model share its cache slot",
+              slot >= 0 && slot == loot_item_prop_slot(145, 1));
+
+        sLightsAt = 0;
+        loot_draw_held(148, 0, &vp, &vp);   /* (the other hand: the right hand's line mirrored) */
+        CHECK("the mirrored hand uses the same model file",
+              loot_item_prop_loaded(148, 0) && loot_item_prop_slot(148, 0) == slot && sLightsAt == 1);
+
+        {
+            int i, shared = 0;
+
+            for (i = 0; i < MAX_PROPS; i++) {
+                Prop *p = props_get(i);
+
+                if (p != NULL && (strcmp(p->path, "PROPS/antimony.gltf") == 0 ||
+                                  strcmp(p->path, "PROPS/item-148.gltf") == 0 ||
+                                  strcmp(p->path, "PROPS/item-145.gltf") == 0)) {
+                    shared = 1;
+                }
+            }
+            CHECK("held item models are not in the shared props pool", shared == 0);
+        }
+    }
 
     printf("loot frame: %d failed\n", fails);
     return fails != 0;

@@ -5,12 +5,15 @@
 #include "forth_internal.h"
 
 #include "engine.h"
+#include "itemprops.h"
 #include "placed.h"
 #include "progress.h"
+#include "props.h"
 #include "room.h"
 #include "sprites.h"
 #include "things.h"
 #include "vrhands.h"
+#include "../core/files.h"
 #include "../data/pac.h"
 #include "../data/texbank.h"
 #include "../hactor/hactor.h"
@@ -71,7 +74,7 @@ typedef struct PropFrame {
     float yaw;
 } PropFrame;
 
-typedef struct Prop {
+typedef struct LootProp {
     int used, style, item, fact, fx, mode, mesh, group, placed;
     void *xt;
     Vec3 home, pos;
@@ -85,7 +88,7 @@ typedef struct Prop {
      * where the world has it. Only ever set for a draw (loot_draw_from_hands). */
     int held;
     PropFrame draw;
-} Prop;
+} LootProp;
 
 typedef struct Template {
     int ready;
@@ -102,6 +105,23 @@ static struct {
 } sIcons[64];
 static int sIconN;
 
+/* A held item's model, cached by its file (several items may name one) and never the shared
+ * MAX_PROPS pool the mods' props use. `state` 0 a free slot, 1 loaded, -1 its file could not be
+ * read. Loaded once when an item is first held (loot_grab), so the draw only reads it. */
+#define ITEM_PROP_BONE_LEFT 30
+#define ITEM_PROP_BONE_RIGHT 46
+#define ITEM_MODEL_SLOTS 256   /* (the 192 items' own names and the shared files; about 45 loaded) */
+typedef struct ItemModel {
+    int state;
+    char path[128];
+    Prop prop;
+} ItemModel;
+static ItemModel sItemModel[ITEM_MODEL_SLOTS];
+/* the debug option's three axes, made once (small RGB quads: no line primitive in render_mesh) */
+static GpuMesh sItemAxes;
+static MeshDraw sItemAxisDraw;
+static int sItemAxesReady;
+
 static Name sNames[NAME_N];
 static int sNameN;
 static int sKind[0xC0];
@@ -109,7 +129,7 @@ static char sIcon[0xC0][64];
 static int sParsed;
 static Cat sCat[CAT_N];
 static int sCatN;
-static Prop sProp[LOOT_N];
+static LootProp sProp[LOOT_N];
 static Template sKey, sDoll, sCard, sPowder, sBall;
 static int sSpark[16], sSparkN;
 static int sQn, sArmed, sSettle;
@@ -470,6 +490,8 @@ static int is_ball(int item) {
     return item >= 0 && item == named_id("ball");
 }
 
+/* The fallback an item is drawn with. A held item's own model is drawn before this by
+ * item_prop_draw, so this stays the item's mesh where it lies - exactly as it was. */
 static int mesh_for_item(int item) {
     int i, model, pal;
 
@@ -491,6 +513,234 @@ static int mesh_for_item(int item) {
         return MESH_ICON;
     }
     return MESH_CARD;
+}
+
+/* ---- a held item's own model (a mod's PROPS/item-<id>.gltf, PROPS/grips.txt) ----
+ * The model is loaded once, when the item is first held, and drawn from the wrist bone the hand
+ * itself is posed from. Its offset and turn come only from grips.txt. With no line the model sits
+ * at that wrist as it is. The fallback below (mesh_for_item) is kept for every item without one. */
+
+static Actor *loot_fiona(void) {
+    int i;
+
+    for (i = 0; i < MAX_ACTORS; i++) {
+        if (gEngine.actors[i].used && strncmp(gEngine.actors[i].name, "O_FI", 4) == 0) {
+            return &gEngine.actors[i];
+        }
+    }
+    return NULL;
+}
+
+/* her left hand is bone 30 (+x), her right bone 46 (-x) */
+static int item_side_bone(int side) {
+    return side == 1 ? ITEM_PROP_BONE_RIGHT : ITEM_PROP_BONE_LEFT;
+}
+
+/* the model's own cache slot, by its file (one file, however many items name it) */
+static ItemModel *item_model_find(const char *path) {
+    int i;
+
+    for (i = 0; i < ITEM_MODEL_SLOTS; i++) {
+        if (sItemModel[i].state != 0 && strcmp(sItemModel[i].path, path) == 0) {
+            return &sItemModel[i];
+        }
+    }
+    return NULL;
+}
+
+/* the model loaded into its private cache the first time its file is asked for; NULL none */
+static ItemModel *item_model_ensure(const char *path) {
+    ItemModel *m;
+    int i;
+
+    m = item_model_find(path);
+    if (m != NULL) {
+        return m->state > 0 ? m : NULL;
+    }
+    for (i = 0; i < ITEM_MODEL_SLOTS && sItemModel[i].state != 0; i++) {
+    }
+    if (i == ITEM_MODEL_SLOTS) {
+        fprintf(stderr, "loot: held model cache full (%d files): %s\n", ITEM_MODEL_SLOTS, path);
+        return NULL;
+    }
+    m = &sItemModel[i];
+    snprintf(m->path, sizeof(m->path), "%s", path);
+    if (!files_exist(path)) {
+        m->state = -1;
+        return NULL;
+    }
+    if (!props_load_own(&m->prop, path)) {
+        fprintf(stderr, "loot: held model %s not loaded\n", path);
+        m->state = -1;
+        return NULL;
+    }
+    m->state = 1;
+    return m;
+}
+
+/* the file the item's model comes from in hand `side` (the grip's model=, or its own item-<id>) */
+static void item_model_path_for(int item, int side, char *out, size_t n) {
+    ItemGrip grip_store;
+    const ItemGrip *grip = itemprops_grip(item, item_side_bone(side), &grip_store) ? &grip_store : NULL;
+
+    itemprops_model_path(grip, item, out, n);
+}
+
+int loot_item_prop_slot(int item, int side) {
+    char path[128];
+    ItemModel *m;
+
+    if (item < 0 || item >= ITEMPROPS_ITEMS) {
+        return -1;
+    }
+    item_model_path_for(item, side, path, sizeof(path));
+    m = item_model_find(path);
+    return m != NULL && m->state > 0 ? (int)(m - sItemModel) : -1;
+}
+
+int loot_item_prop_loaded(int item, int side) {
+    return loot_item_prop_slot(item, side) >= 0;
+}
+
+static int item_holder_side(const LootProp *p) {
+    if ((p->holders & 1) != 0) {
+        return 0;
+    }
+    if ((p->holders & 2) != 0) {
+        return 1;
+    }
+    return -1;
+}
+
+/* the bone's frame in the room, as the last posed skeleton has it: its axes are the columns */
+static int item_wrist_matrix(int bone, Mat4 *out) {
+    Actor *a = loot_fiona();
+    Vec3 ax0, ax1, ax2;
+
+    if (a == NULL || bone < 0 || bone >= a->model.nbones) {
+        return 0;
+    }
+    ax0 = a->bone_axes[bone][0];
+    ax1 = a->bone_axes[bone][1];
+    ax2 = a->bone_axes[bone][2];
+    if (vec3_len(ax0) < 1e-5f || vec3_len(ax1) < 1e-5f || vec3_len(ax2) < 1e-5f) {
+        return 0;   /* (not posed yet) */
+    }
+    memset(out, 0, sizeof(*out));
+    out->m[0] = ax0.x;  out->m[1] = ax0.y;  out->m[2] = ax0.z;
+    out->m[4] = ax1.x;  out->m[5] = ax1.y;  out->m[6] = ax1.z;
+    out->m[8] = ax2.x;  out->m[9] = ax2.y;  out->m[10] = ax2.z;
+    out->m[12] = a->bones[bone].x;
+    out->m[13] = a->bones[bone].y;
+    out->m[14] = a->bones[bone].z;
+    out->m[15] = 1.0f;
+    return 1;
+}
+
+/* one axis as two crossed thin quads, so it is seen from any side */
+static void item_axis_vertex(MeshVertex *v, Vec3 p, uint8_t r, uint8_t g, uint8_t b) {
+    memset(v, 0, sizeof(*v));
+    v->x = p.x;
+    v->y = p.y;
+    v->z = p.z;
+    v->rgba[0] = r;
+    v->rgba[1] = g;
+    v->rgba[2] = b;
+    v->rgba[3] = 0x80;
+}
+
+static void item_axis_quad(MeshVertex *v, int *n, Vec3 dir, Vec3 side, uint8_t r, uint8_t g, uint8_t b) {
+    Vec3 end = vec3_scale(dir, 2.0f);
+    Vec3 s0 = vec3_scale(side, -0.035f), s1 = vec3_scale(side, 0.035f);
+    Vec3 p0 = s0, p1 = s1, p2 = vec3_add(end, s1), p3 = vec3_add(end, s0);
+
+    item_axis_vertex(&v[(*n)++], p0, r, g, b);
+    item_axis_vertex(&v[(*n)++], p1, r, g, b);
+    item_axis_vertex(&v[(*n)++], p2, r, g, b);
+    item_axis_vertex(&v[(*n)++], p0, r, g, b);
+    item_axis_vertex(&v[(*n)++], p2, r, g, b);
+    item_axis_vertex(&v[(*n)++], p3, r, g, b);
+}
+
+static void item_axes_make(void) {
+    MeshVertex v[36];
+    int n = 0;
+
+    item_axis_quad(v, &n, vec3(1.0f, 0.0f, 0.0f), vec3(0.0f, 1.0f, 0.0f), 0x80, 0, 0);
+    item_axis_quad(v, &n, vec3(1.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 1.0f), 0x80, 0, 0);
+    item_axis_quad(v, &n, vec3(0.0f, 1.0f, 0.0f), vec3(1.0f, 0.0f, 0.0f), 0, 0x80, 0);
+    item_axis_quad(v, &n, vec3(0.0f, 1.0f, 0.0f), vec3(0.0f, 0.0f, 1.0f), 0, 0x80, 0);
+    item_axis_quad(v, &n, vec3(0.0f, 0.0f, 1.0f), vec3(1.0f, 0.0f, 0.0f), 0, 0, 0x80);
+    item_axis_quad(v, &n, vec3(0.0f, 0.0f, 1.0f), vec3(0.0f, 1.0f, 0.0f), 0, 0, 0x80);
+    render_mesh_upload(&sItemAxes, v, n);
+    memset(&sItemAxisDraw, 0, sizeof(sItemAxisDraw));
+    sItemAxisDraw.first = 0;
+    sItemAxisDraw.count = n;
+    sItemAxisDraw.texture = -1;
+    sItemAxisDraw.part = MESH_SOLID;
+    sItemAxisDraw.no_zwrite = 1;
+    sItemAxesReady = 1;
+}
+
+static void item_axes_draw(const Mat4 *at, const Mat4 *view_proj) {
+    static const uint32_t all[8] = {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u};
+    Mat4 mvp;
+
+    if (!gVrOptions.item_prop_debug || at == NULL || view_proj == NULL) {
+        return;
+    }
+    if (!sItemAxesReady) {
+        item_axes_make();
+    }
+    mvp = mat4_mul(*view_proj, *at);
+    render_mesh_tint(1.0f, 1.0f, 1.0f, 1.0f);
+    render_mesh(&sItemAxes, &mvp, &sItemAxisDraw, 1, NULL, 0, all);
+}
+
+/* the item's mod model in the hand: 1 when it was drawn (the fallback then stays out of it) */
+static int item_prop_draw(int item, int side, const Mat4 *view_proj) {
+    static const uint32_t all[8] = {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u};
+    ItemModel *m;
+    ItemGrip grip_store;
+    const ItemGrip *grip;
+    Prop *p;
+    Mat4 wrist, world, mvp;
+    Vec3 c;
+    char path[128];
+    int bone;
+    float r = 1.0f, g = 1.0f, b = 1.0f;
+
+    if (view_proj == NULL) {
+        return 0;
+    }
+    bone = item_side_bone(side);
+    /* the holding hand's own line; with only the other hand's line, its mirror across her body */
+    grip = itemprops_grip(item, bone, &grip_store) ? &grip_store : NULL;
+    itemprops_model_path(grip, item, path, sizeof(path));
+    m = item_model_ensure(path);
+    if (m == NULL) {
+        return 0;
+    }
+    p = &m->prop;
+    if (!item_wrist_matrix(bone, &wrist)) {
+        return 0;
+    }
+    world = itemprops_matrix(grip, &wrist);
+    if (grip != NULL) {
+        r = grip->tint[0];
+        g = grip->tint[1];
+        b = grip->tint[2];
+    }
+    c = mat4_point(&world, vec3((p->lo.x + p->hi.x) * 0.5f, (p->lo.y + p->hi.y) * 0.5f,
+                                (p->lo.z + p->hi.z) * 0.5f));
+    engine_lights_at(c);   /* (lit by the room's lights about its middle, as the props in the room) */
+    mvp = mat4_mul(*view_proj, world);
+    render_mesh_tint(r, g, b, 1.0f);
+    render_mesh(&p->gpu, &mvp, p->d, p->nd, p->tex, p->ntex, all);
+    render_mesh_tint(1.0f, 1.0f, 1.0f, 1.0f);
+    item_axes_draw(&wrist, view_proj);
+    item_axes_draw(&world, view_proj);
+    return 1;
 }
 
 /* the fact's own spelling (c1f-3-camomile, got-study-key), not whichever name shares its number */
@@ -1344,9 +1594,9 @@ static Cat *cat_item(int item) {
     return NULL;
 }
 
-static Prop *prop_near(float x, float y, float z, float r) {
+static LootProp *prop_near(float x, float y, float z, float r) {
     int i;
-    Prop *best = NULL;
+    LootProp *best = NULL;
     float bd = r * r;
 
     for (i = 0; i < LOOT_N; i++) {
@@ -1368,7 +1618,7 @@ static Prop *prop_near(float x, float y, float z, float r) {
     return best;
 }
 
-static Prop *fresh(void) {
+static LootProp *fresh(void) {
     int i;
 
     for (i = 0; i < LOOT_N; i++) {
@@ -1386,7 +1636,7 @@ static Prop *fresh(void) {
     return NULL;
 }
 
-static void recover_item(Prop *p) {
+static void recover_item(LootProp *p) {
     int id;
     Cat *c;
 
@@ -1428,7 +1678,7 @@ static void recover_item(Prop *p) {
     }
 }
 
-static void fill_from_cat(Prop *p, Cat *c, float x, float y, float z) {
+static void fill_from_cat(LootProp *p, Cat *c, float x, float y, float z) {
     p->item = c->item;
     p->fact = c->fact;
     p->fx = c->fx;
@@ -1464,7 +1714,7 @@ void loot_reset(void) {
 
 void loot_sparkle(int fx, float x, float y, float z) {
     Cat *c;
-    Prop *p;
+    LootProp *p;
 
     if (!vr_active()) {
         return;
@@ -1516,7 +1766,7 @@ void loot_sparkle(int fx, float x, float y, float z) {
 
 void loot_at(int item, float x, float y, float z) {
     Cat *c;
-    Prop *p;
+    LootProp *p;
 
     if (!vr_active()) {
         return;
@@ -1569,7 +1819,7 @@ void loot_move(int item, float x, float y, float z) {
 }
 
 void loot_part(int item, int fact, int fx, int part) {
-    Prop *p;
+    LootProp *p;
     int g = 0x15 + part;
     int i;
 
@@ -1623,7 +1873,7 @@ void loot_part(int item, int fact, int fx, int part) {
 
 void loot_doll(int item, int fact, int fx) {
     Placed *p;
-    Prop *pr;
+    LootProp *pr;
     int i, idx = -1;
 
     if (!vr_active()) {
@@ -1711,7 +1961,7 @@ int loot_spark_pop(int *fx) {
     return 1;
 }
 
-static void queue_prop(Prop *p) {
+static void queue_prop(LootProp *p) {
     int i = (int)(p - sProp);
 
     if (sQn >= 8 || p->pending) {
@@ -1768,7 +2018,7 @@ int loot_fact(void) {
     return sProp[sSettle].fact;
 }
 
-static void hide_world(Prop *p) {
+static void hide_world(LootProp *p) {
     if (p->style == ST_PART) {
         group_set(p->group, 0);
     }
@@ -1786,7 +2036,7 @@ void loot_consume(void) {
 }
 
 int loot_keep(float *x, float *y, float *z, int *fx) {
-    Prop *p;
+    LootProp *p;
 
     if (sSettle < 0 || sSettle >= LOOT_N || !sProp[sSettle].used) {
         *x = *y = *z = 0;
@@ -1869,7 +2119,7 @@ int loot_nearest(Vec3 hand, int skip, float *d2) {
 
     *d2 = 5.0f * 5.0f;
     for (i = 0; i < LOOT_N; i++) {
-        Prop *p = &sProp[i];
+        LootProp *p = &sProp[i];
         Vec3 at;
         float d;
         if (!p->used || p->pending || i == skip) {
@@ -1899,12 +2149,18 @@ int loot_nearest(Vec3 hand, int skip, float *d2) {
 }
 
 void loot_grab(int index, int side) {
-    Prop *p;
+    LootProp *p;
 
     if (index < 0 || index >= LOOT_N || !sProp[index].used) {
         return;
     }
     p = &sProp[index];
+    {
+        char path[128];
+
+        item_model_path_for(p->item, side, path, sizeof(path));
+        (void)item_model_ensure(path);   /* (loaded now, off the render pass: the hand's draw only reads it) */
+    }
     p->holders |= 1 << side;
     if (p->style == ST_PART) {
         group_set(p->group, 0);
@@ -1919,7 +2175,7 @@ void loot_grab(int index, int side) {
 }
 
 void loot_follow(int index, Vec3 at, Vec3 right, Vec3 up, Vec3 fwd) {
-    Prop *p;
+    LootProp *p;
 
     if (index < 0 || index >= LOOT_N || !sProp[index].used) {
         return;
@@ -1938,7 +2194,7 @@ void loot_follow(int index, Vec3 at, Vec3 right, Vec3 up, Vec3 fwd) {
 }
 
 void loot_let_go(int index, int side) {
-    Prop *p;
+    LootProp *p;
 
     if (index < 0 || index >= LOOT_N || !sProp[index].used) {
         return;
@@ -1984,7 +2240,7 @@ int loot_held(int index, int *holders) {
 }
 
 int loot_drawn_frame(int index, Vec3 *pos, Vec3 *right, Vec3 *up, Vec3 *fwd) {
-    Prop *p;
+    LootProp *p;
 
     if (index < 0 || index >= LOOT_N || !sProp[index].used) {
         return 0;
@@ -2012,7 +2268,7 @@ void loot_draw_from_hands(void) {
     int i, side;
 
     for (i = 0; i < LOOT_N; i++) {
-        Prop *p = &sProp[i];
+        LootProp *p = &sProp[i];
 
         p->held = 0;
         if (!p->used) {
@@ -2031,7 +2287,7 @@ void loot_draw_from_hands(void) {
     }
 }
 
-static Mat4 prop_world(const Prop *p) {
+static Mat4 prop_world(const LootProp *p) {
     Mat4 m = mat4_identity();
     const Vec3 *right = &p->right, *up = &p->up, *fwd = &p->fwd, *pos = &p->pos;
 
@@ -2193,10 +2449,17 @@ static int draw_room_group(int group, const Mat4 *hand, const Mat4 *vp) {
     return 1;
 }
 
-static void draw_spawned(Prop *p, const Mat4 *vp) {
+static void draw_spawned(LootProp *p, const Mat4 *vp) {
     int model, pal;
     Mat4 world = prop_world(p);
 
+    if (p->holders) {   /* (a hand has it: its own model, at that hand's wrist) */
+        int side = item_holder_side(p);
+
+        if (side >= 0 && item_prop_draw(p->item, side, vp)) {
+            return;
+        }
+    }
     if (gfm_of(p->item, &model, &pal) && things_model_draw(model, pal, &world, vp)) {
         return;
     }
@@ -2231,7 +2494,7 @@ static void draw_spawned(Prop *p, const Mat4 *vp) {
     draw_template(&sCard, vp, &world, p->item);
 }
 
-static void draw_placed_held(Prop *p, const Mat4 *vp) {
+static void draw_placed_held(LootProp *p, const Mat4 *vp) {
     Placed *pl;
     Mat4 sc = mat4_identity(), world, mvp;
     static const uint32_t all[8] = {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u};
@@ -2245,6 +2508,13 @@ static void draw_placed_held(Prop *p, const Mat4 *vp) {
     }
     if (vec3_len(r) < 0.5f || vec3_len(u) < 0.5f || vec3_len(f) < 0.5f) {
         return;   /* (a hand's frame not given yet: an item's mesh would land flat on the screen) */
+    }
+    if (p->holders) {
+        int side = item_holder_side(p);
+
+        if (side >= 0 && item_prop_draw(p->item, side, vp)) {
+            return;
+        }
     }
     pl = &gEngine.room.placed.p[p->placed];
     if (pl->mesh.nd > 0) {
@@ -2267,7 +2537,7 @@ void loot_draw(const Mat4 *view_proj, int layer) {
         return;
     }
     for (i = 0; i < LOOT_N; i++) {
-        Prop *p = &sProp[i];
+        LootProp *p = &sProp[i];
         int show;
         if (!p->used) {
             continue;
@@ -2311,7 +2581,7 @@ void loot_maintain(void) {
     for (i = 0; i < sCatN; i++) {
         Cat *c = &sCat[i];
         int j, have = 0;
-        Prop *p;
+        LootProp *p;
         Vec3 at, cen;
         if (c->room != room || c->group <= 0 || fact_on(c->fact) || !group_on(c->group)) {
             continue;
@@ -2350,11 +2620,14 @@ void loot_maintain(void) {
     }
 }
 
-void loot_draw_held(int item, const Mat4 *world, const Mat4 *view_proj) {
+void loot_draw_held(int item, int side, const Mat4 *world, const Mat4 *view_proj) {
     int model, pal;
     float r, g, b;
 
     if (item < 0 || world == NULL || view_proj == NULL) {
+        return;
+    }
+    if (item_prop_draw(item, side, view_proj)) {   /* (its own line for that hand, or the other hand's mirror) */
         return;
     }
     ensure_catalog();

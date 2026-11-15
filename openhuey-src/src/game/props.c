@@ -24,31 +24,26 @@ static uint8_t *read_beside(void *user, const char *rel, size_t *size) {
     return files_read(path, size);
 }
 
-int props_load(const char *path) {
+int props_load_own(Prop *p, const char *path) {
     PropMesh m;
     uint8_t *data;
     size_t size;
-    Prop *p;
-    int i, k;
+    int k;
 
-    for (i = 0; i < MAX_PROPS && sProps[i].used; i++) {
+    if (p == NULL) {
+        return 0;
     }
-    if (i == MAX_PROPS) {
-        fprintf(stderr, "prop: no room for %s (%d at most)\n", path, MAX_PROPS);
-        return -1;
-    }
+    memset(p, 0, sizeof(*p));
     if ((data = files_read(path, &size)) == NULL) {
         fprintf(stderr, "prop: no file %s\n", path);
-        return -1;
+        return 0;
     }
     k = propgltf_read(&m, data, size, read_beside, (void *)path);
     free(data);
     if (!k) {
         fprintf(stderr, "prop: %s not read\n", path);
-        return -1;
+        return 0;
     }
-    p = &sProps[i];
-    memset(p, 0, sizeof(*p));
     p->used = 1;
     p->room = -1;
     p->scale = 1.0f;
@@ -68,11 +63,25 @@ int props_load(const char *path) {
     p->lo = vec3(m.lo[0], m.lo[1], m.lo[2]);
     p->hi = vec3(m.hi[0], m.hi[1], m.hi[2]);
     propgltf_free(&m);
+    return 1;
+}
+
+int props_load(const char *path) {
+    int i;
+
+    for (i = 0; i < MAX_PROPS && sProps[i].used; i++) {
+    }
+    if (i == MAX_PROPS) {
+        fprintf(stderr, "prop: no room for %s (%d at most)\n", path, MAX_PROPS);
+        return -1;
+    }
+    if (!props_load_own(&sProps[i], path)) {
+        return -1;
+    }
     return i;
 }
 
-void props_free(int i) {
-    Prop *p = props_get(i);
+void props_free_own(Prop *p) {
     int k;
 
     if (p == NULL) {
@@ -85,6 +94,14 @@ void props_free(int i) {
     free(p->tex);
     free(p->d);
     memset(p, 0, sizeof(*p));
+}
+
+void props_free(int i) {
+    Prop *p = props_get(i);
+
+    if (p != NULL) {
+        props_free_own(p);
+    }
 }
 
 void props_clear(void) {

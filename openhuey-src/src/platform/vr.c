@@ -53,7 +53,8 @@ VrOptions gVrOptions = {
     0,        /* panic_negative */
     0,        /* panic_shake */
     1,        /* panic_stumbles */
-    2         /* panic_haptics: full */
+    2,        /* panic_haptics: full */
+    0         /* item_prop_debug: no axes */
 };
 
 #if !defined(_WIN32)

@@ -29,6 +29,10 @@ typedef struct Prop {
  * why) or there's no slot left */
 int props_load(const char *path);
 void props_free(int i);
+/* a prop of the caller's own, outside the shared pool (a held item's own model): read as
+ * props_load reads one, and freed by props_free_own. 0 if it can't be read (stderr says why) */
+int props_load_own(Prop *p, const char *path);
+void props_free_own(Prop *p);
 void props_clear(void);              /* every one gone (a new game's scripts) */
 Prop *props_get(int i);              /* NULL if i isn't one */
 Mat4 props_matrix(const Prop *p);    /* its model to the room */

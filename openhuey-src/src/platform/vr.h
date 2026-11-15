@@ -61,6 +61,7 @@ typedef struct VrOptions {
     int32_t panic_shake;      /* 1: the camera shaken by her panic */
     int32_t panic_stumbles;   /* 1: she stumbles, and may fall, running blindly into things */
     int32_t panic_haptics;    /* the beat on the controllers: 0 off, 1 half, 2 full */
+    int32_t item_prop_debug;  /* 1: small RGB axes at a held item's mod model and the wrist it sits on */
 } VrOptions;
 extern VrOptions gVrOptions;
 
