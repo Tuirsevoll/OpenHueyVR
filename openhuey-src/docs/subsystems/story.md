@@ -543,6 +543,10 @@ From `event.c`, `scene_game.c` (the order), `progress.c`.
    entering a room stops the last one's voices and loads its sounds (SceneGame_EnterRoom, the kit's
    `room-sounds`) - not while it is set: the room before's bank and what plays from it go on (the engine's
    bank 6 not reloaded either). Before 0.2.42 it was set but never read.
+10. **A fact with no flag** (`fact?`, `fact!`, `fact-off`): an item without a story fact - a console
+    `loot-at` spawn, or one a room gives no fact - passes -1. The kit ignores any index outside
+    `0 .. #story-flags - 1`, so its pickup (`takes-up`/`takes-the`) still gives it and returns it to
+    the inventory instead of touching a flag past the progress.
 10. **Quitting to the title** (state flag $1C, `quit-wanted`, with the world held - the extras room's way
    out): the title (SceneGame's play frame; ours: the pause actor's `soft-reset`). Before 0.2.42 nothing
    read it and the screen stayed black.

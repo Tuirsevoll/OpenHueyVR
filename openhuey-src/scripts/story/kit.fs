@@ -142,9 +142,9 @@ create places  #place-rooms cells allot   places #place-rooms cells 0 fill
 : run-desc-with ( x field-xt -- )  hook ?dup if  execute  else  drop  then ;
 
 \ ---- facts: the story's, by name (story-names.fs) ----
-: fact? ( n -- flag )  story-flag? ;
-: fact! ( n -- )  story-flag-set ;
-: fact-off ( n -- )  story-flag-clear ;
+: fact? ( n -- flag )  dup 0 >= over #story-flags < and if  story-flag?  else  drop false  then ;
+: fact! ( n -- )  dup 0 >= over #story-flags < and if  story-flag-set  else  drop  then ;
+: fact-off ( n -- )  dup 0 >= over #story-flags < and if  story-flag-clear  else  drop  then ;
 : state? ( n -- flag )  state-flag? ;
 : state! ( n -- )  state-flag-set ;
 : state-off ( n -- )  state-flag-clear ;

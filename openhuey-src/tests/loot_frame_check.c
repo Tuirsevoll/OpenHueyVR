@@ -286,6 +286,7 @@ int main(void) {
         loot_let_go(item, 1);
         CHECK("a released modelled item is queued", loot_waiting() == 1);
         CHECK("the pickup queue has it", loot_take(&got_item, &got_fact, &got_fx, &got_mode, &got_xt) == 1);
+        CHECK("a console-spawned item has no story fact", got_fact == -1);
         loot_consume();   /* (as takes-up: given, then loot-got retires it) */
         loot_idle();
         CHECK("it is gone after the pickup", loot_nearest(vec3(0.0f, 0.0f, 0.0f), -1, &d2) < 0);
