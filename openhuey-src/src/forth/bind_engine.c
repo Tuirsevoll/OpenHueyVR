@@ -4908,6 +4908,8 @@ void bind_engine(Forth *f) {
     field(f, "vr.item-prop-debug", offsetof(VrOptions, item_prop_debug));
     field(f, "vr.body-fp-head", offsetof(VrOptions, body_fp_head));
     field(f, "vr.arm-reach", offsetof(VrOptions, arm_reach));
+    field(f, "vr.cam-back", offsetof(VrOptions, cam_back));
+    field(f, "vr.cam-up", offsetof(VrOptions, cam_up));
     forth_set_current(f, saved);
 }
 

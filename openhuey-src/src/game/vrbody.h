@@ -70,7 +70,7 @@ void vrbody_clavicle(struct Actor *a, Mat4 *world, const Mat4 *unplace, int side
 /* Her head bone where the camera is (the anchor is her head + 1.5 by the game's own camera), so her
  * eyes are the player's and the neck stretches to them: looking down shows her chest, never the
  * inside of it. Call it before vrbody_finish. Logged once: the camera, her eye and how far apart. */
-void vrbody_head_camera(struct Actor *a, Mat4 *world, const Mat4 *unplace);
+void vrbody_head_camera(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace);
 /* FRIK's shoulders: the target her arm's root should sit at - 0.20 m below the eyes, 0.075 m behind
  * them, 0.18 m to the side, in the room's units along her body's yaw - worked out in the room and
  * brought into her model's space (unplace), then reached by TURNING the clavicle (its length kept,

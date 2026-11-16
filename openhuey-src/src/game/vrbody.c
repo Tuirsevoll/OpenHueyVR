@@ -154,7 +154,8 @@
 #define BODY_SCALE_MAX 1.25f
 #define ARM_SCALE_MIN 0.90f        /* the residual on her two arm bones, FRIK-style: a small share,
                                     * never a stretched arm */
-#define ARM_SCALE_MAX 1.25f           /* (a headset at 1.74 m needed a shade over 1.15) */
+#define ARM_SCALE_MAX 1.32f           /* (a headset at 1.74 m needed a shade under this: the hands
+                                    * meet the controllers at full stretch, unpinned) */
 #define MOVE_MIN 0.5f              /* her eye height over the player's: their motion in her sizes */
 #define MOVE_MAX 1.15f
 #define BODY_DROP_DEAD 0.04f       /* metres a head drop passes before the body follows it (a
@@ -170,6 +171,15 @@
 #define SH_BACK_M 0.075f           /* ... behind them (toward the back of the head) */
 #define SH_SIDE_M 0.18f            /* ... to each side */
 #define SH_MAX_M 0.15f             /* the most the placed shoulder may differ from her own posed one */
+
+/* the camera's seat in her head: the point of her head that goes to the camera is this far BEHIND
+ * her eyes (toward the back of her head, along her forward) and this much HIGHER, in her metres
+ * (units_per_m 12.5). The options fine-tune them (vr.cam-back, vr.cam-up, the VR Enhancements
+ * page's Body: Camera Back / Camera Height); these are their defaults and the ends of the range. */
+#define EYE_BACK_M 0.06f
+#define EYE_UP_M 0.01f
+#define EYE_BACK_MAX 0.12f
+#define EYE_UP_RANGE 0.05f
 
 #define DEG (0.017453292519943295f)
 
@@ -1505,13 +1515,13 @@ void vrbody_clavicle(struct Actor *a, Mat4 *world, const Mat4 *unplace, int side
 
 /* ---- 3b. her head at the camera: her eyes where the player's are ------------------------------ */
 
-void vrbody_head_camera(struct Actor *a, Mat4 *world, const Mat4 *unplace) {
+void vrbody_head_camera(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace) {
     const Model *m;
     Vec3 e;
-    float yaw, eye[3], cam[3], cm[3], delta[3];
+    float yaw, eye[3], cam[3], anchor[3], cm[3], am[3], delta[3], fwd[3], back, upm, u;
     int b;
 
-    if (!sActive || a == NULL || world == NULL || unplace == NULL) {
+    if (!sActive || a == NULL || world == NULL || place == NULL || unplace == NULL) {
         return;
     }
     m = &a->model;
@@ -1525,35 +1535,61 @@ void vrbody_head_camera(struct Actor *a, Mat4 *world, const Mat4 *unplace) {
     cam[0] = e.x;
     cam[1] = e.y;
     cam[2] = e.z;
-    /* her eye point, as her body has posed it */
+    u = sBones.unitsPerM > 0.5f ? sBones.unitsPerM : VR_UNITS_PER_METER;
+    /* The camera sits a little *inside* her head: the point of her head that goes to the camera is
+     * EYE_BACK_M behind her eyes - back along her forward, toward the centre of her head - and
+     * EYE_UP_M above them (the room's +Y is the ceiling). Both in her space; the player's fine
+     * tuning (vr.cam-back, vr.cam-up) is clamped to its range. */
+    back = clampf(gVrOptions.cam_back, 0.0f, EYE_BACK_MAX) * u;
+    upm = clampf(gVrOptions.cam_up, -EYE_UP_RANGE, EYE_UP_RANGE) * u;
     b = sBones.eyeBone >= 0 && sBones.eyeBone < m->nbones ? sBones.eyeBone : sBones.head;
     m_pos(&world[b], eye);
     if (b != sBones.eyeBone) {
         eye[1] += EYE_ABOVE_HEAD;   /* (no eye bone: the head bone + a little) */
     }
-    /* The camera is her head's place by the anchor's own making (her head + 1.5), so her eyes are
-     * part of one unit with it: her head bone goes where the camera is and the neck stretches to
-     * it. That is what keeps the view at her eyes - looking down shows her chest, not the inside of
-     * it. */
+    /* her eye point and the anchor point, in the room (the game's own +Y up, her forward level) */
     {
-        Vec3 em = mat4_point(unplace, vec3(cam[0], cam[1], cam[2]));
+        Vec3 er = mat4_point(place, vec3(eye[0], eye[1], eye[2]));
 
-        cm[0] = em.x;
-        cm[1] = em.y;
-        cm[2] = em.z;
+        fwd[0] = sF[0];
+        fwd[1] = 0.0f;
+        fwd[2] = sF[2];
+        if (!v_unit3(fwd, fwd)) {
+            v_set(fwd, 0.0f, 0.0f, 1.0f);
+        }
+        anchor[0] = er.x - fwd[0] * back;
+        anchor[1] = er.y + upm;
+        anchor[2] = er.z - fwd[2] * back;
     }
-    v_sub3(delta, cm, eye);
+    /* The camera is her head's place by the anchor's own making (her head + 1.5), so her head is
+     * part of one unit with it: the anchor point goes to the camera and the neck stretches to it.
+     * That is what keeps the view inside her head - looking down shows her chest. */
+    {
+        Vec3 c2 = mat4_point(unplace, vec3(cam[0], cam[1], cam[2]));
+        Vec3 a2 = mat4_point(unplace, vec3(anchor[0], anchor[1], anchor[2]));
+
+        cm[0] = c2.x;
+        cm[1] = c2.y;
+        cm[2] = c2.z;
+        am[0] = a2.x;
+        am[1] = a2.y;
+        am[2] = a2.z;
+    }
+    v_sub3(delta, cm, am);
     if (v_len3(delta) > 1.0e-5f) {
         shift_tree(world, m, sBones.head, delta);
     }
     if (!sHeadCamLogged) {
-        float u = sBones.unitsPerM > 0.5f ? sBones.unitsPerM : VR_UNITS_PER_METER;
         float d = v_len3(delta);
 
         sHeadCamLogged = 1;
         m_pos(&world[b], eye);
-        fprintf(stderr, "vrbody: head at the camera - camera %.2f %.2f %.2f, her eye %.2f %.2f %.2f, %.3f m apart\n", (double)cam[0], (double)cam[1],
-                (double)cam[2], (double)eye[0], (double)eye[1], (double)eye[2], (double)(d / u));
+        fprintf(stderr, "vrbody: head at the camera - camera %.2f %.2f %.2f, her eye %.2f %.2f %.2f,"
+                " %.3f m apart before the seat; the camera %.3f m behind her eyes and %.3f m above them;"
+                " reach_scale %.3f\n",
+                (double)cam[0], (double)cam[1], (double)cam[2], (double)eye[0], (double)eye[1],
+                (double)eye[2], (double)(d / u), (double)(back / u), (double)(upm / u),
+                (double)sBones.armScale);
     }
 }
 

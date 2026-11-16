@@ -14,6 +14,8 @@ testing the microphone and subtitles: PTT, the subtitles off until the page asks
 T{ vr-settings vr.whisper-open l@  vr-settings vr.whisper-debug l@ -> 0 0 }T
 testing the body's first-person head: hidden in her own view until the page turns it off
 T{ vr-settings vr.body-fp-head l@ -> 1 }T
+testing the VR body's camera seat: 6 cm behind her eyes, 1 cm above them
+T{ vr-settings vr.cam-back sf@ 100e f* fround f>s  vr-settings vr.cam-up sf@ 100e f* fround f>s -> 6 1 }T
 testing the headset crouch's defaults: deadzone 13%, on 25%, off 18%, sneak 35%
 T{ vr-settings vr.crouch-deadzone sf@ 100e f* fround f>s
    vr-settings vr.crouch-on sf@ 100e f* fround f>s

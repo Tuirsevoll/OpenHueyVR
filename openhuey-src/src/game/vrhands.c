@@ -1137,7 +1137,7 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         posed++;
     }
     /* the forearm's own roll, the upper arm's twist and the deltoid, the first-person head */
-    vrbody_head_camera(a, world, unplace);   /* (her eyes at the camera, the neck stretching to them) */
+    vrbody_head_camera(a, world, place, unplace);   /* (her eyes at the camera, the neck stretching to them) */
     vrbody_finish(a, world, place, unplace);
     log_hands(applied[0], applied[1], posed);
 #if VR_STEP_LOG

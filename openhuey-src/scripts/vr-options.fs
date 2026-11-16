@@ -50,7 +50,9 @@ PRIVATE>
     1 vr-settings vr.hide-door l!            \ (a hiding spot's door see-through while fully hidden: on)
     0 vr-settings vr.item-prop-debug l!      \ (small RGB axes at a held item's model and wrist: off)
     1 vr-settings vr.body-fp-head l!       \ (the VR body's head goes from her own first-person view)
-    0e vr-settings vr.arm-reach sf! ;      \ (the player's reach, metres: 0 until a calibration measures it)
+    0e vr-settings vr.arm-reach sf!        \ (the player's reach, metres: 0 until a calibration measures it)
+    0.06e vr-settings vr.cam-back sf!      \ (the camera 6 cm behind her eyes, in her head: vrbody.c
+    0.01e vr-settings vr.cam-up sf! ;      \  EYE_BACK_M/EYE_UP_M; a touch higher)
 
 \ the options written out as Forth, read back at start-up (each line runs)
 : save-vr-options ( -- )
@@ -84,6 +86,8 @@ PRIVATE>
     vr-settings vr.item-prop-debug l@ n>s type       ."  vr-settings vr.item-prop-debug l!" cr
     vr-settings vr.body-fp-head l@ n>s type          ."  vr-settings vr.body-fp-head l!" cr
     vr-settings vr.arm-reach sf@ 6 f>s$ type          ."  vr-settings vr.arm-reach sf!" cr
+    vr-settings vr.cam-back sf@ 6 f>s$ type          ."  vr-settings vr.cam-back sf!" cr
+    vr-settings vr.cam-up sf@ 6 f>s$ type          ."  vr-settings vr.cam-up sf!" cr
 
     vr-settings vr.panic-tint l@ n>s type            ."  vr-settings vr.panic-tint l!" cr
     vr-settings vr.panic-smear l@ n>s type           ."  vr-settings vr.panic-smear l!" cr

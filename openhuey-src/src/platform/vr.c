@@ -59,6 +59,8 @@ VrOptions gVrOptions = {
     2,        /* panic_haptics: full */
     0,        /* item_prop_debug: no axes */
     1,        /* body_fp_head: the first-person head is shrunk away (on) */
+    0.06f,    /* cam_back: the camera 6 cm behind her eyes, in her head (vrbody.c's EYE_BACK_M) */
+    0.01f,    /* cam_up: ... and a centimetre higher (EYE_UP_M) */
     0.0f      /* arm_reach: not measured - the body sizes the arm from the eye height */
 };
 

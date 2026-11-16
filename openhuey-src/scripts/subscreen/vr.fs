@@ -10,7 +10,7 @@ IN: subscreen.vr
 USING: engine ps2-screen subscreen.state subscreen.art subscreen.input vr-options ;
 
 \ the items a row can be (which page shows it is below)
-enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-whisper vr-whisper-debug vr-audio3d vr-hide-door vr-item-prop-debug vr-fp-head
+enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-whisper vr-whisper-debug vr-audio3d vr-hide-door vr-item-prop-debug vr-fp-head vr-cam-back vr-cam-up
               vr-comfort-open vr-hewie-open vr-enhance-open vr-panic-open vr-panic-preset
               vr-panic-tint vr-panic-smear vr-panic-zoom vr-panic-negative vr-panic-shake vr-panic-stumbles vr-panic-haptics ;
 
@@ -25,7 +25,7 @@ variable vr-return-at  0 vr-return-at !
 create main-rows     vr-cal , vr-hand , vr-comfort-open , vr-hewie-open , vr-enhance-open , vr-panic-open ,
 create comfort-rows  vr-turn , vr-comfort , vr-teleport , vr-seated ,
 create hewie-rows    vr-whisper , vr-whisper-debug ,
-create enhance-rows  vr-audio3d , vr-hide-door , vr-item-prop-debug , vr-fp-head ,
+create enhance-rows  vr-audio3d , vr-hide-door , vr-item-prop-debug , vr-fp-head , vr-cam-back , vr-cam-up ,
 create panic-rows    vr-panic-preset , vr-panic-tint , vr-panic-smear , vr-panic-zoom ,
                      vr-panic-negative , vr-panic-shake , vr-panic-stumbles , vr-panic-haptics ,
 : page-rows ( -- addr )
@@ -40,7 +40,7 @@ create panic-rows    vr-panic-preset , vr-panic-tint , vr-panic-smear , vr-panic
     vr-page @ case
         vp-comfort of  4  endof
         vp-hewie of    2  endof
-        vp-enhance of  4  endof
+        vp-enhance of  6  endof
         vp-panic of    8  endof
         >r 6 r>
     endcase ;
@@ -104,6 +104,8 @@ create panic-rows    vr-panic-preset , vr-panic-tint , vr-panic-smear , vr-panic
           vr-hide-door of  s" Hiding Spot Door Transparency"  endof
           vr-item-prop-debug of  s" Held Item Debug Axes"  endof
           vr-fp-head of  s" Body: Hide Head in First Person"  endof
+          vr-cam-back of  s" Body: Camera Back"  endof
+          vr-cam-up of  s" Body: Camera Height"  endof
           vr-comfort-open of  s" Comfort Options"  endof
           vr-hewie-open of  s" Hewie"  endof
           vr-enhance-open of  s" VR Enhancements"  endof
@@ -133,6 +135,8 @@ create panic-rows    vr-panic-preset , vr-panic-tint , vr-panic-smear , vr-panic
         vr-hide-door of  vr-settings vr.hide-door l@ on-off$  endof
         vr-item-prop-debug of  vr-settings vr.item-prop-debug l@ on-off$  endof
         vr-fp-head of  vr-settings vr.body-fp-head l@ on-off$  endof
+        vr-cam-back of  vr-settings vr.cam-back sf@ 2 f>s$  endof
+        vr-cam-up of  vr-settings vr.cam-up sf@ 2 f>s$  endof
         vr-comfort-open of  s" Open"  endof
         vr-hewie-open of  s" Open"  endof
         vr-enhance-open of  s" Open"  endof
@@ -191,6 +195,14 @@ variable vr-step
             se-decide  save-vr-options endof
         vr-fp-head of
             vr-settings vr.body-fp-head l@ 0= 1 and vr-settings vr.body-fp-head l!
+            se-decide  save-vr-options endof
+        vr-cam-back of   \ (the camera's seat in her head: 0..0.12 m, by 0.01)
+            vr-settings vr.cam-back sf@  vr-step @ s>f 0.01e f* f+  0e fmax  0.12e fmin
+            vr-settings vr.cam-back sf!
+            se-decide  save-vr-options endof
+        vr-cam-up of   \ (-0.05..+0.05 m, by 0.01; up is the ceiling)
+            vr-settings vr.cam-up sf@  vr-step @ s>f 0.01e f* f+  -0.05e fmax  0.05e fmin
+            vr-settings vr.cam-up sf!
             se-decide  save-vr-options endof
         vr-comfort-open of  vp-comfort open-vr-page  endof
         vr-hewie-open of    vp-hewie open-vr-page  endof

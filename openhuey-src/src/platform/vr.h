@@ -65,6 +65,10 @@ typedef struct VrOptions {
     /* the VR body (platform/../game/vrbody.c): VRIK's first-person head */
     int32_t body_fp_head;     /* 1: the head and the choker go from her first-person view (the neck
                                * and the head collapsed - VRIK's shrink); 0: left as they are */
+    /* the VR body's camera seat in her head (vrbody.c EYE_BACK_M/EYE_UP_M): the camera a little
+     * behind her eyes, toward the centre of her head, and a touch higher - her space, metres */
+    float cam_back;           /* 0..0.12 m behind her eyes */
+    float cam_up;             /* -0.05..0.05 m, + toward the ceiling */
     /* the body calibration's second half (vr_calibrate: the same action as the eye height): the
      * player's reach, the furthest a controller went from the head while it was measured, metres.
      * 0: not measured - the body sizes the arm from the eye height (vrbody.c) */

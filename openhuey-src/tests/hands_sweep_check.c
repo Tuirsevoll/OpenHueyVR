@@ -388,6 +388,8 @@ static void check_arm_pose(const char *library) {
     memcpy(sPosed, sRest, sizeof(Mat4) * (size_t)sRestN);
 
     /* a session: her eyes level, her left is the room's +x, a hand a side in front of her */
+    gVrOptions.cam_back = 0.06f;   /* (vr.c's defaults: the camera inside her head, in her space) */
+    gVrOptions.cam_up = 0.01f;
     sVrOn = 1;
     sVrYaw = 3.14159265f;   /* (the play space's -z is her +z) */
     sVrEye = vec3(0.0f, 16.6f, 0.0f);
@@ -426,7 +428,7 @@ static void check_arm_pose(const char *library) {
             vrbody_begin(&sArmActor, sPosed, &place, &unplace);
             vrbody_body(&sArmActor, sPosed, &place, &unplace);
             vrbody_shoulders(&sArmActor, sPosed, &place, &unplace, 0, hand[0]);
-            vrbody_head_camera(&sArmActor, sPosed, &unplace);
+            vrbody_head_camera(&sArmActor, sPosed, &place, &unplace);
             for (c = 0; c < 3; c++) {
                 sh[c] = sPosed[ub].m[12 + c];
                 ey[c] = eb >= 0 ? sPosed[eb].m[12 + c] : sPosed[vrbody_bone(VRBODY_HEAD, 0)].m[12 + c];

@@ -115,7 +115,13 @@ head. The helpers are rebuilt from their parent **every** frame, so nothing accu
     anchor is her head + 1.5 by the game's own camera, so her head bone is shifted to it and the
     neck stretches - her eyes are the player's, and looking straight down shows her chest instead
     of the inside of it. Logged once: the camera, her eye after posing, and how far apart they
-    were (metres).
+    were (metres). **The camera sits a little inside her head**: the point that goes to the camera is
+    `EYE_BACK_M` (0.06 m) *behind* her eyes - back along her forward, toward the centre of her head -
+    and `EYE_UP_M` (0.01 m) *above* them (+Y is the ceiling), both in her metres. The player tunes
+    them on the VR Enhancements page (*Body: Camera Back* 0..0.12 m, *Body: Camera Height*
+    -0.05..+0.05 m, 0.01 a step, kept in `vr.cam-back`/`vr.cam-up`), clamped to those ranges.
+    The log says the seat and the reach: `vrbody: head at the camera - camera ... her eye ...; the
+    camera 0.060 m behind her eyes and 0.010 m above them; reach_scale ...`.
   - **every offset and threshold of hers is in HER space**, converted with ONE constant metre's
     units (`units_per_m = VR_UNITS_PER_METER`, 12.5 - the value a 1.6 m calibration gives), never
     one that moves with the player's height: the shoulders' 0.20/0.075/0.18 m, the crouch dead

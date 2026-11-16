@@ -32,6 +32,8 @@ rest single floats (`sf@ sf!`).
 | `vr.calibrate-start` | the start-up height calibration (a first run, or asked for) | 1 |
 | `vr.cutscene-first-person` | an in-game scene watched from her eyes | 0 |
 | `vr.eye-height` | her eyes above the floor, metres (what a calibration measured) | 1.6 |
+| `vr.cam-back` | the VR body's camera seat: metres behind her eyes (0..0.12; vrbody.c's EYE_BACK_M) | 0.06 |
+| `vr.cam-up` | ... and above them, metres (-0.05..0.05; EYE_UP_M) | 0.01 |
 | `vr.arm-reach` | the player's reach, metres: the furthest a controller went from the head while the calibration measured it (0: the eye height sizes the arm) | 0 |
 | `vr.body-scale` | a metre of head motion in the world's units (1: as measured) | 1 |
 | `vr.calibrated` | 1 once a calibration has been kept | 0 |
@@ -92,7 +94,9 @@ in, reachable without a keyboard:
   the triangle goes back to the main page; on the main page it leaves the menu. **Comfort Options**:
   Turning (Smooth, Snap 45, Snap 90), Comfort Vignette (Off, Low, Med, High), Locomotion
   (Continuous, Teleport Fixed, Teleport Dynamic) and Seated Mode (Off, On). **Hewie**: Whisper (PTT,
-  Open Mic) and Whisper Subtitles (Off, On, Debug). **VR Enhancements**: 3D Audio (Off, On),
+  Open Mic) and Whisper Subtitles (Off, On, Debug). **VR Enhancements** (3D Audio, Hiding Spot Door Transparency, Held Item Debug Axes, Body: Hide Head in
+First Person, **Body: Camera Back** and **Body: Camera Height** - the camera's seat inside her head,
+0.01 m a step, 0..0.12 m back and -0.05..0.05 m up): 3D Audio (Off, On),
   Hiding Spot Door Transparency (Off, On), Held Item Debug Axes (Off, On) and Body: Hide Head in
   First Person (Off, On) - the 3D audio the
   binaural HRTF, its occlusion coming with it (docs/subsystems/audio3d.md), the hiding spot's door
