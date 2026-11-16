@@ -103,6 +103,7 @@ create spot  -258e f, -10e f, 174e f,   \ (on the circle, between the scarecrows
     cross button-pressed? if  calibrate-take  exit  then
     triangle button-pressed? start-button button-pressed? or if  0 cal-t !  on-menu stage !  then ;
 : calibrate-frame ( -- )
+    vr-arm-save? if  save-vr-options  then   \ (the reach, measured after the height)
     cal-t @ 0> if  -1 cal-t +!  cal-t @ 0= if  on-menu stage !  then  then ;
 : cal-line ( addr len i -- )   \ (a line of its words, i down from under the title)
     {: a n i | sw y :}  screen-size drop to sw
@@ -113,8 +114,8 @@ create spot  -258e f, -10e f, 174e f,   \ (on the circle, between the scarecrows
     {: | sw :}  screen-size drop to sw  3 pen-scale
     menu-layer  s" HEIGHT CALIBRATION"  sw 10 /  sw 8 /  $D8D0C8FF 3 ui-text
     2 pen-scale
-    s" Stand straight and look ahead." 0 cal-line
-    s" Then press A to measure your height." 1 cal-line
+    s" Stand straight, arms out to the sides." 0 cal-line
+    s" Then press A to measure your height and reach." 1 cal-line
     s" B: skip for now (the VR options page has it too)" 2 cal-line
     cal-t @ 0> if
         cal-ok @ if  s" Measured." 3 cal-line

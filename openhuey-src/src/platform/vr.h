@@ -62,6 +62,13 @@ typedef struct VrOptions {
     int32_t panic_stumbles;   /* 1: she stumbles, and may fall, running blindly into things */
     int32_t panic_haptics;    /* the beat on the controllers: 0 off, 1 half, 2 full */
     int32_t item_prop_debug;  /* 1: small RGB axes at a held item's mod model and the wrist it sits on */
+    /* the VR body (platform/../game/vrbody.c): VRIK's first-person head */
+    int32_t body_fp_head;     /* 1: the head and the choker go from her first-person view (the neck
+                               * and the head collapsed - VRIK's shrink); 0: left as they are */
+    /* the body calibration's second half (vr_calibrate: the same action as the eye height): the
+     * player's reach, the furthest a controller went from the head while it was measured, metres.
+     * 0: not measured - the body sizes the arm from the eye height (vrbody.c) */
+    float arm_reach;
 } VrOptions;
 extern VrOptions gVrOptions;
 
@@ -108,8 +115,15 @@ int vr_body_view(Mat4 *view);
 /* one eye on that head: her eyes apart by the calibrated scale, rotation from the headset */
 int vr_eye_body(int eye, Mat4 *view);
 /* stand straight and call this: the headset's height above the floor becomes the eye height,
- * and the world scale becomes Fiona's height over that. 0 if the headset has no height. */
+ * and the world scale becomes Fiona's height over that. It also starts the reach's measurement
+ * (the arms, six seconds: hold them out) whose value lands in gVrOptions.arm_reach. 0 if the
+ * headset has no height. */
 int vr_calibrate(float *height_m, float *scale);
+/* the reach is being measured (the option row says "Arms out..."); 1 while it is */
+int vr_arm_pending(void);
+/* 1 once when the reach has just been measured: the scripts save the options then, and the call
+ * takes it (clears it) */
+int vr_arm_save(void);
 void vr_set_height(float height_m);
 void vr_set_scale(float scale);
 void vr_body(float *height_m, float *scale);
@@ -174,6 +188,10 @@ int vr_head_at(Vec3 *out);
 int vr_head_local(Vec3 *out);
 /* horizontal forward in that space, where the headset is looking. 0 if it is not tracking. */
 int vr_head_forward(Vec3 *out);
+/* The headset's look this frame: `pitch` positive looking down (radians), `forward` where it looks
+ * and `up` the back of the head, in the same camera axes as a controller's (not turned by the
+ * anchor). Any of them may be NULL. 0 if it is not tracking. */
+int vr_head_look(float *pitch, Vec3 *forward, Vec3 *up);
 /* the next panel placement is once, in front of the current look, and then stays put */
 void vr_screen_face(void);
 void vr_screen_loose(int on);   /* kept for callers; the panel does not follow the head */

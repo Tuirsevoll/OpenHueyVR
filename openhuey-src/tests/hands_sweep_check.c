@@ -17,6 +17,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../src/core/files.h"
+#include "../src/data/modelgltf.h"
 #include "../src/game/engine.h"
 #include "../src/game/loot.h"
 #include "../src/game/placed.h"
@@ -138,23 +140,75 @@ int loot_claims_placed(int placed_index) {
     return 0;
 }
 
-int vr_active(void) { return 0; }
+/* ---- the headset session, as a check may ask for it (off by default: the sweeps need none) ---- */
+static int sVrOn;
+static Vec3 sVrEye, sVrHeadPos, sVrHeadFwd, sVrHeadUp;
+static float sVrYaw, sVrPitch;
+static Vec3 sVrHand[2];
+static int sVrTracked[2];
+
+int vr_active(void) { return sVrOn; }
+
+/* the VR options (platform/vr.c): a body of zeroes - no seated play, no first-person head */
+VrOptions gVrOptions;
 
 void vr_body(float *height_m, float *scale) {
     (void)height_m;
     (void)scale;
 }
 
+float vr_crouch_fraction(void) { return 0.0f; }
+
+int vr_head_at(Vec3 *out) {
+    if (!sVrOn || out == NULL) {
+        return 0;
+    }
+    *out = sVrHeadPos;
+    return 1;
+}
+
+int vr_head_look(float *pitch, Vec3 *forward, Vec3 *up) {
+    if (!sVrOn) {
+        return 0;
+    }
+    if (pitch != NULL) {
+        *pitch = sVrPitch;
+    }
+    if (forward != NULL) {
+        *forward = sVrHeadFwd;
+    }
+    if (up != NULL) {
+        *up = sVrHeadUp;
+    }
+    return 1;
+}
+
 int vr_anchor_get(Vec3 *eye, float *yaw) {
-    (void)eye;
-    (void)yaw;
-    return 0;
+    if (!sVrOn) {
+        return 0;
+    }
+    if (eye != NULL) {
+        *eye = sVrEye;
+    }
+    if (yaw != NULL) {
+        *yaw = sVrYaw;
+    }
+    return 1;
 }
 
 int vr_controller(int hand, VrController *out) {
-    (void)hand;
-    (void)out;
-    return 0;
+    if (!sVrOn || out == NULL || hand < 0 || hand > 1 || !sVrTracked[hand]) {
+        return 0;
+    }
+    out->tracked = 1;
+    out->at = sVrHand[hand];
+    out->right = vec3(1.0f, 0.0f, 0.0f);
+    out->up = vec3(0.0f, 1.0f, 0.0f);
+    out->forward = vec3(0.0f, 0.0f, -1.0f);
+    out->grip = 0.0f;
+    out->index = 0.0f;
+    out->thumb = 1.0f;
+    return 1;
 }
 
 void vr_haptic(int hand, float amplitude, float seconds) {
@@ -259,6 +313,136 @@ static MeshVertex sTableTop[6] = {
     {-4.0f, 2.0f, -4.0f}, {4.0f, 2.0f, 4.0f}, {-4.0f, 2.0f, 4.0f},
 };
 
+/* ---- the arms posed (vrhands_pose): a bug that left them at the animation's pose was invisible
+ * to every check - the hand went to the controller, the shoulders did not. A model with the arms'
+ * bones named (the mod's own, examples/mods/fiona-vr-rig) is posed with a hand a side in front of
+ * her, and the arm's bones must leave the pose the animation had them in. ---- */
+static Model sArmModel;
+static Actor sArmActor;
+static Mat4 sRest[MODEL_MAX_BONES], sPosed[MODEL_MAX_BONES], sSkin[MODEL_MAX_BONES];
+static int sRestN;
+static int sFails;   /* (a FAIL anywhere in this file) */
+
+static void capture(Mat4 *world, int n, void *user) {
+    (void)user;
+    sRestN = n;
+    memcpy(sRest, world, sizeof(Mat4) * (size_t)n);
+}
+static int load_arm_model(const char *name) {
+    char path[160];
+    uint8_t *json, *bin, *motions = NULL;
+    size_t len = 0, bs = 0, ms = 0;
+    int ok;
+
+    snprintf(path, sizeof(path), "%s.model/model.gltf", name);
+    json = files_read(path, &len);
+    if (json == NULL) {
+        return 0;
+    }
+    snprintf(path, sizeof(path), "%s.model/model.bin", name);
+    bin = files_read(path, &bs);
+    snprintf(path, sizeof(path), "%s.model/motions.bin", name);
+    motions = files_read(path, &ms);
+    ok = bin != NULL && modelgltf_read(&sArmModel, (const char *)json, len, bin, bs, motions, motions != NULL ? ms : 0);
+    free(json);
+    free(bin);
+    return ok;
+}
+static float bone_dist(const Mat4 *a, const Mat4 *b) {
+    return sqrtf((a->m[12] - b->m[12]) * (a->m[12] - b->m[12]) +
+                 (a->m[13] - b->m[13]) * (a->m[13] - b->m[13]) +
+                 (a->m[14] - b->m[14]) * (a->m[14] - b->m[14]));
+}
+
+static void check_arm_pose(const char *library) {
+    static Mat4 place, unplace;
+    float hand[2][3], from[3];
+    int side, sh, el, wr;
+
+    files_layers_clear();
+    files_layer_add(library);
+    if (!load_arm_model("O_FIN/FIN_000")) {
+        fprintf(stderr, "hands: can't read O_FIN/FIN_000 from %s: the arms are not posed here\n", library);
+        return;
+    }
+    memset(&sArmActor, 0, sizeof(sArmActor));
+    sArmActor.model = sArmModel;
+    sArmActor.used = 1;
+    sArmActor.visible = 1;
+    sArmActor.scale = 1.0f;
+    sArmActor.head.head = model_bone_named(&sArmModel, "bone 33");
+    sArmActor.head.neck = model_bone_named(&sArmModel, "bone 23");
+    snprintf(sArmActor.name, sizeof(sArmActor.name), "O_FIN/FIN_000");
+    place = unplace = mat4_identity();
+
+    /* the animation's pose, as the hook gets it */
+    model_pose_hook(capture, NULL);
+    model_pose_blend(&sArmModel, -1, 0.0f, -1, 0.0f, 0.0f, sSkin, NULL);
+    model_pose_hook(NULL, NULL);
+    memcpy(sPosed, sRest, sizeof(Mat4) * (size_t)sRestN);
+
+    /* a session: her eyes level, her left is the room's +x, a hand a side in front of her */
+    sVrOn = 1;
+    sVrYaw = 3.14159265f;   /* (the play space's -z is her +z) */
+    sVrEye = vec3(0.0f, 16.6f, 0.0f);
+    sVrHeadPos = sVrEye;
+    sVrHeadFwd = vec3(0.0f, 0.0f, -1.0f);
+    sVrHeadUp = vec3(0.0f, 1.0f, 0.0f);
+    sVrPitch = 0.0f;
+    sVrTracked[0] = sVrTracked[1] = 1;
+    sVrHand[0] = vec3(-2.2f, -1.0f, -3.6f);   /* (play space: her left, below, in front) */
+    sVrHand[1] = vec3(2.2f, -1.0f, -3.6f);
+    hand[0][0] = sVrEye.x + 2.2f;   /* (room: the anchor's yaw pi mirrors x and z) */
+    hand[0][1] = sVrEye.y - 1.0f;
+    hand[0][2] = sVrEye.z + 3.6f;
+    hand[1][0] = sVrEye.x - 2.2f;
+    hand[1][1] = sVrEye.y - 1.0f;
+    hand[1][2] = sVrEye.z + 3.6f;
+
+    vrhands_pose(&sArmActor, sPosed, &place, &unplace);
+
+    for (side = 0; side < 2; side++) {
+        const char *l = side == 0 ? "left" : "right";
+        float turned;
+
+        sh = model_bone_named(&sArmModel, side == 0 ? "bone 27" : "bone 43");
+        el = model_bone_named(&sArmModel, side == 0 ? "bone 28" : "bone 44");
+        wr = model_bone_named(&sArmModel, side == 0 ? "bone 30" : "bone 46");
+        if (sh < 0 || el < 0 || wr < 0) {
+            printf("hands: the %s arm's bones are not in this model (FAIL)\n", l);
+            sFails++;
+            continue;
+        }
+        /* the shoulder joint's own place barely moves - it is the joint - so the proof the arm was
+         * posed is its own turn and the elbow's place */
+        turned = sPosed[sh].m[0] * sRest[sh].m[0] + sPosed[sh].m[1] * sRest[sh].m[1] +
+                 sPosed[sh].m[2] * sRest[sh].m[2];
+        printf("hands: %s arm - shoulder turned %.2f, elbow moved %.2f, hand at the controller %.2f away\n",
+               l, (double)(1.0f - turned), (double)bone_dist(&sPosed[el], &sRest[el]),
+               (double)sqrtf((sPosed[wr].m[12] - hand[side][0]) * (sPosed[wr].m[12] - hand[side][0]) +
+                             (sPosed[wr].m[13] - hand[side][1]) * (sPosed[wr].m[13] - hand[side][1]) +
+                             (sPosed[wr].m[14] - hand[side][2]) * (sPosed[wr].m[14] - hand[side][2])));
+        if (turned > 0.999f || bone_dist(&sPosed[el], &sRest[el]) < 0.5f) {
+            printf("hands: the %s arm was left at the animation's pose (FAIL)\n", l);
+            sFails++;
+        }
+        from[0] = sPosed[wr].m[12] - hand[side][0];
+        from[1] = sPosed[wr].m[13] - hand[side][1];
+        from[2] = sPosed[wr].m[14] - hand[side][2];
+        if (from[0] * from[0] + from[1] * from[1] + from[2] * from[2] > 3.0f * 3.0f) {
+            printf("hands: the %s hand is not at its controller (FAIL)\n", l);
+            sFails++;
+        }
+        /* the elbow must be the hand's arm's elbow: about a forearm from the hand, not left where
+         * the animation (or the clavicle's little turn) had it */
+        printf("hands: %s arm - elbow to hand %.2f\n", l, (double)bone_dist(&sPosed[el], &sPosed[wr]));
+        if (bone_dist(&sPosed[el], &sPosed[wr]) > 3.5f) {
+            printf("hands: the %s elbow is not where the hand's arm solved it (FAIL)\n", l);
+            sFails++;
+        }
+    }
+}
+
 /* one placed object of the room, its mesh `v` in its own space, unturned and at the origin */
 static void placed_of(PlacedSet *s, MeshVertex *v, int nv) {
     memset(s, 0, sizeof(*s));
@@ -269,8 +453,6 @@ static void placed_of(PlacedSet *s, MeshVertex *v, int nv) {
     s->p[0].mesh.nv = nv;
 }
 
-static int sFails;
-
 static void want(const char *what, int got, int expected) {
     if (got == expected) {
         printf("hands: %s -> %d (pass)\n", what, got);
@@ -280,7 +462,7 @@ static void want(const char *what, int got, int expected) {
     }
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     static Room wall, floor, table;
     static PlacedSet face, top, moved;
 
@@ -492,6 +674,9 @@ int main(void) {
     }
     printf("hands: faces counted: %d of 2 (the wall), %d of 1 (the floor), %d of 1 (the table top)\n",
            face_tris(&wall), face_tris(&floor), face_tris(&table));
+    if (argc > 1) {   /* (the mod's library: the arms posed, as the game poses them) */
+        check_arm_pose(argv[1]);
+    }
     if (sFails != 0) {
         fprintf(stderr, "FAIL: %d of the sweep's tests\n", sFails);
         return 1;

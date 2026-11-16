@@ -10,7 +10,7 @@ IN: subscreen.vr
 USING: engine ps2-screen subscreen.state subscreen.art subscreen.input vr-options ;
 
 \ the items a row can be (which page shows it is below)
-enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-whisper vr-whisper-debug vr-audio3d vr-hide-door vr-item-prop-debug
+enum: vr-row  vr-turn vr-hand vr-comfort vr-teleport vr-cal vr-seated vr-whisper vr-whisper-debug vr-audio3d vr-hide-door vr-item-prop-debug vr-fp-head
               vr-comfort-open vr-hewie-open vr-enhance-open vr-panic-open vr-panic-preset
               vr-panic-tint vr-panic-smear vr-panic-zoom vr-panic-negative vr-panic-shake vr-panic-stumbles vr-panic-haptics ;
 
@@ -25,7 +25,7 @@ variable vr-return-at  0 vr-return-at !
 create main-rows     vr-cal , vr-hand , vr-comfort-open , vr-hewie-open , vr-enhance-open , vr-panic-open ,
 create comfort-rows  vr-turn , vr-comfort , vr-teleport , vr-seated ,
 create hewie-rows    vr-whisper , vr-whisper-debug ,
-create enhance-rows  vr-audio3d , vr-hide-door , vr-item-prop-debug ,
+create enhance-rows  vr-audio3d , vr-hide-door , vr-item-prop-debug , vr-fp-head ,
 create panic-rows    vr-panic-preset , vr-panic-tint , vr-panic-smear , vr-panic-zoom ,
                      vr-panic-negative , vr-panic-shake , vr-panic-stumbles , vr-panic-haptics ,
 : page-rows ( -- addr )
@@ -40,7 +40,7 @@ create panic-rows    vr-panic-preset , vr-panic-tint , vr-panic-smear , vr-panic
     vr-page @ case
         vp-comfort of  4  endof
         vp-hewie of    2  endof
-        vp-enhance of  3  endof
+        vp-enhance of  4  endof
         vp-panic of    8  endof
         >r 6 r>
     endcase ;
@@ -96,13 +96,14 @@ create panic-rows    vr-panic-preset , vr-panic-tint , vr-panic-smear , vr-panic
           vr-hand of  s" Left-handed Mode"  endof
           vr-comfort of  s" Comfort Vignette"  endof
           vr-teleport of  s" Locomotion"  endof
-          vr-cal of  s" Calibrate Height"  endof
+          vr-cal of  s" Calibrate Height & Reach"  endof
           vr-seated of  s" Seated Mode"  endof
           vr-whisper of  s" Whisper"  endof
           vr-whisper-debug of  s" Whisper Subtitles"  endof
           vr-audio3d of  s" 3D Audio"  endof
           vr-hide-door of  s" Hiding Spot Door Transparency"  endof
           vr-item-prop-debug of  s" Held Item Debug Axes"  endof
+          vr-fp-head of  s" Body: Hide Head in First Person"  endof
           vr-comfort-open of  s" Comfort Options"  endof
           vr-hewie-open of  s" Hewie"  endof
           vr-enhance-open of  s" VR Enhancements"  endof
@@ -115,20 +116,23 @@ create panic-rows    vr-panic-preset , vr-panic-tint , vr-panic-smear , vr-panic
           vr-panic-shake of  s" Camera shake"  endof
           vr-panic-stumbles of  s" Panic stumbles"  endof
           vr-panic-haptics of  s" Heartbeat haptics"  endof
-          >r s" Calibrate Height" r>  endcase ;
+          >r s" Calibrate Height & Reach" r>  endcase ;
 : vr-row-value ( i -- addr len )
     case
         vr-turn of  turn$  endof
         vr-hand of  vr-settings vr.left-handed l@ on-off$  endof
         vr-comfort of  comfort$  endof
         vr-teleport of  teleport$  endof
-        vr-cal of  vr-settings vr.calibrated l@ if  vr-settings vr.eye-height sf@ 2 f>s$  else  s" Not set"  then  endof
+        vr-cal of
+            vr-arm-pending? if  s" Arms out..."  else
+            vr-settings vr.calibrated l@ if  vr-settings vr.eye-height sf@ 2 f>s$  else  s" Not set"  then  then  endof
         vr-seated of  vr-settings vr.seated l@ on-off$  endof
         vr-whisper of  whisper$  endof
         vr-whisper-debug of  subtitles$  endof
         vr-audio3d of  vr-settings vr.audio3d l@ on-off$  endof
         vr-hide-door of  vr-settings vr.hide-door l@ on-off$  endof
         vr-item-prop-debug of  vr-settings vr.item-prop-debug l@ on-off$  endof
+        vr-fp-head of  vr-settings vr.body-fp-head l@ on-off$  endof
         vr-comfort-open of  s" Open"  endof
         vr-hewie-open of  s" Open"  endof
         vr-enhance-open of  s" Open"  endof
@@ -184,6 +188,9 @@ variable vr-step
             se-decide  save-vr-options endof
         vr-item-prop-debug of
             vr-settings vr.item-prop-debug l@ 0= 1 and vr-settings vr.item-prop-debug l!
+            se-decide  save-vr-options endof
+        vr-fp-head of
+            vr-settings vr.body-fp-head l@ 0= 1 and vr-settings vr.body-fp-head l!
             se-decide  save-vr-options endof
         vr-comfort-open of  vp-comfort open-vr-page  endof
         vr-hewie-open of    vp-hewie open-vr-page  endof

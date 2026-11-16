@@ -11,6 +11,20 @@ a menu or a dialogue - and the crouch trigger on the left hand drives the VR cro
 the room's walls, its door leaves and its placed objects, so a controller can say when a hand has
 swept through something solid.
 
+The arm's own chain is found by the model's names (shoulder 27/43, elbow 28/44, wrist 30/46), and
+with it comes the rest of her: the VR body (`docs/subsystems/vrbody.md`) turns her chest, puts her
+body under the headset, solves her elbow and rebuilds the twist helpers - all in `vrhands_pose`,
+and all off where the arms are off. The arm's bones are written into the pose last, after the
+animation, whichever solve made them (`hands-sweep-check`'s posed-arm section, which fails if they
+are left at the animation's pose).
+
+**The arm's length is the calibration's** (`vrbody_arm_scale`): Fiona's arm is her model's (4.89
+units at her scale) while a controller's target is the room's (12.5 units to the player's metre), so
+her arm is stretched by the player's measured reach over her own - the elbow solve's two lengths and
+the bones' X axes together - and the hand stays exactly on the controller. Its default, before a
+reach is measured, comes from the eye height (0.40 of it). `arm_lengths` (the fallback's lengths)
+takes the same scale, and remeasures if a calibration changes it.
+
 ## Rules
 
 - **The wall test** (`hand_path_hits_wall` in `src/game/vrhands.c`): the straight path a hand took

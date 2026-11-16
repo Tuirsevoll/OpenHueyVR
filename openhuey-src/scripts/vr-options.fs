@@ -48,7 +48,9 @@ PRIVATE>
     2 vr-settings vr.panic-haptics l!
     1 vr-settings vr.audio3d l!              \ (placed sounds through the headset's HRTF, occluded: on)
     1 vr-settings vr.hide-door l!            \ (a hiding spot's door see-through while fully hidden: on)
-    0 vr-settings vr.item-prop-debug l! ;    \ (small RGB axes at a held item's model and wrist: off)
+    0 vr-settings vr.item-prop-debug l!      \ (small RGB axes at a held item's model and wrist: off)
+    1 vr-settings vr.body-fp-head l!       \ (the VR body's head goes from her own first-person view)
+    0e vr-settings vr.arm-reach sf! ;      \ (the player's reach, metres: 0 until a calibration measures it)
 
 \ the options written out as Forth, read back at start-up (each line runs)
 : save-vr-options ( -- )
@@ -80,6 +82,8 @@ PRIVATE>
     vr-settings vr.audio3d l@ n>s type               ."  vr-settings vr.audio3d l!" cr
     vr-settings vr.hide-door l@ n>s type             ."  vr-settings vr.hide-door l!" cr
     vr-settings vr.item-prop-debug l@ n>s type       ."  vr-settings vr.item-prop-debug l!" cr
+    vr-settings vr.body-fp-head l@ n>s type          ."  vr-settings vr.body-fp-head l!" cr
+    vr-settings vr.arm-reach sf@ 6 f>s$ type          ."  vr-settings vr.arm-reach sf!" cr
 
     vr-settings vr.panic-tint l@ n>s type            ."  vr-settings vr.panic-tint l!" cr
     vr-settings vr.panic-smear l@ n>s type           ."  vr-settings vr.panic-smear l!" cr

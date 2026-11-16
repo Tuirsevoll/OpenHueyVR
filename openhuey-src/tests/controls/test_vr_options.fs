@@ -12,6 +12,8 @@ T{ vr-settings vr.teleport l@  vr-settings vr.seated l@  vr-settings vr.left-han
 T{ vr-settings vr.calibrate-start l@ -> 1 }T
 testing the microphone and subtitles: PTT, the subtitles off until the page asks
 T{ vr-settings vr.whisper-open l@  vr-settings vr.whisper-debug l@ -> 0 0 }T
+testing the body's first-person head: hidden in her own view until the page turns it off
+T{ vr-settings vr.body-fp-head l@ -> 1 }T
 testing the headset crouch's defaults: deadzone 13%, on 25%, off 18%, sneak 35%
 T{ vr-settings vr.crouch-deadzone sf@ 100e f* fround f>s
    vr-settings vr.crouch-on sf@ 100e f* fround f>s
@@ -20,9 +22,11 @@ T{ vr-settings vr.crouch-deadzone sf@ 100e f* fround f>s
 
 testing vr-defaults puts them back after a change
 1 vr-settings vr.turn-snap l!  90e vr-settings vr.snap-degrees sf!  1 vr-settings vr.teleport l!
-1 vr-settings vr.seated l!  1 vr-settings vr.whisper-open l!  1 vr-settings vr.whisper-debug l!  vr-defaults
+1 vr-settings vr.seated l!  1 vr-settings vr.whisper-open l!  1 vr-settings vr.whisper-debug l!
+0.7e vr-settings vr.arm-reach sf!  vr-defaults
 T{ vr-settings vr.turn-snap l@  vr-settings vr.snap-degrees sf@ f>s  vr-settings vr.teleport l@  vr-settings vr.seated l@ -> 0 45 0 0 }T
 T{ vr-settings vr.whisper-open l@  vr-settings vr.whisper-debug l@ -> 0 0 }T
+T{ vr-settings vr.arm-reach sf@ f>s -> 0 }T   \ (a reach is a calibration's to keep: vr-defaults leaves it)
 
 testing a turn by an angle: her yaw and her heading the same, the view asked for the same turn
 fvariable yaw-after   fvariable head-after

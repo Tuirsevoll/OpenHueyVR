@@ -145,6 +145,7 @@ USING: engine game-state actors messages keys facts flag-names items items.table
 
 \ ---- a frame with the world held ----
 : held-frame ( -- )
+    vr-arm-save? if  vr-options:save-vr-options  then   \ (a body calibration's reach, measured while the menu is up)
     1 frames +!  stage @ shut <> if  broadcast menu-frame  then
     stage @ case
         opening of  16 openness +!  openness @ 128 >= if  128 openness !  up stage !  then  sub-volume  endof

@@ -28,6 +28,7 @@
 #include "game/progress.h"
 #include "game/things.h"
 #include "game/vrhands.h"
+#include "game/vrbody.h"
 #include "game/loot.h"
 #include "game/props.h"
 #include "game/sprites.h"
@@ -617,8 +618,11 @@ static void draw_props(Engine *e, const Mat4 *vp) {
 static void draw_actor(Engine *e, Actor *a, const Mat4 *vp) {
     float alpha = a->alpha, faded = doorway_faded(e, a);
 
-    if (a == sFp && !vr_hands_tracked()) {
-        return;   /* controllers up: her arms are drawn, reaching them */
+    if (a == sFp && !vr_hands_tracked() && gVrOptions.body_fp_head) {
+        /* no controller tracked: her arms are still the animation's, so her body is left out of
+         * the first-person view rather than drawn in it unposed. The head option off means the
+         * player wants her own body in the picture: it is drawn then. */
+        return;
     }
 
     a->alpha = alpha * (1.0f - faded);
@@ -855,7 +859,12 @@ static void prepare_shadows(Engine *e) {
         a->lights[0] = a->lights[1] = a->lights[2] = -1;
         if (actor_shown(a)) {
             actor_prepare(a);
-            if (a == sFp) {   /* the headset is at her eyes: no head, face or hair in the picture */
+            /* The headset is at her eyes: her head, face and hair are collapsed in the drawn mesh
+             * so the view is not inside them. The VR body's own shrink (game/vrbody.c) does the
+             * same at the bone level, and both are the one option: "Body: Hide Head in First
+             * Person" (vr.body-fp-head). Off, the head is there - for a mirror, a shadow or a
+             * player who wants to see it, at the price of the eye being inside it. */
+            if (a == sFp && gVrOptions.body_fp_head) {
                 actor_hide_head(a);
             }
             light_actor(e, a);
@@ -925,12 +934,17 @@ static int fiona_view(Engine *e, Camera *out) {
     {
         Vec3 bone = pick->head.head > 0 ? actor_bone(pick, pick->head.head)
                                         : vec3(pick->pos.x, pick->pos.y + 14.0f, pick->pos.z);
+        float hy = bone.y;
 
+        /* The VR body (game/vrbody.c) moves her head with her body and shrinks it from her own
+         * eyes: the camera keeps the head it found before that, so the pose never feeds back into
+         * the view. Without a body (a cutscene, no headset pose) it is her head as it is posed. */
+        vrbody_eye_y(pick, &hy);
         /* height from the head, but not its walk-cycle sway: that yaw is the old camera's fight.
          * While a headset crouch is active, her standing eye height is the anchor: the body
          * crouches or walks under it, so the view and the hands stay at the player's head. */
         out->pos.x = pick->pos.x + sinf(sAlign);
-        out->pos.y = vr_crouch_anchor(bone.y + 1.5f);
+        out->pos.y = vr_crouch_anchor(hy + 1.5f);
         out->pos.z = pick->pos.z - cosf(sAlign);
     }
     vr_anchor_set(1, out->pos, out->yaw);
@@ -1300,7 +1314,9 @@ static void draw_frame(Engine *e) {
                     int w, h;
                     unsigned fbo;
 
-                    if (!vr_eye_begin(i, e->camera.znear, e->camera.zfar, &w, &h, &proj, &offset, &fbo)) {
+                    /* the near plane is this frame's value (the camera's): the body lowers it as
+                     * she looks down, so her own body does not clip away under her */
+                    if (!vr_eye_begin(i, vrbody_near(e->camera.znear), e->camera.zfar, &w, &h, &proj, &offset, &fbo)) {
                         vr_eye_end(i);
                         continue;
                     }

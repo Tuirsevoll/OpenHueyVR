@@ -32,6 +32,7 @@ rest single floats (`sf@ sf!`).
 | `vr.calibrate-start` | the start-up height calibration (a first run, or asked for) | 1 |
 | `vr.cutscene-first-person` | an in-game scene watched from her eyes | 0 |
 | `vr.eye-height` | her eyes above the floor, metres (what a calibration measured) | 1.6 |
+| `vr.arm-reach` | the player's reach, metres: the furthest a controller went from the head while the calibration measured it (0: the eye height sizes the arm) | 0 |
 | `vr.body-scale` | a metre of head motion in the world's units (1: as measured) | 1 |
 | `vr.calibrated` | 1 once a calibration has been kept | 0 |
 | `vr.crouch-deadzone` | the headset drop or crouch trigger (a share of the standing height) below which no crouch animation plays | 0.13 |
@@ -40,6 +41,7 @@ rest single floats (`sf@ sf!`).
 | `vr.sneak-speed` | the crouch walk's share of a walk, and its animation rate (45%: 55% slower) | 0.45 |
 | `vr.hide-door` | a hiding spot's door drawn see-through (about half alpha) while she is inside and fully hidden | 1 |
 | `vr.item-prop-debug` | small RGB axes at a held item's mod model and the wrist it sits on | 0 |
+| `vr.body-fp-head` | the VR body's head goes from her own first-person view (the neck and the head collapsed, VRIK's shrink); 0 leaves them | 1 |
 | `vr.panic-tint` | the panic's grey / darkening tint at each heartbeat (the VR page's Reduced preset) | 1 |
 | `vr.panic-smear` | the heartbeat's frame blend, held and blended in again (photosensitive: off) | 0 |
 | `vr.panic-zoom` | the first frames drawn 16 pixels bigger over themselves (photosensitive: off) | 0 |
@@ -55,6 +57,8 @@ rest single floats (`sf@ sf!`).
 | `vr-gesture` | `-- g` | the turn stick's Hewie gesture this tick: 0 up (go / attack), 1 down (come), 2 its click (stay), -1 none |
 | `vr-menu?` | `-- flag` | a menu is up: the triggers page the tabs, they do not crouch / kick |
 | `vr-tracking?` | `-- flag` | the headset's pose is found (a calibration can measure it) |
+| `vr-arm-pending?` | `-- flag` | the calibration's reach is being measured (the row says Arms out...) |
+| `vr-arm-save?` | `-- flag` | the reach has just been measured: the scripts save the options once |
 | `hand-stops-clear` | `--` | the arms' stops dropped (a snap turn: the hands' places moved with her) |
 | `vr-defaults` | `--` | every option as the game was (`vr-options`) |
 | `save-vr-options`, `load-vr-options` | `--` | the player's written to / read from `<user>/vr-options.fs` |
@@ -83,22 +87,25 @@ in, reachable without a keyboard:
   are read from the VR stick in a headset (`read-arrows`), so every page of the sub screen - the
   lists, the map, the files, the options - and this one are worked with the controllers: the
   movement stick moves, A answers, a grip backs out.
-- **Its pages**: the main page stays short - Calibrate Height, Left-handed Mode, Comfort Options,
+- **Its pages**: the main page stays short - Calibrate Height & Reach, Left-handed Mode, Comfort Options,
   Hewie, VR Enhancements and Panic Effects. A sub menu opens with the cross (or left / right), and
   the triangle goes back to the main page; on the main page it leaves the menu. **Comfort Options**:
   Turning (Smooth, Snap 45, Snap 90), Comfort Vignette (Off, Low, Med, High), Locomotion
   (Continuous, Teleport Fixed, Teleport Dynamic) and Seated Mode (Off, On). **Hewie**: Whisper (PTT,
   Open Mic) and Whisper Subtitles (Off, On, Debug). **VR Enhancements**: 3D Audio (Off, On),
-  Hiding Spot Door Transparency (Off, On) and Held Item Debug Axes (Off, On) - the 3D audio the
+  Hiding Spot Door Transparency (Off, On), Held Item Debug Axes (Off, On) and Body: Hide Head in
+  First Person (Off, On) - the 3D audio the
   binaural HRTF, its occlusion coming with it (docs/subsystems/audio3d.md), the hiding spot's door
-  the see-through door of a walked-into spot (docs/subsystems/hiding.md), and the axes at a held
-  item's mod model and the wrist it sits on (docs/modding.md, "Held items"). **Panic Effects**:
+  the see-through door of a walked-into spot (docs/subsystems/hiding.md), the axes at a held
+  item's mod model and the wrist it sits on (docs/modding.md, "Held items"), and the VR body's head
+  gone from her own eyes (docs/subsystems/vrbody.md). **Panic Effects**:
   the preset (Full, Reduced, Minimal; Custom shown, never stepped to) and, listed below it, the
   seven individual settings.
   A label on the left, its value on the right, the row chosen drawn in a lit bar:
   up / down choose, left / right step the row (a choice round its words, a number by its step),
-  and the cross steps it too - on Calibrate Height the cross is the measurement itself
-  (`vr-calibrate`; without a headset the buzzer says so, and the row reads Not set). A change is
+  and the cross steps it too - on Calibrate Height & Reach the cross is the measurement itself
+  (`vr-calibrate`; without a headset the buzzer says so, and the row reads Not set). It measures
+  the height and the reach together (the row says Arms out... until the reach is in). A change is
   heard (a cursor sound) and kept (`save-vr-options`).
 - It draws with the sub screen's own art and font (`subscreen/art.fs`: `page-art`, `centred`,
   `text`), so it reads as the game's menu - no other effect, as the PS2 look asks. The strip's
@@ -186,18 +193,23 @@ keyboard remains beside them.
   `subscreen/vr.fs`): stand straight, the headset height above the floor becomes her eye height,
   the world is sized to her (see below), and the play space's origin is taken again where she
   stands, so the new size applies from there and the view does not shift by her offset from the
-  old one. The result lives in the options (`vr.eye-height`, `vr.body-scale`, `vr.calibrated`), so
-  it is kept and read at start-up; `vr-defaults` leaves it - it is not a row. A first run (a headset,
-  `vr.calibrate-start` on, nothing kept yet) opens the title on its own screen: stand straight and
-  press A, or B to go on without it; what it measured is said for about three seconds, then the
+  old one. The same action measures the **reach** - hold the arms out for a moment; the row reads
+  "Arms out..." until it has it, and a full reach ends it at once (six seconds at the most) - and
+  that is what sizes her *arm* to the player's (docs/subsystems/vrbody.md: FRIK's arm length
+  scaling). Both live in the options (`vr.eye-height`, `vr.body-scale`, `vr.calibrated`,
+  `vr.arm-reach` in metres, 0 until measured), so they are kept and read at start-up; the scripts
+  save them again when the reach lands (`vr-arm-save?`), since it finishes a moment after the row's
+  press. `vr-defaults` leaves them - they are not rows. A first run (a headset,
+  `vr.calibrate-start` on, nothing kept yet) opens the title on its own screen: stand straight, arms
+  out, press A, or B to go on without it; what it measured is said for about three seconds, then the
   screen leaves for the menu by itself (`calibrate-frame`, ninety ticks, counted by the title's own
-  tick); the page's `Calibrate height` row does it again later, and shows what it measured. A
-  save's load does it at once, before the world comes back (`vr-calibrate-now`, `saves.fs`): no
-  menu, no button, so a game loaded in a headset is sized to the player standing there. A runtime
+  tick); the page's `Calibrate Height & Reach` row does it again later, and shows what it measured.
+  A save's load does it at once, before the world comes back (`vr-calibrate-now`, `saves.fs`): no
+  menu, no button, so a game loaded in a headset is sized to the player standing there (the reach
+  is taken from the arms as they are; without a T-pose it keeps the height's estimate). A runtime
   with no floor space measures nothing: the screen says so and whatever was kept stands. The
-  height alone is enough - an arm span (a T-pose) says the same thing about a body to within a few
-  per cent, and this game's body is Fiona's, not the player's; what the number is needed for here
-  is the world's size, not a skeleton's.
+  height alone sizes the world and, before a reach is measured, the arm too (0.40 of it, an average
+  player's eye-to-grip): the reach is only ever the arm's number, never the world's.
 - **Seated play** (`vr.seated`): the world is sized to `vr.seated-height` instead of a floor
   measurement (1.6 / height, clamped), so the virtual floor stays at the player's own; the first
   run's calibration is not asked for (`scripts/opening.fs` `calibrate-wanted?`) and a standing

@@ -1,5 +1,9 @@
 /* Arms follow the controllers. Finger shapes are the model's hand morphs (one blend): the
  * index trigger and the grip share it, and a third shape is the point when the mesh has one.
+ * The rest of her follows too, in VR gameplay only: src/game/vrbody.c turns her chest toward the
+ * hands and puts her body under the headset (docs/subsystems/vrbody.md). A model's own `vr ...`
+ * helper bones take the forearm's and the upper arm's roll, and its first-person head is shrunk
+ * away - all of it skipped the moment the arms are.
  * Doors swing in degrees (0 shut, open either way to ±90). A hand moves one only while it
  * is touching it. A shut door follows a grip on the knob. A door off the latch can be pushed
  * from either face, anywhere on the leaf. Letting go eases it by the 45° rule, unless it was
@@ -13,6 +17,7 @@
 #include "vrhands.h"
 #include "loot.h"
 #include "things.h"
+#include "vrbody.h"
 
 #include "engine.h"
 #include "progress.h"
@@ -128,11 +133,16 @@ static int sShoulder[2], sElbow[2], sHandBone[2], sArmFound[2];
 /* the bind pose's upper arm and forearm, model units scaled to room units: once per model */
 static float sArmLen[2][2];
 static int sArmLenHave[2];
+static float sArmLenK[2];   /* (the arm scale they were measured at: a new calibration remeasures) */
 static const Model *sLenModel;
 static int sLenBones, sLenVerts;
 /* the palm, the last bone of each arm's chain, which the controller drives; where the wrist
  * sits on elbow->palm as the bind pose has it; and the hand's centre in the palm's space */
 static int sPalmBone[2];
+/* the bone the hand is measured on (hand_measure: its extent and centre): the geometric chain's
+ * wrist, which is what the grip was always measured on, so a known model's hand is the same size
+ * and in the same place whether the chain is found by geometry or by name */
+static int sMeasureBone[2];
 static float sWristT[2];
 static Vec3 sGripCenter[2];
 /* the elbow's bend direction last frame (a fallback when the pole lies along the arm) and the
@@ -151,9 +161,6 @@ static Vec3 sCenter[2];
 
 #define VR_UNITS_PER_METER 12.5f
 #define HAND_METRES 0.19f   /* wrist to fingertip before HAND_SCALE */
-/* the arm's length against Fiona's model's own, so the palm reaches a real arm's distance:
- * a value to be replaced by a calibrated one later */
-#define ARM_LENGTH_SCALE 1.5f
 /* the elbows' bend in her body's frame: down and out, a little behind her (her forward is +z) */
 #define ELBOW_BACK -0.3f
 /* the elbow's bend turns at most this a frame (5 degrees), and a pole nearer than this to the
@@ -227,10 +234,17 @@ static int palm_bone(const Model *m, int wrist) {
     return best;
 }
 
+/* The arm's chain. The model names its own bones (docs/modding.md: "bone 27", "bone 43" ...), so
+ * when the names are there that is what is taken: the shoulder joint (27/43), the elbow hinge
+ * (28/44) and the wrist (30/46), the wrist itself the palm the grip is placed on. A model without
+ * them keeps the geometric search: the outermost bone two steps down from a joint, its grandparent
+ * the shoulder, its parent the elbow, its child the palm. The hand is measured on the geometric
+ * wrist either way, so its size and its seat are exactly what they were. Both answers are logged,
+ * once a model (the fingers are a mod's own bones: never an index of ours). */
 static void find_arms(Actor *a, const Mat4 *world) {
     const Model *m = &a->model;
     float best[2] = {-1.0f, -1.0f};
-    int i, k;
+    int i, k, near_sh[2], near_el[2], near_ha[2], named[6];
 
     if (sArmModel == m && sArmBones == m->nbones && sArmVerts == m->nv && sArmFound[0] && sArmFound[1]) {
         return;
@@ -240,6 +254,7 @@ static void find_arms(Actor *a, const Mat4 *world) {
     sArmVerts = m->nv;
     sArmFound[0] = sArmFound[1] = 0;
     sPalmBone[0] = sPalmBone[1] = -1;
+    sMeasureBone[0] = sMeasureBone[1] = -1;
     for (i = 0; i < m->nbones; i++) {
         int p = m->bones[i].parent;
         int g = p >= 0 ? m->bones[p].parent : -1;
@@ -268,10 +283,45 @@ static void find_arms(Actor *a, const Mat4 *world) {
         sArmFound[side] = 1;
     }
     for (k = 0; k < 2; k++) {
+        near_sh[k] = sShoulder[k];
+        near_el[k] = sElbow[k];
+        near_ha[k] = sHandBone[k];
         if (sArmFound[k]) {
+            sMeasureBone[k] = sHandBone[k];
             sPalmBone[k] = palm_bone(m, sHandBone[k]);
         }
     }
+    /* by name, when the model has them: 27/43 the shoulder, 28/44 the elbow, 30/46 the wrist */
+    named[0] = model_bone_named(m, "bone 27");
+    named[1] = model_bone_named(m, "bone 43");
+    named[2] = model_bone_named(m, "bone 28");
+    named[3] = model_bone_named(m, "bone 44");
+    named[4] = model_bone_named(m, "bone 30");
+    named[5] = model_bone_named(m, "bone 46");
+    if (named[0] >= 0 && named[1] >= 0 && named[2] >= 0 && named[3] >= 0 &&
+        named[4] >= 0 && named[5] >= 0) {
+        for (k = 0; k < 2; k++) {
+            sShoulder[k] = named[k];
+            sElbow[k] = named[2 + k];
+            sHandBone[k] = named[4 + k];
+            sPalmBone[k] = named[4 + k];   /* (the wrist is its own palm: the grip's own bone) */
+            if (sMeasureBone[k] < 0) {
+                sMeasureBone[k] = named[4 + k];   /* (no geometric chain to measure on) */
+            }
+            sArmFound[k] = 1;
+        }
+    }
+    fprintf(stderr,
+            "hands: arms by geometry - L shoulder %d elbow %d wrist %d;"
+            " R shoulder %d elbow %d wrist %d\n",
+            near_sh[0], near_el[0], near_ha[0], near_sh[1], near_el[1], near_ha[1]);
+    fprintf(stderr,
+            "hands: arms in use - L shoulder %d elbow %d wrist %d palm %d;"
+            " R shoulder %d elbow %d wrist %d palm %d (%s; the hand measured on L%d/R%d, its grip unchanged)\n",
+            sShoulder[0], sElbow[0], sHandBone[0], sPalmBone[0],
+            sShoulder[1], sElbow[1], sHandBone[1], sPalmBone[1],
+            named[0] >= 0 && named[1] >= 0 ? "by name" : "by geometry",
+            sMeasureBone[0], sMeasureBone[1]);
 }
 
 /* play space matches the camera: +X right, +Y up, -Z forward. `p` is an offset from her eyes. */
@@ -569,10 +619,13 @@ static void hand_measure(const Model *m, int bone, float *extent, Vec3 *center);
 
 /* the arm's two lengths from the bind pose: the inverse of each bone's inv_bind (rigid) gives
  * its bind world position, and the distances go to room units with the actor's own scale, as
- * the placed bones the solver measures are. Computed once per model, as find_arms caches. */
+ * the placed bones the solver measures are. Times the calibration's arm scale (vrbody_arm_scale:
+ * the player's reach over Fiona's, from the VR options' Calibrate Height & Reach), so the arm
+ * reaches the controller as a real one would. Computed once per model, as find_arms caches. */
 static void arm_lengths(const Actor *a) {
     const Model *m = &a->model;
     float scale = a->scale != 0.0f ? a->scale : 1.0f;
+    float k = vrbody_arm_scale(a);
     int side;
 
     if (sLenModel != m || sLenBones != m->nbones || sLenVerts != m->nv) {
@@ -582,12 +635,12 @@ static void arm_lengths(const Actor *a) {
         sArmLenHave[0] = sArmLenHave[1] = 0;
     }
     for (side = 0; side < 2; side++) {
-        int wrist = sHandBone[side], palm = sPalmBone[side] >= 0 ? sPalmBone[side] : wrist;
+        int wrist = sMeasureBone[side], palm = sPalmBone[side] >= 0 ? sPalmBone[side] : sMeasureBone[side];
         Mat4 sh, el, pa, wr;
         float d[3], dpalm, wext;
         Vec3 wc;
 
-        if (!sArmFound[side] || sArmLenHave[side]) {
+        if (!sArmFound[side] || wrist < 0 || (sArmLenHave[side] && sArmLenK[side] == k)) {
             continue;
         }
         sh = rigid_inverse(&m->bones[sShoulder[side]].inv_bind);
@@ -597,12 +650,12 @@ static void arm_lengths(const Actor *a) {
         d[0] = sh.m[12] - el.m[12];
         d[1] = sh.m[13] - el.m[13];
         d[2] = sh.m[14] - el.m[14];
-        sArmLen[side][0] = v_len(d) * scale * ARM_LENGTH_SCALE;
+        sArmLen[side][0] = v_len(d) * scale * k;
         d[0] = el.m[12] - pa.m[12];
         d[1] = el.m[13] - pa.m[13];
         d[2] = el.m[14] - pa.m[14];
         dpalm = v_len(d);
-        sArmLen[side][1] = dpalm * scale * ARM_LENGTH_SCALE;
+        sArmLen[side][1] = dpalm * scale * k;
         d[0] = el.m[12] - wr.m[12];
         d[1] = el.m[13] - wr.m[13];
         d[2] = el.m[14] - wr.m[14];
@@ -616,6 +669,7 @@ static void arm_lengths(const Actor *a) {
             sGripCenter[side] = mat4_point(&m->bones[palm].inv_bind, pm);
         }
         sArmLenHave[side] = 1;
+        sArmLenK[side] = k;
     }
 }
 
@@ -703,6 +757,9 @@ static void hand_measure(const Model *m, int bone, float *extent, Vec3 *center) 
 static float hand_scale(const Actor *a, int side, int bone) {
     float body = 1.0f, extent, s;
 
+    if (bone < 0 || bone >= a->model.nbones) {
+        return 1.0f;   /* (no bone to measure on: as the model's own hand) */
+    }
     if (sExtentModel != &a->model || sExtentVerts != a->model.nv) {
         sExtentModel = &a->model;
         sExtentVerts = a->model.nv;
@@ -767,13 +824,20 @@ static Mat4 grip_matrix(Vec3 at, Vec3 fwd, Vec3 up, float scale, Vec3 center, in
     return m;
 }
 
-static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace, int side, Vec3 at, Vec3 fwd, Vec3 up) {
+/* The arm: the shoulder, the elbow and the hand, from the grip. The hand's own pose is the grip
+ * matrix, exactly as it was (its descendants carried with it). When the VR body is on (vrbody.h,
+ * section 5) the elbow and the wrist's twist come from FRIK's solve; else the body's fixed bend
+ * and place_middle's smoothed pole, as before. */
+static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace, int side,
+                     const Mat4 *hand, float hs) {
     const Model *m = &a->model;
     int sh = sShoulder[side], el = sElbow[side];
     int wr = sHandBone[side], pa = sPalmBone[side] >= 0 ? sPalmBone[side] : sHandBone[side];
-    Mat4 room[3], grip, old;
-    float root[3], mid[3], pole[3], l1, l2, yaw, hs;
-    int i;
+    Mat4 room[3], grip = *hand, old;
+    float root[3], mid[3], pole[3], l1, l2, yaw;
+    float k = vrbody_arm_scale(a);   /* (the calibration's stretch for the arm's bones) */
+    VrArm arm;
+    int i, solved = 0;
 
     if (!sArmFound[side] || sh < 0 || el < 0 || wr < 0 || wr >= m->nbones || pa < 0 || pa >= m->nbones) {
         return;
@@ -786,11 +850,34 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
     room[2] = mat4_mul(*place, world[wr]);
     root[0] = room[0].m[12]; root[1] = room[0].m[13]; root[2] = room[0].m[14];
     mid[0] = room[1].m[12]; mid[1] = room[1].m[13]; mid[2] = room[1].m[14];
-    l1 = sArmLen[side][0];   /* the bind pose's, not this animation's */
+    memset(&arm, 0, sizeof(arm));
+    if (vrbody_arm(a, side, root, &grip.m[12], &grip, &arm) && !arm.skip) {
+        /* FRIK's elbow: the law of cosines in the plane of the shoulder -> target and the bend's
+         * own direction; 27 -> 28 stays a pure hinge, as the PS2 motions have it */
+        float reach[3];
+        int j;
+
+        for (j = 0; j < 3; j++) {
+            reach[j] = arm.reach[j];
+            grip.m[12 + j] = reach[j];
+        }
+        if (side == 0) {
+            aim(&room[0], root, arm.elbow, arm.pole, side);
+            aim(&room[1], arm.elbow, reach, arm.pole, side);
+        } else {
+            aim_rev(&room[0], root, arm.elbow, arm.pole, side);
+            aim_rev(&room[1], arm.elbow, reach, arm.pole, side);
+        }
+        /* the arm's bones stretch along the bone (X) by the calibrated scale, as the IK's lengths
+         * are: the skin spans the shoulder to the elbow to the hand, and the hand stays exactly on
+         * the controller - FRIK's arm length scaling, not a moved target */
+        room[0].m[0] *= k; room[0].m[1] *= k; room[0].m[2] *= k;
+        room[1].m[0] *= k; room[1].m[1] *= k; room[1].m[2] *= k;
+        solved = 1;
+    }
+    l1 = sArmLen[side][0];   /* (the fallback's: the bind pose's, not this animation's) */
     l2 = sArmLen[side][1];
-    hs = hand_scale(a, side, wr);   /* the hand's scale, still measured on the wrist */
-    grip = grip_matrix(at, fwd, up, hs, sGripCenter[side], side);
-    if (l1 > 0.05f && l2 > 0.05f) {
+    if (!solved && !arm.skip && l1 > 0.05f && l2 > 0.05f) {
         /* the bend is in her body's frame (yaw 0 along +z, her left +x), not the headset's:
          * down and out on that side, a little behind her, so the elbows point out and back */
         float out_sign = side == 0 ? 1.0f : -1.0f;
@@ -811,11 +898,11 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
         v_sub(d, reach, root);
         dist = v_len(d);
         if (dist > l1 + l2 && dist > 1.0e-4f) {
-            float k = (l1 + l2) * 0.999f / dist;
+            float shrink = (l1 + l2) * 0.999f / dist;   /* (not the calibration's k: this is the clamp) */
 
-            reach[0] = root[0] + d[0] * k;
-            reach[1] = root[1] + d[1] * k;
-            reach[2] = root[2] + d[2] * k;
+            reach[0] = root[0] + d[0] * shrink;
+            reach[1] = root[1] + d[1] * shrink;
+            reach[2] = root[2] + d[2] * shrink;
             grip.m[12] = reach[0];
             grip.m[13] = reach[1];
             grip.m[14] = reach[2];
@@ -832,8 +919,8 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
         }
         /* the arm is longer than Fiona's model's: lengthen the upper arm and forearm along the
          * bone (X) only; Y and Z, the thickness, stay as they are, so the joints still meet */
-        room[0].m[0] *= ARM_LENGTH_SCALE; room[0].m[1] *= ARM_LENGTH_SCALE; room[0].m[2] *= ARM_LENGTH_SCALE;
-        room[1].m[0] *= ARM_LENGTH_SCALE; room[1].m[1] *= ARM_LENGTH_SCALE; room[1].m[2] *= ARM_LENGTH_SCALE;
+        room[0].m[0] *= k; room[0].m[1] *= k; room[0].m[2] *= k;
+        room[1].m[0] *= k; room[1].m[1] *= k; room[1].m[2] *= k;
         if (pa != wr) {
             /* the wrist on the forearm's line from the elbow to the palm, the bind pose's share */
             float wp[3];
@@ -895,6 +982,12 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
             room[2].m[8] *= hs; room[2].m[9] *= hs; room[2].m[10] *= hs;
             world[wr] = mat4_mul(*unplace, room[2]);
         }
+        solved = 1;
+    }
+    /* The arm's bones go into the pose last, whichever solve made them: the VR body's elbow or the
+     * fallback's. (This write used to live inside the fallback's block, so a solved arm was left at
+     * the animation's pose - the shoulders by her sides while the hand reached the controller.) */
+    if (solved) {
         world[sh] = mat4_mul(*unplace, room[0]);
         world[el] = mat4_mul(*unplace, room[1]);
     }
@@ -925,6 +1018,7 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
 #endif
 
     if (!vrhands_wants(a) || !a->visible || world == NULL) {
+        vrbody_idle();
 #if VR_STEP_LOG
         pose_us += perf_us(t_pose, SDL_GetPerformanceCounter());
 #endif
@@ -932,9 +1026,14 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
     }
     find_arms(a, world);
     arm_lengths(a);
+    /* the VR body (vrbody.h): its yaw, and the body under the headset with the feet kept. Off
+     * wherever the arms are off (a cutscene, a scene, no anchor): then not one matrix is touched. */
+    vrbody_begin(a, world, place, unplace);
+    vrbody_body(a, world, place, unplace);
     for (side = 0; side < 2; side++) {
         Vec3 at, right, fwd, up;
-        float grip, index, thumb;
+        Mat4 hand;
+        float grip, index, thumb, hs;
 
         if (!sArmFound[side] || !hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
             continue;
@@ -961,11 +1060,18 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
             }
             sStopHeld[side] = held;
         }
-        applied[side] = hand_scale(a, side, sHandBone[side]);
-        pose_arm(a, world, place, unplace, side, at, fwd, up);
+        /* FRIK's DampenHands: only the body's pose is smoothed. What a door, a ladder or a grab
+         * reads is the raw controller (vrhands_tick), so none of them changes. */
+        vrbody_dampen(side, &at, &fwd, &up);
+        applied[side] = hs = hand_scale(a, side, sMeasureBone[side]);
+        hand = grip_matrix(at, fwd, up, hs, sGripCenter[side], side);
+        vrbody_clavicle(a, world, unplace, side, &hand.m[12]);
+        pose_arm(a, world, place, unplace, side, &hand, hs);
         curl_hand(a, side, grip, index, thumb);
         posed++;
     }
+    /* the forearm's own roll, the upper arm's twist and the deltoid, the first-person head */
+    vrbody_finish(a, world, place, unplace);
     log_hands(applied[0], applied[1], posed);
 #if VR_STEP_LOG
     pose_us += perf_us(t_pose, SDL_GetPerformanceCounter());

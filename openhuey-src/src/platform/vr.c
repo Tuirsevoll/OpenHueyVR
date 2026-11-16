@@ -10,6 +10,8 @@
 
 #include "gl.h"
 
+#include <SDL3/SDL.h>   /* (the calibration's clock, SDL_GetTicksNS) */
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,6 +47,7 @@ VrOptions gVrOptions = {
     0.18f,    /* crouch_off: ... and its release */
     0.45f,    /* sneak_speed: 45% of a walk */
     0,        /* audio3d: the scripts' defaults (vr-options.fs) turn it on */
+    1,        /* hide_door_see_through: on (the value that was missing here, every one after it one place out) */
     /* the panic's effects: the page's Reduced preset (the grey tint alone, the stumbles and the
      * full beat kept) - scripts/vr-options.fs writes the player's over these */
     1,        /* panic_tint */
@@ -54,7 +57,9 @@ VrOptions gVrOptions = {
     0,        /* panic_shake */
     1,        /* panic_stumbles */
     2,        /* panic_haptics: full */
-    0         /* item_prop_debug: no axes */
+    0,        /* item_prop_debug: no axes */
+    1,        /* body_fp_head: the first-person head is shrunk away (on) */
+    0.0f      /* arm_reach: not measured - the body sizes the arm from the eye height */
 };
 
 #if !defined(_WIN32)
@@ -118,9 +123,17 @@ void vr_haptic(int hand, float amplitude, float seconds) { (void)hand; (void)amp
 int vr_head_at(Vec3 *out) { (void)out; return 0; }
 int vr_head_local(Vec3 *out) { (void)out; return 0; }
 int vr_head_forward(Vec3 *out) { (void)out; return 0; }
+int vr_head_look(float *pitch, Vec3 *forward, Vec3 *up) {
+    (void)pitch;
+    (void)forward;
+    (void)up;
+    return 0;
+}
 void vr_screen_face(void) {}
 void vr_screen_loose(int on) { (void)on; }
 int vr_calibrate(float *height_m, float *scale) { (void)height_m; (void)scale; return 0; }
+int vr_arm_pending(void) { return 0; }
+int vr_arm_save(void) { return 0; }
 void vr_set_height(float height_m) { (void)height_m; }
 void vr_set_scale(float scale) { (void)scale; }
 void vr_body(float *height_m, float *scale) {
@@ -479,6 +492,20 @@ static XrPosef head_pose(void) {
 static int sEyeSet;      /* a calibration, or the first pose, chose the eye height */
 static int sEyeManual;   /* the console set it; the first pose must not replace it */
 
+/* The body calibration's second half: the player's reach, the furthest a tracked controller goes
+ * from the head while the measurement runs (a T-pose or the arms straight ahead). It starts with
+ * the same action as the height (vr_calibrate: the VR options' Calibrate Height & Reach row, or
+ * the title's) and lands in gVrOptions.arm_reach; a full reach ends it at once. */
+#define ARM_MEASURE_SECONDS 6.0f     /* how long the window stays open */
+#define ARM_MEASURE_DONE 0.62f       /* a reach this far out (metres) is a full one: done at once */
+#define ARM_MEASURE_MIN 0.40f        /* below this nothing was a reach (hands down is ~0.60 for an adult): no measurement */
+#define ARM_MEASURE_MAX 1.20f        /* (a tracker's glitch beyond any arm is not a reach) */
+#define ARM_MEASURE_SETTLE 0.35f     /* seconds before sampling: the origin is being taken again */
+static int sArmOn;        /* the reach is being measured */
+static float sArmBest;    /* the furthest a controller has been from the head, metres */
+static Uint64 sArmAt;     /* when it started */
+static int sArmFresh;     /* it has just been measured: the scripts save the options once */
+
 /* a metre of head motion in the world's units: 1 when nothing sensible is set (defined below,
  * after clamp_scale) */
 static float body_scale(void);
@@ -593,6 +620,11 @@ int vr_calibrate(float *height_m, float *scale) {
     /* a real floor height sizes the world to her. Anything else (a seated origin) keeps scale 1. */
     gVrOptions.body_scale = (h >= 0.8f && h <= 2.3f) ? clamp_scale(1.6f / h) : 1.0f;
     gVrOptions.calibrated = 1;
+    /* and the reach: the same action, the arms held out for a moment (arm_measure_tick below) */
+    sArmOn = 1;
+    sArmBest = 0.0f;
+    sArmAt = SDL_GetTicksNS();
+    sArmFresh = 0;
     /* and the origin is taken again where they stand, so the world's new size applies from here
      * instead of shifting the camera by their own offset from the old one. One action: the height
      * measured, the world sized, the view anchored (VRIK's, as far as this game's rig allows). */
@@ -604,6 +636,63 @@ int vr_calibrate(float *height_m, float *scale) {
         *scale = gVrOptions.body_scale;
     }
     return 1;
+}
+
+/* the reach's measurement, once a frame while it runs: the furthest a tracked controller is from
+ * the head (both in the play space, a metre of it the world's units). A full reach ends it at once,
+ * else the window's time does; a reach too small to be a measurement leaves the option at 0 and the
+ * body falls back on the eye height. */
+static void arm_measure_done(void) {
+    sArmOn = 0;
+    sArmFresh = 1;
+    gVrOptions.arm_reach = sArmBest >= ARM_MEASURE_MIN ? sArmBest : 0.0f;
+    printf("vr: body calibrated - eyes %.2f m, reach %.2f m%s\n", (double)gVrOptions.eye_height,
+           (double)gVrOptions.arm_reach, gVrOptions.arm_reach > 0.0f ? "" : " (none: the height sizes the arm)");
+}
+
+static void arm_measure_tick(void) {
+    XrPosef head;
+    float s;
+    int i;
+
+    if (!sArmOn || sViewCount <= 0) {
+        return;
+    }
+    if ((float)(SDL_GetTicksNS() - sArmAt) / 1.0e9f < ARM_MEASURE_SETTLE) {
+        return;   /* (vr_calibrate asked for the origin again: a frame or two of the old one) */
+    }
+    head = head_pose();
+    s = body_scale();
+    for (i = 0; i < 2; i++) {
+        float hx = head.position.x * VR_UNITS_PER_METER / s;
+        float hy = head.position.y * VR_UNITS_PER_METER / s;
+        float hz = head.position.z * VR_UNITS_PER_METER / s;
+        float dx, dy, dz, d;
+
+        if (!sHand[i].tracked) {
+            continue;
+        }
+        dx = sHand[i].at.x - hx;
+        dy = sHand[i].at.y - hy;
+        dz = sHand[i].at.z - hz;
+        d = sqrtf(dx * dx + dy * dy + dz * dz) * s / VR_UNITS_PER_METER;   /* metres */
+        if (d > sArmBest && d < ARM_MEASURE_MAX) {
+            sArmBest = d;
+        }
+    }
+    if (sArmBest >= ARM_MEASURE_DONE ||
+        (float)(SDL_GetTicksNS() - sArmAt) / 1.0e9f >= ARM_MEASURE_SECONDS) {
+        arm_measure_done();
+    }
+}
+
+int vr_arm_pending(void) { return sArmOn; }
+
+int vr_arm_save(void) {
+    int r = sArmFresh;
+
+    sArmFresh = 0;
+    return r;
 }
 
 void vr_set_height(float height_m) {
@@ -1149,6 +1238,28 @@ int vr_head_forward(Vec3 *out) {
         return 1;
     }
     *out = vec3(f.x / xz, 0.0f, f.z / xz);
+    return 1;
+}
+
+int vr_head_look(float *pitch, Vec3 *forward, Vec3 *up) {
+    XrPosef d;
+    Vec3 f, u;
+
+    if (sViewCount <= 0) {
+        return 0;
+    }
+    d = head_pose();
+    f = quat_dir(d.orientation, 0.0f, 0.0f, -1.0f);
+    u = quat_dir(d.orientation, 0.0f, 1.0f, 0.0f);
+    if (pitch != NULL) {   /* (down is positive: the forward's fall) */
+        *pitch = -asinf(f.y < -1.0f ? -1.0f : f.y > 1.0f ? 1.0f : f.y);
+    }
+    if (forward != NULL) {
+        *forward = f;
+    }
+    if (up != NULL) {
+        *up = u;
+    }
     return 1;
 }
 
@@ -2033,6 +2144,7 @@ int vr_begin_frame(void) {
     }
     sFrameOn = 1;
     sync_stick();
+    arm_measure_tick();   /* (a body calibration's reach, while its window is open) */
     if (!sLogged) {
         /* once, to the console: what a headset session was told to do. A support line - the VR
          * options are otherwise silent, and a setting that never reached the engine looks the

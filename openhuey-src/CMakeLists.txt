@@ -156,7 +156,7 @@ add_executable(hga
     src/main.c
     src/platform/gl.c src/platform/platform.c src/platform/vr.c src/platform/voice.c src/platform/update.c src/platform/sound.c src/platform/movie.c src/platform/music.c src/platform/seq.c src/platform/spu.c src/platform/snddrv.c src/platform/saudio.c
     src/render/render.c src/render/post.c
-    src/game/room.c src/game/console.c src/game/actor.c src/game/doglegs.c src/game/humanlegs.c src/game/vrhands.c src/game/loot.c src/game/itemprops.c src/game/chair.c src/game/cloth.c src/game/world.c
+    src/game/room.c src/game/console.c src/game/actor.c src/game/doglegs.c src/game/humanlegs.c src/game/vrhands.c src/game/vrbody.c src/game/loot.c src/game/itemprops.c src/game/chair.c src/game/cloth.c src/game/world.c
     src/game/camdirector.c src/game/areas.c src/game/exits.c src/game/messages.c src/game/cutscene.c src/game/placed.c src/game/sprites.c src/game/mods.c src/game/particles.c src/game/things.c src/game/obstacles.c src/game/swimpath.c src/game/rumble.c src/game/props.c
     src/game/sound3d.c src/game/vrspots.c
     src/forth/bind_engine.c)
@@ -277,9 +277,14 @@ endif()
 add_test(NAME spu_check COMMAND spu-check)
 
 # the hands' wall sweep: a hand's path across a room's wall is found, a floor's isn't (detection only)
-add_executable(hands-sweep-check tests/hands_sweep_check.c src/game/vrhands.c)
+add_executable(hands-sweep-check tests/hands_sweep_check.c src/game/vrhands.c src/game/vrbody.c)
 target_link_libraries(hands-sweep-check PRIVATE hgadata forth)
-add_test(NAME hands_sweep_check COMMAND hands-sweep-check)
+add_test(NAME hands_sweep_check COMMAND hands-sweep-check "${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/fiona-vr-rig/library")
+
+# Fiona's VR body: the bones by name, the ratios, the feet kept, the helpers and the head (vrbody.c)
+add_executable(vrbody-check tests/vrbody_check.c src/game/vrbody.c)
+target_link_libraries(vrbody-check PRIVATE hgadata)
+add_test(NAME vrbody_check COMMAND vrbody-check "${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/fiona-vr-rig/library")
 
 # a thing in a hand: drawn between the last two ticks' hand frames, as her eyes are (loot.c)
 add_executable(loot-frame-check tests/loot_frame_check.c src/game/loot.c src/game/itemprops.c src/game/props.c)
