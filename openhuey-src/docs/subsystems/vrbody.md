@@ -104,29 +104,34 @@ head. The helpers are rebuilt from their parent **every** frame, so nothing accu
   says "Arms out..." while it runs). It lives in `vr.arm-reach` (metres, 0 = not measured) beside
   `vr.eye-height`/`vr.body-scale`/`vr.calibrated`, and the scripts save it when the measurement
   lands (`vr-arm-save?` in `subscreen.fs`'s held frame and `opening.fs`'s calibration screen).
-  From it, once a frame (FRIK's shape: her body scaled first, then a *small* share on her arm):
-  - **her drawn body is scaled to the player's height**, `bodyScale = player height / 1.6`
-    (0.85..1.25), applied at the end of the body pass to **the skinned pose alone** - every bone,
-    uniformly, about her feet (so they stay on the floor). That is where her shoulders come to
-    sit where the player's do, and the arms solve from there. Her **actor's scale, collision,
-    hitbox, position, movement, the world, its scale option and the camera are not touched**:
-    nothing but the drawn skeleton sees this (`vrbody_body_scale`, and the log says her actor's
-    scale is unchanged).
-  - **the arm's share** = the player's *shoulder-to-wrist* over hers, drawn. The measured reach is
-    the headset to the controller, in metres, and the room's units for one are **her own eye
-    height as the room draws her over the player's** (`units_per_m` = her rest eye height in
-    room units / the player's eye height in metres, ~9.8 - the same proportion the camera and the
-    world scale use; the VR world's own 12.5 / `vr.body-scale` is not hers: at 12.75 a 0.86 m
-    reach became 11 units and the arm had to stretch to 1.8 to reach it). A person's 0.20 m of
-    eye-to-shoulder comes off it (`EYE_TO_SHOULDER_M`), and her arm is
-    `(arm1 + arm2) x bodyScale`. The ratio is clamped to **0.90..1.15** - FRIK's arm length,
-    *never* the old stretched arm: a 1.73 m player's measured 0.86 m lands at ~1.13, within
-    10-15% of her own arm, so the clamp never bites. It multiplies the solve's two lengths
-    **equally** and the two arm bones' length axis with them, so the drawn arm spans exactly the
-    solved chain and the hand is the controller's (`vrbody_arm_scale` = body x arm;
-    `vrhands.c`'s fallback lengths take the same). Before a reach is measured the eye height sizes
-    it (0.47 of it - a measured reach is about half). All the numbers are logged once:
-    `fiona_arm_len`, `player_arm_len`, `reach_scale`, `units_per_m`.
+  From it, once a frame (one scale, the world's: her body is her own size, her head at the camera,
+  and only her arms take a share):
+  - **her drawn body is NOT scaled again.** `bodyScale` is **1.0** always: the height calibration
+    already sets the VR world's scale (`vr.c`'s 1.6 / the player's height), and scaling her body by
+    the same idea a second time buried her head and chest under the camera - the taller the player,
+    the worse (`body_scale 1.077` at 1.74 m). Her actor's scale, collision, hitbox, position,
+    movement, the world and the camera are untouched (`vrbody_body_scale` = 1).
+  - **her head is put at the camera** (`vrbody_head_camera`, before the first-person head): the
+    anchor is her head + 1.5 by the game's own camera, so her head bone is shifted to it and the
+    neck stretches - her eyes are the player's, and looking straight down shows her chest instead
+    of the inside of it. Logged once: the camera, her eye after posing, and how far apart they
+    were (metres).
+  - **every offset and threshold of hers is in HER space**, converted with ONE constant metre's
+    units (`units_per_m = VR_UNITS_PER_METER`, 12.5 - the value a 1.6 m calibration gives), never
+    one that moves with the player's height: the shoulders' 0.20/0.075/0.18 m, the crouch dead
+    zone, the body's move (her eye height over her model's 1.6 m = 0.783) and the clavicle's reach
+    (a fraction of her own arm). The world's scale already maps the player onto her, so a
+    height-dependent factor corrected everything twice - the logs read 12.48 at 1.60 m against
+    13.53 at 1.73 m, and the taller the player the deeper the camera sat in her body. Now the
+    shoulder and the eye come out identical at 1.60, 1.63 and 1.74 m (`hands-sweep-check` asserts
+    it, to 0.00000 units).
+  - **the calibrated reach, into her space**: `reach_m x (1.6 / the player's height) x 12.5`, so a
+    taller player's longer reach lands at her arm too (a 1.74 m player's 0.86 m is 0.79 m of hers).
+    The shoulder offset (|up, back, side| = 0.279 m, in her metres) comes off it, her arm is
+    `arm1 + arm2` (her own, `bodyScale` 1), and the ratio is clamped to **0.90..1.25** - it comes
+    out ~1.2 for a real reach, never pinned. Before a reach is measured the eye height sizes it
+    (0.47 of it - a measured reach is about half). All the numbers are logged once:
+    `fiona_arm_len`, `player_arm_len`, `reach_scale`, `units_per_m`, `body move`.
   - **the hand is the size the IK has always drawn it**, whatever the body's and the arm's
     scales are: at the wrist the inherited scale is cancelled (its local scale is 1 over what it
     inherited), so the wrist's world scale is the hand's own `hand_scale` (`HAND_METRES` x

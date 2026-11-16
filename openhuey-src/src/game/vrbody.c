@@ -154,7 +154,7 @@
 #define BODY_SCALE_MAX 1.25f
 #define ARM_SCALE_MIN 0.90f        /* the residual on her two arm bones, FRIK-style: a small share,
                                     * never a stretched arm */
-#define ARM_SCALE_MAX 1.15f
+#define ARM_SCALE_MAX 1.25f           /* (a headset at 1.74 m needed a shade over 1.15) */
 #define MOVE_MIN 0.5f              /* her eye height over the player's: their motion in her sizes */
 #define MOVE_MAX 1.15f
 #define BODY_DROP_DEAD 0.04f       /* metres a head drop passes before the body follows it (a
@@ -185,6 +185,7 @@ typedef struct VrBody {
     int clav[2], upper[2], elbow[2], fore[2], hand[2];
     int thigh[2], shin[2], foot[2], toe[2];
     int twist1[2], twist2[2], upperTwist[2], deltoid[2], neckFp;
+    int eyeBone;                           /* her eye bone (34), or -1: the head + EYE_ABOVE_HEAD */
     int haveFore, haveUpper, haveNeckFp;   /* the vr ... helpers that are there */
     float kArm, kBody;                     /* the ratios: room units a FRIK unit is */
     float armLen;                          /* |pos(30) - pos(27)|, rest, model units */
@@ -246,6 +247,7 @@ static int sSignsLogged;
 static int sShouldersLogged;
 static int sShoulderLogged[2];   /* (each side's own numbers, once) */
 static int sShoulderWarned[2];   /* (the range warning, once a side) */
+static int sHeadCamLogged;       /* (her eye against the camera, once) */
 /* the calibration last logged (so the scale factors are said once, not a frame) */
 static float sLoggedEye = -1.0f, sLoggedReach = -1.0f;
 
@@ -704,6 +706,7 @@ static void cache_bones(const struct Actor *a) {
     /* her rest eye height above the floor (bone 0): the eye bones' own, else the head's + a little */
     bind_pos(m, sBones.root, p0);
     eyes = game_bone(m, 34);
+    sBones.eyeBone = eyes;
     eye2 = game_bone(m, 35);
     if (eyes >= 0 && eye2 >= 0) {
         bind_pos(m, eyes, p1);
@@ -771,33 +774,41 @@ static void body_scales(const struct Actor *a) {
     if (!(world > 0.2f)) {
         world = 1.0f;
     }
-    /* her height against the player's: the player's eye height is her model's (1.6 m is her eyes'
-     * height as the game draws her), so the ratio is the height's */
-    sBones.bodyScale = clampf(eye_m / FIONA_HEIGHT_M, BODY_SCALE_MIN, BODY_SCALE_MAX);
+    /* Her drawn body is NOT scaled: the height calibration already sets the VR world's scale
+     * (vr.c's 1.6 / the player's height), so scaling her again corrected her twice and buried her
+     * head and chest under the camera the taller the player was. One scale, the world's: her body
+     * is her own size, her head is put at the camera (vrbody_head_camera), and only her arms take a
+     * share. */
+    sBones.bodyScale = 1.0f;
     reach_m = gVrOptions.arm_reach;
     if (!(reach_m > 0.15f)) {
         reach_m = ARM_REACH_OF_HEIGHT * eye_m;
     }
-    /* The room's units for a metre of the *player*: her own eye height as the room draws her over
-     * the player's, in metres - the same proportion the camera and the world scale use. The VR
-     * world's own metre (12.5 / vr.body-scale) is not hers: at 12.75 a 0.86 m reach became 11
-     * units and the arm had to stretch to 1.8 to reach it. */
-    units_per_m = (sBones.eyeWorld > 0.05f ? sBones.eyeWorld : 15.65f) / eye_m;
+    /* Every offset and threshold of the body's is in HER space: ONE constant metre's units
+     * (VR_UNITS_PER_METER, the value a 1.6 m calibration gives), never one that moves with the
+     * player's height. The world's scale has already mapped the player onto her, so anything given
+     * in metres and converted per height would be corrected twice - the taller the player, the
+     * more wrong (a shoulder an extra 0.02 m low at 1.74 m, a body move of 0.67 instead of 0.78).
+     * With this constant every height looks exactly like the 1.6 m calibration. */
+    units_per_m = VR_UNITS_PER_METER;
     sBones.unitsPerM = units_per_m;
-    player_reach = reach_m * units_per_m;
+    /* The calibrated reach, into her space: the world's scale (1.6 / the player's height) takes
+     * the player's own size into her metres first, so a taller player's longer reach still lands
+     * at her arm (a 1.74 m player's 0.86 m is 0.79 m of hers). */
+    player_reach = reach_m * world * VR_UNITS_PER_METER;
     /* The reach is measured from the headset to the controller, which is the eyes to the hand: the
      * arm itself starts at the shoulder *the body places* (vrbody_shoulders), so the same offset
-     * comes off it - |up, back, side| - and the two agree. Her arm is her own shoulder to wrist,
-     * drawn. Their ratio is the small share her two arm bones take, so her full stretch is the
-     * player's - bounded, never the old stretched arm. */
-    player_arm = player_reach - sqrtf(SH_UP_M * SH_UP_M + SH_BACK_M * SH_BACK_M + SH_SIDE_M * SH_SIDE_M) * units_per_m;
+     * comes off it - |up, back, side|, in her metres - and the two agree. Her arm is her own
+     * shoulder to wrist. Their ratio is the share her two arm bones take. */
+    player_arm = player_reach -
+                 sqrtf(SH_UP_M * SH_UP_M + SH_BACK_M * SH_BACK_M + SH_SIDE_M * SH_SIDE_M) * units_per_m;
     fiona_arm = (sBones.arm1 + sBones.arm2) * sBones.bodyScale;
     sBones.armScale = clampf(player_arm / (fiona_arm > 0.05f ? fiona_arm : 1.0f),
                              ARM_SCALE_MIN, ARM_SCALE_MAX);
-    sBones.moveScale = clampf(sBones.eyeWorld / (eye_m * VR_UNITS_PER_METER / world > 0.1f ?
-                                                 eye_m * VR_UNITS_PER_METER / world : 1.0f),
+    /* and the body's move: her eye height over *her* model's (1.6 m), a constant 0.78 */
+    sBones.moveScale = clampf(sBones.eyeWorld / (FIONA_HEIGHT_M * VR_UNITS_PER_METER),
                               MOVE_MIN, MOVE_MAX);
-    sBones.dropDead = BODY_DROP_DEAD * (VR_UNITS_PER_METER / world);
+    sBones.dropDead = BODY_DROP_DEAD * units_per_m;
     (void)a;
     if (gVrOptions.eye_height != sLoggedEye || gVrOptions.arm_reach != sLoggedReach) {
         sLoggedEye = gVrOptions.eye_height;
@@ -1471,9 +1482,8 @@ void vrbody_clavicle(struct Actor *a, Mat4 *world, const Mat4 *unplace, int side
     if (len < 1.0e-5f) {
         return;
     }
-    L = sBones.armLen * sBones.bodyScale * sBones.armScale;   /* (the arm's length in this same, drawn
-                                                              * model space: the clavicle's share is
-                                                              * a fraction of it) */
+    L = sBones.armLen * sBones.bodyScale;   /* (a fraction of HER arm, in her own model's units: nothing
+                                             * here may move with the player's height) */
     adjust = clampf(len - 0.5f * L, 0.0f, 0.85f * L) / (0.85f * L);
     v_scale3(off, d, adjust * CLAV_REACH * L / len);
     if (off[1] < 0.0f) {
@@ -1491,6 +1501,60 @@ void vrbody_clavicle(struct Actor *a, Mat4 *world, const Mat4 *unplace, int side
     }
     rot_about(axis, ang, origin, &r);
     turn_tree(world, m, sBones.clav[side], &r);
+}
+
+/* ---- 3b. her head at the camera: her eyes where the player's are ------------------------------ */
+
+void vrbody_head_camera(struct Actor *a, Mat4 *world, const Mat4 *unplace) {
+    const Model *m;
+    Vec3 e;
+    float yaw, eye[3], cam[3], cm[3], delta[3];
+    int b;
+
+    if (!sActive || a == NULL || world == NULL || unplace == NULL) {
+        return;
+    }
+    m = &a->model;
+    if (sBones.head < 0) {
+        return;
+    }
+    if (!vr_anchor_get(&e, &yaw)) {
+        return;
+    }
+    (void)yaw;
+    cam[0] = e.x;
+    cam[1] = e.y;
+    cam[2] = e.z;
+    /* her eye point, as her body has posed it */
+    b = sBones.eyeBone >= 0 && sBones.eyeBone < m->nbones ? sBones.eyeBone : sBones.head;
+    m_pos(&world[b], eye);
+    if (b != sBones.eyeBone) {
+        eye[1] += EYE_ABOVE_HEAD;   /* (no eye bone: the head bone + a little) */
+    }
+    /* The camera is her head's place by the anchor's own making (her head + 1.5), so her eyes are
+     * part of one unit with it: her head bone goes where the camera is and the neck stretches to
+     * it. That is what keeps the view at her eyes - looking down shows her chest, not the inside of
+     * it. */
+    {
+        Vec3 em = mat4_point(unplace, vec3(cam[0], cam[1], cam[2]));
+
+        cm[0] = em.x;
+        cm[1] = em.y;
+        cm[2] = em.z;
+    }
+    v_sub3(delta, cm, eye);
+    if (v_len3(delta) > 1.0e-5f) {
+        shift_tree(world, m, sBones.head, delta);
+    }
+    if (!sHeadCamLogged) {
+        float u = sBones.unitsPerM > 0.5f ? sBones.unitsPerM : VR_UNITS_PER_METER;
+        float d = v_len3(delta);
+
+        sHeadCamLogged = 1;
+        m_pos(&world[b], eye);
+        fprintf(stderr, "vrbody: head at the camera - camera %.2f %.2f %.2f, her eye %.2f %.2f %.2f, %.3f m apart\n", (double)cam[0], (double)cam[1],
+                (double)cam[2], (double)eye[0], (double)eye[1], (double)eye[2], (double)(d / u));
+    }
 }
 
 /* ---- 4b. FRIK's shoulders: her arm's root where the player's is ---------------------------------- */

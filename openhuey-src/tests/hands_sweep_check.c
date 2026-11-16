@@ -153,9 +153,14 @@ int vr_active(void) { return sVrOn; }
 /* the VR options (platform/vr.c): a body of zeroes - no seated play, no first-person head */
 VrOptions gVrOptions;
 
+static float sVrBodyHeight = 1.6f, sVrBodyScale = 1.0f;   /* (the calibration's pair) */
 void vr_body(float *height_m, float *scale) {
-    (void)height_m;
-    (void)scale;
+    if (height_m != NULL) {
+        *height_m = sVrBodyHeight;
+    }
+    if (scale != NULL) {
+        *scale = sVrBodyScale;
+    }
 }
 
 float vr_crouch_fraction(void) { return 0.0f; }
@@ -401,6 +406,58 @@ static void check_arm_pose(const char *library) {
     hand[1][2] = sVrEye.z + 3.6f;
 
     vrhands_pose(&sArmActor, sPosed, &place, &unplace);
+
+    /* One body, three calibrated heights: everything of hers is in her own space, so her
+     * shoulder and eye must not move at all - the world's scale has already taken the player's
+     * size into hers. */
+    {
+        static const float heights[3] = {1.60f, 1.63f, 1.74f};
+        float first_sh[3] = {0.0f, 0.0f, 0.0f}, first_ey[3] = {0.0f, 0.0f, 0.0f};
+        float worst_sh = 0.0f, worst_ey = 0.0f;
+        int k, c, ub = vrbody_bone(VRBODY_UPPER, 0), eb = model_bone_named(&sArmModel, "bone 34");
+
+        for (k = 0; k < 3; k++) {
+            float sh[3], ey[3];
+
+            sVrBodyHeight = heights[k];
+            sVrBodyScale = 1.6f / heights[k];   /* (vr_calibrate's own world scale) */
+            memcpy(sPosed, sRest, sizeof(Mat4) * (size_t)sRestN);
+            vrbody_idle();
+            vrbody_begin(&sArmActor, sPosed, &place, &unplace);
+            vrbody_body(&sArmActor, sPosed, &place, &unplace);
+            vrbody_shoulders(&sArmActor, sPosed, &place, &unplace, 0, hand[0]);
+            vrbody_head_camera(&sArmActor, sPosed, &unplace);
+            for (c = 0; c < 3; c++) {
+                sh[c] = sPosed[ub].m[12 + c];
+                ey[c] = eb >= 0 ? sPosed[eb].m[12 + c] : sPosed[vrbody_bone(VRBODY_HEAD, 0)].m[12 + c];
+            }
+            if (k == 0) {
+                for (c = 0; c < 3; c++) {
+                    first_sh[c] = sh[c];
+                    first_ey[c] = ey[c];
+                }
+            } else {
+                for (c = 0; c < 3; c++) {
+                    worst_sh = fmaxf(worst_sh, fabsf(sh[c] - first_sh[c]));
+                    worst_ey = fmaxf(worst_ey, fabsf(ey[c] - first_ey[c]));
+                }
+            }
+            printf("hands: at %.2f m - the shoulder %.4f %.4f %.4f, the eye %.4f %.4f %.4f (arm share %.3f)\n",
+                   (double)heights[k], (double)sh[0], (double)sh[1], (double)sh[2], (double)ey[0],
+                   (double)ey[1], (double)ey[2],
+                   (double)(vrbody_arm_scale(&sArmActor) / vrbody_body_scale(&sArmActor)));
+        }
+        printf("hands: three heights, the shoulder moved %.5f and the eye %.5f at the most\n",
+               (double)worst_sh, (double)worst_ey);
+        if (worst_sh > 1.0e-3f || worst_ey > 1.0e-3f) {
+            printf("hands: the body is not height-independent (FAIL)\n");
+            sFails++;
+        }
+        sVrBodyHeight = 1.6f;
+        sVrBodyScale = 1.0f;
+        memcpy(sPosed, sRest, sizeof(Mat4) * (size_t)sRestN);
+        vrhands_pose(&sArmActor, sPosed, &place, &unplace);   /* (back to the pose under test) */
+    }
 
     for (side = 0; side < 2; side++) {
         const char *l = side == 0 ? "left" : "right";

@@ -865,13 +865,12 @@ int main(int argc, char **argv) {
         check("a lean forward moves the body under the head", dist3(neck0, neck1) > 0.1f);
         check("... and the feet stay on the floor", dist3(feet0[0], feet1[0]) < 0.05f);
     }
-
-    /* ---- her drawn body takes the player's height; her actor's scale does not ---------------- */
+    /* ---- her drawn body is NOT scaled again: the world's scale already made her the player's ---- */
     {
         float head0[3], head1[3], foot0b[3], foot1b[3], bs;
         float scale_before = a.scale;
 
-        sTestEye = 1.75f;   /* (a taller player: her body must grow to meet it) */
+        sTestEye = 1.75f;   /* (a taller player: the world scale handles it, not her body) */
         sCrouch = 0.0f;
         sHeadPitch = 0.0f;
         sHeadPos = vec3(sEye.x, sEye.y, sEye.z);
@@ -888,15 +887,14 @@ int main(int argc, char **argv) {
         printf("vrbody: her drawn body at %.3f - the head %.2f -> %.2f, the foot %.2f -> %.2f, the actor's scale %.2f (was %.2f)\n",
                (double)bs, (double)head0[1], (double)head1[1], (double)foot0b[1], (double)foot1b[1],
                (double)a.scale, (double)scale_before);
-        check("her drawn body takes the player's height (1.75 m / 1.6 m)",
-              fabsf(bs - 1.75f / 1.6f) < 0.01f);
-        check("... the head rises with it", head1[1] > head0[1] + 0.5f);
-        check("... the feet stay on the floor", fabsf(foot1b[1] - foot0b[1]) < 0.05f);
+        check("her drawn body is not scaled again (the world's scale did it), whatever the height",
+              fabsf(bs - 1.0f) < 1.0e-4f);
+        check("... so the head and the feet stay where her own body put them",
+              fabsf(head1[1] - head0[1]) < 0.05f && fabsf(foot1b[1] - foot0b[1]) < 0.05f);
         check("... and her actor's scale is untouched (collision, hitbox, movement, the world)",
               a.scale == scale_before && a.scale == 1.0f);
         sTestEye = 1.6f;
     }
-
     printf("vrbody: %d checks, %d bad\n", sChecked, sBad);
     model_free(&m);
     return sBad == 0 ? 0 : 1;
