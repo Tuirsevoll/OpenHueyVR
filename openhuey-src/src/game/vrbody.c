@@ -163,12 +163,13 @@
 /* FRIK's shoulders: her arm starts where the player's does, not where her model's chest happens to
  * be - below the eyes, a little behind them, and out to each side, in the player's metres and along
  * her body's yaw (never the head's pitch). When a controller is further than the arm is long the
- * shoulder reaches toward it first, up to SH_FWD_M, so the gap is the shoulder's and never a
- * stretched bone. The calibration measures the reach from this same point, so the two agree. */
+ * shoulder is turned toward it by the clavicle (its own share of the arm, CLAV_REACH), so the gap
+ * is the shoulder's and never a stretched bone. The calibration measures the reach from this same
+ * point, so the two agree. */
 #define SH_UP_M 0.20f              /* the shoulder joint below the eyes */
 #define SH_BACK_M 0.075f           /* ... behind them (toward the back of the head) */
 #define SH_SIDE_M 0.18f            /* ... to each side */
-#define SH_FWD_M 0.08f             /* how far the shoulder reaches toward a far hand */
+#define SH_MAX_M 0.15f             /* the most the placed shoulder may differ from her own posed one */
 
 #define DEG (0.017453292519943295f)
 
@@ -243,6 +244,8 @@ static int sHeadHave;
 static int sSignsLogged;
 /* the shoulders' offset, said once */
 static int sShouldersLogged;
+static int sShoulderLogged[2];   /* (each side's own numbers, once) */
+static int sShoulderWarned[2];   /* (the range warning, once a side) */
 /* the calibration last logged (so the scale factors are said once, not a frame) */
 static float sLoggedEye = -1.0f, sLoggedReach = -1.0f;
 
@@ -1034,10 +1037,11 @@ int vrbody_begin(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *un
     if (!sShouldersLogged) {
         sShouldersLogged = 1;
         fprintf(stderr, "vrbody: shoulders - %.2f m below the eyes, %.3f m behind them, %.2f m to each"
-                " side (%.3f m from the eye: the reach is measured from there), reaching %.2f m toward a"
-                " far hand first\n", (double)SH_UP_M, (double)SH_BACK_M, (double)SH_SIDE_M,
+                " side (%.3f m from the eye: the reach is measured from there), held within %.2f m of"
+                " her own and reached by the clavicle's turn\n", (double)SH_UP_M, (double)SH_BACK_M,
+                (double)SH_SIDE_M,
                 (double)sqrtf(SH_UP_M * SH_UP_M + SH_BACK_M * SH_BACK_M + SH_SIDE_M * SH_SIDE_M),
-                (double)SH_FWD_M);
+                (double)SH_MAX_M);
     }
     /* once, to the console: the sign conventions a headset report needs (the elbow's two vertical
      * turns and the legs' rules) - the first thing to quote when an elbow or a knee looks wrong */
@@ -1491,19 +1495,23 @@ void vrbody_clavicle(struct Actor *a, Mat4 *world, const Mat4 *unplace, int side
 
 /* ---- 4b. FRIK's shoulders: her arm's root where the player's is ---------------------------------- */
 
-void vrbody_shoulders(struct Actor *a, Mat4 *world, int side, const float *target) {
+void vrbody_shoulders(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace, int side,
+                      const float *target) {
     const Model *m;
-    Vec3 e;
-    float eye[3], yaw, fwd[3], want[3], sh[3], d[3], delta[3], len, reach, u, back, out;
+    Vec3 e, wm;
+    float eye[3], yaw, fwd[3], want[3], sh[3], origin[3], ua[3], ub[3], d[3], axis[3];
+    float len, sane, u, back, out, ang;
+    Mat4 r;
 
-    if (!sActive || a == NULL || world == NULL || target == NULL || side < 0 || side > 1) {
+    if (!sActive || a == NULL || world == NULL || unplace == NULL || target == NULL ||
+        side < 0 || side > 1) {
         return;
     }
     m = &a->model;
     if (sBones.upper[side] < 0 || sBones.clav[side] < 0) {
         return;
     }
-    if (!vr_anchor_get(&e, &yaw)) {   /* (her eyes, where the camera is) */
+    if (!vr_anchor_get(&e, &yaw)) {   /* (her eyes, in the room - where the camera anchor is) */
         return;
     }
     (void)yaw;
@@ -1518,31 +1526,60 @@ void vrbody_shoulders(struct Actor *a, Mat4 *world, int side, const float *targe
     if (!v_unit3(fwd, fwd)) {
         v_set(fwd, 0.0f, 0.0f, 1.0f);
     }
-    /* below the eyes, a little behind them (back along her forward), out to her own side */
+    /* the player's own shoulder, in the ROOM (the anchor's own space and up): below the eyes, a
+     * little behind them, out to her side */
     back = SH_BACK_M * u;
     out = SH_SIDE_M * u;
     want[0] = eye[0] - fwd[0] * back + sS[side][0] * out;
     want[1] = eye[1] - SH_UP_M * u;
     want[2] = eye[2] - fwd[2] * back + sS[side][2] * out;
+    /* into her model's space - world[] is the model, the anchor is the room (the same conversion
+     * vrbody_clavicle makes; mixing the two was a shoulder thrown far from her body) */
+    wm = mat4_point(unplace, vec3(want[0], want[1], want[2]));
+    want[0] = wm.x;
+    want[1] = wm.y;
+    want[2] = wm.z;
     m_pos(&world[sBones.upper[side]], sh);
-    /* Further than her arm is long? The shoulder reaches toward it first, up to SH_FWD_M, so what is
-     * left over is the shoulder's reach and never a stretched bone. */
-    reach = (sBones.arm1 + sBones.arm2) * (a->scale != 0.0f ? a->scale : 1.0f) * sBones.bodyScale * sBones.armScale;
-    v_sub3(d, target, want);
+    m_pos(&world[sBones.clav[side]], origin);
+    /* never far from where her own body put it: 0.15 m at the most, blended toward the target
+     * (a warning once a side, so a bad offset can be seen rather than a thrown shoulder) */
+    sane = SH_MAX_M * u;
+    v_sub3(d, want, sh);
     len = v_len3(d);
-    if (len > reach && len > 1.0e-5f) {
-        float add = fminf(len - reach, SH_FWD_M * u);
-        float k = add / len;
-
-        want[0] += d[0] * k;
-        want[1] += d[1] * k;
-        want[2] += d[2] * k;
+    if (len > sane) {
+        if (!sShoulderWarned[side]) {
+            sShoulderWarned[side] = 1;
+            fprintf(stderr, "vrbody: the %s shoulder target is %.3f m from her own: held to %.2f m\n",
+                    side == 0 ? "left" : "right", (double)(len / u), (double)SH_MAX_M);
+        }
+        v_scale3(d, d, sane / len);
+        v_add3(want, sh, d);
     }
-    v_sub3(delta, want, sh);
-    if (v_len3(delta) > 1.0e-5f) {
-        /* the arm's chain moves with the shoulder; the clavicle stays at her chest and stretches to
-         * it, which is what gives the shoulder its reach */
-        shift_tree(world, m, sBones.upper[side], delta);
+    /* the clavicle TURNS toward it and keeps its length - the shoulder lands on its own arc (
+     * that rotation is where the shoulder's reach comes from; nothing is stretched) */
+    v_sub3(ua, sh, origin);
+    v_sub3(ub, want, origin);
+    if (!v_unit3(ua, ua) || !v_unit3(ub, ub)) {
+        return;
+    }
+    v_cross3(axis, ua, ub);
+    ang = atan2f(v_len3(axis), clampf(v_dot3(ua, ub), -1.0f, 1.0f));
+    if (ang > 1.0e-5f) {
+        rot_about(axis, ang, origin, &r);
+        turn_tree(world, m, sBones.clav[side], &r);
+    }
+    /* once a side: the eye, the shoulder it asks for, hers as posed, and how far apart (metres) */
+    if (!sShoulderLogged[side]) {
+        Vec3 sp = mat4_point(place != NULL ? place : unplace, vec3(sh[0], sh[1], sh[2]));
+        Vec3 wp = mat4_point(place != NULL ? place : unplace, vec3(want[0], want[1], want[2]));
+        float dm = sqrtf((wp.x - sp.x) * (wp.x - sp.x) + (wp.y - sp.y) * (wp.y - sp.y) +
+                         (wp.z - sp.z) * (wp.z - sp.z));
+
+        sShoulderLogged[side] = 1;
+        fprintf(stderr, "vrbody: %s shoulder - eye %.2f %.2f %.2f, asked %.2f %.2f %.2f, hers %.2f %.2f %.2f; %.3f m apart (held to %.2f m at most)\n",
+                side == 0 ? "left" : "right", (double)eye[0], (double)eye[1], (double)eye[2],
+                (double)wp.x, (double)wp.y, (double)wp.z, (double)sp.x, (double)sp.y, (double)sp.z,
+                (double)(dm / u), (double)SH_MAX_M);
     }
 }
 

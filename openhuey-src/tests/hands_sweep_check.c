@@ -441,20 +441,20 @@ static void check_arm_pose(const char *library) {
             printf("hands: the %s elbow is not where the hand's arm solved it (FAIL)\n", l);
             sFails++;
         }
-        /* her arm's root is where the player's is: the shoulder sits the FRIK offset from the eyes
-         * (|0.20 up, 0.075 back, 0.18 side| = 0.279 m, in the room's units for the player) */
+        /* her arm's root is her own, only turned toward the player's: the clavicle keeps its length,
+         * so the shoulder never leaves her body by more than the 0.15 m the placement allows */
         {
             int ub = vrbody_bone(VRBODY_UPPER, side);
-            Vec3 e = sVrEye;
             float u = 15.651f / 1.6f;   /* (her rest eye height / the player's, the calibration's) */
-            float dx = sPosed[ub].m[12] - e.x, dy = sPosed[ub].m[13] - e.y, dz = sPosed[ub].m[14] - e.z;
+            float dx = sPosed[ub].m[12] - sRest[ub].m[12];
+            float dy = sPosed[ub].m[13] - sRest[ub].m[13];
+            float dz = sPosed[ub].m[14] - sRest[ub].m[14];
             float d = sqrtf(dx * dx + dy * dy + dz * dz);
-            float want = 0.279f * u;
 
-            printf("hands: %s shoulder - %.2f from the eye (the FRIK offset: %.2f)\n", l,
-                   (double)d, (double)want);
-            if (fabsf(d - want) > 0.15f) {
-                printf("hands: the %s shoulder is not at the player's own offset (FAIL)\n", l);
+            printf("hands: %s shoulder - moved %.3f m from her own (the most: 0.150)\n", l,
+                   (double)(d / u));
+            if (d / u > 0.16f) {
+                printf("hands: the %s shoulder left her body (FAIL)\n", l);
                 sFails++;
             }
         }

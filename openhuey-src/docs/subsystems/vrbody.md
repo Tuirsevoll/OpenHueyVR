@@ -36,6 +36,7 @@ bit-identical. `vrbody-check` proves the off case with the mod's own model.
 | `vrbody_body` | the chest's turn, the body under the headset, the feet kept |
 | `vrbody_dampen` | one hand's frame smoothed for the body's pose only (`DampenHands`) |
 | `vrbody_clavicle` | one clavicle's turn toward a far hand |
+| `vrbody_shoulders` | her arm's root at the player's shoulder, reached by the clavicle's turn |
 | `vrbody_arm` | one arm's elbow, its limit window and the wrist's twist (`VrArm`) |
 | `vrbody_finish` | the forearm's roll, the upper arm's twist, the deltoid, the first-person head |
 | `vrbody_near` | the near plane the eye views should use |
@@ -147,21 +148,23 @@ head. The helpers are rebuilt from their parent **every** frame, so nothing accu
   her crouch animation is scrubbing.
 - **The clavicle** gives a far hand 0.15 L of reach (a downward offset counts 0.4, glTF is Y up),
   turned about the clavicle's origin by the smallest rotation.
-- **FRIK's shoulders** (`vrbody_shoulders`, after the clavicle and before the arm): her arm's root
-  is placed where the *player's* is, not where her model's chest happens to sit - **0.20 m below
-  the eyes, 0.075 m behind them and 0.18 m out to each side** (`SH_UP_M`, `SH_BACK_M`,
-  `SH_SIDE_M`), in the player's metres (`units_per_m`) along her **body's yaw** (a look up or down
-  never moves a shoulder). A headset had the arms coming out of the player's face because the
-  drawn body's scale had lifted her modelled shoulders to the camera. The arm's chain moves with
-  it (the clavicle stays at her chest and stretches, which is where the reach comes from), and a
-  controller **further than the arm is long** makes the shoulder reach toward it first, up to
-  **0.08 m** (`SH_FWD_M`), so what is left over is the shoulder's and never a stretched bone.
-  The **calibration measures the reach from that same point**: |up, back, side| = 0.279 m comes
-  off the measured head-to-controller reach, so the two agree (a 1.73 m player's 0.86 m lands
-  at an arm share of ~1.0). The offset is logged once.
-  The torso is not pushed forward: the hips' target goes *back* from the neck (`BODY_HEAD_FRONT`,
-  3 kBody behind it) and a look's aim offsets go back and down, so nothing of the body comes
-  toward the camera but the head the first-person option collapses.
+- **FRIK's shoulders** (`vrbody_shoulders`, before the clavicle and the arm): her arm's root should
+  be where the *player's* is, not where her drawn chest leaves it - **0.20 m below the eyes,
+  0.075 m behind them, 0.18 m out to each side** (`SH_UP_M`, `SH_BACK_M`, `SH_SIDE_M`), in the
+  player's metres (`units_per_m`) along her **body's yaw** (a look up or down never moves a
+  shoulder). The offset is built in the **room** - the anchor's own space, +Y up, the same space
+  and up the camera anchor uses - and brought into her model's space through **`unplace`**, the
+  same conversion `vrbody_clavicle` makes; mixing the two once threw a shoulder metres from her
+  body and dragged the arm into the floor. It is then **reached by turning the clavicle, never by
+  moving or stretching it**: the shoulder lands on the clavicle's own arc with its length kept, and
+  the extra give comes from `vrbody_clavicle`'s turn toward a far hand (`CLAV_REACH`, ~0.08 m).
+  A **0.15 m clamp** (`SH_MAX_M`) holds the placed shoulder that close to her own posed one,
+  warning once a side if the target is further. Logged once a side: the eye, the shoulder asked
+  for, hers as posed, and the distance between them in metres. The torso is not pushed forward
+  into the camera: the hips' target goes *back* from the neck (`BODY_HEAD_FRONT`, 3 kBody behind
+  it) and a look's aim offsets go back and down. The **calibration measures the reach from that
+  same point**: |up, back, side| = 0.279 m comes off the measured head-to-controller reach, so the
+  two agree (a 1.73 m player's 0.86 m lands at an arm share of ~1.0).
 - **The elbow** (FRIK's limit window): a wrist's twist from the hand's back and thumb-side axes;
   behind/crossed/lifted limits (they steer the elbow's *direction*, never the reach - a straight
   arm is the full `l1 + l2`, not a 145 degree cap); the pole as
@@ -200,7 +203,8 @@ head. The helpers are rebuilt from their parent **every** frame, so nothing accu
   made unit at the end (`vec3_norm` leaves a zero one zero): no NaN. The older whole-mesh collapse
   (`actor_hide_head`, main.c) is the **same option**: with "Body: Hide Head in First Person" off,
   neither runs and her head is there.
-- **Order**: body's forward, body and posture (feet re-planted), clavicle, arm, forearm's roll,
+- **Order**: body's forward, body and posture (feet re-planted), the shoulder's placement, clavicle,
+  arm, forearm's roll,
   upper arm and deltoid, head.
 
 ## Design notes

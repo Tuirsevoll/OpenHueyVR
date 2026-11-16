@@ -67,11 +67,13 @@ int vrbody_dampen(int side, Vec3 *at, Vec3 *fwd, Vec3 *up);
 /* The clavicle turned toward a target far from the shoulder, before that arm's solve. `target` is
  * a room point (the grip). */
 void vrbody_clavicle(struct Actor *a, Mat4 *world, const Mat4 *unplace, int side, const float *target);
-/* FRIK's shoulders: her arm's root placed from the player's eyes - 0.20 m below them, 0.075 m behind,
- * 0.18 m to the side, along her body's yaw - and, when `target` (the controller) is further than
- * the arm is long, reaching toward it by up to 0.08 m first. The arm's chain moves with it; the
- * clavicle stays at her chest. Call it after vrbody_clavicle and before vrbody_arm. */
-void vrbody_shoulders(struct Actor *a, Mat4 *world, int side, const float *target);
+/* FRIK's shoulders: the target her arm's root should sit at - 0.20 m below the eyes, 0.075 m behind
+ * them, 0.18 m to the side, in the room's units along her body's yaw - worked out in the room and
+ * brought into her model's space (unplace), then reached by TURNING the clavicle (its length kept,
+ * nothing stretched) and held within 0.15 m of her own posed shoulder. Call it before
+ * vrbody_clavicle and vrbody_arm (the clavicle's own turn toward a far hand comes after it). */
+void vrbody_shoulders(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace, int side,
+                      const float *target);
 
 /* The arm's solve in the room: the elbow from FRIK's limit window and the wrist's twist. */
 typedef struct VrArm {
