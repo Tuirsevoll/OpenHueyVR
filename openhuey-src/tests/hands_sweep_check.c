@@ -441,6 +441,23 @@ static void check_arm_pose(const char *library) {
             printf("hands: the %s elbow is not where the hand's arm solved it (FAIL)\n", l);
             sFails++;
         }
+        /* her arm's root is where the player's is: the shoulder sits the FRIK offset from the eyes
+         * (|0.20 up, 0.075 back, 0.18 side| = 0.279 m, in the room's units for the player) */
+        {
+            int ub = vrbody_bone(VRBODY_UPPER, side);
+            Vec3 e = sVrEye;
+            float u = 15.651f / 1.6f;   /* (her rest eye height / the player's, the calibration's) */
+            float dx = sPosed[ub].m[12] - e.x, dy = sPosed[ub].m[13] - e.y, dz = sPosed[ub].m[14] - e.z;
+            float d = sqrtf(dx * dx + dy * dy + dz * dz);
+            float want = 0.279f * u;
+
+            printf("hands: %s shoulder - %.2f from the eye (the FRIK offset: %.2f)\n", l,
+                   (double)d, (double)want);
+            if (fabsf(d - want) > 0.15f) {
+                printf("hands: the %s shoulder is not at the player's own offset (FAIL)\n", l);
+                sFails++;
+            }
+        }
         /* the hand is the one size the IK has always drawn: the arm's and the body's scales stop
          * at the wrist, so it and a finger come out the same (and not the forearm's) */
         {

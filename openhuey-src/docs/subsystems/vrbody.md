@@ -147,6 +147,21 @@ head. The helpers are rebuilt from their parent **every** frame, so nothing accu
   her crouch animation is scrubbing.
 - **The clavicle** gives a far hand 0.15 L of reach (a downward offset counts 0.4, glTF is Y up),
   turned about the clavicle's origin by the smallest rotation.
+- **FRIK's shoulders** (`vrbody_shoulders`, after the clavicle and before the arm): her arm's root
+  is placed where the *player's* is, not where her model's chest happens to sit - **0.20 m below
+  the eyes, 0.075 m behind them and 0.18 m out to each side** (`SH_UP_M`, `SH_BACK_M`,
+  `SH_SIDE_M`), in the player's metres (`units_per_m`) along her **body's yaw** (a look up or down
+  never moves a shoulder). A headset had the arms coming out of the player's face because the
+  drawn body's scale had lifted her modelled shoulders to the camera. The arm's chain moves with
+  it (the clavicle stays at her chest and stretches, which is where the reach comes from), and a
+  controller **further than the arm is long** makes the shoulder reach toward it first, up to
+  **0.08 m** (`SH_FWD_M`), so what is left over is the shoulder's and never a stretched bone.
+  The **calibration measures the reach from that same point**: |up, back, side| = 0.279 m comes
+  off the measured head-to-controller reach, so the two agree (a 1.73 m player's 0.86 m lands
+  at an arm share of ~1.0). The offset is logged once.
+  The torso is not pushed forward: the hips' target goes *back* from the neck (`BODY_HEAD_FRONT`,
+  3 kBody behind it) and a look's aim offsets go back and down, so nothing of the body comes
+  toward the camera but the head the first-person option collapses.
 - **The elbow** (FRIK's limit window): a wrist's twist from the hand's back and thumb-side axes;
   behind/crossed/lifted limits (they steer the elbow's *direction*, never the reach - a straight
   arm is the full `l1 + l2`, not a 145 degree cap); the pole as

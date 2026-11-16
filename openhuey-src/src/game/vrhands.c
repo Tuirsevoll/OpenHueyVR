@@ -1131,6 +1131,7 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         }
         hand = grip_matrix(at, fwd, up, hs, sGripCenter[side], side);
         vrbody_clavicle(a, world, unplace, side, &hand.m[12]);
+        vrbody_shoulders(a, world, side, &hand.m[12]);   /* (her arm's root where the player's is) */
         pose_arm(a, world, place, unplace, side, &hand, hs);
         curl_hand(a, side, grip, index, thumb);
         posed++;

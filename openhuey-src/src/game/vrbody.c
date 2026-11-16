@@ -160,8 +160,15 @@
 #define BODY_DROP_DEAD 0.04f       /* metres a head drop passes before the body follows it (a
                                     * relaxed stance is not a crouch, and standing tall is no bend) */
 #define ARM_REACH_EPS 1.0e-3f      /* the hand may sit this far short at full stretch (a wrist gap) */
-#define EYE_TO_SHOULDER_M 0.20f   /* a person's eye to their shoulder joint, in metres: what the
-                                    * measured reach (the headset to the controller) is not the arm's */
+/* FRIK's shoulders: her arm starts where the player's does, not where her model's chest happens to
+ * be - below the eyes, a little behind them, and out to each side, in the player's metres and along
+ * her body's yaw (never the head's pitch). When a controller is further than the arm is long the
+ * shoulder reaches toward it first, up to SH_FWD_M, so the gap is the shoulder's and never a
+ * stretched bone. The calibration measures the reach from this same point, so the two agree. */
+#define SH_UP_M 0.20f              /* the shoulder joint below the eyes */
+#define SH_BACK_M 0.075f           /* ... behind them (toward the back of the head) */
+#define SH_SIDE_M 0.18f            /* ... to each side */
+#define SH_FWD_M 0.08f             /* how far the shoulder reaches toward a far hand */
 
 #define DEG (0.017453292519943295f)
 
@@ -189,6 +196,7 @@ typedef struct VrBody {
      * player's, and what they make of the arm's scale and the body's move */
     float eyeWorld, reachRest;
     float bodyScale;                       /* her drawn skeleton against the player's height */
+    float unitsPerM;                       /* the room's units for a metre of *the player* */
     float armScale, moveScale, dropDead;
 } VrBody;
 
@@ -233,6 +241,8 @@ static float sHeadY;
 static int sHeadHave;
 /* the signs, said once (the elbow's two turns and the legs' rules) */
 static int sSignsLogged;
+/* the shoulders' offset, said once */
+static int sShouldersLogged;
 /* the calibration last logged (so the scale factors are said once, not a frame) */
 static float sLoggedEye = -1.0f, sLoggedReach = -1.0f;
 
@@ -770,12 +780,14 @@ static void body_scales(const struct Actor *a) {
      * world's own metre (12.5 / vr.body-scale) is not hers: at 12.75 a 0.86 m reach became 11
      * units and the arm had to stretch to 1.8 to reach it. */
     units_per_m = (sBones.eyeWorld > 0.05f ? sBones.eyeWorld : 15.65f) / eye_m;
+    sBones.unitsPerM = units_per_m;
     player_reach = reach_m * units_per_m;
     /* The reach is measured from the headset to the controller, which is the eyes to the hand: the
-     * arm itself starts at the shoulder, a person's 0.20 m below the eyes. Her arm is her own
-     * shoulder to wrist, drawn. Their ratio is the small share her two arm bones take, so her full
-     * stretch is the player's - bounded, never the old stretched arm. */
-    player_arm = player_reach - EYE_TO_SHOULDER_M * units_per_m;
+     * arm itself starts at the shoulder *the body places* (vrbody_shoulders), so the same offset
+     * comes off it - |up, back, side| - and the two agree. Her arm is her own shoulder to wrist,
+     * drawn. Their ratio is the small share her two arm bones take, so her full stretch is the
+     * player's - bounded, never the old stretched arm. */
+    player_arm = player_reach - sqrtf(SH_UP_M * SH_UP_M + SH_BACK_M * SH_BACK_M + SH_SIDE_M * SH_SIDE_M) * units_per_m;
     fiona_arm = (sBones.arm1 + sBones.arm2) * sBones.bodyScale;
     sBones.armScale = clampf(player_arm / (fiona_arm > 0.05f ? fiona_arm : 1.0f),
                              ARM_SCALE_MIN, ARM_SCALE_MAX);
@@ -1017,6 +1029,16 @@ int vrbody_begin(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *un
     v_copy3(sS[0], side);
     v_scale3(sS[1], side, -1.0f);
     sActive = 1;
+    /* once: where her shoulders are put, in the player's metres - the offset the reach is measured
+     * from too, so the arm and the calibration agree */
+    if (!sShouldersLogged) {
+        sShouldersLogged = 1;
+        fprintf(stderr, "vrbody: shoulders - %.2f m below the eyes, %.3f m behind them, %.2f m to each"
+                " side (%.3f m from the eye: the reach is measured from there), reaching %.2f m toward a"
+                " far hand first\n", (double)SH_UP_M, (double)SH_BACK_M, (double)SH_SIDE_M,
+                (double)sqrtf(SH_UP_M * SH_UP_M + SH_BACK_M * SH_BACK_M + SH_SIDE_M * SH_SIDE_M),
+                (double)SH_FWD_M);
+    }
     /* once, to the console: the sign conventions a headset report needs (the elbow's two vertical
      * turns and the legs' rules) - the first thing to quote when an elbow or a knee looks wrong */
     if (!sSignsLogged) {
@@ -1465,6 +1487,63 @@ void vrbody_clavicle(struct Actor *a, Mat4 *world, const Mat4 *unplace, int side
     }
     rot_about(axis, ang, origin, &r);
     turn_tree(world, m, sBones.clav[side], &r);
+}
+
+/* ---- 4b. FRIK's shoulders: her arm's root where the player's is ---------------------------------- */
+
+void vrbody_shoulders(struct Actor *a, Mat4 *world, int side, const float *target) {
+    const Model *m;
+    Vec3 e;
+    float eye[3], yaw, fwd[3], want[3], sh[3], d[3], delta[3], len, reach, u, back, out;
+
+    if (!sActive || a == NULL || world == NULL || target == NULL || side < 0 || side > 1) {
+        return;
+    }
+    m = &a->model;
+    if (sBones.upper[side] < 0 || sBones.clav[side] < 0) {
+        return;
+    }
+    if (!vr_anchor_get(&e, &yaw)) {   /* (her eyes, where the camera is) */
+        return;
+    }
+    (void)yaw;
+    eye[0] = e.x;
+    eye[1] = e.y;
+    eye[2] = e.z;
+    u = sBones.unitsPerM > 0.5f ? sBones.unitsPerM : VR_UNITS_PER_METER;
+    /* her body's yaw, not the head's: a look up or down must not move a shoulder */
+    fwd[0] = sF[0];
+    fwd[1] = 0.0f;
+    fwd[2] = sF[2];
+    if (!v_unit3(fwd, fwd)) {
+        v_set(fwd, 0.0f, 0.0f, 1.0f);
+    }
+    /* below the eyes, a little behind them (back along her forward), out to her own side */
+    back = SH_BACK_M * u;
+    out = SH_SIDE_M * u;
+    want[0] = eye[0] - fwd[0] * back + sS[side][0] * out;
+    want[1] = eye[1] - SH_UP_M * u;
+    want[2] = eye[2] - fwd[2] * back + sS[side][2] * out;
+    m_pos(&world[sBones.upper[side]], sh);
+    /* Further than her arm is long? The shoulder reaches toward it first, up to SH_FWD_M, so what is
+     * left over is the shoulder's reach and never a stretched bone. */
+    reach = (sBones.arm1 + sBones.arm2) * (a->scale != 0.0f ? a->scale : 1.0f) * sBones.bodyScale * sBones.armScale;
+    v_sub3(d, target, want);
+    len = v_len3(d);
+    if (len > reach && len > 1.0e-5f) {
+        float add = fminf(len - reach, SH_FWD_M * u);
+        float k = add / len;
+
+        want[0] += d[0] * k;
+        want[1] += d[1] * k;
+        want[2] += d[2] * k;
+    }
+    v_sub3(delta, want, sh);
+    if (v_len3(delta) > 1.0e-5f) {
+        /* the arm's chain moves with the shoulder; the clavicle stays at her chest and stretches to
+         * it, which is what gives the shoulder its reach */
+        shift_tree(world, m, sBones.upper[side], delta);
+    }
 }
 
 /* ---- 5. the arm's solve -------------------------------------------------------------------- */
