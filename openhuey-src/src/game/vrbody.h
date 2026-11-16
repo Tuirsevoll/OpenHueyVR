@@ -46,6 +46,10 @@ int vrbody_bone(int part, int side);
  * lengths are that many times Fiona's. 1 before a model is read; the height sizes it before a
  * reach is measured. */
 float vrbody_arm_scale(const struct Actor *a);
+/* the uniform scale her *drawn* skeleton takes (her body against the player's height, FRIK's
+ * body scale): the skinned pose only - her actor's scale, collision, the world and the camera are
+ * untouched. 1 before a model is read. */
+float vrbody_body_scale(const struct Actor *a);
 /* the two ratios FRIK's numbers are given in, computed once a model (0 before the first pose) */
 float vrbody_karm(void);
 float vrbody_kbody(void);

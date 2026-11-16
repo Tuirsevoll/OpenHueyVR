@@ -835,7 +835,8 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
     int wr = sHandBone[side], pa = sPalmBone[side] >= 0 ? sPalmBone[side] : sHandBone[side];
     Mat4 room[3], grip = *hand, old;
     float root[3], mid[3], pole[3], l1, l2, yaw;
-    float k = vrbody_arm_scale(a);   /* (the calibration's stretch for the arm's bones) */
+    float k = vrbody_arm_scale(a);    /* (body x arm: the segment's length in the drawn pose) */
+    float kb = vrbody_body_scale(a);  /* (her body's own scale: the arm's thickness) */
     VrArm arm;
     int i, solved = 0;
 
@@ -868,11 +869,18 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
             aim_rev(&room[0], root, arm.elbow, arm.pole, side);
             aim_rev(&room[1], arm.elbow, reach, arm.pole, side);
         }
-        /* the arm's bones stretch along the bone (X) by the calibrated scale, as the IK's lengths
-         * are: the skin spans the shoulder to the elbow to the hand, and the hand stays exactly on
-         * the controller - FRIK's arm length scaling, not a moved target */
-        room[0].m[0] *= k; room[0].m[1] *= k; room[0].m[2] *= k;
-        room[1].m[0] *= k; room[1].m[1] *= k; room[1].m[2] *= k;
+        /* The drawn arm spans exactly the solved chain: its two bones take the body's uniform scale
+         * on Y and Z (their thickness) and the body's scale with the small arm residual on X (their
+         * length). No arm bone is stretched beyond that clamp, and the hand is still exactly the
+         * controller's - FRIK's arm length, not a stretched one. */
+        {   /* (indices: X is 0..2, Y 4..6, Z 8..10 in the column-major Mat4) */
+            int c;
+
+            for (c = 0; c < 3; c++) {
+                room[0].m[c] *= k;      room[0].m[4 + c] *= kb;   room[0].m[8 + c] *= kb;
+                room[1].m[c] *= k;      room[1].m[4 + c] *= kb;   room[1].m[8 + c] *= kb;
+            }
+        }
         solved = 1;
     }
     l1 = sArmLen[side][0];   /* (the fallback's: the bind pose's, not this animation's) */
@@ -921,6 +929,10 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
          * bone (X) only; Y and Z, the thickness, stay as they are, so the joints still meet */
         room[0].m[0] *= k; room[0].m[1] *= k; room[0].m[2] *= k;
         room[1].m[0] *= k; room[1].m[1] *= k; room[1].m[2] *= k;
+        room[0].m[4] *= kb; room[0].m[5] *= kb; room[0].m[6] *= kb;
+        room[0].m[8] *= kb; room[0].m[9] *= kb; room[0].m[10] *= kb;
+        room[1].m[4] *= kb; room[1].m[5] *= kb; room[1].m[6] *= kb;
+        room[1].m[8] *= kb; room[1].m[9] *= kb; room[1].m[10] *= kb;
         if (pa != wr) {
             /* the wrist on the forearm's line from the elbow to the palm, the bind pose's share */
             float wp[3];

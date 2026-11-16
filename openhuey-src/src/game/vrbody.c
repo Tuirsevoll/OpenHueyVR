@@ -81,9 +81,6 @@
 #define CLAV_DOWN 0.4f             /* a downward offset counts this much (glTF is Y up: -Y is down) */
 
 /* 5. the arm: FRIK's elbow's limit window and the wrist's twist */
-#define ARM_MAX_FLEX 145.0f        /* degrees: the most the elbow closes */
-#define ARM_MIN_FLEX 10.0f         /* ... and the least */
-#define ARM_STRETCH 0.1f           /* each segment may grow this much, no more */
 #define ARM_TOO_FAR 2.25f          /* times the arm: a tracker's glitch, no solve */
 #define WRIST_K_FLOOR 0.45f
 #define WRIST_K_TOP 0.8f
@@ -152,12 +149,19 @@
 #define VR_UNITS_PER_METER 12.5f   /* (vr.c's and vrhands.c's own: the room's units for a metre) */
 #define ARM_REACH_OF_HEIGHT 0.40f  /* before one is measured: FRIK's arm (0.30 of the height) and
                                     * her eye-to-shoulder - an average player's eye-to-grip */
-#define ARM_SCALE_MIN 0.85f        /* the arm's stretch, FRIK-style, within limits */
-#define ARM_SCALE_MAX 1.80f
+#define FIONA_HEIGHT_M 1.6f        /* her, as the game says she is (docs/game_design.md) */
+#define BODY_SCALE_MIN 0.85f       /* her drawn body against the player's height, within limits */
+#define BODY_SCALE_MAX 1.25f
+#define ARM_SCALE_MIN 0.90f        /* the residual on her two arm bones, FRIK-style: a small share,
+                                    * never a stretched arm */
+#define ARM_SCALE_MAX 1.15f
 #define MOVE_MIN 0.5f              /* her eye height over the player's: their motion in her sizes */
 #define MOVE_MAX 1.15f
 #define BODY_DROP_DEAD 0.04f       /* metres a head drop passes before the body follows it (a
                                     * relaxed stance is not a crouch, and standing tall is no bend) */
+#define ARM_REACH_EPS 1.0e-3f      /* the hand may sit this far short at full stretch (a wrist gap) */
+#define EYE_TO_SHOULDER_M 0.20f   /* a person's eye to their shoulder joint, in metres: what the
+                                    * measured reach (the headset to the controller) is not the arm's */
 
 #define DEG (0.017453292519943295f)
 
@@ -184,6 +188,7 @@ typedef struct VrBody {
     /* the calibration: her own eye height and eye-to-wrist reach (room units) against the
      * player's, and what they make of the arm's scale and the body's move */
     float eyeWorld, reachRest;
+    float bodyScale;                       /* her drawn skeleton against the player's height */
     float armScale, moveScale, dropDead;
 } VrBody;
 
@@ -561,12 +566,6 @@ static float smooth_max(float a, float b, float band) {
 
     return 0.5f * (a + b + sqrtf(d * d + band * band));
 }
-/* the reach of two segments at an elbow flexion, degrees */
-static float reach_at(float l1, float l2, float flex_deg) {
-    float c = cosf(flex_deg * DEG);
-
-    return sqrtf(l1 * l1 + l2 * l2 + 2.0f * l1 * l2 * c);
-}
 /* The game's own crouch, as scripts/story/crouch.fs reads it: below vr.crouch-deadzone a drop is no
  * crouch at all; from there to vr.crouch-on its crouch animation scrubs 0..1 (and the hide flag
  * comes on). That system owns her crouch posture, so vrbody must not bend her again for the same
@@ -743,42 +742,68 @@ static void cache_bones(const struct Actor *a) {
             sBones.haveNeckFp ? "" : " (no helper: skipped)");
 }
 
-/* The calibration's numbers, from the options the VR options' Calibrate Height & Reach row keeps
- * (vr_calibrate): the player's reach against Fiona's own (the arm's scale, FRIK-style - the arm's
- * bones stretch so her hand is the controller's, never a floating hand), and her height against
- * the player's (the move: their motion in her sizes). Before a reach is measured both come from
- * the eye height. Logged once per change. */
+/* The calibration's numbers for the body, FRIK's way. Her *drawn* body is scaled to the player's
+ * height (a uniform scale of the posed skeleton alone - her actor's scale, her collision, the
+ * world, the camera and everything gameplay reads stay exactly as they were), and her two arm
+ * bones take a small residual so her full reach is the player's. Nothing is stretched past
+ * ARM_SCALE_MIN..MAX, and the hand is always the controller's: the target is the controller, never
+ * a moved hand. Before a reach is measured the eye height sizes it. Logged once per change. */
 static void body_scales(const struct Actor *a) {
-    float eye_m = 1.6f, body = 1.0f, world_m, reach_m, player_eye;
+    float eye_m = 1.6f, world = 1.0f, reach_m, player_reach, player_arm, fiona_arm;
 
-    vr_body(&eye_m, &body);
+    vr_body(&eye_m, &world);
     if (!(eye_m > 0.5f) || eye_m > 3.0f) {
         eye_m = 1.6f;
     }
-    if (!(body > 0.2f)) {
-        body = 1.0f;
+    if (!(world > 0.2f)) {
+        world = 1.0f;
     }
-    world_m = VR_UNITS_PER_METER / body;   /* (the room's units a player's metre is, as vr_head_at) */
+    /* her height against the player's: the player's eye height is her model's (1.6 m is her eyes'
+     * height as the game draws her), so the ratio is the height's */
+    sBones.bodyScale = clampf(eye_m / FIONA_HEIGHT_M, BODY_SCALE_MIN, BODY_SCALE_MAX);
     reach_m = gVrOptions.arm_reach;
     if (!(reach_m > 0.15f)) {
         reach_m = ARM_REACH_OF_HEIGHT * eye_m;
     }
-    sBones.armScale = clampf(reach_m * world_m / (sBones.reachRest > 0.05f ? sBones.reachRest : 1.0f),
+    player_reach = reach_m * VR_UNITS_PER_METER / world;   /* (the room's units, as vr_head_at maps it) */
+    /* The reach is measured from the headset to the controller, which is her eyes to her hand: the
+     * arm itself starts at the shoulder, a person's 0.20 m below the eyes. Her arm is her own
+     * shoulder to wrist, drawn. Their ratio is the small share her two arm bones take, so her full
+     * stretch is the player's - bounded, never the old stretched arm. */
+    player_arm = player_reach - EYE_TO_SHOULDER_M * (VR_UNITS_PER_METER / world);
+    fiona_arm = (sBones.arm1 + sBones.arm2) * sBones.bodyScale;
+    sBones.armScale = clampf(player_arm / (fiona_arm > 0.05f ? fiona_arm : 1.0f),
                              ARM_SCALE_MIN, ARM_SCALE_MAX);
-    player_eye = eye_m * world_m;
-    sBones.moveScale = clampf(sBones.eyeWorld / (player_eye > 0.1f ? player_eye : 1.0f), MOVE_MIN, MOVE_MAX);
-    sBones.dropDead = BODY_DROP_DEAD * world_m;
+    sBones.moveScale = clampf(sBones.eyeWorld / (eye_m * VR_UNITS_PER_METER / world > 0.1f ?
+                                                 eye_m * VR_UNITS_PER_METER / world : 1.0f),
+                              MOVE_MIN, MOVE_MAX);
+    sBones.dropDead = BODY_DROP_DEAD * (VR_UNITS_PER_METER / world);
     (void)a;
     if (gVrOptions.eye_height != sLoggedEye || gVrOptions.arm_reach != sLoggedReach) {
         sLoggedEye = gVrOptions.eye_height;
         sLoggedReach = gVrOptions.arm_reach;
         fprintf(stderr,
-                "vrbody: calibration - eyes %.2f m, reach %.2f m%s; arm scale %.3f (her arm %.3f eye to"
-                " wrist, reach %.3f); body move %.3f (her eyes %.4f, the player's %.4f)\n",
+                "vrbody: calibration - eyes %.2f m, reach %.2f m%s; her body scaled %.3f (the player's"
+                " height); fiona_arm_len %.3f, player_arm_len %.3f (room units), reach_scale %.3f"
+                " (clamped %.2f..%.2f); body move %.3f\n",
                 (double)eye_m, (double)reach_m, gVrOptions.arm_reach > 0.0f ? " (measured)" : " (from the height)",
-                (double)sBones.armScale, (double)(sBones.arm1 + sBones.arm2), (double)sBones.reachRest,
-                (double)sBones.moveScale, (double)sBones.eyeWorld, (double)player_eye);
+                (double)sBones.bodyScale, (double)fiona_arm, (double)player_arm,
+                (double)sBones.armScale, (double)ARM_SCALE_MIN, (double)ARM_SCALE_MAX, (double)sBones.moveScale);
+        fprintf(stderr, "vrbody: her actor's scale is %.3f (untouched: the body scale is the drawn pose"
+                " only - collision, hitbox, movement and the world are hers)\n", (double)a->scale);
     }
+}
+
+float vrbody_body_scale(const struct Actor *a) {
+    if (a == NULL) {
+        return 1.0f;
+    }
+    cache_bones(a);
+    if (!sBones.ok) {
+        return 1.0f;
+    }
+    body_scales(a);
+    return sBones.bodyScale;
 }
 
 float vrbody_arm_scale(const struct Actor *a) {
@@ -790,7 +815,9 @@ float vrbody_arm_scale(const struct Actor *a) {
         return 1.0f;
     }
     body_scales(a);
-    return sBones.armScale;
+    /* the whole multiplier from her rest model bone to the drawn, room-space one: the body's
+     * uniform scale and the arm's residual share of it */
+    return sBones.bodyScale * sBones.armScale;
 }
 
 int vrbody_bone(int part, int side) {
@@ -1098,6 +1125,9 @@ static void replant(Mat4 *world, const Model *m, int side, const float *foot_at,
     shift_tree(world, m, foot, delta);
 }
 
+/* a bone's own scale: its 3x3 by s, its place kept a share s of the way from `p` */
+static void scale_about(Mat4 *m, const float *p, float s);
+
 /* ---- 2's chest turn and 3's body under the headset ----------------------------------------- */
 
 /* Her pelvis's own forward, model space: the bind's forward (+z, as her eyes sit in front of her
@@ -1346,6 +1376,19 @@ void vrbody_body(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *un
             replant(world, m, side, feet[side], pf, roll);
         }
     }
+    /* Her drawn body scaled to the player's height (FRIK's body scale): a uniform scale of this
+     * pose alone, about her feet, so her shoulders sit where the player's do and the arms solve
+     * from there to the controllers. Her actor's scale, collision, hitbox, movement, the world and
+     * the camera are not touched: nothing but the skinned pose ever sees this. */
+    if (fabsf(sBones.bodyScale - 1.0f) > 1.0e-4f && m->nbones > 0) {
+        float pivot[3];
+
+        m_pos(&world[sBones.root], pivot);
+        pivot[1] = fminf(feet[0][1], feet[1][1]);   /* (her feet stay on the floor) */
+        for (i = 0; i < m->nbones; i++) {
+            scale_about(&world[i], pivot, sBones.bodyScale);
+        }
+    }
 }
 
 /* ---- FRIK's DampenHands and its shoulder's (clavicle's) IK ---------------------------------- */
@@ -1396,7 +1439,9 @@ void vrbody_clavicle(struct Actor *a, Mat4 *world, const Mat4 *unplace, int side
     if (len < 1.0e-5f) {
         return;
     }
-    L = sBones.armLen * sBones.armScale;   /* (the calibrated reach, as the arm solve has it) */
+    L = sBones.armLen * sBones.bodyScale * sBones.armScale;   /* (the arm's length in this same, drawn
+                                                              * model space: the clavicle's share is
+                                                              * a fraction of it) */
     adjust = clampf(len - 0.5f * L, 0.0f, 0.85f * L) / (0.85f * L);
     v_scale3(off, d, adjust * CLAV_REACH * L / len);
     if (off[1] < 0.0f) {
@@ -1424,7 +1469,7 @@ int vrbody_arm(struct Actor *a, int side, const float *root, const float *target
     float scale = a->scale != 0.0f ? a->scale : 1.0f;
     float d[3], c0[3], c1[3], back[3], thumb[3], npl[3], npt[3], rel[3], bend[3];
     float sum[3], proj[3], dif[3], elbow[3];
-    float l1, l2, len1, len2, dist, r, ex, add, t1, t2, k, raw, keep, hb, behind, crossd;
+    float l1, l2, len1, len2, dist, t1, t2, k, raw, keep, hb, behind, crossd;
     float across, armtwist, behindhead, fwd, lift, upw, lo, hi, limit, turn, tw, a_cos, h;
 
     if (!sActive || out == NULL || root == NULL || target == NULL || grip == NULL || side < 0 || side > 1) {
@@ -1435,8 +1480,8 @@ int vrbody_arm(struct Actor *a, int side, const float *root, const float *target
     if (sBones.upper[side] < 0 || sBones.elbow[side] < 0 || sBones.hand[side] < 0) {
         return 0;
     }
-    l1 = len1 = sBones.arm1 * scale * sBones.armScale;   /* (the calibrated arm: her own, stretched) */
-    l2 = len2 = sBones.arm2 * scale * sBones.armScale;
+    l1 = len1 = sBones.arm1 * scale * sBones.bodyScale * sBones.armScale;
+    l2 = len2 = sBones.arm2 * scale * sBones.bodyScale * sBones.armScale;
     v_sub3(d, target, root);
     dist = v_len3(d);
     if (dist < 1.0e-5f || l1 < 1.0e-4f || l2 < 1.0e-4f) {
@@ -1447,24 +1492,12 @@ int vrbody_arm(struct Actor *a, int side, const float *root, const float *target
         return 0;
     }
     v_unit3(d, d);
-    /* 1. the flexion's window: never closed past 145 degrees, never straighter than 10, and a
-     * segment may stretch by ARM_STRETCH at most to keep the hand where it is */
-    r = reach_at(l1, l2, ARM_MAX_FLEX);
-    if (dist < r) {
-        dist = r;
-    }
-    r = reach_at(l1, l2, ARM_MIN_FLEX);
-    if (dist > r) {
-        ex = dist - r;
-        add = fminf(ARM_STRETCH, ex * len1 / (len1 + len2));
-        l1 += add;
-        add = fminf(ARM_STRETCH, ex * len2 / (len1 + len2));
-        l2 += add;
-        r = reach_at(l1, l2, ARM_MIN_FLEX);
-        if (dist > r) {
-            dist = r;
-        }
-    }
+    /* 1. the hand is the controller's: the target is never moved out or in. All an arm of her
+     * length can do is bend, or go straight - so the distance is clamped to what the two bones
+     * reach: fully folded is |l1 - l2|, fully straight is l1 + l2 and not a hair more (that is
+     * where a far hand leaves a wrist gap rather than pulling her arm out of shape), and the
+     * elbow's 145 degree window only steers its direction below, never the reach. */
+    dist = clampf(dist, fabsf(l1 - l2) + ARM_REACH_EPS, l1 + l2 + ARM_REACH_EPS);
     v_scale3(out->reach, d, dist);
     v_add3(out->reach, root, out->reach);
 

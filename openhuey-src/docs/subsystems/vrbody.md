@@ -103,16 +103,30 @@ head. The helpers are rebuilt from their parent **every** frame, so nothing accu
   says "Arms out..." while it runs). It lives in `vr.arm-reach` (metres, 0 = not measured) beside
   `vr.eye-height`/`vr.body-scale`/`vr.calibrated`, and the scripts save it when the measurement
   lands (`vr-arm-save?` in `subscreen.fs`'s held frame and `opening.fs`'s calibration screen).
-  From it, once a frame:
-  - **the arm's scale** = the player's reach in the room's units (metres x 12.5 / `vr.body-scale`,
-    as `vr_head_at` maps it) over her own eye-to-wrist reach at rest. Fiona's arm is her model's,
-    the controller's target is the room's, and they are not the same size: without it the arm maxed
-    out while the player's was barely half extended and the hand came off the controller. The
-    solve's two lengths are **multiplied** by it and so are the arm bones' X axes (FRIK's arm
-    length scaling): the hand stays exactly on the controller - the *bones* stretch, the target is
-    never moved - and 0.85..1.8 bounds it. Before a reach is measured the eye height sizes it
-    (0.40 of it, FRIK's 0.30 arm plus her eye-to-shoulder). `vrbody_arm_scale` is the one place
-    (`vrhands.c`'s fallback uses it for the same lengths).
+  From it, once a frame (FRIK's shape: her body scaled first, then a *small* share on her arm):
+  - **her drawn body is scaled to the player's height**, `bodyScale = player height / 1.6`
+    (0.85..1.25), applied at the end of the body pass to **the skinned pose alone** - every bone,
+    uniformly, about her feet (so they stay on the floor). That is where her shoulders come to
+    sit where the player's do, and the arms solve from there. Her **actor's scale, collision,
+    hitbox, position, movement, the world, its scale option and the camera are not touched**:
+    nothing but the drawn skeleton sees this (`vrbody_body_scale`, and the log says her actor's
+    scale is unchanged).
+  - **the arm's share** = the player's *shoulder-to-hand* over her *shoulder-to-wrist*, drawn:
+    the measured reach is the headset to the controller (the eyes to the hand), so a person's
+    0.20 m of eye-to-shoulder comes off it (`EYE_TO_SHOULDER_M`), and her arm is
+    `(arm1 + arm2) x bodyScale`. The ratio is clamped to **0.90..1.15** - FRIK's arm length,
+    *never* the old stretched arm. It multiplies the solve's two lengths **equally** and the two
+    arm bones' length axis with them, so the drawn arm spans exactly the solved chain and the
+    hand is the controller's (`vrbody_arm_scale` = body x arm; `vrhands.c`'s fallback lengths
+    take the same). Before a reach is measured the eye height sizes it (0.40 of it, FRIK's 0.30
+    arm plus her eye-to-shoulder). All three numbers are logged once: `fiona_arm_len`,
+    `player_arm_len`, `reach_scale`.
+  - **the reach is never moved**: the target is the controller and an arm of her length can only
+    bend or go straight, so the distance is clamped to `|l1 - l2| .. l1 + l2` (a millimetre's
+    slack). At full stretch the arm is **dead straight** with the hand at l1 + l2 - at most a
+    wrist gap short of the controller when the target is further than her arm reaches - and at the
+    other end it folds; the old flexion window (145/10 degrees) **never touches the reach**, which
+    is what used to pull her hand off the controller with the hands by her sides.
   - **the body's move** = her rest eye height over the player's, in the room's units (0.5..1.15):
     a head move is applied to her body in *her* proportions, so a taller player's crouch is the
     fraction of Fiona's height it really is, and standing tall is her standing straight.
@@ -122,8 +136,9 @@ head. The helpers are rebuilt from their parent **every** frame, so nothing accu
   her crouch animation is scrubbing.
 - **The clavicle** gives a far hand 0.15 L of reach (a downward offset counts 0.4, glTF is Y up),
   turned about the clavicle's origin by the smallest rotation.
-- **The elbow** (FRIK's limit window): the flexion's 145/10 degrees and a 0.1 stretch a segment; the
-  wrist's twist from the hand's back and thumb-side axes; behind/crossed/lifted limits; the pole as
+- **The elbow** (FRIK's limit window): a wrist's twist from the hand's back and thumb-side axes;
+  behind/crossed/lifted limits (they steer the elbow's *direction*, never the reach - a straight
+  arm is the full `l1 + l2`, not a 145 degree cap); the pole as
   straight down turned about the body's sideways (`ELBOW_BEND_SIGN`, mirrored per side); the
   elbow's direction turned about up to come forward across the body and behind the head
   (`ELBOW_SWING_SIGN`); the elbow at the law of cosines, 27 -> 28 a pure hinge. A headset had the
@@ -182,7 +197,10 @@ head. The helpers are rebuilt from their parent **every** frame, so nothing accu
 ## Status
 
 Built and checked: `vrbody-check` (the mod's model: the names, the ratios, the off case, the feet,
-the helpers' seats, the collapsed head, the near plane, the arm's solves at the calibration's scale,
+the helpers' seats, the collapsed head, the near plane, the arm's solves at the calibration's scale
+(a target past the arm goes dead straight at `l1 + l2` with the elbow on the line, a target at the
+shoulder folds to `|l1 - l2|`, and her drawn body takes the player's height while her actor's
+scale stays 1),
 a look down that must not crouch her **and leaves the legs dead straight**, a duck below the deadzone
  with the knees forward and none of it to the side, a lean, an elbow that sits down and outward
 wrist turned 120..240 degrees through the seam - the arm's roll keeps its way and the twist is a

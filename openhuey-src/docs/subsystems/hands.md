@@ -18,12 +18,13 @@ and all off where the arms are off. The arm's bones are written into the pose la
 animation, whichever solve made them (`hands-sweep-check`'s posed-arm section, which fails if they
 are left at the animation's pose).
 
-**The arm's length is the calibration's** (`vrbody_arm_scale`): Fiona's arm is her model's (4.89
-units at her scale) while a controller's target is the room's (12.5 units to the player's metre), so
-her arm is stretched by the player's measured reach over her own - the elbow solve's two lengths and
-the bones' X axes together - and the hand stays exactly on the controller. Its default, before a
-reach is measured, comes from the eye height (0.40 of it). `arm_lengths` (the fallback's lengths)
-takes the same scale, and remeasures if a calibration changes it.
+**Her arm's length is the calibration's** (`vrbody_arm_scale` = the body's uniform scale x the
+arm's small share, `docs/subsystems/vrbody.md`): her *drawn* body is scaled to the player's height,
+and only then do her two arm bones take a bounded share (0.90..1.15) so her full stretch is the
+player's. Nothing is stretched past that, the target is always the controller, and the hand is
+placed at the solved wrist - on the controller, with at most a wrist gap at full stretch.
+`arm_lengths` (the fallback's lengths) takes the same multiplier, and remeasures if a
+calibration changes it.
 
 ## Rules
 

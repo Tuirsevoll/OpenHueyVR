@@ -79,9 +79,10 @@ int vr_head_look(float *pitch, Vec3 *forward, Vec3 *up) {
     return 1;
 }
 /* the session's eye height and world scale (platform/vr.c): the calibration's, or as they were */
+static float sTestEye = 1.6f;   /* (the harness's player: a taller one, for the body scale) */
 void vr_body(float *height_m, float *scale) {
     if (height_m != NULL) {
-        *height_m = 1.6f;
+        *height_m = sTestEye;
     }
     if (scale != NULL) {
         *scale = 1.0f;
@@ -587,12 +588,54 @@ int main(int argc, char **argv) {
         d[1] = arm.reach[1] - root[1];
         d[2] = arm.reach[2] - root[2];
         {
-            float r145 = sqrtf(l * l + torso * torso + 2.0f * l * torso * cosf(145.0f * 0.0174532925f));
             float got = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+            float folded = fabsf(l - torso);
 
-            printf("vrbody: a target at the shoulder is pushed out to %.4f (145 degrees: %.4f)\n",
-                   (double)got, (double)r145);
-            check("a target too close is pushed out to 145 degrees' reach", fabsf(got - r145) < 1.0e-3f);
+            printf("vrbody: a target at the shoulder is pulled in to %.4f (the arm folded: %.4f)\n",
+                   (double)got, (double)folded);
+            check("a target too close is pulled in to the arm's folded reach, not pushed out",
+                  fabsf(got - folded) < 2.0e-3f);
+        }
+        /* and a target past the arm: the arm goes straight, the hand at l1 + l2 (a wrist gap, never
+         * an arm pulled out of shape or an elbow swung out to the side) */
+        target[0] = root[0];
+        target[1] = root[1] - 0.2f * (l + torso);
+        target[2] = root[2] + 1.05f * (l + torso);   /* (just past the arm) */
+        grip.m[12] = target[0];
+        grip.m[13] = target[1];
+        grip.m[14] = target[2];
+        vrbody_arm(&a, 0, root, target, &grip, &arm);
+        {
+            float a0[3], b0[3], got, gap, off;
+
+            a0[0] = arm.reach[0] - root[0];
+            a0[1] = arm.reach[1] - root[1];
+            a0[2] = arm.reach[2] - root[2];
+            got = sqrtf(a0[0] * a0[0] + a0[1] * a0[1] + a0[2] * a0[2]);
+            b0[0] = target[0] - arm.reach[0];
+            b0[1] = target[1] - arm.reach[1];
+            b0[2] = target[2] - arm.reach[2];
+            gap = sqrtf(b0[0] * b0[0] + b0[1] * b0[1] + b0[2] * b0[2]);
+            /* the elbow on the shoulder-hand line: nothing bent out to the side */
+            {
+                float e[3], n2[3];
+                float len = got > 1.0e-5f ? got : 1.0f;
+                float t2;
+
+                e[0] = arm.elbow[0] - root[0];
+                e[1] = arm.elbow[1] - root[1];
+                e[2] = arm.elbow[2] - root[2];
+                t2 = (e[0] * a0[0] + e[1] * a0[1] + e[2] * a0[2]) / (len * len);
+                n2[0] = e[0] - a0[0] * t2;
+                n2[1] = e[1] - a0[1] * t2;
+                n2[2] = e[2] - a0[2] * t2;
+                off = sqrtf(n2[0] * n2[0] + n2[1] * n2[1] + n2[2] * n2[2]);
+            }
+            printf("vrbody: a target past the arm - the hand %.4f out (l1 + l2: %.4f), %.4f short of\n"
+                   " it, the elbow %.4f off the line\n", (double)got, (double)(l + torso), (double)gap, (double)off);
+            check("a target past the arm goes fully straight (l1 + l2, the elbow on the line)",
+                  fabsf(got - (l + torso)) < 2.0e-3f && off < 0.02f);
+            check("... and the hand is at most a wrist gap short of the controller", gap < 0.5f);
         }
         /* far past any arm: no solve, the target left as it was */
         target[2] = root[2] + 5.0f * (l + torso);
@@ -821,6 +864,37 @@ int main(int argc, char **argv) {
                (double)dist3(neck0, neck1), (double)dist3(pelvis0, pelvis1), (double)dist3(feet0[0], feet1[0]));
         check("a lean forward moves the body under the head", dist3(neck0, neck1) > 0.1f);
         check("... and the feet stay on the floor", dist3(feet0[0], feet1[0]) < 0.05f);
+    }
+
+    /* ---- her drawn body takes the player's height; her actor's scale does not ---------------- */
+    {
+        float head0[3], head1[3], foot0b[3], foot1b[3], bs;
+        float scale_before = a.scale;
+
+        sTestEye = 1.75f;   /* (a taller player: her body must grow to meet it) */
+        sCrouch = 0.0f;
+        sHeadPitch = 0.0f;
+        sHeadPos = vec3(sEye.x, sEye.y, sEye.z);
+        sHeadFwd = vec3(0.0f, 0.0f, -1.0f);
+        vrbody_idle();
+        memcpy(sWorld, start, sizeof(Mat4) * (size_t)sNBones);
+        vrbody_begin(&a, sWorld, &place, &unplace);
+        bone_pos(vrbody_bone(VRBODY_HEAD, 0), head0);
+        bone_pos(vrbody_bone(VRBODY_FOOT, 0), foot0b);
+        vrbody_body(&a, sWorld, &place, &unplace);
+        bone_pos(vrbody_bone(VRBODY_HEAD, 0), head1);
+        bone_pos(vrbody_bone(VRBODY_FOOT, 0), foot1b);
+        bs = vrbody_body_scale(&a);
+        printf("vrbody: her drawn body at %.3f - the head %.2f -> %.2f, the foot %.2f -> %.2f, the actor's scale %.2f (was %.2f)\n",
+               (double)bs, (double)head0[1], (double)head1[1], (double)foot0b[1], (double)foot1b[1],
+               (double)a.scale, (double)scale_before);
+        check("her drawn body takes the player's height (1.75 m / 1.6 m)",
+              fabsf(bs - 1.75f / 1.6f) < 0.01f);
+        check("... the head rises with it", head1[1] > head0[1] + 0.5f);
+        check("... the feet stay on the floor", fabsf(foot1b[1] - foot0b[1]) < 0.05f);
+        check("... and her actor's scale is untouched (collision, hitbox, movement, the world)",
+              a.scale == scale_before && a.scale == 1.0f);
+        sTestEye = 1.6f;
     }
 
     printf("vrbody: %d checks, %d bad\n", sChecked, sBad);
