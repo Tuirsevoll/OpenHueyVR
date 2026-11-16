@@ -111,16 +111,27 @@ head. The helpers are rebuilt from their parent **every** frame, so nothing accu
     hitbox, position, movement, the world, its scale option and the camera are not touched**:
     nothing but the drawn skeleton sees this (`vrbody_body_scale`, and the log says her actor's
     scale is unchanged).
-  - **the arm's share** = the player's *shoulder-to-hand* over her *shoulder-to-wrist*, drawn:
-    the measured reach is the headset to the controller (the eyes to the hand), so a person's
-    0.20 m of eye-to-shoulder comes off it (`EYE_TO_SHOULDER_M`), and her arm is
+  - **the arm's share** = the player's *shoulder-to-wrist* over hers, drawn. The measured reach is
+    the headset to the controller, in metres, and the room's units for one are **her own eye
+    height as the room draws her over the player's** (`units_per_m` = her rest eye height in
+    room units / the player's eye height in metres, ~9.8 - the same proportion the camera and the
+    world scale use; the VR world's own 12.5 / `vr.body-scale` is not hers: at 12.75 a 0.86 m
+    reach became 11 units and the arm had to stretch to 1.8 to reach it). A person's 0.20 m of
+    eye-to-shoulder comes off it (`EYE_TO_SHOULDER_M`), and her arm is
     `(arm1 + arm2) x bodyScale`. The ratio is clamped to **0.90..1.15** - FRIK's arm length,
-    *never* the old stretched arm. It multiplies the solve's two lengths **equally** and the two
-    arm bones' length axis with them, so the drawn arm spans exactly the solved chain and the
-    hand is the controller's (`vrbody_arm_scale` = body x arm; `vrhands.c`'s fallback lengths
-    take the same). Before a reach is measured the eye height sizes it (0.40 of it, FRIK's 0.30
-    arm plus her eye-to-shoulder). All three numbers are logged once: `fiona_arm_len`,
-    `player_arm_len`, `reach_scale`.
+    *never* the old stretched arm: a 1.73 m player's measured 0.86 m lands at ~1.13, within
+    10-15% of her own arm, so the clamp never bites. It multiplies the solve's two lengths
+    **equally** and the two arm bones' length axis with them, so the drawn arm spans exactly the
+    solved chain and the hand is the controller's (`vrbody_arm_scale` = body x arm;
+    `vrhands.c`'s fallback lengths take the same). Before a reach is measured the eye height sizes
+    it (0.47 of it - a measured reach is about half). All the numbers are logged once:
+    `fiona_arm_len`, `player_arm_len`, `reach_scale`, `units_per_m`.
+  - **the hand is the size the IK has always drawn it**, whatever the body's and the arm's
+    scales are: at the wrist the inherited scale is cancelled (its local scale is 1 over what it
+    inherited), so the wrist's world scale is the hand's own `hand_scale` (`HAND_METRES` x
+    `HAND_SCALE`), and the palm's move under it is a similarity carrying that same size - the
+    fingers keep their own bone-local frames and simply come out at it, as does a held item in
+    that wrist frame. Logged once: `hands: body_scale ... arm_scale ... hand world scale ...`.
   - **the reach is never moved**: the target is the controller and an arm of her length can only
     bend or go straight, so the distance is clamped to `|l1 - l2| .. l1 + l2` (a millimetre's
     slack). At full stretch the arm is **dead straight** with the hand at l1 + l2 - at most a

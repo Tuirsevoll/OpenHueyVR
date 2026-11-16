@@ -24,6 +24,7 @@
 #include "../src/game/placed.h"
 #include "../src/game/progress.h"
 #include "../src/game/room.h"
+#include "../src/game/vrbody.h"
 #include "../src/game/vrhands.h"
 #include "../src/hactor/hactor.h"
 #include "../src/platform/vr.h"
@@ -439,6 +440,35 @@ static void check_arm_pose(const char *library) {
         if (bone_dist(&sPosed[el], &sPosed[wr]) > 3.5f) {
             printf("hands: the %s elbow is not where the hand's arm solved it (FAIL)\n", l);
             sFails++;
+        }
+        /* the hand is the one size the IK has always drawn: the arm's and the body's scales stop
+         * at the wrist, so it and a finger come out the same (and not the forearm's) */
+        {
+            int hb = vrbody_bone(VRBODY_HAND, side), fb = -1, c2;
+            float nh, nf = 0.0f, x, y, z;
+
+            x = sPosed[hb].m[0];
+            y = sPosed[hb].m[1];
+            z = sPosed[hb].m[2];
+            nh = sqrtf(x * x + y * y + z * z);
+            for (c2 = 0; c2 < sArmModel.nbones; c2++) {
+                if (sArmModel.bones[c2].parent == hb) {
+                    fb = c2;
+                    break;
+                }
+            }
+            if (fb >= 0) {
+                x = sPosed[fb].m[0];
+                y = sPosed[fb].m[1];
+                z = sPosed[fb].m[2];
+                nf = sqrtf(x * x + y * y + z * z);
+            }
+            printf("hands: %s hand - the wrist %.3f, a finger %.3f (one hand's own size)\n",
+                   l, (double)nh, (double)(fb >= 0 ? nf : nh));
+            if (fabsf(nh - (fb >= 0 ? nf : nh)) > 0.02f) {
+                printf("hands: the %s hand is not one size through (FAIL)\n", l);
+                sFails++;
+            }
         }
     }
 }

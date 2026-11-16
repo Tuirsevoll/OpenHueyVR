@@ -147,8 +147,8 @@
 
 /* ---- the calibration (platform/vr.c: vr_calibrate, the VR options' Calibrate Height & Reach) ---- */
 #define VR_UNITS_PER_METER 12.5f   /* (vr.c's and vrhands.c's own: the room's units for a metre) */
-#define ARM_REACH_OF_HEIGHT 0.40f  /* before one is measured: FRIK's arm (0.30 of the height) and
-                                    * her eye-to-shoulder - an average player's eye-to-grip */
+#define ARM_REACH_OF_HEIGHT 0.47f  /* before one is measured: a measured reach is about half the
+                                    * eye height (0.86 m at 1.73 m); 0.40 left the arm short */
 #define FIONA_HEIGHT_M 1.6f        /* her, as the game says she is (docs/game_design.md) */
 #define BODY_SCALE_MIN 0.85f       /* her drawn body against the player's height, within limits */
 #define BODY_SCALE_MAX 1.25f
@@ -749,7 +749,7 @@ static void cache_bones(const struct Actor *a) {
  * ARM_SCALE_MIN..MAX, and the hand is always the controller's: the target is the controller, never
  * a moved hand. Before a reach is measured the eye height sizes it. Logged once per change. */
 static void body_scales(const struct Actor *a) {
-    float eye_m = 1.6f, world = 1.0f, reach_m, player_reach, player_arm, fiona_arm;
+    float eye_m = 1.6f, world = 1.0f, reach_m, player_reach, player_arm, fiona_arm, units_per_m;
 
     vr_body(&eye_m, &world);
     if (!(eye_m > 0.5f) || eye_m > 3.0f) {
@@ -765,12 +765,17 @@ static void body_scales(const struct Actor *a) {
     if (!(reach_m > 0.15f)) {
         reach_m = ARM_REACH_OF_HEIGHT * eye_m;
     }
-    player_reach = reach_m * VR_UNITS_PER_METER / world;   /* (the room's units, as vr_head_at maps it) */
-    /* The reach is measured from the headset to the controller, which is her eyes to her hand: the
+    /* The room's units for a metre of the *player*: her own eye height as the room draws her over
+     * the player's, in metres - the same proportion the camera and the world scale use. The VR
+     * world's own metre (12.5 / vr.body-scale) is not hers: at 12.75 a 0.86 m reach became 11
+     * units and the arm had to stretch to 1.8 to reach it. */
+    units_per_m = (sBones.eyeWorld > 0.05f ? sBones.eyeWorld : 15.65f) / eye_m;
+    player_reach = reach_m * units_per_m;
+    /* The reach is measured from the headset to the controller, which is the eyes to the hand: the
      * arm itself starts at the shoulder, a person's 0.20 m below the eyes. Her arm is her own
      * shoulder to wrist, drawn. Their ratio is the small share her two arm bones take, so her full
      * stretch is the player's - bounded, never the old stretched arm. */
-    player_arm = player_reach - EYE_TO_SHOULDER_M * (VR_UNITS_PER_METER / world);
+    player_arm = player_reach - EYE_TO_SHOULDER_M * units_per_m;
     fiona_arm = (sBones.arm1 + sBones.arm2) * sBones.bodyScale;
     sBones.armScale = clampf(player_arm / (fiona_arm > 0.05f ? fiona_arm : 1.0f),
                              ARM_SCALE_MIN, ARM_SCALE_MAX);
@@ -785,10 +790,11 @@ static void body_scales(const struct Actor *a) {
         fprintf(stderr,
                 "vrbody: calibration - eyes %.2f m, reach %.2f m%s; her body scaled %.3f (the player's"
                 " height); fiona_arm_len %.3f, player_arm_len %.3f (room units), reach_scale %.3f"
-                " (clamped %.2f..%.2f); body move %.3f\n",
+                " (clamped %.2f..%.2f); units_per_m %.3f; body move %.3f\n",
                 (double)eye_m, (double)reach_m, gVrOptions.arm_reach > 0.0f ? " (measured)" : " (from the height)",
                 (double)sBones.bodyScale, (double)fiona_arm, (double)player_arm,
-                (double)sBones.armScale, (double)ARM_SCALE_MIN, (double)ARM_SCALE_MAX, (double)sBones.moveScale);
+                (double)sBones.armScale, (double)ARM_SCALE_MIN, (double)ARM_SCALE_MAX, (double)units_per_m,
+                (double)sBones.moveScale);
         fprintf(stderr, "vrbody: her actor's scale is %.3f (untouched: the body scale is the drawn pose"
                 " only - collision, hitbox, movement and the world are hers)\n", (double)a->scale);
     }

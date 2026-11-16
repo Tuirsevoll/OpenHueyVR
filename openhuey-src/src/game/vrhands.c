@@ -122,6 +122,7 @@ static int sHandStopHave[2];    /* 0: no stop yet */
  * back last pose) */
 static Vec3 sStopRaw[2];
 static int sStopHeld[2];
+static int sHandLogDone;   /* (the hand's scales, said once) */
 static int sPoseRoom = -2;
 /* one pose per door, shared by both rooms it joins */
 static float sDoorSwing[DOORS];
@@ -988,10 +989,23 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
                     }
                 }
             }
-            /* the wrist keeps the hand's scale (its vertices are part of the hand's skin) */
-            room[2].m[0] *= hs; room[2].m[1] *= hs; room[2].m[2] *= hs;
-            room[2].m[4] *= hs; room[2].m[5] *= hs; room[2].m[6] *= hs;
-            room[2].m[8] *= hs; room[2].m[9] *= hs; room[2].m[10] *= hs;
+            /* The wrist is the hand's, so the arm's and the body's scale stop here: its own local
+             * scale is 1 over what it inherited (the arm's and every scale up to it), which leaves
+             * its world scale exactly the hand's own - hs, the size the IK has always drawn it - and
+             * the palm, the fingers and a held item under it follow it, their own bone-local frames
+             * untouched. */
+            {
+                float nr = sqrtf(room[2].m[0] * room[2].m[0] + room[2].m[1] * room[2].m[1] +
+                                room[2].m[2] * room[2].m[2]);
+                float f = nr > 1.0e-6f ? hs / nr : 1.0f;
+                int c;
+
+                for (c = 0; c < 3; c++) {
+                    room[2].m[c] *= f;
+                    room[2].m[4 + c] *= f;
+                    room[2].m[8 + c] *= f;
+                }
+            }
             world[wr] = mat4_mul(*unplace, room[2]);
         }
         solved = 1;
@@ -1006,8 +1020,39 @@ static void pose_arm(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unpla
     old = world[pa];
     world[pa] = mat4_mul(*unplace, grip);
     {
-        Mat4 delta = mat4_mul(world[pa], rigid_inverse(&old));
+        /* The palm's frame is the controller's, and everything under it - the fingers, their
+         * skin, a held item - takes the hand's own size: the delta is a similarity with
+         * hs / (the scale the palm's frame had) in it, so every bone below keeps its bone-local
+         * frame exactly (rotations and bind offsets) and comes out at hs, whatever the arm's and
+         * the body's scales were. */
+        Mat4 od = old, nd = world[pa], delta;
+        float sb = sqrtf(od.m[0] * od.m[0] + od.m[1] * od.m[1] + od.m[2] * od.m[2]);
+        float sn = sqrtf(nd.m[0] * nd.m[0] + nd.m[1] * nd.m[1] + nd.m[2] * nd.m[2]);
+        float f;
+        int c;
 
+        if (sb < 1.0e-6f) {
+            sb = 1.0f;
+        }
+        if (sn < 1.0e-6f) {
+            sn = 1.0f;
+        }
+        f = sn / sb;
+        for (c = 0; c < 3; c++) {   /* both frames as pure rotations */
+            od.m[c] /= sb;
+            od.m[4 + c] /= sb;
+            od.m[8 + c] /= sb;
+            nd.m[c] /= sn;
+            nd.m[4 + c] /= sn;
+            nd.m[8 + c] /= sn;
+        }
+        delta = mat4_mul(nd, rigid_inverse(&od));   /* the move: a rotation and a place */
+        for (c = 0; c < 3; c++) {                    /* and the hand's own size in it */
+            delta.m[c] *= f;
+            delta.m[4 + c] *= f;
+            delta.m[8 + c] *= f;
+            delta.m[12 + c] = (1.0f - f) * world[pa].m[12 + c] + f * delta.m[12 + c];
+        }
         for (i = 0; i < m->nbones; i++) {
             if (descends(m, i, pa)) {
                 world[i] = mat4_mul(delta, world[i]);
@@ -1076,6 +1121,14 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
          * reads is the raw controller (vrhands_tick), so none of them changes. */
         vrbody_dampen(side, &at, &fwd, &up);
         applied[side] = hs = hand_scale(a, side, sMeasureBone[side]);
+        if (!sHandLogDone) {   /* once: the two scales that must never reach the hand, and the one
+                                * that is the hand's own (the IK's size, unchanged) */
+            float bs = vrbody_body_scale(a), tot = vrbody_arm_scale(a);
+
+            sHandLogDone = 1;
+            fprintf(stderr, "hands: body_scale %.3f, arm_scale %.3f, hand world scale %.3f (the original IK's own, unchanged)\n", (double)bs,
+                    (double)(bs > 1.0e-6f ? tot / bs : 1.0f), (double)hs);
+        }
         hand = grip_matrix(at, fwd, up, hs, sGripCenter[side], side);
         vrbody_clavicle(a, world, unplace, side, &hand.m[12]);
         pose_arm(a, world, place, unplace, side, &hand, hs);
