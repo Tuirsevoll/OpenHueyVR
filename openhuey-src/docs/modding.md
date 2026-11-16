@@ -328,8 +328,9 @@ item  bone  ox oy oz  qx qy qz qw  [grip-pose-name]  [model=<file>]  [r g b]
 - `ox oy oz`: the model's origin from the wrist, in the wrist bone's own axes, game units (Fiona is
   about 15 tall, Y up).
 - `qx qy qz qw`: the model's turn about that origin, a unit quaternion (x y z w).
-- `grip-pose-name`: kept for the mod; the game does not change her hand's shape from it (her hand
-  shapes stay the animations').
+- `grip-pose-name`: the pose `PROPS/grip_poses.txt` gives this hand's finger bones (API 1.6,
+  "Finger grip poses" below). Without that file, or with a name it does not have, the hand keeps
+  its animation/trigger shape as before.
 - `model=<file>`: a model in `PROPS/` (for example `model=antimony.gltf`), shared by every item
   that names it. A name already starting with `PROPS/` is used as it is. Without this the item's
   own `PROPS/item-<id>.gltf` is used.
@@ -340,6 +341,40 @@ item  bone  ox oy oz  qx qy qz qw  [grip-pose-name]  [model=<file>]  [r g b]
   (the first is kept).
 - An item with a model but no line sits at the wrist as it is: the model's origin at the wrist, no
   offset and no turn.
+
+### Finger grip poses (API 1.6, `PROPS/grip_poses.txt`)
+
+A mod can also shape the fingers around the item. `library/data/PROPS/grip_poses.txt` is read
+through the same files layer as `grips.txt`:
+
+```
+# pose <name>, then one line a finger bone: <bone name> qx qy qz qw
+pose grip_orb
+arm right finger 2a -0.487758 0.029052 0.000203 0.872496
+arm right finger 2b -0.064588 -0.305268 0.049872 0.948764
+...
+```
+
+- `pose <name>` starts a pose; the name matches the optional word in `grips.txt` (up to 31
+  characters). A following line is `<bone name> qx qy qz qw`: the **last four words** are the
+  turn, everything before them is the bone name (so names with spaces work). Comments start `#`;
+  blank lines and malformed lines are ignored.
+- The quaternion is the bone's pose rotation **relative to its rest, in the bone's own axes**:
+  `local_posed = local_rest * R(q)`, as Blender's pose rotation. The translation stays the rest
+  one; bones a pose does not list keep the hand's normal shape.
+- The left hand uses the matching `arm left finger ...` bone with the mirrored turn
+  `(qx, -qy, -qz, qw)` - the same mirror as `grips.txt`. If a pose lists `arm left ...` lines
+  itself, those are used for the left hand as they are.
+- A hand blends into the pose over 0.10 s when the item starts being held or shown, and back out
+  over 0.10 s when it lets go. Switching straight from one item to another blends between the two
+  poses. The hand morph (fist/point) eases to its rest shape while a pose is in, because the poses
+  were authored on the rest hand.
+- The game writes only bones named `... finger ...`; its own bones 0-48, the wrist, palm and the
+  `vr ...` helpers are never touched. A missing pose name logs once and leaves the hand as it was.
+  The built-in check runs once on Fiona's VR model at load and logs `self-check PASS` with the
+  three fingertip positions; `[grip-poses]` lines on stderr report what is applied.
+- Poses apply only in VR gameplay, after the arms and body are posed - never to a cutscene, a
+  canned animation, a menu or the flat screen.
 
 The model keeps its authored size and shading and is drawn in the room's 3D pass with the things
 lying about. The `vr.item-prop-debug` option (VR Options, VR Enhancements, off by default) draws

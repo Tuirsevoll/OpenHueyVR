@@ -1,9 +1,10 @@
-/* Arms follow the controllers. Finger shapes are the model's hand morphs (one blend): the
- * index trigger and the grip share it, and a third shape is the point when the mesh has one.
- * The rest of her follows too, in VR gameplay only: src/game/vrbody.c turns her chest toward the
- * hands and puts her body under the headset (docs/subsystems/vrbody.md). A model's own `vr ...`
- * helper bones take the forearm's and the upper arm's roll, and its first-person head is shrunk
- * away - all of it skipped the moment the arms are.
+/* Arms follow the controllers. Finger shapes are the model's hand morphs (one blend), and a
+ * mod's PROPS/grip_poses.txt can turn its own finger bones to the grip an item names
+ * (src/game/gripposes.c, applied last in vrhands_pose). The rest of her follows too, in VR
+ * gameplay only: src/game/vrbody.c turns her chest toward the hands and puts her body under
+ * the headset (docs/subsystems/vrbody.md). A model's own `vr ...` helper bones take the
+ * forearm's and the upper arm's roll, and its first-person head is shrunk away - all of it
+ * skipped the moment the arms are.
  * Doors swing in degrees (0 shut, open either way to ±90). A hand moves one only while it
  * is touching it. A shut door follows a grip on the knob. A door off the latch can be pushed
  * from either face, anywhere on the leaf. Letting go eases it by the 45° rule, unless it was
@@ -15,6 +16,8 @@
 #define VR_STEP_LOG 0
 
 #include "vrhands.h"
+#include "gripposes.h"
+#include "itemprops.h"
 #include "loot.h"
 #include "things.h"
 #include "vrbody.h"
@@ -65,6 +68,17 @@ void vrhands_take_times(unsigned *pose, unsigned *stop) {
 #define HOLD_WARD 4
 
 static int sHold[2], sHoldId[2], sDoorAxis[2];
+/* an equipped magnesia (dropped) or antimony (thrown), shown in the right hand until a grip
+ * closes after it appears and then opens (the grip pose asks what that hand is showing). */
+static struct {
+    int item, kind, drop, side;
+    int armed, saw_low, shown;
+    int pending, pkind;
+    Vec3 at, right, up, fwd;
+    Vec3 hist[4];
+    int histN;
+    Vec3 pat, pvel;
+} sDef = {.item = -1, .kind = -1, .side = 1};
 /* the ladder each hand holds (a nav link of the room, -1 none): the air beside a ladder while
  * Fiona climbs, and the pull of that hand, which is what climbs her (docs/subsystems/hands.md,
  * "Pull to climb") */
@@ -1067,20 +1081,65 @@ static void log_hands(float left, float right, int posed) {
     (void)posed;   /* (silent: the hand-fit line is off) */
 }
 
+/* The real time since the last posed frame, for the grip poses' blend (not the game's fixed
+ * tick: a headset draws at its own rate). 0 until there is a previous frame. */
+static Uint64 sGripClock;
+
+static float grip_pose_dt(void) {
+    Uint64 now = SDL_GetPerformanceCounter();
+    Uint64 f = SDL_GetPerformanceFrequency();
+    float dt = 0.0f;
+
+    if (sGripClock != 0 && f > 0) {
+        dt = (float)(now - sGripClock) / (float)f;
+    }
+    sGripClock = now;
+    return dt;
+}
+
+static void grip_pose_forget_clock(void) {
+    /* (the next posed frame starts a new span: a cutscene or a menu is not a long frame) */
+    sGripClock = 0;
+}
+
+/* What each hand wants from PROPS/grip_poses.txt this frame: the item in the hand (loot, or the
+ * equipped magnesia/antimony shown there) and the pose its grip line names. Nothing else. */
+static void grip_pose_want(int side) {
+    int item = -1;
+    ItemGrip g;
+
+    if (sHold[side] == HOLD_LOOT) {
+        item = loot_item_of(sHoldId[side]);
+    }
+    if (item < 0 && sDef.shown && sDef.side == side) {
+        item = sDef.item;
+    }
+    if (item >= 0 && itemprops_grip(item, side == 0 ? 30 : 46, &g) && g.pose[0] != 0) {
+        vrgrip_want(side, g.pose, item);
+    } else {
+        vrgrip_want(side, NULL, item);
+    }
+}
+
 void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace) {
     float applied[2] = {0.0f, 0.0f};
+    int posed_side[2] = {0, 0};
     int side, posed = 0;
+    float dt;
 #if VR_STEP_LOG
     Uint64 t_pose = SDL_GetPerformanceCounter();   /* (temporary: the pose's own time) */
 #endif
 
     if (!vrhands_wants(a) || !a->visible || world == NULL) {
         vrbody_idle();
+        vrgrip_idle();
+        grip_pose_forget_clock();
 #if VR_STEP_LOG
         pose_us += perf_us(t_pose, SDL_GetPerformanceCounter());
 #endif
         return;
     }
+    dt = grip_pose_dt();
     find_arms(a, world);
     arm_lengths(a);
     /* the VR body (vrbody.h): its yaw, and the body under the headset with the feet kept. Off
@@ -1134,11 +1193,22 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         vrbody_clavicle(a, world, unplace, side, &hand.m[12]);
         pose_arm(a, world, place, unplace, side, &hand, hs);
         curl_hand(a, side, grip, index, thumb);
+        posed_side[side] = 1;
         posed++;
     }
     /* the forearm's own roll, the upper arm's twist and the deltoid, the first-person head */
     vrbody_head_camera(a, world, place, unplace);   /* (her eyes at the camera, the neck stretching to them) */
     vrbody_finish(a, world, place, unplace);
+    /* last: the mod's finger grip poses on the model's own finger bones. A hand that was not
+     * tracked this frame has no pose (its bones are the animation's). */
+    for (side = 0; side < 2; side++) {
+        if (posed_side[side]) {
+            grip_pose_want(side);
+        } else {
+            vrgrip_want(side, NULL, -1);
+        }
+    }
+    vrgrip_apply(a, world, dt);
     log_hands(applied[0], applied[1], posed);
 #if VR_STEP_LOG
     pose_us += perf_us(t_pose, SDL_GetPerformanceCounter());
@@ -1936,6 +2006,7 @@ static void match_progress(Engine *e, int exit, int d, float swing) {
 void vrhands_forget_poses(void) {
     memset(sDoorHave, 0, sizeof(sDoorHave));
     sPoseRoom = -2;
+    vrgrip_idle();
 }
 
 void vrhands_forget_stops(void) {
@@ -1961,6 +2032,7 @@ void vrhands_drop_all(void) {
         sWallNear[side] = 0;
     }
     sLadderPull = 0.0f;
+    vrgrip_idle();
 }
 
 /* the angle last seen on this door, on whichever side of it was loaded */
@@ -3082,18 +3154,6 @@ static void leaf_scan(Engine *e) {
     }
     sLeafHits = hits;
 }
-
-/* an equipped magnesia (dropped) or antimony (thrown), shown in the right hand until a
- * grip closes after it appears and then opens. */
-static struct {
-    int item, kind, drop, side;
-    int armed, saw_low, shown;
-    int pending, pkind;
-    Vec3 at, right, up, fwd;
-    Vec3 hist[4];
-    int histN;
-    Vec3 pat, pvel;
-} sDef = {.item = -1, .kind = -1, .side = 1};
 
 static int defense_kind(int item, int *drop) {
     switch (item) {

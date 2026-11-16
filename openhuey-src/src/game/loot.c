@@ -2268,6 +2268,13 @@ int loot_held(int index, int *holders) {
     return 1;
 }
 
+int loot_item_of(int index) {
+    if (index < 0 || index >= LOOT_N || !sProp[index].used) {
+        return -1;
+    }
+    return sProp[index].item;
+}
+
 int loot_drawn_frame(int index, Vec3 *pos, Vec3 *right, Vec3 *up, Vec3 *fwd) {
     LootProp *p;
 
