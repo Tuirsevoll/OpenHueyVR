@@ -33,7 +33,7 @@
 #include <windows.h>
 #endif
 
-#define LOOT_N 32
+#define LOOT_N 128
 #define CAT_N 1024
 #define NAME_N 4096
 #define NAME_LEN 48
@@ -118,6 +118,8 @@ typedef struct ItemModel {
     Prop prop;
 } ItemModel;
 static ItemModel sItemModel[ITEM_MODEL_SLOTS];
+/* one stderr line an item, the first time its model is drawn at rest (the sign check) */
+static unsigned char sItemRestLogged[ITEMPROPS_ITEMS];
 /* the debug option's three axes, made once (small RGB quads: no line primitive in render_mesh) */
 static GpuMesh sItemAxes;
 static MeshDraw sItemAxisDraw;
@@ -585,6 +587,18 @@ static void item_model_path_for(int item, int side, char *out, size_t n) {
     const ItemGrip *grip = itemprops_grip(item, item_side_bone(side), &grip_store) ? &grip_store : NULL;
 
     itemprops_model_path(grip, item, out, n);
+}
+
+/* load the model an item lying about will use, off the render pass (the right hand's line, as
+ * item_rest_draw draws it); repeated calls are cache hits */
+static void item_model_preload(int item) {
+    char path[128];
+
+    if (item < 0 || item >= ITEMPROPS_ITEMS) {
+        return;
+    }
+    item_model_path_for(item, 1, path, sizeof(path));
+    (void)item_model_ensure(path);
 }
 
 int loot_item_prop_slot(int item, int side) {
@@ -1706,6 +1720,7 @@ static void fill_from_cat(LootProp *p, Cat *c, float x, float y, float z) {
     }
     p->home = p->pos = vec3(x, y, z);
     recover_item(p);
+    item_model_preload(p->item);
     if (p->mesh == MESH_KEY) {
         ensure_key();
     } else if (p->mesh == MESH_DOLL) {
@@ -1748,6 +1763,7 @@ void loot_sparkle(int fx, float x, float y, float z) {
                     icon_tex(p->item);
                 }
             }
+            item_model_preload(p->item);
         }
         return;
     }
@@ -1761,6 +1777,7 @@ void loot_sparkle(int fx, float x, float y, float z) {
             if (sProp[i].used && sProp[i].item == c->item && !sProp[i].holders) {
                 sProp[i].home = sProp[i].pos = vec3(x, y, z);
                 sProp[i].fx = fx >= 0 ? fx : sProp[i].fx;
+                item_model_preload(sProp[i].item);
                 return;
             }
         }
@@ -1800,6 +1817,7 @@ void loot_at(int item, float x, float y, float z) {
         if (!p->holders) {
             p->home = p->pos = vec3(x, y, z);
         }
+        item_model_preload(p->item);
         return;
     }
     c = cat_item(item);
@@ -1814,6 +1832,7 @@ void loot_at(int item, float x, float y, float z) {
         p->mesh = mesh_for_item(item);
         p->style = ST_SPAWN;
         p->home = p->pos = vec3(x, y, z);
+        item_model_preload(p->item);
         if (p->mesh == MESH_KEY) {
             ensure_key();
         } else {
@@ -1858,6 +1877,7 @@ void loot_part(int item, int fact, int fx, int part) {
     p->group = g;
     p->mesh = MESH_KEY;
     p->mode = MODE_THE;
+    item_model_preload(p->item);
     /* the part's own centre, so the copy sits in the hand where the key was */
     if (gEngine.room.id == KEY_ROOM && sKey.ready) {
         p->home = p->pos = vec3(0, 0, 0);
@@ -2300,7 +2320,7 @@ static Mat4 prop_world(const LootProp *p) {
     Mat4 m = mat4_identity();
     const Vec3 *right = &p->right, *up = &p->up, *fwd = &p->fwd, *pos = &p->pos;
 
-    if (p->posed) {
+    if (p->posed && p->holders) {   /* (in a hand: the hand's frame, as the tick or the draw gave it) */
         if (p->held) {   /* (a hand: where it is drawn this frame, not where the tick left it) */
             right = &p->draw.right;
             up = &p->draw.up;
@@ -2316,6 +2336,13 @@ static Mat4 prop_world(const LootProp *p) {
         m.m[8] = fwd->x;
         m.m[9] = fwd->y;
         m.m[10] = fwd->z;
+    } else {   /* (at rest: its place and its yaw about room y, upright) */
+        float c = cosf(p->yaw), s = sinf(p->yaw);
+
+        m.m[0] = c;
+        m.m[2] = -s;
+        m.m[8] = s;
+        m.m[10] = c;
     }
     m.m[12] = pos->x;
     m.m[13] = pos->y;
@@ -2458,6 +2485,70 @@ static int draw_room_group(int group, const Mat4 *hand, const Mat4 *vp) {
     return 1;
 }
 
+/* An item lying about (not in a hand) drawn with its own model, from the right hand's grip line
+ * (model= and tint), at the prop's world matrix. Room up is -y, so the floor side of the model is
+ * the larger y: the model is moved so that point is on the item's spot and the rest is above it
+ * (smaller y). The model is only looked up here: loot_at/loot_sparkle/fill_from_cat preload it. */
+static int item_rest_draw(const LootProp *p, const Mat4 *vp) {
+    static const uint32_t all[8] = {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u};
+    ItemModel *m;
+    ItemGrip grip_store;
+    const ItemGrip *grip;
+    Prop *mp;
+    Mat4 world, mvp;
+    Vec3 lo, hi, middle;
+    char path[128];
+    float min_y = 1e30f, max_y = -1e30f, spot_y, delta;
+    float r = 1.0f, g = 1.0f, b = 1.0f;
+    int i;
+
+    if (p == NULL || vp == NULL || p->item < 0 || p->item >= ITEMPROPS_ITEMS) {
+        return 0;
+    }
+    /* the same line the held draw uses for the right hand; the model itself is only found here */
+    grip = itemprops_grip(p->item, ITEM_PROP_BONE_RIGHT, &grip_store) ? &grip_store : NULL;
+    item_model_path_for(p->item, 1, path, sizeof(path));
+    m = item_model_find(path);
+    if (m == NULL || m->state <= 0) {
+        return 0;
+    }
+    mp = &m->prop;
+    world = prop_world(p);
+    lo = mp->lo;
+    hi = mp->hi;
+    for (i = 0; i < 8; i++) {
+        Vec3 c = vec3(i & 1 ? hi.x : lo.x, i & 2 ? hi.y : lo.y, i & 4 ? hi.z : lo.z);
+        Vec3 w = mat4_point(&world, c);
+
+        min_y = w.y < min_y ? w.y : min_y;
+        max_y = w.y > max_y ? w.y : max_y;
+    }
+    spot_y = world.m[13];
+    delta = spot_y - max_y;   /* (room up is -y: max y is the floor side) */
+    world.m[13] += delta;
+    min_y += delta;
+    max_y += delta;
+    middle = mat4_point(&world, vec3((lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f, (lo.z + hi.z) * 0.5f));
+    engine_lights_at(middle);
+    if (p->item < ITEMPROPS_ITEMS && !sItemRestLogged[p->item]) {
+        sItemRestLogged[p->item] = 1;
+        fprintf(stderr,
+                "loot: item %d at rest: spot y %.3f, model y %.3f .. %.3f (room up is -y; model should be "
+                "ABOVE the spot: its lowest y (ceiling side) is smaller than the spot, its floor side at the spot)\n",
+                p->item, spot_y, min_y, max_y);
+    }
+    if (grip != NULL) {
+        r = grip->tint[0];
+        g = grip->tint[1];
+        b = grip->tint[2];
+    }
+    mvp = mat4_mul(*vp, world);
+    render_mesh_tint(r, g, b, 1.0f);
+    render_mesh(&mp->gpu, &mvp, mp->d, mp->nd, mp->tex, mp->ntex, all);
+    render_mesh_tint(1.0f, 1.0f, 1.0f, 1.0f);
+    return 1;
+}
+
 static void draw_spawned(LootProp *p, const Mat4 *vp) {
     int model, pal;
     Mat4 world = prop_world(p);
@@ -2468,6 +2559,9 @@ static void draw_spawned(LootProp *p, const Mat4 *vp) {
         if (side >= 0 && item_prop_draw(p->item, side, vp)) {
             return;
         }
+    }
+    if (!p->holders && item_rest_draw(p, vp)) {   /* (lying about: its own model on the spot) */
+        return;
     }
     if (gfm_of(p->item, &model, &pal) && things_model_draw(model, pal, &world, vp)) {
         return;
@@ -2618,6 +2712,7 @@ void loot_maintain(void) {
         p->mode = c->mode < 0 ? MODE_THE : c->mode;
         p->mesh = MESH_PART;
         p->group = c->group;
+        item_model_preload(p->item);
         at = vec3(c->x, c->y, c->z);
         if (group_center(c->group, &cen)) {
             float dx = cen.x - c->x, dz = cen.z - c->z;

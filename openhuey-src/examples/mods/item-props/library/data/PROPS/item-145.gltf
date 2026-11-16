@@ -1,0 +1,292 @@
+{
+ "asset": {
+  "generator": "Khronos glTF Blender I/O v5.3.43",
+  "version": "2.0"
+ },
+ "scene": 1,
+ "scenes": [
+  {
+   "name": "export_tmp"
+  },
+  {
+   "name": "Scene",
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "antimony_orb__exp"
+  }
+ ],
+ "materials": [
+  {
+   "doubleSided": true,
+   "name": "item_145_antimony_powder_inner_mat",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0
+    },
+    "metallicFactor": 0,
+    "roughnessFactor": 0.800000011920929
+   }
+  },
+  {
+   "alphaMode": "BLEND",
+   "doubleSided": true,
+   "name": "orb_depth_only",
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.75,
+     0.8999999761581421,
+     1,
+     0.0
+    ],
+    "metallicFactor": 0,
+    "roughnessFactor": 0.5
+   }
+  },
+  {
+   "alphaMode": "BLEND",
+   "doubleSided": true,
+   "name": "orb_glass_preview",
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.75,
+     0.8999999761581421,
+     1,
+     0.30000001192092896
+    ],
+    "metallicFactor": 0,
+    "roughnessFactor": 0.10000000149011612
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "name": "antimony_orb_exp",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    },
+    {
+     "attributes": {
+      "POSITION": 4,
+      "NORMAL": 5,
+      "TEXCOORD_0": 6
+     },
+     "indices": 7,
+     "material": 1
+    },
+    {
+     "attributes": {
+      "POSITION": 8,
+      "NORMAL": 9,
+      "TEXCOORD_0": 10
+     },
+     "indices": 7,
+     "material": 2
+    }
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0
+  }
+ ],
+ "images": [
+  {
+   "mimeType": "image/png",
+   "name": "item_145_antimony_powder_inner_tex",
+   "uri": "item-145_antimony_powder.png"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 423,
+   "max": [
+    0.28261828422546387,
+    0.24256330728530884,
+    0.32112160325050354
+   ],
+   "min": [
+    -0.22549080848693848,
+    -0.004777245223522186,
+    -0.19266346096992493
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 423,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 423,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 609,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5126,
+   "count": 1318,
+   "max": [
+    0.3414786756038666,
+    0.6203426122665405,
+    0.37762799859046936
+   ],
+   "min": [
+    -0.2843509912490845,
+    -0.0074236891232430935,
+    -0.24916978180408478
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 5,
+   "componentType": 5126,
+   "count": 1318,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 6,
+   "componentType": 5126,
+   "count": 1318,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 7,
+   "componentType": 5123,
+   "count": 3774,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 8,
+   "componentType": 5126,
+   "count": 1318,
+   "max": [
+    0.3414786756038666,
+    0.6203426122665405,
+    0.37762799859046936
+   ],
+   "min": [
+    -0.2843509912490845,
+    -0.0074236891232430935,
+    -0.24916978180408478
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 9,
+   "componentType": 5126,
+   "count": 1318,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 10,
+   "componentType": 5126,
+   "count": 1318,
+   "type": "VEC2"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 5076,
+   "byteOffset": 0,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 5076,
+   "byteOffset": 5076,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 3384,
+   "byteOffset": 10152,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 1218,
+   "byteOffset": 13536,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 15816,
+   "byteOffset": 14756,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 15816,
+   "byteOffset": 30572,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 10544,
+   "byteOffset": 46388,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 7548,
+   "byteOffset": 56932,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteLength": 15816,
+   "byteOffset": 64480,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 15816,
+   "byteOffset": 80296,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 10544,
+   "byteOffset": 96112,
+   "target": 34962
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9729,
+   "minFilter": 9987
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 106656,
+   "uri": "antimony_orb.bin"
+  }
+ ]
+}

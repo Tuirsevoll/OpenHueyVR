@@ -1,0 +1,140 @@
+{
+ "asset": {
+  "generator": "Khronos glTF Blender I/O v5.3.43",
+  "version": "2.0"
+ },
+ "scene": 1,
+ "scenes": [
+  {
+   "name": "export_tmp"
+  },
+  {
+   "name": "Scene",
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "vial_shared__exp"
+  }
+ ],
+ "materials": [
+  {
+   "doubleSided": true,
+   "name": "vial_shared_mat",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0
+    },
+    "metallicFactor": 0,
+    "roughnessFactor": 0.800000011920929
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "name": "vial_shared_exp",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0
+  }
+ ],
+ "images": [
+  {
+   "mimeType": "image/png",
+   "name": "vial_shared_tex",
+   "uri": "item-75_fortis.png"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 3079,
+   "max": [
+    0.13058404624462128,
+    0.550000011920929,
+    0.1308804154396057
+   ],
+   "min": [
+    -0.12986822426319122,
+    -0.550000011920929,
+    -0.1312658041715622
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 3079,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 3079,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 9474,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 36948,
+   "byteOffset": 0,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 36948,
+   "byteOffset": 36948,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 24632,
+   "byteOffset": 73896,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 18948,
+   "byteOffset": 98528,
+   "target": 34963
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9729,
+   "minFilter": 9987
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 117476,
+   "uri": "vial_shared.bin"
+  }
+ ]
+}

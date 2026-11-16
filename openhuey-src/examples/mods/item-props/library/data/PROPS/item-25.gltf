@@ -1,0 +1,140 @@
+{
+ "asset": {
+  "generator": "Khronos glTF Blender I/O v5.3.43",
+  "version": "2.0"
+ },
+ "scene": 1,
+ "scenes": [
+  {
+   "name": "export_tmp"
+  },
+  {
+   "name": "Scene",
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "mandragora_shared__exp"
+  }
+ ],
+ "materials": [
+  {
+   "doubleSided": true,
+   "name": "mandragora_shared_mat",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0
+    },
+    "metallicFactor": 0,
+    "roughnessFactor": 0.800000011920929
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "name": "mandragora_shared_exp",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0
+  }
+ ],
+ "images": [
+  {
+   "mimeType": "image/png",
+   "name": "mandragora_shared_tex",
+   "uri": "item-25_yellow_mandragora.png"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 3227,
+   "max": [
+    0.9279415011405945,
+    1.3697820901870728,
+    0.49652281403541565
+   ],
+   "min": [
+    -0.7809497714042664,
+    -1.3697820901870728,
+    -0.9568074941635132
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 3227,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 3227,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 8073,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 38724,
+   "byteOffset": 0,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 38724,
+   "byteOffset": 38724,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 25816,
+   "byteOffset": 77448,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 16146,
+   "byteOffset": 103264,
+   "target": 34963
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9729,
+   "minFilter": 9987
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 119412,
+   "uri": "mandragora_shared.bin"
+  }
+ ]
+}

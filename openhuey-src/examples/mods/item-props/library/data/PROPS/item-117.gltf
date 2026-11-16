@@ -1,0 +1,140 @@
+{
+ "asset": {
+  "generator": "Khronos glTF Blender I/O v5.3.43",
+  "version": "2.0"
+ },
+ "scene": 1,
+ "scenes": [
+  {
+   "name": "export_tmp"
+  },
+  {
+   "name": "Scene",
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "medallion_shared__exp"
+  }
+ ],
+ "materials": [
+  {
+   "doubleSided": true,
+   "name": "medallion_shared_mat",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0
+    },
+    "metallicFactor": 0,
+    "roughnessFactor": 0.800000011920929
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "name": "medallion_shared_exp",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0
+  }
+ ],
+ "images": [
+  {
+   "mimeType": "image/png",
+   "name": "medallion_shared_tex",
+   "uri": "item-117_magist_medallion.png"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 1958,
+   "max": [
+    0.29284727573394775,
+    0.33810022473335266,
+    0.02410045824944973
+   ],
+   "min": [
+    -0.29284727573394775,
+    -0.33810022473335266,
+    -0.02410045824944973
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 1958,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 1958,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 5091,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 23496,
+   "byteOffset": 0,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 23496,
+   "byteOffset": 23496,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 15664,
+   "byteOffset": 46992,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 10182,
+   "byteOffset": 62656,
+   "target": 34963
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9729,
+   "minFilter": 9987
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 72840,
+   "uri": "medallion_shared.bin"
+  }
+ ]
+}

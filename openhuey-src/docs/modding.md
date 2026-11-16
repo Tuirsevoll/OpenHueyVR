@@ -345,6 +345,12 @@ The model keeps its authored size and shading and is drawn in the room's 3D pass
 lying about. The `vr.item-prop-debug` option (VR Options, VR Enhancements, off by default) draws
 small RGB axes at the model's origin and the wrist bone while a held item has one.
 
+An item **lying about** draws the same model too, before the game's fallback card / key / powder /
+ball / doll / magnesia: the right hand's grip line (so its `model=` and tint) at the item's spot,
+upright and with its floor side on the spot. The fallback is used only when no model file exists.
+The engine logs one line per item the first time it draws its resting model - the item, the spot's
+y and the model's drawn y range - so a bad up/down sign can be seen (`room up is -y`).
+
 A typical VR pickup: on `item-placed` load and place the item's prop (remember k and the room's
 id: the sender); as the hand grabs it, carry the prop (`-1` room: it follows her through doors);
 when it's "put away", send `take-item-at` - on `item-cleared` free the prop; on a refused

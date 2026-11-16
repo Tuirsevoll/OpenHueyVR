@@ -224,6 +224,11 @@ int main(void) {
         f->bone_axes[46][1] = vec3(0.0f, 1.0f, 0.0f);
         f->bone_axes[46][2] = vec3(0.0f, 0.0f, 1.0f);
         loot_at(148, 0.0f, 0.0f, 0.0f);
+        CHECK("an item at rest preloads its model", loot_item_prop_loaded(148, 1));
+        sLightsAt = 0;
+        loot_draw(&vp, 1);
+        CHECK("an item at rest draws its model", sLightsAt == 1);
+
         item = loot_nearest(vec3(0.0f, 0.0f, 0.0f), -1, &d2);
         loot_grab(item, 1);
         sLightsAt = 0;

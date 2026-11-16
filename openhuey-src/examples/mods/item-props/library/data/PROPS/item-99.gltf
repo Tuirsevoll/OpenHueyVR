@@ -1,0 +1,141 @@
+{
+ "asset": {
+  "generator": "Khronos glTF Blender I/O v5.3.43",
+  "version": "2.0"
+ },
+ "scene": 1,
+ "scenes": [
+  {
+   "name": "export_tmp"
+  },
+  {
+   "name": "Scene",
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "pill_esca_shared__exp"
+  }
+ ],
+ "materials": [
+  {
+   "doubleSided": true,
+   "name": "orb_opaque.001",
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     1,
+     1,
+     1,
+     1
+    ],
+    "metallicFactor": 0,
+    "roughnessFactor": 0.10000000149011612,
+    "baseColorTexture": {
+     "index": 0
+    }
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "name": "pill_esca_shared_exp",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 1318,
+   "max": [
+    0.09368644654750824,
+    0.17019423842430115,
+    0.10360423475503922
+   ],
+   "min": [
+    -0.07801316678524017,
+    -0.0020367279648780823,
+    -0.06836105138063431
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 1318,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 1318,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 3774,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 15816,
+   "byteOffset": 0,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 15816,
+   "byteOffset": 15816,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 10544,
+   "byteOffset": 31632,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 7548,
+   "byteOffset": 42176,
+   "target": 34963
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 49724,
+   "uri": "pill_esca_shared.bin"
+  }
+ ],
+ "images": [
+  {
+   "uri": "item-99_esca.png"
+  }
+ ],
+ "samplers": [
+  {}
+ ],
+ "textures": [
+  {
+   "source": 0,
+   "sampler": 0
+  }
+ ]
+}
