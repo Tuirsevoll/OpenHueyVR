@@ -409,6 +409,44 @@ static void check_arm_pose(const char *library) {
 
     vrhands_pose(&sArmActor, sPosed, &place, &unplace);
 
+    /* Frames as the game runs them: the camera from her head (main.c: vrbody_eye_y + 1.5), the
+     * animation's fresh pose each frame, and the body's head seat - it must settle, never climb
+     * (a head seat read back into the camera would). A cutscene first, as after a scene. */
+    {
+        int k, hb = vrbody_bone(VRBODY_HEAD, 0);
+        float cam0 = 0.0f, cam1 = 0.0f;
+
+        vrbody_idle();   /* (the cutscene) */
+        for (k = 0; k < 120; k++) {
+            float hy = 0.0f, cam;
+
+            if (!vrbody_eye_y(&sArmActor, &hy)) {
+                hy = sPosed[hb].m[13];   /* (the pose of the last frame) */
+            }
+            cam = hy + 1.5f;
+            sVrEye = vec3(sVrEye.x, cam, sVrEye.z);
+            sVrHeadPos = sVrEye;
+            memcpy(sPosed, sRest, sizeof(Mat4) * (size_t)sRestN);
+            vrhands_pose(&sArmActor, sPosed, &place, &unplace);
+            if (k == 2) {
+                cam0 = cam;
+            }
+            if (k == 119) {
+                cam1 = cam;
+            }
+            if (k % 20 == 0) {
+                printf("hands: frame %d - the camera %.4f, her head %.4f, her eye %.4f\n", k,
+                       (double)cam, (double)sPosed[hb].m[13], (double)sPosed[vrbody_bone(VRBODY_HEAD, 0)].m[13]);
+            }
+        }
+        printf("hands: 120 frames after a cutscene - the camera moved %.4f\n",
+               (double)(cam1 - cam0));
+        if (fabsf(cam1 - cam0) > 0.5f) {
+            printf("hands: the view climbs after a cutscene (FAIL)\n");
+            sFails++;
+        }
+    }
+
     /* One body, three calibrated heights: everything of hers is in her own space, so her
      * shoulder and eye must not move at all - the world's scale has already taken the player's
      * size into hers. */

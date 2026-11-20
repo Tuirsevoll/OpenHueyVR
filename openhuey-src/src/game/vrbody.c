@@ -180,6 +180,8 @@
 #define EYE_UP_M 0.01f
 #define EYE_BACK_MAX 0.12f
 #define EYE_UP_RANGE 0.05f
+#define HEAD_SEAT_MAX_M 0.30f    /* the most the head seat may move her head in a frame: it is what the
+                                * view is read from, so it must never chase it */
 
 #define DEG (0.017453292519943295f)
 
@@ -250,6 +252,7 @@ static int sSwingHave;
 /* the camera's read of her head: before the body and the first-person head move it */
 static const struct Actor *sHeadWho;
 static float sHeadY;
+static float sHeadPos[2];   /* (her room place when that head was read: a room change is not hers) */
 static int sHeadHave;
 /* the signs, said once (the elbow's two turns and the legs' rules) */
 static int sSignsLogged;
@@ -258,6 +261,7 @@ static int sShouldersLogged;
 static int sShoulderLogged[2];   /* (each side's own numbers, once) */
 static int sShoulderWarned[2];   /* (the range warning, once a side) */
 static int sHeadCamLogged;       /* (her eye against the camera, once) */
+static int sHeadSeatWarned;      /* (a seat out of range, once) */
 /* the calibration last logged (so the scale factors are said once, not a frame) */
 static float sLoggedEye = -1.0f, sLoggedReach = -1.0f;
 
@@ -937,7 +941,11 @@ int vrbody_begin(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *un
     int i, have[2], fresh;
 
     sActive = 0;
-    sHeadHave = 0;
+    /* sHeadHave is NOT dropped: the camera reads her head's own y (vrbody_eye_y) and the seat
+     * below moves that bone, so forgetting it would let the view read the seated head back and
+     * climb, frame after frame - after a cutscene, most visibly. It is the frame's own pre-body
+     * head each time vrbody_body runs, and only vrbody_idle of another actor leaves it stale.
+     */
     sArmOn[0] = sArmOn[1] = 0;
     sFrame++;
     now = SDL_GetTicksNS();
@@ -1218,6 +1226,8 @@ void vrbody_body(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *un
         m_pos(&world[eye_bone], head);
         sHeadY = mat4_point(place, vec3(head[0], head[1], head[2])).y;
         sHeadWho = a;
+        sHeadPos[0] = a->pos.x;
+        sHeadPos[1] = a->pos.z;
         sHeadHave = 1;
     }
     /* the feet as the motion and humanlegs left them, before the pelvis moves */
@@ -1576,6 +1586,22 @@ void vrbody_head_camera(struct Actor *a, Mat4 *world, const Mat4 *place, const M
         am[2] = a2.z;
     }
     v_sub3(delta, cm, am);
+    /* The seat may never be far: the view is read from her head, so a seat that chased a moved
+     * camera would climb frame after frame (a cutscene's end showed it). This bounds it, and says
+     * so once if it is ever asked for. */
+    {
+        float lim = HEAD_SEAT_MAX_M * u;
+        float len = v_len3(delta);
+
+        if (len > lim) {
+            if (!sHeadSeatWarned) {
+                sHeadSeatWarned = 1;
+                fprintf(stderr, "vrbody: the head seat asked for %.3f m - held to %.2f m\n",
+                        (double)(len / u), (double)HEAD_SEAT_MAX_M);
+            }
+            v_scale3(delta, delta, lim / len);
+        }
+    }
     if (v_len3(delta) > 1.0e-5f) {
         shift_tree(world, m, sBones.head, delta);
     }
@@ -2047,13 +2073,20 @@ int vrbody_eye_y(const struct Actor *a, float *y) {
     if (!sHeadHave || a == NULL || a != sHeadWho || y == NULL) {
         return 0;
     }
+    /* The head remembered is the one before any body pose (the seat below moves the bone). A room
+     * change can leave it metres from where she is now (she has been put somewhere else): then it
+     * is not hers and the caller takes her posed head instead. */
+    if (fabsf(a->pos.x - sHeadPos[0]) + fabsf(a->pos.z - sHeadPos[1]) > 2.0f * VR_UNITS_PER_METER) {
+        return 0;   /* (another room's head: not hers any more) */
+    }
     *y = sHeadY;
     return 1;
 }
 
 void vrbody_idle(void) {
     sActive = 0;
-    sHeadHave = 0;
+    /* (sHeadHave kept: the camera keeps the last head it found before any body pose, exactly as
+     * during a pose - dropping it would hand the view the seated head and it would climb) */
     sArmOn[0] = sArmOn[1] = 0;
     /* A cutscene, a menu or non-VR play has moved her: the next posed frame starts its smoothings
      * afresh instead of easing from where the body was before the jump. */

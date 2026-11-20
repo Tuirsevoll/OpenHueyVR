@@ -120,6 +120,12 @@ head. The helpers are rebuilt from their parent **every** frame, so nothing accu
     and `EYE_UP_M` (0.01 m) *above* them (+Y is the ceiling), both in her metres. The player tunes
     them on the VR Enhancements page (*Body: Camera Back* 0..0.12 m, *Body: Camera Height*
     -0.05..+0.05 m, 0.01 a step, kept in `vr.cam-back`/`vr.cam-up`), clamped to those ranges.
+    **The view must never read the seat back**: the camera keeps the head it found before any body
+    pose (`vrbody_eye_y`) across cutscenes too - `vrbody_idle`/`vrbody_begin` no longer drop it - and
+    the seat may move her head at most `HEAD_SEAT_MAX_M` (0.30 m) in a frame, warned once. Without
+    that, a frame that lost the memory read the seated head and the seat chased it: the view flew
+    upward after a cutscene until the room changed. Her place moving more than 2 m (another room)
+    drops the memory, so a new room never uses the old one's height.
     The log says the seat and the reach: `vrbody: head at the camera - camera ... her eye ...; the
     camera 0.060 m behind her eyes and 0.010 m above them; reach_scale ...`.
   - **every offset and threshold of hers is in HER space**, converted with ONE constant metre's
