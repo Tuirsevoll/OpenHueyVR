@@ -52,12 +52,13 @@ create acts 4 cells allot   variable #acts
     {: | bits :}  0 #acts !
     under-cursor dup 0< if  drop  else
         item-actions to bits
+        under-cursor hand-equippable? if  bits can-equip or to bits  then
         can-discard can-equip can-use  3 0 do  dup bits and if  act+  else  drop  then  loop   \ (use first)
     then
     go-back act+ ;
 : act@ ( i -- act )  cells acts + @ ;
 : act-word ( act -- msg )   \ (use $50, wear $58 / take off $59, throw away $51, back $5A)
-    case  can-use of  $50  endof  can-equip of  page-list cursor @ equip-state worn = $59 $58 ?  endof
+    case  can-use of  $50  endof  can-equip of  page-list cursor @ equip-state worn =  under-cursor hand-item =  or  $59 $58 ?  endof
           can-discard of  $51  endof  >r $5A r>  endcase ;
 : load-picture ( -- )   \ its picture into the cache's picture group
     under-cursor dup shown-picture @ = if  drop exit  then
@@ -103,7 +104,12 @@ create acts 4 cells allot   variable #acts
     if  back-to-page exit  then
     1 under-cursor message-param!  page-list cursor @ items-id send discard-item  $4057 ['] back ask ;
 : worn-instead ( answer -- )  0= if  page-list cursor @ items-id send equip-item  then  back-to-page ;
+: wear-hand ( -- )   \ a key thing: into her hand, or back to its place in the list
+    under-cursor hand-item = if  items-id send unequip-hand-item
+    else  page-list cursor @ items-id send equip-hand-item  then
+    back-to-page ;
 : wear ( -- )
+    under-cursor hand-equippable? if  wear-hand exit  then
     page-list cursor @ equip-state case
         other-worn of  1  page-list cursor @ slot-of equipped  message-param!  $405C ['] worn-instead ask  endof   \ ask
         worn of  page-list cursor @ items-id send unequip-item  back-to-page  endof

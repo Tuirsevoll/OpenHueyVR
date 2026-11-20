@@ -1,5 +1,6 @@
 /* The item grips a mod gives its held models (itemprops.h). */
 #include "itemprops.h"
+#include "gripposes.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -203,6 +204,7 @@ static void grips_load(void) {
 void itemprops_reset(void) {
     memset(sGrips, 0, sizeof(sGrips));
     sLoaded = 0;
+    vrgrip_reset();
 }
 
 const ItemGrip *itemprops_get(int item, int bone) {

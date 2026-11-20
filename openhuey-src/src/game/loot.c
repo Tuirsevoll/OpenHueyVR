@@ -652,6 +652,27 @@ static int item_wrist_matrix(int bone, Mat4 *out) {
     return 1;
 }
 
+/* where a hand item's model sits in the room: the wrist and the item's grip line, the matrix
+ * item_prop_draw draws it from (its origin). 0 when her hand is not posed yet. */
+int loot_held_origin(int item, int side, Vec3 *out) {
+    ItemGrip grip_store;
+    const ItemGrip *grip;
+    Mat4 wrist, world;
+    int bone;
+
+    if (out == NULL || item < 0) {
+        return 0;
+    }
+    bone = item_side_bone(side);
+    if (!item_wrist_matrix(bone, &wrist)) {
+        return 0;
+    }
+    grip = itemprops_grip(item, bone, &grip_store) ? &grip_store : NULL;
+    world = itemprops_matrix(grip, &wrist);
+    *out = vec3(world.m[12], world.m[13], world.m[14]);
+    return 1;
+}
+
 /* one axis as two crossed thin quads, so it is seen from any side */
 static void item_axis_vertex(MeshVertex *v, Vec3 p, uint8_t r, uint8_t g, uint8_t b) {
     memset(v, 0, sizeof(*v));
@@ -2266,6 +2287,13 @@ int loot_held(int index, int *holders) {
         *holders = sProp[index].holders;
     }
     return 1;
+}
+
+int loot_item_of(int index) {
+    if (index < 0 || index >= LOOT_N || !sProp[index].used) {
+        return -1;
+    }
+    return sProp[index].item;
 }
 
 int loot_drawn_frame(int index, Vec3 *pos, Vec3 *right, Vec3 *up, Vec3 *fwd) {

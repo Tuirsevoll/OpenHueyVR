@@ -17,7 +17,7 @@ typedef struct ItemGrip {
     int bone;              /* her hand's bone: 30 (left, +x) or 46 (right, -x) */
     Vec3 offset;           /* in the wrist bone's own axes, game units */
     float rot[4];          /* x y z w, turned about the offset */
-    char pose[32];         /* the optional grip pose's name: kept, never applied (no animation changes) */
+    char pose[32];         /* the optional grip pose's name: PROPS/grip_poses.txt applies it */
     char model[96];        /* the optional model's file in PROPS/ (empty: item-<id>.gltf) */
     float tint[3];         /* multiplies the model's colours (1 1 1: as authored) */
 } ItemGrip;

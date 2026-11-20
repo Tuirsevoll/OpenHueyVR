@@ -1,9 +1,10 @@
-/* Arms follow the controllers. Finger shapes are the model's hand morphs (one blend): the
- * index trigger and the grip share it, and a third shape is the point when the mesh has one.
- * The rest of her follows too, in VR gameplay only: src/game/vrbody.c turns her chest toward the
- * hands and puts her body under the headset (docs/subsystems/vrbody.md). A model's own `vr ...`
- * helper bones take the forearm's and the upper arm's roll, and its first-person head is shrunk
- * away - all of it skipped the moment the arms are.
+/* Arms follow the controllers. Finger shapes are the model's hand morphs (one blend), and a
+ * mod's PROPS/grip_poses.txt can turn its own finger bones to the grip an item names
+ * (src/game/gripposes.c, applied last in vrhands_pose). The rest of her follows too, in VR
+ * gameplay only: src/game/vrbody.c turns her chest toward the hands and puts her body under
+ * the headset (docs/subsystems/vrbody.md). A model's own `vr ...` helper bones take the
+ * forearm's and the upper arm's roll, and its first-person head is shrunk away - all of it
+ * skipped the moment the arms are.
  * Doors swing in degrees (0 shut, open either way to ±90). A hand moves one only while it
  * is touching it. A shut door follows a grip on the knob. A door off the latch can be pushed
  * from either face, anywhere on the leaf. Letting go eases it by the 45° rule, unless it was
@@ -15,6 +16,8 @@
 #define VR_STEP_LOG 0
 
 #include "vrhands.h"
+#include "gripposes.h"
+#include "itemprops.h"
 #include "loot.h"
 #include "things.h"
 #include "vrbody.h"
@@ -65,6 +68,24 @@ void vrhands_take_times(unsigned *pose, unsigned *stop) {
 #define HOLD_WARD 4
 
 static int sHold[2], sHoldId[2], sDoorAxis[2];
+/* an equipped magnesia (dropped) or antimony (thrown), shown in the right hand until a grip
+ * closes after it appears and then opens (the grip pose asks what that hand is showing). */
+static struct {
+    int item, kind, drop, side;
+    int armed, saw_low, shown;
+    int pending, pkind;
+    Vec3 at, right, up, fwd;
+    Vec3 hist[4];
+    int histN;
+    Vec3 pat, pvel;
+} sDef = {.item = -1, .kind = -1, .side = 1};
+/* the key item the scripts put in her right hand (items.fs's `Equip`, gEngine.hand_item): shown
+ * in VR while she plays, with the grip pose its grip line names. Never thrown: no arming, and
+ * the defense path is left as it is. The magnesia/antimony in slot 2 has the hand instead. */
+static struct {
+    int item, side, shown;
+    Vec3 at, right, up, fwd;
+} sHand = {.item = -1, .side = 1};
 /* the ladder each hand holds (a nav link of the room, -1 none): the air beside a ladder while
  * Fiona climbs, and the pull of that hand, which is what climbs her (docs/subsystems/hands.md,
  * "Pull to climb") */
@@ -1067,20 +1088,68 @@ static void log_hands(float left, float right, int posed) {
     (void)posed;   /* (silent: the hand-fit line is off) */
 }
 
+/* The real time since the last posed frame, for the grip poses' blend (not the game's fixed
+ * tick: a headset draws at its own rate). 0 until there is a previous frame. */
+static Uint64 sGripClock;
+
+static float grip_pose_dt(void) {
+    Uint64 now = SDL_GetPerformanceCounter();
+    Uint64 f = SDL_GetPerformanceFrequency();
+    float dt = 0.0f;
+
+    if (sGripClock != 0 && f > 0) {
+        dt = (float)(now - sGripClock) / (float)f;
+    }
+    sGripClock = now;
+    return dt;
+}
+
+static void grip_pose_forget_clock(void) {
+    /* (the next posed frame starts a new span: a cutscene or a menu is not a long frame) */
+    sGripClock = 0;
+}
+
+/* What each hand wants from PROPS/grip_poses.txt this frame: the item in the hand (loot, or the
+ * equipped magnesia/antimony shown there) and the pose its grip line names. Nothing else. */
+static void grip_pose_want(int side) {
+    int item = -1;
+    ItemGrip g;
+
+    if (sHold[side] == HOLD_LOOT) {
+        item = loot_item_of(sHoldId[side]);
+    }
+    if (item < 0 && sDef.shown && sDef.side == side) {
+        item = sDef.item;
+    }
+    if (item < 0 && sHand.shown && sHand.side == side) {
+        item = sHand.item;   /* (the key item the menu equipped in her hand) */
+    }
+    if (item >= 0 && itemprops_grip(item, side == 0 ? 30 : 46, &g) && g.pose[0] != 0) {
+        vrgrip_want(side, g.pose, item);
+    } else {
+        vrgrip_want(side, NULL, item);
+    }
+}
+
 void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace) {
     float applied[2] = {0.0f, 0.0f};
+    int posed_side[2] = {0, 0};
     int side, posed = 0;
+    float dt;
 #if VR_STEP_LOG
     Uint64 t_pose = SDL_GetPerformanceCounter();   /* (temporary: the pose's own time) */
 #endif
 
     if (!vrhands_wants(a) || !a->visible || world == NULL) {
         vrbody_idle();
+        vrgrip_idle();
+        grip_pose_forget_clock();
 #if VR_STEP_LOG
         pose_us += perf_us(t_pose, SDL_GetPerformanceCounter());
 #endif
         return;
     }
+    dt = grip_pose_dt();
     find_arms(a, world);
     arm_lengths(a);
     /* the VR body (vrbody.h): its yaw, and the body under the headset with the feet kept. Off
@@ -1134,11 +1203,22 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         vrbody_clavicle(a, world, unplace, side, &hand.m[12]);
         pose_arm(a, world, place, unplace, side, &hand, hs);
         curl_hand(a, side, grip, index, thumb);
+        posed_side[side] = 1;
         posed++;
     }
     /* the forearm's own roll, the upper arm's twist and the deltoid, the first-person head */
     vrbody_head_camera(a, world, place, unplace);   /* (her eyes at the camera, the neck stretching to them) */
     vrbody_finish(a, world, place, unplace);
+    /* last: the mod's finger grip poses on the model's own finger bones. A hand that was not
+     * tracked this frame has no pose (its bones are the animation's). */
+    for (side = 0; side < 2; side++) {
+        if (posed_side[side]) {
+            grip_pose_want(side);
+        } else {
+            vrgrip_want(side, NULL, -1);
+        }
+    }
+    vrgrip_apply(a, world, dt);
     log_hands(applied[0], applied[1], posed);
 #if VR_STEP_LOG
     pose_us += perf_us(t_pose, SDL_GetPerformanceCounter());
@@ -1936,6 +2016,7 @@ static void match_progress(Engine *e, int exit, int d, float swing) {
 void vrhands_forget_poses(void) {
     memset(sDoorHave, 0, sizeof(sDoorHave));
     sPoseRoom = -2;
+    vrgrip_idle();
 }
 
 void vrhands_forget_stops(void) {
@@ -1961,6 +2042,7 @@ void vrhands_drop_all(void) {
         sWallNear[side] = 0;
     }
     sLadderPull = 0.0f;
+    vrgrip_idle();
 }
 
 /* the angle last seen on this door, on whichever side of it was loaded */
@@ -3083,18 +3165,6 @@ static void leaf_scan(Engine *e) {
     sLeafHits = hits;
 }
 
-/* an equipped magnesia (dropped) or antimony (thrown), shown in the right hand until a
- * grip closes after it appears and then opens. */
-static struct {
-    int item, kind, drop, side;
-    int armed, saw_low, shown;
-    int pending, pkind;
-    Vec3 at, right, up, fwd;
-    Vec3 hist[4];
-    int histN;
-    Vec3 pat, pvel;
-} sDef = {.item = -1, .kind = -1, .side = 1};
-
 static int defense_kind(int item, int *drop) {
     switch (item) {
     case 0x90: *drop = 0; return 0; /* ball */
@@ -3157,6 +3227,83 @@ static Vec3 defense_flick(Vec3 fwd, Vec3 up) {
 
 static Vec3 defense_place(Vec3 at, Vec3 up, Vec3 fwd) {
     return vec3_add(at, vec3_add(vec3_scale(up, 0.35f), vec3_scale(fwd, 0.6f)));
+}
+
+/* ---- the key item the menu equipped in her hand (gEngine.hand_item) ---- */
+
+static void hand_item_hide(void) {
+    sHand.item = -1;
+    sHand.shown = 0;
+}
+
+/* a tick: is the key item shown, and in which hand (the right, or the left when that is the only
+ * one tracked). The magnesia/antimony in slot 2 has the hand instead, and nothing is shown while
+ * VR does not play (a menu, a cutscene - her eyes' anchor is cleared then - or flat screen). */
+static void hand_item_tick(void) {
+    int item = gEngine.hand_item, side;
+    Vec3 at, right, up, fwd;
+    float grip, index, thumb;
+
+    if (item < 0 || !vr_active() || sDef.shown) {
+        hand_item_hide();
+        return;
+    }
+    for (side = 1; side >= 0; side--) {
+        if (sArmFound[side] && hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
+            sHand.item = item;
+            sHand.side = side;
+            sHand.at = at;
+            sHand.right = right;
+            sHand.up = up;
+            sHand.fwd = fwd;
+            sHand.shown = 1;
+            loot_preload_held(item, side);   /* (its model, off the render pass) */
+            return;
+        }
+    }
+    hand_item_hide();
+}
+
+/* where the hand item's model sits in the room - her wrist and the item's grip line, the matrix
+ * item_prop_draw draws it from (its origin): 0 when none is shown (a trigger check, and the
+ * scripts' `hand-item-at`) */
+int vrhands_hand_item_at(Vec3 *out) {
+    return sHand.shown && sHand.item >= 0 ? loot_held_origin(sHand.item, sHand.side, out) : 0;
+}
+
+/* drawn from the live hand frame, as the equipped thing is, so it sits in the hand on every
+ * drawn frame. Nothing to draw in a menu, a cutscene, or flat screen. */
+static void hand_item_draw(const Mat4 *view_proj) {
+    Mat4 m;
+    Vec3 at, right, up, fwd;
+    float grip = 0.0f, index = 0.0f, thumb = 0.0f;
+
+    if (!sHand.shown || sHand.item < 0 || view_proj == NULL || !vr_active() || gEngine.paused ||
+        gEngine.console.open) {
+        return;
+    }
+    at = sHand.at;
+    right = sHand.right;
+    up = sHand.up;
+    fwd = sHand.fwd;
+    if (!hand_world(sHand.side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
+        return;   /* (no tracked hand: a menu, a scene - nothing left hanging in the room) */
+    }
+    at = defense_place(at, up, fwd);
+    m = mat4_identity();
+    m.m[0] = right.x;
+    m.m[1] = right.y;
+    m.m[2] = right.z;
+    m.m[4] = up.x;
+    m.m[5] = up.y;
+    m.m[6] = up.z;
+    m.m[8] = fwd.x;
+    m.m[9] = fwd.y;
+    m.m[10] = fwd.z;
+    m.m[12] = at.x;
+    m.m[13] = at.y;
+    m.m[14] = at.z;
+    loot_draw_held(sHand.item, sHand.side, &m, view_proj);
 }
 
 static void defense_tick(void) {
@@ -3232,6 +3379,7 @@ void vrhands_defense_draw(const Mat4 *view_proj) {
     Vec3 at, right, up, fwd;
     float grip = 0.0f, index = 0.0f, thumb = 0.0f;
 
+    hand_item_draw(view_proj);   /* (the key item the menu equipped: never the defense thing) */
     if (!sDef.shown || sDef.kind < 0 || view_proj == NULL) {
         return;
     }
@@ -3805,4 +3953,5 @@ void vrhands_tick(Engine *e) {
     leaf_scan(e);
     loot_maintain();
     defense_tick();
+    hand_item_tick();   /* (the key item the menu equipped, if slot 2's magnesia has not the hand) */
 }

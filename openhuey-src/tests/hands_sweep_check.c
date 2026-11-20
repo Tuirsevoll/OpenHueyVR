@@ -99,9 +99,21 @@ void room_door_passage(Room *r, int exit, int open, uint32_t locks) {
 
 void loot_maintain(void) {}
 
+int loot_item_of(int index) {
+    (void)index;
+    return -1;
+}
+
 void loot_preload_held(int item, int side) {
     (void)item;
     (void)side;
+}
+
+int loot_held_origin(int item, int side, Vec3 *out) {
+    (void)item;
+    (void)side;
+    (void)out;
+    return 0;
 }
 
 void loot_draw_held(int item, int side, const Mat4 *world, const Mat4 *view_proj) {
