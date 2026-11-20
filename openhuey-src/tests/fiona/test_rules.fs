@@ -9,11 +9,20 @@ USING: floor-flags vectors tester engine game-state actors messages room-names g
 : mode ( -- n )  [: her-mode @ ;] her@ ;
 : hold ( key -- )  true key-hold ;   : release ( key -- )  false key-hold ;
 : free! ( -- )  [: idle ;] her@  10 run-frames ;
+\ the VR aim origin (fiona/state.fs eye-xz): with no headset pose behind it, her body's x and z
+: eye-body? ( -- flag )
+    {: | F: ex ez bx bz :}
+    eye-xz to ez to ex
+    fiona body-pos fswap fdrop to bz to bx
+    ex bx f- fabs 0.001e f<  ez bz f- fabs 0.001e f< and ;
 
 2 run-frames
 0 fiona send costume  1 run-frames
 game:story send story-stop  deliver  progress pr.state 8 0 fill
 30 run-frames
+
+testing the VR aim origin: her body's x and z while no headset pose is behind it (a session's eye)
+T{ [: eye-body? ;] her@ -> -1 }T
 
 testing Fiona_ToIdle: the stick by the camera again (+0x1AD588 0); arriving afresh keeps a door's held stick
 T{ [: steered her-turn-mode !  idle  her-turn-mode @ ;] her@ -> 0 }T

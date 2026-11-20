@@ -125,7 +125,10 @@ behaviours, `Hewie_WhatNext` / `WhenIdle` (the weighted lists, from the executab
   the save since 0.2.45 (Hewie_SaveState's +0x838: the exit he came in by - `hewie-cond`), with his
   condition (+0xC4; ours follows his health each frame, so a hurt one comes back hurt either way).
 - Fixed in 0.2.42 against the original: "go there" measured from where she stood (Actor_FreeDistance
-  from her start, by his floor - it was from him, so the spot often fell at her feet); "come back"
+  from her start, by his floor - it was from him, so the spot often fell at her feet); in a headset
+  the spot is on her look (`her-aim-yaw`), and without a triangle of hers there is no spot ahead
+  (before, the command could carry a garbage point and he just stood or searched - the story
+  fetches then never saw him in the area they ask for); "come back"
   while the story hides him picks anew (+0xF3559); placed by the story in another room he takes his
   default (Hewie_PlaceInRoom); she leaving while a script has him lets the script go first
   (Hewie_Vt34: Hewie_FullStop) - he no longer stays behind; "come back" with the stalker about puts

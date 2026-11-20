@@ -166,10 +166,12 @@ variable tp-go   -1 tp-go !
 : tp-clear ( -- )
     tp-fx @ 0>= if  tp-fx @ kill  then
     -1 tp-fx !  0 tp-aiming !  0 tp-held ! ;
-\ there: her feet on the floor of the aim, facing the way it went; what her hands held let go
+\ there: her feet on the floor of the aim, facing the way it went (the view with her, so her body -
+\ which faces the look again next tick - keeps that way); what her hands held let go
 : tp-land ( -- )
     hands-drop
     tp-at vec@  tp-dir v.x sf@ tp-dir v.z sf@ fatan2  put
+    vr? if  tp-dir v.x sf@ tp-dir v.z sf@ fatan2  vr-face f- angle-wrap vr-turn!  then
     show-her
     stand
     0 her-still !  0 her-run-t !  1e her-stick-k f!

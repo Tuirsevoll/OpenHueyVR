@@ -163,6 +163,13 @@ int main(void) {
     loot_grab(item, 1);
     loot_follow(item, vec3(0.0f, 0.0f, 0.0f), right, up, fwd);
     CHECK("a hand has the item", loot_held(item, NULL) == 1);
+    {   /* the hand-first rule: taking it is on the release, never on the grip */
+        int got_item = 0, got_fact = 0, got_fx = 0, got_mode = 0;
+        void *got_xt = NULL;
+
+        CHECK("a grab alone does not queue the pickup",
+              loot_take(&got_item, &got_fact, &got_fx, &got_mode, &got_xt) == 0);
+    }
 
     /* a draw: the thing is drawn from the hand's frame, wherever that hand is now */
     sHandAt = vec3(0.0f, 0.0f, 10.0f);

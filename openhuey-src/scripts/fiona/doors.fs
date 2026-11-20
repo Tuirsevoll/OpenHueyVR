@@ -17,7 +17,7 @@ USING: engine vectors keys actors messages common paths doors fiona.state fiona.
     vr? 0= if  drop true exit  then
     room-door-at 0= if  fdrop fdrop fdrop false exit  then
     {: F: x y z :}
-    her-pos {: F: hx hy hz :}
+    eye-xz {: F: hx hz :}   \ (from her eyes: the leaf in front of where the player looks)
     x hx f-  z hz f-  fatan2  vr-face f-  angle-wrap fabs  60e deg>rad f<= ;
 : usable ( -- exit | -1 )
     8 0 do

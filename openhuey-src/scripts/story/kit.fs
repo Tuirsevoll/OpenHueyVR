@@ -381,7 +381,7 @@ create aim-at 2 floats allot
     vr? 0= over fiona <> or if  drop fdrop fdrop exit  then  drop aim! ;
 : aim-cone? ( -- flag )
     aim-on @ 0= if  false exit  then
-    aim-at sf@  aim-at float+ sf@  fiona body-pos fswap fdrop  {: F: tx tz hx hz :}
+    aim-at sf@  aim-at float+ sf@  eye-xz  {: F: tx tz hx hz :}   \ (from her eyes, not her body)
     tx hx f-  tz hz f-  {: F: dx dz :}
     dx fdup f*  dz fdup f*  f+  1.5e f< if  true exit  then   \ the point is at her feet
     dx dz fatan2  look-yaw f-  angle-wrap fabs  60e deg>rad f<= ;
@@ -403,10 +403,10 @@ create aim-at 2 floats allot
     ok ;
 : faces-area? ( id area within -- flag )   \ inside it, facing its middle
     {: id area within :}  id area in-area? 0= if  false exit  then
-    vr? id fiona = and if  aim-cone? exit  then
+    vr? id fiona = and aim-on @ and if  aim-cone? if  true exit  then  then   \ (the headset: her eyes first)
     area area-middle drop fswap fdrop  id body-pos fswap fdrop  {: F: ax az mx mz :}
     ax mx f-  az mz f-  fatan2 angle-wrap rad>deg  {: F: toward :}
-    id face-yaw angle-wrap rad>deg toward f-  fabs  fdup 180e f> if  360e fswap f-  then  within s>f f<= ;
+    id body-yaw angle-wrap rad>deg toward f-  fabs  fdup 180e f> if  360e fswap f-  then  within s>f f<= ;
 : touches? ( id F: x y z r h -- flag )   \ its body overlapping the upright cylinder at (x y z), radius r, height h
     {: id F: x y zz r h :}  id here? 0= if  false exit  then
     id body-at vec@ id body-dims {: F: cx cy cz cr ch :}
@@ -1193,9 +1193,9 @@ $30 constant swing-phase  $34 constant swing-offset  $38 constant swing-left  $3
     {: area deg within :}  fiona area in-area?  fiona deg within heading? and ;
 : faces-point? ( id within F: x z -- flag )   \ facing the point, within so many degrees
     {: id within F: x z :}  id here? 0= if  false exit  then
-    vr? id fiona = and if  x z aim!  aim-cone? exit  then
+    vr? id fiona = and if  x z aim!  aim-cone? if  true exit  then  then   \ (the headset: her eyes first)
     id body-pos fswap fdrop {: F: mx mz :}  x mx f-  z mz f-  fatan2
-    id face-yaw f- angle-wrap fabs rad>deg  within s>f f<= ;
+    id body-yaw f- angle-wrap fabs rad>deg  within s>f f<= ;
 : close-to? ( a b margin -- flag )   \ their bodies within margin of each other across, overlapping in height
     {: a b margin :}  a here?  b here? and 0= if  false exit  then  a b margin s>f 0e bodies-touching? dup if  b body-pos fswap fdrop a note-fiona  then ;   \ (Actor_Touching)
 : stalker-kept ( -- )  stalker hold  begin  yield  again ;   \ (an activity: the stalker held for the rest of the visit)

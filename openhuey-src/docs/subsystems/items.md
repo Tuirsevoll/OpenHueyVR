@@ -73,6 +73,11 @@ i -- addr )` and `id@ n@`, `item-at`, `listed`, `items-of ( id -- n )`, `find-it
    `item-use` (0x0C), `item-count?` (cond 0x39), `subscreen-bit?` (cond 0x5E), `reward-item`
    (0xD8: a hint by how Hewie has been treated), `stalker-gift` (0xB6: the stalker's row). A
    give lands at the next delivery.
+7. **Taken by a hand** (VR; `src/game/loot.c`): a grip on an item's prop holds it in that hand (its
+   model drawn there, the item still in the world until the room's pickup runs); letting go runs
+   that pickup - her action button's taking (its cutscene, the item given) or the item put away.
+   Taking is on the release, never on the grip; a prop with no room pickup is taken by the hand's
+   own `takes-up` when it is let go.
 
 ## API (I2: the sub screen, `scripts/subscreen.fs`)
 

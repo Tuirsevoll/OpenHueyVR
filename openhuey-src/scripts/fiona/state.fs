@@ -1,7 +1,7 @@
 \ fiona/state.fs - Fiona's state: one actor's fields (docs/subsystems/fiona.md). `fiona enter`
 \ at the console shows them.
 IN: fiona.state
-USING: actors messages paths vectors ;
+USING: engine actors messages paths vectors ;
 
 state: fiona-state
   cell field her-model          \ her model (an Actor)
@@ -149,6 +149,11 @@ state: fiona-state
   \ button its, not her door's - the original's prepared action replaces her door request
   cell field her-offered  cell field offer-stood
 end-state
+\ the point the player aims from, for the VR aim cones (story/kit.fs `aim-cone?`, fiona/doors.fs
+\ `door-ahead?`): the headset's eye in the room, else her body. From her body a lean or the camera
+\ seat put a close aim point a score of degrees off, so a clock at arm's length asked for an aim
+\ beside it.
+: eye-xz ( F: -- x z )  fiona-id eye-xz! ;
 \ her-sub's that others test: pushing (fiona/push.fs), letting go of a thing (fiona/letgo.fs: how)
 5 constant pushing-sub
 $31 constant thrown-sub   $32 constant aimed-sub   $33 constant set-down-sub

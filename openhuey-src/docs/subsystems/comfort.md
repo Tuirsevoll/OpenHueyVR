@@ -244,7 +244,8 @@ keyboard remains beside them.
   stride stopped leaves it at her feet. So a flick into a wall puts her against that wall, and a
   long one crosses a room and no further. A glow marks the place - white where she may stand, red
   where the first stride is already stopped. Letting go takes her there - her feet on that floor,
-  facing the way the flick went - and what her hands held is let go (`hands-drop`), so nothing is
+  facing the way the flick went, the view turned with her (so her body, which faces the look again
+  each tick, keeps that way) - and what her hands held is let go (`hands-drop`), so nothing is
   dragged along. A place she cannot stand is not taken: letting go there leaves her where she is.
 - **Left-handed play** (`vr.left-handed`; `vr.c` `bind_stick`, `sync_stick`): the sticks, face
   buttons and triggers swap hands - the moving stick to the right, the turning stick (and Hewie's

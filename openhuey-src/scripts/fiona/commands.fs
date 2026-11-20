@@ -51,23 +51,29 @@ USING: engine vectors game-state actors messages hewie-names common facts keys f
 
 \ ---- the command (Fiona_MarkActionStart, Fiona_CommandHewie): its code, where and which way
 \ she was; for "go there" (0x23) 5 short of where he would have to stop, further on her heading.
-\ Then how it strikes him ----
+\ In a headset the way she aims is where she looks, not her walking heading (which stays where she
+\ last walked while she stands): the right stick turns her body there on the pad, the headset does
+\ not. Then how it strikes him ----
+: her-aim-yaw ( F: -- yaw )  vr? if  vr-face  else  her-heading f@  then ;
 : mark-action-start ( code -- )
     dup broadcast fiona-started
-    her-sub !  her-heading f@ her-act-yaw f!  her-tri @ her-act-tri !  her-act-at her-at vec-copy ;
+    her-sub !  her-aim-yaw her-act-yaw f!  her-tri @ her-act-tri !  her-act-at her-at vec-copy ;
 create ch-at /vec allot
 : go-spot ( -- )
     dog-ok? 0= if  exit  then
-    her-act-tri @ her-act-at hewie-floor her-act-yaw f@ 15e v-free     ( F: d )   \ (from where she was, by his floor: Actor_FreeDistance)
+    her-act-tri @ dup 0< if  drop her body-tri  then   ( tri )
+    dup 0< if  drop  exit  then               \ (no triangle of hers: no spot ahead)
+    her-act-at hewie-floor her-act-yaw f@ 15e v-free     ( F: d )   \ (from where she was, by his floor: Actor_FreeDistance)
     fdup 5e f> if
         5e f-  her-act-yaw f@ fswap ch-at her-act-at vec-ahead
-        her-tri @ her-at ch-at hewie-floor v-walk dup 0< if  drop  else  her-act-tri !  her-act-at ch-at vec-copy  then
+        her-act-tri @ dup 0< if  drop her body-tri  then
+        her-at ch-at hewie-floor v-walk dup 0< if  drop  else  her-act-tri !  her-act-at ch-at vec-copy  then
     else  fdrop  then ;
 \ a spoken command: the same `command` Hewie already takes (his trust and the bark stay his),
 \ without her mode, her action or her walk state. Close praise and scold are the immediate
 \ ones; the pat and the close scold are her gesture, and a spoken line does not start it.
 : voice-place ( -- )
-    her-heading f@ her-act-yaw f!  her-tri @ her-act-tri !  her-act-at her-at vec-copy ;
+    her-aim-yaw her-act-yaw f!  her-tri @ her-act-tri !  her-act-at her-at vec-copy ;
 : voice-react ( code -- )
     dup go-there-cmd = if  drop  go-reaction react  exit  then
     dup go-for-it-cmd = if  drop  go-reaction react  exit  then

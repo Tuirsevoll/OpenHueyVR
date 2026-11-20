@@ -70,6 +70,13 @@ behaviour.
    the fall of the floor. She turns towards the stick 10 degrees a frame. Her floor is the nav
    mesh less the triangles her mask blocks (0x28020018). If a step takes her backwards (pushed
    along a wall corner), she stays where she was.
+   **In a headset** the controls are look-relative instead: the movement stick is turned by where
+   she looks (`fiona/controls.fs` `vr-aim`) and her body faces that look (`her-yaw` and
+   `her-heading` = `vr-face`, in `vr-move` and `stick-held`). A script's hold or a scene keeps
+   its own facing (`hands-off?`; `story-turned` turns the view with it). The VR aim cones
+   (`story/kit.fs` `aim-cone?`, `fiona/doors.fs` `door-ahead?`) measure from the headset's eye
+   (`fiona/state.fs` `eye-xz`), not her body, so a lean or the camera seat does not put a close
+   action off the crosshair.
 3. **Standing.** Let go of the stick: walking eases to a stop, running to a stop. Standing
    still a while she rests (after 90 frames her resting animation), but only while followed
    (tense), not afraid, and not long recovered. Otherwise she plays her idle.
@@ -159,7 +166,9 @@ on her (before 0.2.36 it let go, and with the tip up her gesture was never read)
 (Fiona_HewieCommandAction): go there / go for it, come back, stay / come, praise, scold (from
 afar or close up). Her gesture (mode 0xD: 0xC00..0xC0F), her lines on its key frames
 (Fiona_MotionSounds' event 1; Fiona_CallHewie, Fiona_OrderLine), the command on its event 2
-(Fiona_CommandHewie: for "go there" the spot 5 short of where he would stop). "Come back" and
+(Fiona_CommandHewie: for "go there" the spot 5 short of where he would stop). In a headset she aims
+with her look (`her-aim-yaw` = `vr-face`; her body faces that look too), and a story's own facing
+checks take either her eyes or her body (`story/kit.fs` `faces-point?` / `faces-area?`). "Come back" and
 "go for it" on the move: no gesture. Panicking or held: a cry for help (0x38). The meeting
 (stay / praise / scold by his side): she asks, walks to the place he finds (walk-to-spot),
 waits for him to sit, the second part and her gesture (0xC06 stay, 0xC07..0xC09 praise with

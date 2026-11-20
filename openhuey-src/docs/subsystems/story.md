@@ -70,7 +70,11 @@ has one.
 - **Offers**: what she may do where she stands - `offer` (an activity, Fiona held for it),
   `offer-remark` - the first offered in a frame wins; `unhurried` (the scripts' 0x0A kind 0),
   `any-time` (1), `calm-hewie-up` (3), `calm-only` (4: an examining), `hiding-spot` (5 / 6),
-  `quiet-any-time` (7: the extras room's corners) as the original's kinds.
+  `quiet-any-time` (7: the extras room's corners) as the original's kinds. In a headset the offer
+  must also be in view (`faced-offer?`, `aim-cone?`): the bearing to its aim point (an area's
+  middle, or the point a `touches?`/`faces-point?` set) is measured from the headset's eye
+  (`fiona/state.fs` `eye-xz`), and her body faces where she looks, so looking at the thing offers
+  it - not a point beside it.
 - **The action prompt** (`SceneGame_ActionPrompt`, `prompt-out` each frame): as what she could do
   here changes - the room's doing, else her own request (`fiona-could`: an exit's door area, a
   ladder, straining) - its marker opens in the window: an examining's "Huh? What's this?" ($800C),

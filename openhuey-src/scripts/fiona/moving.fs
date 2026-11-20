@@ -92,7 +92,10 @@ fvariable vr-step   \ the last real step, kept across a reversal so a new cycle 
 
 
 : stick-held ( -- )   \ the stick held: walk, or run with the run button (not under story flag 0x1E)
-    stick-heading her-heading f!   \ (the way she walks - in the headset too, not where she looks)
+    hands-off? if  stick-heading her-heading f!
+    else  vr? if  vr-face fdup her-heading f! her-yaw f!   \ (the body faces where she looks)
+          else  stick-heading her-heading f!  then
+    then
     vr? stick-len vr-stride f< and if
         group walking-group = if  walk-look  then
         group running-group = if  run-look  then
@@ -105,19 +108,8 @@ fvariable vr-step   \ the last real step, kept across a reversal so a new cycle 
     else  0 her-run-t !  walk-look  vr? if  vr-pace  then  then ;
 defer push-check ( F: reach -- )   ' fdrop is push-check   \ (something to push that far ahead: fiona/push.fs)
 : turn-to-stick ( -- )   \ toward the stick's heading 10 degrees a frame - or, after a cut, the
-    vr? if
-        her-still @ 0= if
-            \ walking: toward the stick's way a little a frame, not in a jump
-            stick-heading her-heading f!
-            3e deg>rad turn-to-heading fdrop
-        else  hands-off? 0= if
-            \ standing: only a look well off her way turns her, a little a frame
-            vr-face her-yaw f@ f- angle-wrap fabs 45e deg>rad f> if
-                her-yaw f@ vr-face 1.5e deg>rad turn-toward fdrop her-yaw f!
-            then
-        then  then
-        exit
-    then
+    vr? if  her-still @ 0= if  her-heading f@ her-yaw f!  then  exit  then   \ (her body is the look:
+        \ vr-move and stick-held set it, so walking only keeps her yaw on its heading)
     her-turn-mode @ turning-round = if   \ accelerating turn toward the old camera's heading
         her-turn-rate f@ 0.0013083e f+ 3e deg>rad fmin her-turn-rate f!
         her-yaw f@ her-turn-to f@ her-turn-rate f@ turn-toward  fswap her-yaw f!

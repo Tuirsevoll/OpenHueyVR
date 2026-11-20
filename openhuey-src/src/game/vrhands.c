@@ -3754,7 +3754,7 @@ void vrhands_tick(Engine *e) {
                     (ward < 0 || lootD <= wardD)) {
                     door = -1;
                     prop = -1;
-                    if (loot_grab(loot, side)) {   /* (0: the room's pickup ran on the grip) */
+                    if (loot_grab(loot, side)) {   /* (0: no such prop) */
                         sHold[side] = HOLD_LOOT;
                         sHoldId[side] = loot;
                         loot_follow(loot, at, right, up, fwd);

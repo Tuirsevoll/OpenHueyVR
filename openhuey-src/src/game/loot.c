@@ -84,11 +84,6 @@ typedef struct LootProp {
     int holders; /* bit 0 / 1 */
     int pending;
     int spark;
-    /* the room's pickup offered by `offer` (story/kit.fs) for a physical grab: gripping it takes
-     * it, as her action button would. `offer_tick` is the tick it was last offered on (a stale
-     * offer, after she has walked away, does not). */
-    int offer;
-    long offer_tick;
     /* in a hand: `held` 1 when this draw took the frame from that hand (`draw`), 0 when it draws
      * where the world has it. Only ever set for a draw (loot_draw_from_hands). */
     int held;
@@ -2006,8 +2001,6 @@ void loot_offer(Forth *f, void *xt) {
     if (best >= 0) {
         sProp[best].xt = xt;
         sProp[best].mode = MODE_XT;
-        sProp[best].offer = 1;
-        sProp[best].offer_tick = gEngine.ticks;
     }
 }
 
@@ -2213,10 +2206,10 @@ int loot_nearest(Vec3 hand, int skip, float *d2) {
     return found;
 }
 
-/* a hand takes the prop: 1 when it is held in that hand, 0 when it is not - the room's pickup it
- * was offered for a physical grab ran instead (gripping it is taking it, as her action button
- * would: the cutscene, the item given). A prop with a mod's own pickup word (loot_script) is held
- * as before: only `offer`'s are taken on the grip. */
+/* a hand takes the prop at `index` (side 0 the left, 1 the right): it is held there, and the room's
+ * pickup it was offered for (loot_offer's `xt`) runs when that hand lets go (loot_let_go, then
+ * story/kit.fs loot-run) - her action button's taking, or the item put away. 0 only for a prop
+ * that is not there. */
 int loot_grab(int index, int side) {
     LootProp *p;
 
@@ -2233,11 +2226,6 @@ int loot_grab(int index, int side) {
     if (!p->spark && p->fx >= 0) {
         queue_spark(p->fx);
         p->spark = 1;
-    }
-    if (p->offer && !p->pending && gEngine.ticks - p->offer_tick <= 2) {
-        queue_prop(p);   /* (the pickup: the room's own rule, as the menu's Use runs it) */
-        p->offer = 0;
-        return 0;
     }
     loot_preload_held(p->item, side);   /* (loaded now, off the render pass: the hand's draw only reads it) */
     p->holders |= 1 << side;
