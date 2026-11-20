@@ -130,9 +130,10 @@ int loot_nearest(Vec3 hand, int skip, float *d2) {
     return -1;
 }
 
-void loot_grab(int index, int side) {
+int loot_grab(int index, int side) {
     (void)index;
     (void)side;
+    return 1;
 }
 
 void loot_follow(int index, Vec3 at, Vec3 right, Vec3 up, Vec3 fwd) {
