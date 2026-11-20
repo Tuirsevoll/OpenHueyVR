@@ -156,7 +156,7 @@ add_executable(hga
     src/main.c
     src/platform/gl.c src/platform/platform.c src/platform/vr.c src/platform/voice.c src/platform/update.c src/platform/sound.c src/platform/movie.c src/platform/music.c src/platform/seq.c src/platform/spu.c src/platform/snddrv.c src/platform/saudio.c
     src/render/render.c src/render/post.c
-    src/game/room.c src/game/console.c src/game/actor.c src/game/doglegs.c src/game/humanlegs.c src/game/vrhands.c src/game/vrbody.c src/game/loot.c src/game/itemprops.c src/game/chair.c src/game/cloth.c src/game/world.c
+    src/game/room.c src/game/console.c src/game/actor.c src/game/doglegs.c src/game/humanlegs.c src/game/vrhands.c src/game/vrbody.c src/game/gripposes.c src/game/loot.c src/game/itemprops.c src/game/chair.c src/game/cloth.c src/game/world.c
     src/game/camdirector.c src/game/areas.c src/game/exits.c src/game/messages.c src/game/cutscene.c src/game/placed.c src/game/sprites.c src/game/mods.c src/game/particles.c src/game/things.c src/game/obstacles.c src/game/swimpath.c src/game/rumble.c src/game/props.c
     src/game/sound3d.c src/game/vrspots.c src/game/triggerprobe.c
     src/forth/bind_engine.c)
@@ -277,7 +277,7 @@ endif()
 add_test(NAME spu_check COMMAND spu-check)
 
 # the hands' wall sweep: a hand's path across a room's wall is found, a floor's isn't (detection only)
-add_executable(hands-sweep-check tests/hands_sweep_check.c src/game/vrhands.c src/game/vrbody.c)
+add_executable(hands-sweep-check tests/hands_sweep_check.c src/game/vrhands.c src/game/vrbody.c src/game/gripposes.c src/game/itemprops.c)
 target_link_libraries(hands-sweep-check PRIVATE hgadata forth)
 add_test(NAME hands_sweep_check COMMAND hands-sweep-check "${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/fiona-vr-rig/library")
 
@@ -287,17 +287,25 @@ target_link_libraries(vrbody-check PRIVATE hgadata)
 add_test(NAME vrbody_check COMMAND vrbody-check "${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/fiona-vr-rig/library")
 
 # a thing in a hand: drawn between the last two ticks' hand frames, as her eyes are (loot.c)
-add_executable(loot-frame-check tests/loot_frame_check.c src/game/loot.c src/game/itemprops.c src/game/props.c)
+add_executable(loot-frame-check tests/loot_frame_check.c src/game/loot.c src/game/itemprops.c src/game/props.c src/game/gripposes.c)
 target_link_libraries(loot-frame-check PRIVATE hgadata forth)
 target_compile_definitions(loot-frame-check PRIVATE "HG2_SCRIPT_DIR=\"${SCRIPT_DIR}\"")
 target_compile_definitions(loot-frame-check PRIVATE "ITEMPROPS_SAMPLE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/item-props/library\"")
 add_test(NAME loot_frame_check COMMAND loot-frame-check)
 
 # the held items' grips: PROPS/grips.txt read as the held models' data, and its wrist matrix
-add_executable(itemprops-check tests/itemprops_check.c src/game/itemprops.c)
+add_executable(itemprops-check tests/itemprops_check.c src/game/itemprops.c src/game/gripposes.c)
 target_link_libraries(itemprops-check PRIVATE hgadata)
 target_compile_definitions(itemprops-check PRIVATE "ITEMPROPS_SAMPLE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/item-props/library\"")
 add_test(NAME itemprops_check COMMAND itemprops-check)
+
+# the mods' finger grip poses: PROPS/grip_poses.txt parsed, the left mirror, slerp, the rig check
+add_executable(gripposes-check tests/gripposes_check.c src/game/gripposes.c)
+target_link_libraries(gripposes-check PRIVATE hgadata)
+target_compile_definitions(gripposes-check PRIVATE
+    "GRIPPOSES_POSE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/item-props/library\""
+    "GRIPPOSES_MODEL_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/fiona-vr-rig/library\"")
+add_test(NAME gripposes_check COMMAND gripposes-check)
 
 # the movies' conversion: every SFD split as the import splits it - the same video packets, the same sound
 add_executable(movie-check tests/movie_check.c)

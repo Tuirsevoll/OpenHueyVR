@@ -56,6 +56,9 @@ void loot_draw(const Mat4 *view_proj, int layer);
 void loot_draw_from_hands(void);
 /* 1 when the item at `index` is in a hand: its holders' bits (bit 0 the left, 1 the right) */
 int loot_held(int index, int *holders);
+/* the item id of the prop at `index` (a check, and the hand's grip pose): -1 when there is no
+ * such prop */
+int loot_item_of(int index);
 /* the frame the item at `index` is drawn with now - the world's, or the hand's when this draw took
  * it - and 0 when there is no such item. For a check of the drawing. */
 int loot_drawn_frame(int index, Vec3 *pos, Vec3 *right, Vec3 *up, Vec3 *fwd);

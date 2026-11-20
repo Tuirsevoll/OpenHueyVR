@@ -99,6 +99,11 @@ void room_door_passage(Room *r, int exit, int open, uint32_t locks) {
 
 void loot_maintain(void) {}
 
+int loot_item_of(int index) {
+    (void)index;
+    return -1;
+}
+
 void loot_preload_held(int item, int side) {
     (void)item;
     (void)side;
