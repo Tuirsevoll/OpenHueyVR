@@ -398,6 +398,30 @@ int main(int argc, char **argv) {
           vrbody_bone(VRBODY_UPPER, 0) == 27 && vrbody_bone(VRBODY_HAND, 0) == 30 &&
           vrbody_bone(VRBODY_TWIST1, 0) >= 49 && vrbody_bone(VRBODY_DELTOID, 1) >= 49);
 
+    /* ---- FRIK's DampenHands, and a room change: the hand must not ease from the old room ---- */
+    {
+        Vec3 at, fwd = vec3(0.0f, 0.0f, -1.0f), up = vec3(0.0f, 1.0f, 0.0f);
+        Vec3 target;
+        float eased;
+
+        at = vec3(-2.0f, 0.0f, 3.0f);
+        vrbody_dampen(0, &at, &fwd, &up);   /* (the hand's first frame: taken as it is) */
+        at = vec3(-1.0f, 0.0f, 3.0f);
+        check("a moved hand is eased (DampenHands)",
+              vrbody_dampen(0, &at, &fwd, &up) && at.x > -2.0f && at.x < -1.0f);
+        /* her place has jumped to another room: the hand is its controller's on the next pose,
+         * exactly, not still easing from where it was in the room she left (the stretched arm) */
+        eased = at.x;
+        vrbody_forget_place();
+        target = vec3(40.0f, 10.0f, -60.0f);
+        at = target;
+        printf("vrbody: a room change - the hand at %.2f %.2f %.2f, not eased from %.2f\n",
+               (double)at.x, (double)at.y, (double)at.z, (double)eased);
+        check("a room change starts the hands afresh (no arm stretched across the rooms)",
+              !vrbody_dampen(0, &at, &fwd, &up) && at.x == target.x && at.y == target.y &&
+              at.z == target.z);
+    }
+
     /* the ratios, from the bind pose: L = |30 - 27|, E her rest eyes above bone 0 */
     memcpy(sWorld, start, sizeof(Mat4) * (size_t)sNBones);
     bone_pos(vrbody_bone(VRBODY_HAND, 0), p0);

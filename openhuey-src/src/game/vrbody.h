@@ -101,6 +101,11 @@ float vrbody_near(float znear);
  * is this actor's; `y` left alone otherwise). The camera places her eyes on her head, so it must
  * read this, not the head the body and the shrink moved. */
 int vrbody_eye_y(const struct Actor *a, float *y);
+/* Her place has jumped under the body (a room change, a teleport, a snap turn): the next posed
+ * frame starts its smoothings afresh - each hand's smoothed frame, the hip's offset and the spine's
+ * swing are places in the room she left, and easing from them would stretch her arms toward it for
+ * the first frames of the new one. */
+void vrbody_forget_place(void);
 /* no pose this frame (the IK is off: a cutscene, a scene, non-VR): nothing of the body's is used
  * by the camera or the near plane */
 void vrbody_idle(void);

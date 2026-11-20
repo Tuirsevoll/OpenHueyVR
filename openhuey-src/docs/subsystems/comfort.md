@@ -173,7 +173,9 @@ keyboard remains beside them.
   a waiting snap, so it cannot fire later.
 - **The arm stops go with a snap** (`hand-stops-clear`): the arms' stops are places in the room,
   and a snap moves the hands' places a long way in one tick. Dropping them lets the next posed hand
-  take the controller as it is (as a room change does).
+  take the controller as it is (as a room change does). The body's smoothed hand frames go with
+  them (`vrbody_forget_place`): `DampenHands` keeps them as places in the room too, and easing from
+  before the snap would swing the arms around it.
 - **The picture blends a snap if it is under `TURN_SNAP`** (`main.c`, 1.05 radians = 60 degrees),
   as it blends any turn; 60 degrees and more counts as a cut and is instant.
 - **The comfort vignette** (`main.c` `comfort_measure`, `comfort_tick`; `render.c` `render_comfort`,

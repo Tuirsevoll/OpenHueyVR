@@ -80,7 +80,11 @@ calibration changes it.
   head), so a hand pressed against a wall stays where it touched while she walks or turns. It is
   let go when the controller is more than `HAND_RELEASE` (temporarily 5.0, about an arm's length)
   from it; the first frame after the controller is found takes the hand as it is (no sweep, no
-  pop), and losing the hand or changing room drops the stop.
+  pop), and losing the hand, changing room, a snap turn or a teleport drops the stop
+  (`vrhands_forget_stops`, `vrhands_drop_all`, the room-change branch of `vrhands_tick`, and
+  `vrhands_pose`'s own room check for a drawn frame between two ticks) - and the body's own
+  smoothed hand frames with it (`vrbody_forget_place`), so the arm is never posed from where it
+  was in the old place.
 - **The raw controller still does everything else**: the buzz's detection (`hand_path_hits_*` in
   `vrhands_tick`), the door push (`push_step`) and every grab and swing read the controller's own
   position, unchanged. Only the arm is stopped.

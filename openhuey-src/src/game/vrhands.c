@@ -139,6 +139,9 @@ static Vec3 sHandAt[2];
 static int sHandHave[2];
 static Vec3 sHandStop[2];       /* the arm's place, in world space */
 static int sHandStopHave[2];    /* 0: no stop yet */
+/* the room the stops and the body's smoothed hands were last made in: a drawn frame between two
+ * ticks can be the first in the new room, before the tick's own room-change branch has run */
+static int sHandRoom = -2;
 /* (temporary: the stop's feel signal - the controller's own place, and whether that hand was held
  * back last pose) */
 static Vec3 sStopRaw[2];
@@ -1149,6 +1152,13 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
 #endif
         return;
     }
+    if (sHandRoom != gEngine.room.id) {
+        /* Another room: the arm stops and the body's smoothed hands are places in the room she
+         * left (the tick's room branch may not have run yet on this drawn frame). */
+        sHandRoom = gEngine.room.id;
+        sHandStopHave[0] = sHandStopHave[1] = 0;
+        vrbody_forget_place();
+    }
     dt = grip_pose_dt();
     find_arms(a, world);
     arm_lengths(a);
@@ -2021,6 +2031,7 @@ void vrhands_forget_poses(void) {
 
 void vrhands_forget_stops(void) {
     sHandStopHave[0] = sHandStopHave[1] = 0;
+    vrbody_forget_place();   /* (and the hands' smoothed frames: they are the old place's too) */
 }
 
 /* Both hands let go of what they hold (a teleport: a door, a prop, a leaf or loot is not dragged
@@ -2042,6 +2053,7 @@ void vrhands_drop_all(void) {
         sWallNear[side] = 0;
     }
     sLadderPull = 0.0f;
+    vrbody_forget_place();   /* (the body's smoothings are the old place's: no arm stretched back to it) */
     vrgrip_idle();
 }
 
@@ -3617,6 +3629,7 @@ void vrhands_tick(Engine *e) {
         memset(sPushWas, 0, sizeof(sPushWas));
         sHandHave[0] = sHandHave[1] = 0;        /* (another room's doors and walls are not the old's) */
         sHandStopHave[0] = sHandStopHave[1] = 0;
+        vrbody_forget_place();                  /* (nor its smoothed hands: no arm stretched across) */
         sLadderHold[0] = sLadderHold[1] = -1;   /* (another room's links are not these) */
         sLadderFresh[0] = sLadderFresh[1] = 0;
         sLadderAnchorHave[0] = sLadderAnchorHave[1] = 0;

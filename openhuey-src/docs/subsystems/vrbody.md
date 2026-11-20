@@ -41,6 +41,7 @@ bit-identical. `vrbody-check` proves the off case with the mod's own model.
 | `vrbody_finish` | the forearm's roll, the upper arm's twist, the deltoid, the first-person head |
 | `vrbody_near` | the near plane the eye views should use |
 | `vrbody_eye_y` | the camera's head, read before the body moved it |
+| `vrbody_forget_place` | her place jumped (a room change, a teleport, a snap turn): the smoothings start afresh |
 | `vrbody_idle` | no pose this frame |
 
 The first-person head is a VR option, `vr.body-fp-head` (default on; docs/subsystems/comfort.md).
@@ -239,7 +240,12 @@ head. The helpers are rebuilt from their parent **every** frame, so nothing accu
 - The helpers' own places are never moved: only their turns change, so the skin they share with
   their parents stays closed.
 - `vrbody_idle` (a cutscene, a menu, non-VR) clears the smoothings, so the next posed frame starts
-  afresh instead of easing from where the body was before the jump.
+  afresh instead of easing from where the body was before the jump. `vrbody_forget_place` does the
+  same without taking the IK off when her place jumps under it - a room change (the room-change
+  branch of `vrhands_tick`, and `vrhands_pose`'s own room check for a drawn frame between two
+  ticks), a teleport (`vrhands_drop_all`) or a snap turn (`vrhands_forget_stops`): a hand's
+  smoothed frame, the hip's offset and the spine's swing are places in the room she left, and
+  easing from them stretched her arms toward it for the first frames of the new one.
 
 ## Status
 
@@ -251,7 +257,9 @@ scale stays 1),
 a look down that must not crouch her **and leaves the legs dead straight**, a duck below the deadzone
  with the knees forward and none of it to the side, a lean, an elbow that sits down and outward
 wrist turned 120..240 degrees through the seam - the arm's roll keeps its way and the twist is a
-quarter at the elbow, a half at the forearm and four fifths at the cuff) and `hands-sweep-check`'s
+quarter at the elbow, a half at the forearm and four fifths at the cuff, and a room change's hand
+smoothing - the next pose takes the controller whole instead of easing an arm out of the room she
+left) and `hands-sweep-check`'s
 posed-arm section (the shoulder turns, the elbow leaves the animation and is a forearm from the
 hand; a bug that left the arms unposed fails it). Not yet on a headset: the sign conventions of the
 elbow's two vertical turns (`ELBOW_BEND_SIGN`, `ELBOW_SWING_SIGN`) are the first thing to look at if

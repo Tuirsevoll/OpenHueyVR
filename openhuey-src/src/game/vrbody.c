@@ -2083,6 +2083,19 @@ int vrbody_eye_y(const struct Actor *a, float *y) {
     return 1;
 }
 
+/* Her place has jumped under the body (a room change, a teleport, a snap turn): the next posed
+ * frame starts its smoothings afresh. A hand's smoothed frame, the hip's offset and the spine's
+ * swing are kept in the room's own space, so easing from where they were in the place she left
+ * stretches her arms toward it for the first frames of the new one. */
+void vrbody_forget_place(void) {
+    sFHave = 0;
+    sPelvisHave = 0;
+    sSwingHave = 0;
+    sHandSeen[0] = sHandSeen[1] = 0;
+    sTwistHave[0] = sTwistHave[1] = 0;
+    sRollHave[0] = sRollHave[1] = 0;
+}
+
 void vrbody_idle(void) {
     sActive = 0;
     /* (sHeadHave kept: the camera keeps the last head it found before any body pose, exactly as
@@ -2090,11 +2103,6 @@ void vrbody_idle(void) {
     sArmOn[0] = sArmOn[1] = 0;
     /* A cutscene, a menu or non-VR play has moved her: the next posed frame starts its smoothings
      * afresh instead of easing from where the body was before the jump. */
-    sFHave = 0;
-    sPelvisHave = 0;
-    sSwingHave = 0;
-    sHandSeen[0] = sHandSeen[1] = 0;
-    sTwistHave[0] = sTwistHave[1] = 0;
-    sRollHave[0] = sRollHave[1] = 0;
+    vrbody_forget_place();
 }
 
