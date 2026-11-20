@@ -176,6 +176,9 @@ behaviour hewie-own
       sit-trick-act 0 want  60 his-cooldown !  0 his-broke !  tell-doing ;
   on command ( code tri yaw x z -- )   \ (Hewie_StateBlock's 13)
       along? 0= if  2drop 2drop drop exit  then
+      his-busy @ if  0 to voice-issued  2drop 2drop drop exit  then   \ (a script or scene has him: its
+      \ moves keep him. The gesture that starts a story's fetch reaches him after its hold - a late
+      \ "go there" must not turn the fetch into a search and leave the script waiting)
       cells>xyz                                                ( code tri ) ( F: yaw x z )
       over go-there-cmd = if  showed  else  drop fdrop fdrop fdrop  then
       fiona-command drop  0 his-broke !  tell-doing ;

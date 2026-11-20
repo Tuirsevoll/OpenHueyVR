@@ -61,12 +61,12 @@ USING: engine vectors game-state actors messages hewie-names common facts keys f
 create ch-at /vec allot
 : go-spot ( -- )
     dog-ok? 0= if  exit  then
-    her-act-tri @ dup 0< if  drop her body-tri  then   ( tri )
+    her-act-tri @ dup 0< if  drop fiona-id body-tri  then   ( tri )
     dup 0< if  drop  exit  then               \ (no triangle of hers: no spot ahead)
     her-act-at hewie-floor her-act-yaw f@ 15e v-free     ( F: d )   \ (from where she was, by his floor: Actor_FreeDistance)
     fdup 5e f> if
         5e f-  her-act-yaw f@ fswap ch-at her-act-at vec-ahead
-        her-act-tri @ dup 0< if  drop her body-tri  then
+        her-act-tri @ dup 0< if  drop fiona-id body-tri  then
         her-at ch-at hewie-floor v-walk dup 0< if  drop  else  her-act-tri !  her-act-at ch-at vec-copy  then
     else  fdrop  then ;
 \ a spoken command: the same `command` Hewie already takes (his trust and the bark stay his),

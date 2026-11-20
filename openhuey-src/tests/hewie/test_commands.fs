@@ -23,6 +23,13 @@ hewie send join-fiona  3 run-frames
 : ready ( -- )  [: 1000 add-trust  obeys  0 -1 set-mood  0 0 set-action ;] his!  30 run-frames ;
 ready
 
+testing a command while a script has him: ignored - its moves keep him (a fetch's late "go there")
+[: hewie-names:story-bark-act his-action !  -1 his-busy !  0 his-cmd-was ! ;] his!
+go-there-cmd -1 0e f>cell 0e f>cell 0e f>cell hewie-id send command  5 run-frames
+T{ action -> hewie-names:story-bark-act }T
+T{ [: his-cmd-was @ ;] his@ -> 0 }T
+[: 0 his-busy ! ;] his!  ready
+
 testing without state flag 0xD her gestures do nothing
 T{ key: K press-key  60 run-frames  [: her-mode @ ;] her@ -> 0 }T
 T{ [: his-cmd-was @ ;] his@ -> 0 }T

@@ -402,3 +402,8 @@ none of calm / followed / chased - before the first is told - dropped a cell of 
   (after coming out). Checked in `test_run.fs`.
 - **The leap's rise** (`scripted.fs`): scaled only when the motion's event bit 2 asks for it.
 - **The pounce's bite** (`st-leap-bite`): from his mouth's place forward, as the original.
+- **A command while a script has him** (`on command`, Hewie_StateBlock's 13): ignored while
+  `his-busy` (a doing's hold, a scene), and its `voice-issued` cleared. A room's fetch is started
+  by the same gesture and Fiona's `command` reaches him a few frames after the room's hold: it used
+  to break into the script's bark/walk and turn the fetch into her "go there", leaving the room's
+  activity waiting. Checked in `test_commands.fs`.
