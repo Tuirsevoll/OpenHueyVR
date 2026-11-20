@@ -32,6 +32,7 @@
 #include "../game/loot.h"
 #include "../game/sound3d.h"
 #include "../game/vrspots.h"
+#include "../game/triggerprobe.h"   /* (DEBUG-ONLY: the room/Fiona probe - remove with it) */
 
 #include "../core/files.h"
 #include "../core/zip.h"
@@ -4094,6 +4095,7 @@ void engine_tick(Engine *e) {
         }
     }
     hactor_frame(e->forth);
+    triggerprobe_tick(e);   /* (DEBUG-ONLY: the room/Fiona probe, after the scripts moved her) */
     post_tick_end();   /* (its frame-end over: what the panic screens asked for is this tick's, every
                         * eye and every frame until the next tick ends) */
     if (e->still) {   /* (the game over: the world stands still behind it, its actors running) */
