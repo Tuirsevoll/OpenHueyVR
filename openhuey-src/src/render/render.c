@@ -1,6 +1,7 @@
 #include "render.h"
 
 #include "../platform/gl.h"
+#include "../platform/vr.h"
 #include "font.h"
 #include "post.h"
 
@@ -417,6 +418,7 @@ int render_init(void) {
     if (R.mesh_prog == 0 || R.prog2d == 0) {
         return 0;
     }
+    render_mesh_ps2_clip(0);   /* (the program's own default would be a clip volume of zeroes) */
     /* the scene's textures: trilinear and anisotropic, repeating */
     glCreateSamplers(1, &R.sampler);
     glSamplerParameteri(R.sampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
@@ -974,15 +976,21 @@ static float sObjectAlpha = 1.0f;
  * volume - nearer than the camera's near, beyond its far, or past the GS's 4096-wide drawing
  * space around the 512 x 448 screen (2047 / 256 and 2047 / 224 of the screen's half-sizes) -
  * isn't drawn at all; OpenGL would cut it at the screen and the near plane instead, so a camera
- * in a model shows its insides. On for the draws until turned off */
+ * in a model shows its insides. On for the draws until turned off.
+ *
+ * Never while an eye is drawn: the headset's eye is the camera, so the PS2's clip volume is not
+ * the picture's any more. Every polygon of it thrown away whole shows up as the level's faces
+ * popping out of view - at the wide edges of the eye's own frustum, and wherever a triangle the
+ * eye is inside (the floor at the player's feet when she looks down) has a corner behind it - and
+ * the eye's frustum cuts polygons where they cross its edge and its near plane far better. */
 void render_mesh_ps2_clip(int on) {
     float aspect = R.proj.m[0] != 0.0f ? R.proj.m[5] / R.proj.m[0] : 4.0f / 3.0f;
 
-    if (on) {
-        glProgramUniform4f(R.mesh_prog, U_REJECT, (2047.0f / 256.0f) * (4.0f / 3.0f) / aspect, 2047.0f / 224.0f, R.znear,
-                           R.zfar);
+    if (on && vr_eye_active() < 0) {
+        glProgramUniform4f(R.mesh_prog, U_REJECT, (2047.0f / 256.0f) * (4.0f / 3.0f) / aspect, 2047.0f / 224.0f,
+                           R.znear, R.zfar);
     } else {
-        glProgramUniform4f(R.mesh_prog, U_REJECT, 0.0f, 0.0f, 0.0f, 0.0f);
+        glProgramUniform4f(R.mesh_prog, U_REJECT, 0.0f, 0.0f, -1e30f, 1e30f);   /* (nothing rejected) */
     }
 }
 

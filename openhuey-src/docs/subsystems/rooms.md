@@ -82,7 +82,12 @@ The room draws in the original's renderer layers, in order with the characters' 
 Part 3 is never drawn. Characters behind glass are drawn before it, so its depth writes don't
 hide them. Room, door and placed draws drop a triangle with a corner outside the PS2's clip
 volume, as their microprograms do (`D_003A7530` and the placed kinds': CLIP, FCAND, ADC -
-`render_mesh_ps2_clip`).
+`render_mesh_ps2_clip`). **In a headset that test is off entirely** (0.2.51): the eye is the
+camera, so the PS2's two screens-wide bands, its near plane and its far plane are not the
+picture's any more - and a polygon thrown away whole (the floor at her feet when she looks down
+has a corner behind the eye) reads as the level de-rendering at the edge of vision. The eye's own
+frustum cuts polygons where they cross its edge, and its near plane cuts the ones the eye is
+inside (VR already brings that in, `vrbody_near`, so her own body does not clip away).
 
 The room's lights (section 4): without one, no lights and the ambient 128 (`Lights_Reset`). A
 character off the nav mesh takes light 0 alone, wherever it reaches (`Lights_ForModel`).

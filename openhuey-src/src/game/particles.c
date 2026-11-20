@@ -5,6 +5,7 @@
 
 #include "sprites.h"
 #include "../render/post.h"
+#include "../platform/vr.h"
 #include "engine.h"
 #include "things.h"
 #include "camdirector.h"
@@ -827,9 +828,22 @@ static void quad(Sprite *r, uint32_t rgba, const Vec3 c[4]) {
     }
 }
 
+/* the PS2's "is the camera looking at it" tests (Camera_OutOfView): the effects' sprites are built
+ * on the tick with the game's own third-person camera (particles_tick gets e->camera), so these are
+ * that camera's picture - the one no player watches in a headset (post.c room_dof_on leaves the
+ * room's depth band out for the same reason). In a headset the eye is the camera, and a whole
+ * effect thrown away at the edge of what it could see reads as the scene de-rendering there; a
+ * cutscene's or the story's shot keeps the game's camera, and its tests. */
+static int ps2_camera_culls(void) {
+    return !(vr_active() && !gCamDir.scene && !gCamDir.event);
+}
+
 static int box_off_screen(const Vec3 world[8]) {   /* (shards_draw: a box with a corner out of view not drawn) */
     int c;
 
+    if (!ps2_camera_culls()) {
+        return 0;
+    }
     for (c = 0; c < 8; c++) {
         if (camera_out_of_view(&gEngine.camera, world[c])) {
             return 1;
@@ -4102,10 +4116,10 @@ static Vec3 window_point(const System *s, int id) {
 static void window_flash_write(System *s) {   /* WindowFlash_Draw: the fan */
     const int8_t *fan = kWindowFans[clampi(s->timer, 0, 4)];
     Sprite *r;
-    int k;
+    int k, cull = ps2_camera_culls();
 
     for (k = 0; k < fan[0]; k++) {   /* (only all of it in view: else neither it nor the bloom) */
-        if (camera_out_of_view(&gEngine.camera, window_point(s, fan[k + 1]))) {
+        if (cull && camera_out_of_view(&gEngine.camera, window_point(s, fan[k + 1]))) {
             sprites_records(s->batch, 0);
             return;
         }

@@ -7,6 +7,7 @@
 
 #include "../core/files.h"
 #include "../data/texbank.h"
+#include "../platform/vr.h"
 #include "../render/render.h"
 
 #define CACHE 64
@@ -414,7 +415,10 @@ static int draw_batch(Batch *x, const Mat4 *view_proj, const Mat4 *view) {
             memcpy(v->rgba, s->shaded ? s->crgba[j] : s->rgba, 4);
         }
     }
-    if ((x->flags & SPRITE_WHOLE) && !all_in_view(view_proj, sVerts, nv)) {
+    /* (a headset eye: the original threw a whole batch away when it could not see all of it - with
+     * the player's own head as the camera, a light shaft or a floor glow vanished the moment it
+     * touched the edge of vision; the eye's frustum cuts the quads instead) */
+    if ((x->flags & SPRITE_WHOLE) && vr_eye_active() < 0 && !all_in_view(view_proj, sVerts, nv)) {
         return 0;
     }
     render_mesh_update(&x->gpu, sVerts, nv);   /* (replaceable storage: rebuilt each frame) */

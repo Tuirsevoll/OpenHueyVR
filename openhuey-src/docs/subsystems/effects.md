@@ -220,3 +220,13 @@ object and not in a shot; the bloom mask by its alpha (the GS writes the frame's
 bursts' puffs gone under the floor beneath them, their rings turned by the camera then laid on
 the floor; the welling's fade-in mark. Matched: every other class number for number (the RNG is
 ours, so the draws differ).
+
+**In a headset those view tests are the PS2 camera's, and the player's eye is not it** (0.2.51):
+the sprites are built on the tick from `e->camera`, the game's own third-person camera still
+following her unseen, so `camera_out_of_view` (the shards', stones' and debris's boxes, the dial's
+flash) and the whole-in-view dropping (`SPRITE_WHOLE`) threw away light shafts, floor glows, wall
+shadows and debris the player was looking straight at - the scene seeming to de-render at the edge
+of vision. While an eye is the picture nothing is dropped for being out of view: the draws test
+`vr_eye_active` (sprites.c) and the writers `vr_active` without a scene or the story's shot - the
+same test as post.c `room_dof_on` - and the eye's frustum cuts the quads instead. A cutscene's or
+the story's shot keeps its own camera, and its own tests.
