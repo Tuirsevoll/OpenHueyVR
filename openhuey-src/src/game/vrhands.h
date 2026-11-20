@@ -21,6 +21,9 @@ void vrhands_take_times(unsigned *pose, unsigned *stop);
  * scene, a menu). A thing that hand holds is drawn from this same frame, so it sits in the hand on
  * every drawn frame (docs/subsystems/hands.md, "A held thing is drawn with the hand"). */
 int vrhands_hand_frame(int side, Vec3 *at, Vec3 *right, Vec3 *up, Vec3 *fwd);
+/* where the key item the menu equipped in her hand sits in the room (her wrist and its grip line,
+ * the matrix its model is drawn from): 0 when none is shown (flat screen, a menu, a cutscene) */
+int vrhands_hand_item_at(Vec3 *out);
 /* a pet pushes the bone under the hand. Called from the pose, after the skeleton is built. */
 void vrhands_pet_pose(struct Actor *a, Mat4 *world, int nbones, const Mat4 *unplace);
 void vrhands_tick(struct Engine *e);

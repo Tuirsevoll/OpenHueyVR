@@ -62,6 +62,10 @@ typedef struct Engine {
     } refl[4];
     long ticks;
     int testing;      /* run by --test: nothing kept on disk (the system data) */
+    int hand_item;    /* the key item the scripts put in her right hand (items.fs's equip-hand-item):
+                       * an item id, -1 none. Not saved; shown by vrhands.c, tested by triggers.c. */
+    unsigned char hand_letters[8];   /* the hand item's own 8 letters (a word plate's word: every
+                                      * plate is item $3F, so the word is what tells them apart) */
     int paused;            /* a menu is up: actors and the room stand still (`pause!`) */
     int still;             /* the models and the room stand still, the actors run (`still!`: the game over) */
     int alone;             /* an actor drawn alone (its id + 1; 0: the scene as it is) - the model gallery's */

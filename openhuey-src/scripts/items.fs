@@ -34,6 +34,29 @@ enum: item-list  key-list kit-list material-list ;
 : item-sort ( id -- key )  class-of i.sort @ ;
 : stacks? ( id -- flag )  item-held stack = ;
 
+\ the things a hand may hold (hga's own: `Equip`, src/game/vrhands.c): the key things and the
+\ word plate, but not the maps and sketches (what she holds up to read), nor a remedy, bait or
+\ what she wears
+: map-or-sketch? ( id -- flag )
+    case
+        castle-sketch of  true  endof    mansion-sketch of  true  endof
+        forest-map of     true  endof    tower-sketch of    true  endof
+        mystery-sketch of true  endof
+        >r false r>
+    endcase ;
+: hand-equippable? ( id -- flag )   \ a key thing or a word plate, not a map or a sketch
+    dup item-class? 0= if  drop false exit  then
+    dup item-kind {: k :}  k key-thing =  k word-plate =  or 0= if  drop false exit  then
+    map-or-sketch? 0= ;
+: hand-item? ( id -- flag )  hand-item = ;
+: hand-equip ( list i -- )   \ (the key thing or word plate there, into her hand; its place kept)
+    held-at {: at :}  at id@ {: id :}
+    id hand-equippable? if
+        id hand-item!
+        at letters hand-letters 8 move   \ (a plate's word, kept with the hand item)
+    then ;
+: hand-unequip ( -- )  -1 hand-item! ;
+
 : listed ( list -- n )   \ how many places of the list are filled (Items_FirstFree)
     #places 0 do  dup i held-at empty? if  drop i unloop exit  then  loop  drop #places ;
 : item-at ( list i -- id )  held-at id@ ;
@@ -47,6 +70,23 @@ enum: item-list  key-list kit-list material-list ;
         place id@ id = if  place unloop unloop exit  then
     loop  loop  0 ;
 : items-of ( id -- n )  find-item dup if  how-many  then ;
+
+\ the item in her hand, by its place: every word plate is item $3F, so its own 8 letters (its
+\ word) are what tell one plate from another - the game's `plate-use` reads them from the place
+: hand-letters=? ( at -- flag )
+    {: at :}
+    8 0 do
+        at letters i + c@  hand-letters i + c@  <> if  false unloop exit  then
+    loop  true ;
+: find-hand-place ( -- addr | 0 )
+    hand-item dup 0< if  drop 0 exit  then
+    {: id :}
+    3 0 do  #places 0 do
+        j i held-at {: at :}
+        at empty? if  leave  then
+        at id@ id =  at hand-letters=?  and if  at unloop unloop exit  then
+    loop  loop
+    id find-item ;
 
 \ what she wears, or holds to throw: a slot per kind (her boots, earrings, what she throws, the choker)
 enum: equip-slot  boots-slot earrings-slot throw-slot choker-slot ;
@@ -104,6 +144,9 @@ end-state
 : list-place ( addr -- list i )  progress pr.item-lists - /held / #places /mod swap ;
 \ an item taken out: off what she wears, the rest of its list moved up (Items_Remove)
 : remove ( addr -- )
+    dup id@ hand-item = if
+        dup hand-letters=? if  -1 hand-item!  then   \ (that very one out of her hand too)
+    then
     {: addr :}
     4 0 do  i equipped addr id@ = if  -1 i equip-slot l!  then  loop
     addr list-place {: list at :}
@@ -424,17 +467,37 @@ PRIVATE>
 \ spend one ----
 defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
 
+\ the rule run on a place (Items_Use), without the menu's answer
+: use-place ( at -- id r )
+    {: at :}
+    at empty? if  -1 no-use exit  then
+    at id@ {: id :}  at item-use-rule {: r :}
+    r 3 and  at id@ id = and if  at spend  then   \ (still there: a rule may have moved it)
+    id r ;
+
+\ a trigger box of this room met by the item in her hand: the Use the menu would run, once
+: hand-trigger ( -- )
+    {: | at :}
+    cam-scene? world-frozen state-flag? or 0= if
+        trigger-hit? if
+            find-hand-place to at
+            at if  at use-place 2drop  then
+        then
+    then ;
+
 behaviour keeping-items
   on spawned ( -- )
       3 0 do  #places 0 do  j i held-at empty  loop  loop
       4 0 do  -1 i equip-slot l!  loop
+      -1 hand-item!
       progress pr.boosts 8 /boost * 0 fill
-      self subscribe tick  self subscribe hewie-doing  self subscribe fiona-doing  self subscribe leaving-room ;
+      self subscribe tick  self subscribe hewie-doing  self subscribe fiona-doing  self subscribe leaving-room  self subscribe game-loaded ;
   on tick ( -- )   \ (the counters not while the world is frozen: Items_Update under flag $17)
-      world-frozen state-flag? panic-starting state-flag? or 0= if  count-up  then  cam-scene? 0= if  timed-effects run-down  then ;
+      world-frozen state-flag? panic-starting state-flag? or 0= if  count-up  then  cam-scene? 0= if  timed-effects run-down  then  hand-trigger ;
   \ (SceneGame's room change: everything heard full again - Weltigo's fade, if silent, only back
   \ as it fades in; and at the game's end)
   on leaving-room ( room exit -- )  2drop  1e world-volume! ;
+  on game-loaded ( -- )  -1 hand-item! ;   \ (the hand item is not saved: nothing in it after a load)
   on killed ( -- )  1e world-volume! ;
   on hewie-doing ( here action mode sub cond mood group commandable near reachable breakable way trust -- )
       {: here action mode sub cond mood group commandable near reachable breakable way trust :}
@@ -448,17 +511,17 @@ behaviour keeping-items
   on take-item ( id -- )  find-item ?dup if  spend  then ;
   on add-file ( id sound? -- )  swap file-add and if  $C 5 bank-sound  then ;
   on use-item ( list held-at -- )   \ (Items_Use: its rule; bits 1 / 2 spend one)
-      held-at {: place :}
-      place empty? if  -1 no-use sender send item-used exit  then
-      place id@ {: id :}  place item-use-rule {: r :}
-      r 3 and  place id@ id = and if  place spend  then   \ (still there: a rule may have moved it)
-      id r sender send item-used ;
+      held-at use-place  sender send item-used ;
   on discard-item ( list held-at -- )  held-at dup id@ 0< if  drop  else  spend  then ;
   on equip-item ( list held-at -- )
       {: list at :}  list at slot-of {: slot :}
       slot 0< if  exit  then  list at item-at slot equip-slot l!  tell-equipment ;
   on unequip-item ( list held-at -- )
       2dup equip-state worn = if  slot-of equip-slot -1 swap l!  tell-equipment  else  2drop  then ;
+  \ hga's own `Equip` (hga's menu, scripts/subscreen/lists.fs): the key thing in her hand, where it
+  \ stays in its list place. Nothing is worn, nothing is thrown, and it is not saved.
+  on equip-hand-item ( list i -- )  hand-equip ;
+  on unequip-hand-item ( -- )  hand-unequip ;
   on sort-items ( list -- )   \ (Items_Sort: by their places in a sort)
       {: list :}  list listed {: n :}  n 2 < if  exit  then
       n 1- 0 ?do   \ (a bubble sort, as the original)

@@ -109,6 +109,13 @@ void loot_preload_held(int item, int side) {
     (void)side;
 }
 
+int loot_held_origin(int item, int side, Vec3 *out) {
+    (void)item;
+    (void)side;
+    (void)out;
+    return 0;
+}
+
 void loot_draw_held(int item, int side, const Mat4 *world, const Mat4 *view_proj) {
     (void)item;
     (void)side;
