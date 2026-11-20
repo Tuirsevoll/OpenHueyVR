@@ -162,15 +162,17 @@ not read there and her root motion is not used (`scripts/fiona/ladder.fs`, `vr-c
   or on the equipped item's tick), not while drawing. A tint in the grip line multiplies the
   model's colours, and the `vr.item-prop-debug` option draws RGB axes at the model and the wrist.
 - **A mod can shape the fingers too** (`PROPS/grip_poses.txt`, `src/game/gripposes.c`). A grip's
-  optional pose name looks up a pose in that file; its lines turn Fiona's own `arm ... finger`
-  bones by a pose rotation relative to their rest (`local_rest * R(q)`, the left hand mirrored as
-  `(x, -y, -z, w)`). `vrgrip_apply` runs last in `vrhands_pose`, after `pose_arm`, `curl_hand` and
-  `vrbody_finish`, and only in VR gameplay. It blends in or out over 0.10 s on the real frame time,
-  and while a pose is in it eases the hand morph to its rest shape (shape 0) because the poses were
-  authored on the rest hand. It writes no bone that is not named `... finger ...`; an item with no
-  pose, an empty hand, a door, a ladder, a wardrobe leaf or a mod prop leaves today's trigger/grip
-  curl exactly as it was. A missing pose name logs once and falls back to that curl. The built-in
-  check logs `[grip-poses] self-check PASS` with the right finger 2c / 1c and left 2c tips.
+  optional pose name looks up a pose in that file; its lines turn and move Fiona's own
+  `arm ... finger` bones relative to their rest (`local_rest * T(t) * R(q)`, the left hand
+  mirrored as `(x, -y, -z, w)` and `(-tx, ty, tz)`). `vrgrip_apply` runs last in `vrhands_pose`,
+  after `pose_arm`, `curl_hand` and `vrbody_finish`, and only in VR gameplay. It blends rotation
+  and move in or out over 0.10 s on the real frame time, and while a pose is in it eases the hand
+  morph to its rest shape (shape 0) because the poses were authored on the rest hand. It writes no
+  bone that is not named `... finger ...`; an item with no pose, an empty hand, a door, a ladder,
+  a wardrobe leaf or a mod prop leaves today's trigger/grip curl exactly as it was. A missing pose
+  name logs once and falls back to that curl. The built-in check logs `[grip-poses] self-check
+  PASS` with the right finger 2a / 3a / 5a / 2c positions, and the load line gives the pose,
+  bone-line and knuckle-offset counts.
 - **A grip lets an equipped thing go at once** (`scripts/fiona/letgo.fs`: `hand-defense`). With a
   magnesia, antimony (or a ball, the doll, the stone) in the equipment's slot 2, a grip pressed and
   released - `vrhands_defense_take`, armed by a close after the model is in the hand - makes the

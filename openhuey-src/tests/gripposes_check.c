@@ -1,6 +1,7 @@
 /* The mod finger grip poses (src/game/gripposes.c): the file's lines (bone names with spaces,
- * comments, malformed lines, the 31-character pose name), the left hand's mirror, slerp's
- * endpoints, the sample's 24 poses, and the built-in rig self-check on Fiona's VR model.
+ * optional bone-local moves, comments, malformed lines, the 31-character pose name), the left
+ * hand's rotation and move mirrors, slerp's endpoints, the sample's 24 poses / 67 offsets, and
+ * the built-in rig self-check on Fiona's VR model.
  *
  *   gripposes-check */
 #include <math.h>
@@ -67,8 +68,9 @@ int main(void) {
         "# a comment\n"
         "\n"
         "pose grip_test\n"
-        "arm right finger 1a 0 0 0 1\n"
+        "arm right finger 1a 0 0 0 1 0.1 -0.2 0.3\n"
         "arm right finger 2c 0 0 0 2   # a turn of length 2 is normalised\n"
+        "arm right finger 6c 0 0 0 1\n"
         "arm right finger 3c 0 0 0 0\n"
         "arm right finger 4c 0 0 0\n"
         "arm right finger 5c nope 0 0 1\n"
@@ -90,9 +92,15 @@ int main(void) {
 
     n = vrgrip_parse_text(text, poses, VRGRIP_POSES, &lines, &skipped);
     CHECK("the parser reads the two valid poses and skips the bad lines",
-          n == 2 && lines == 3 && skipped == 5);
+          n == 2 && lines == 4 && skipped == 5);
+    CHECK("a 7-number line reads the bone-local move",
+          poses[0].nbones == 3 && near(poses[0].bone[0].t[0], 0.1f) &&
+              near(poses[0].bone[0].t[1], -0.2f) && near(poses[0].bone[0].t[2], 0.3f));
+    CHECK("a 4-number line defaults the move to zero",
+          near(poses[0].bone[1].t[0], 0.0f) && near(poses[0].bone[1].t[1], 0.0f) &&
+              near(poses[0].bone[1].t[2], 0.0f));
     CHECK("a bone name with spaces and a normalised turn",
-          poses[0].nbones == 2 && strcmp(poses[0].bone[0].name, "arm right finger 1a") == 0 &&
+          strcmp(poses[0].bone[0].name, "arm right finger 1a") == 0 &&
               near(poses[0].bone[0].q[3], 1.0f) && near(poses[0].bone[1].q[3], 1.0f) &&
               strcmp(poses[0].bone[1].name, "arm right finger 2c") == 0);
     CHECK("a 31-character pose name", strcmp(poses[1].name, "1234567890123456789012345678901") == 0);
@@ -103,6 +111,14 @@ int main(void) {
     vrgrip_mirror_q(q);
     CHECK("the left hand's mirror is (x, -y, -z, w)", near(q[0], 1.0f) && near(q[1], -2.0f) &&
                                                          near(q[2], -3.0f) && near(q[3], 4.0f));
+
+    {
+        float t[3] = {0.25f, -0.5f, 0.75f};
+
+        vrgrip_mirror_t(t);
+        CHECK("the left hand's move mirror is (-x, y, z)",
+              near(t[0], -0.25f) && near(t[1], -0.5f) && near(t[2], 0.75f));
+    }
 
     vrgrip_slerp(a, b, 0.0f, out);
     CHECK("slerp at 0 gives a", near(out[0], a[0]) && near(out[1], a[1]) && near(out[2], a[2]) &&
@@ -121,20 +137,36 @@ int main(void) {
         n = vrgrip_parse_text((const char *)data, poses, VRGRIP_POSES, &lines, &skipped);
         CHECK("the sample has 24 poses and 360 bone lines", n == 24 && lines == 360 && skipped == 0);
         free(data);
+        {
+            int offsets = 0, pi, bi;
+
+            for (pi = 0; pi < n; pi++) {
+                for (bi = 0; bi < poses[pi].nbones; bi++) {
+                    const float *t = poses[pi].bone[bi].t;
+
+                    if (t[0] != 0.0f || t[1] != 0.0f || t[2] != 0.0f) {
+                        offsets++;
+                    }
+                }
+            }
+            CHECK("the sample has 67 knuckle offsets", offsets == 67);
+        }
     }
 
     files_layer_add(GRIPPOSES_MODEL_DIR);
     memset(&m, 0, sizeof(m));
     CHECK("Fiona's VR model is found", load_model(&m, "O_FIN/FIN_000"));
     CHECK("the rig self-check runs and passes", vrgrip_selfcheck_model(&m, poses, n, &chk) && chk.ran && chk.pass);
-    printf("grip poses: self-check R2c (%.3f %.3f %.3f), R1c (%.3f %.3f %.3f), L2c (%.3f %.3f %.3f)\n",
+    printf("grip poses: self-check R2a (%.3f %.3f %.3f), R3a (%.3f %.3f %.3f), "
+           "R5a (%.3f %.3f %.3f), R2c (%.3f %.3f %.3f)\n",
            (double)chk.got[0][0], (double)chk.got[0][1], (double)chk.got[0][2], (double)chk.got[1][0],
            (double)chk.got[1][1], (double)chk.got[1][2], (double)chk.got[2][0], (double)chk.got[2][1],
-           (double)chk.got[2][2]);
+           (double)chk.got[2][2], (double)chk.got[3][0], (double)chk.got[3][1], (double)chk.got[3][2]);
 
     {   /* the runtime path: the pose is applied in 0.10 s, and a release restores the rest pose */
         Actor a;
         Mat4 w[MODEL_MAX_BONES];
+        int b2a = model_bone_named(&m, "arm right finger 2a");
         int b2c = model_bone_named(&m, "arm right finger 2c");
         int wr = model_bone_named(&m, "bone 46");
         Vec3 p;
@@ -151,9 +183,14 @@ int main(void) {
             w[i] = rigid_inv(&m.bones[i].inv_bind);
         }
         vrgrip_apply(&a, w, 0.10f);
+        p = mat4_point(&m.bones[wr].inv_bind, vec3(w[b2a].m[12], w[b2a].m[13], w[b2a].m[14]));
+        CHECK("the runtime path moves the grip_orb knuckle",
+              fabsf(p.x + 0.892f) < 0.012f && fabsf(p.y - 0.144f) < 0.012f &&
+                  fabsf(p.z - 0.227f) < 0.012f);
         p = mat4_point(&m.bones[wr].inv_bind, vec3(w[b2c].m[12], w[b2c].m[13], w[b2c].m[14]));
         CHECK("the runtime path reaches the grip_orb tip",
-              fabsf(p.x + 1.096f) < 0.05f && fabsf(p.y + 0.415f) < 0.05f && fabsf(p.z - 0.261f) < 0.05f);
+              fabsf(p.x + 1.085f) < 0.012f && fabsf(p.y + 0.384f) < 0.012f &&
+                  fabsf(p.z - 0.261f) < 0.012f);
         CHECK("the pose holds the hand at its rest morph", a.face.hand[1].w < 0.01f);
 
         vrgrip_want(1, NULL, -1);

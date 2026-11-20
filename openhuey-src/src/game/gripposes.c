@@ -53,6 +53,15 @@ static Quat q_mul(Quat a, Quat b) {
     return r;
 }
 
+/* turn v by the unit quaternion q: q * (v, 0) * inverse(q) */
+static Vec3 q_rotate(Quat q, Vec3 v) {
+    Quat qv = {v.x, v.y, v.z, 0.0f};
+    Quat qi = {-q.x, -q.y, -q.z, q.w};
+    Quat r = q_mul(q_mul(q, qv), qi);
+
+    return vec3(r.x, r.y, r.z);
+}
+
 /* The rotation of a matrix's columns, with the scale removed and the frame re-orthonormalised.
  * world[] carries the hand's scale, so this is how the bone's own turn is read back. */
 static Quat q_from_mat(const Mat4 *m) {
@@ -222,6 +231,13 @@ void vrgrip_mirror_q(float q[4]) {
     q[2] = -q[2];
 }
 
+void vrgrip_mirror_t(float t[3]) {
+    if (t == NULL) {
+        return;
+    }
+    t[0] = -t[0];   /* model X is left-right: the bone's own X is the odd axis */
+}
+
 void vrgrip_slerp(const float a[4], const float b[4], float t, float out[4]) {
     Quat qa, qb;
     float d, s0, s1;
@@ -362,11 +378,36 @@ int vrgrip_parse_text(const char *text, VrGripPose *poses, int max_poses, int *b
                 bad++;
             } else {
                 char name[32];
-                float q[4];
-                size_t k, j = 0;
+                float q[4], t[3] = {0.0f, 0.0f, 0.0f};
+                float tmp;
+                size_t k, j = 0, first_num;
+                int nnum = 0;
 
-                name[0] = 0;
-                for (k = 0; k < (size_t)nw - 4; k++) {
+                /*
+                 * The numbers are the line's numeric suffix, so bone names can contain spaces.
+                 * Four are the quaternion; three more are the optional bone-local move. Any
+                 * other count (an incomplete quaternion, a stray word, too many numbers) is a
+                 * malformed line, as before.
+                 */
+                while ((size_t)nnum < (size_t)nw && parse_float_word(words[nw - 1 - nnum], &tmp)) {
+                    nnum++;
+                }
+                if (nnum != 4 && nnum != 7) {
+                    bad++;
+                    goto next_line;
+                }
+                first_num = (size_t)nw - (size_t)nnum;
+                if (first_num == 0) {
+                    bad++;
+                    goto next_line;
+                }
+                if (nnum == 7 && (!parse_float_word(words[first_num + 4], &t[0]) ||
+                                  !parse_float_word(words[first_num + 5], &t[1]) ||
+                                  !parse_float_word(words[first_num + 6], &t[2]))) {
+                    bad++;
+                    goto next_line;
+                }
+                for (k = 0; k < first_num; k++) {
                     size_t wl = strlen(words[k]);
 
                     if (wl > sizeof(name) - 1 - j - (j > 0 ? 1u : 0u)) {
@@ -381,10 +422,10 @@ int vrgrip_parse_text(const char *text, VrGripPose *poses, int max_poses, int *b
                     name[j] = 0;
                 }
                 if (j == 0 || j >= sizeof(name) ||
-                    !parse_float_word(words[nw - 4], &q[0]) ||
-                    !parse_float_word(words[nw - 3], &q[1]) ||
-                    !parse_float_word(words[nw - 2], &q[2]) ||
-                    !parse_float_word(words[nw - 1], &q[3])) {
+                    !parse_float_word(words[first_num], &q[0]) ||
+                    !parse_float_word(words[first_num + 1], &q[1]) ||
+                    !parse_float_word(words[first_num + 2], &q[2]) ||
+                    !parse_float_word(words[first_num + 3], &q[3])) {
                     bad++;
                 } else {
                     float q2 = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
@@ -399,12 +440,16 @@ int vrgrip_parse_text(const char *text, VrGripPose *poses, int max_poses, int *b
                         b->q[1] = q[1] * inv;
                         b->q[2] = q[2] * inv;
                         b->q[3] = q[3] * inv;
+                        b->t[0] = t[0];
+                        b->t[1] = t[1];
+                        b->t[2] = t[2];
                         snprintf(b->name, sizeof(b->name), "%s", name);
                         lines++;
                     }
                 }
             }
         }
+next_line:
         p = *e != 0 ? e + 1 : e;
     }
     if (bone_lines != NULL) {
@@ -432,6 +477,7 @@ typedef struct ResolvedPose {
     int nbones;
     int bone[VRGRIP_BONES];
     float q[VRGRIP_BONES][4];
+    float t[VRGRIP_BONES][3];
 } ResolvedPose;
 static ResolvedPose sResolved[2][VRGRIP_POSES];
 static unsigned char sResolvedDone[2][VRGRIP_POSES];
@@ -458,7 +504,7 @@ static int pose_named(const char *name) {
 static void poses_load(void) {
     uint8_t *data;
     size_t size = 0;
-    int lines = 0, skipped = 0;
+    int lines = 0, skipped = 0, offsets = 0, i, j;
 
     if (sLoaded) {
         return;
@@ -473,9 +519,18 @@ static void poses_load(void) {
     }
     sPoseN = vrgrip_parse_text((const char *)data, sPoses, VRGRIP_POSES, &lines, &skipped);
     free(data);
+    for (i = 0; i < sPoseN; i++) {
+        for (j = 0; j < sPoses[i].nbones; j++) {
+            const float *t = sPoses[i].bone[j].t;
+
+            if (t[0] != 0.0f || t[1] != 0.0f || t[2] != 0.0f) {
+                offsets++;
+            }
+        }
+    }
 #if GRIP_POSE_LOG
-    fprintf(stderr, "[grip-poses] loaded %d poses (%d bone lines, %d skipped) from %s\n", sPoseN, lines,
-            skipped, GRIP_POSE_PATH);
+    fprintf(stderr, "[grip-poses] loaded %d poses, %d bone lines, %d knuckle offsets, %d skipped from %s\n",
+            sPoseN, lines, offsets, skipped, GRIP_POSE_PATH);
 #endif
 }
 
@@ -569,8 +624,12 @@ static const ResolvedPose *resolve_pose(const Model *m, int side, int pidx) {
         r->q[r->nbones][1] = p->bone[i].q[1];
         r->q[r->nbones][2] = p->bone[i].q[2];
         r->q[r->nbones][3] = p->bone[i].q[3];
+        r->t[r->nbones][0] = p->bone[i].t[0];
+        r->t[r->nbones][1] = p->bone[i].t[1];
+        r->t[r->nbones][2] = p->bone[i].t[2];
         if (mirror) {
             vrgrip_mirror_q(r->q[r->nbones]);
+            vrgrip_mirror_t(r->t[r->nbones]);
         }
         r->nbones++;
     }
@@ -610,6 +669,20 @@ static int resolved_q(const ResolvedPose *r, int bone, float q[4]) {
     return 0;
 }
 
+static Vec3 resolved_t(const ResolvedPose *r, int bone) {
+    int i;
+
+    if (r == NULL) {
+        return vec3(0.0f, 0.0f, 0.0f);
+    }
+    for (i = 0; i < r->nbones; i++) {
+        if (r->bone[i] == bone) {
+            return vec3(r->t[i][0], r->t[i][1], r->t[i][2]);
+        }
+    }
+    return vec3(0.0f, 0.0f, 0.0f);
+}
+
 /* ---- the built-in rig check ---- */
 
 static int map_pose_name(const VrGripPose *p, int i, int side, char out[32], int *mirror) {
@@ -642,13 +715,18 @@ static int map_pose_name(const VrGripPose *p, int i, int side, char out[32], int
     return 1;
 }
 
-/* world[i] = world[parent] * T(rest offset) * R(local turn). The parent's scale is inherited
- * exactly; the bone's own translation stays its rest one, as the poses only turn the fingers. */
-static void set_world_bone(Mat4 *world, const Model *m, int i, Quat local) {
+/* world[i] = world[parent] * local_rest * T(t) * R(local turn). local_rest is
+ * T(rest translation) * R(rest turn), so this is the same as
+ * T(rest translation + R(rest turn) * t) * R(local turn): t is in the bone's own rest axes,
+ * before the pose turn, exactly Blender's matrix_basis order. The parent's scale is inherited;
+ * t = 0 leaves the bone at its rest translation. */
+static void set_world_bone(Mat4 *world, const Model *m, int i, Quat local, Vec3 t) {
     int p = m->bones[i].parent;
     Mat4 rest = local_rest(m, i);
-    Mat4 t = mat4_at(rest.m[12], rest.m[13], rest.m[14]);
-    Mat4 turn = mat4_mul(t, mat4_rot(local));
+    Quat qrest = q_from_mat(&rest);
+    Vec3 moved = q_rotate(qrest, t);
+    Mat4 at = mat4_at(rest.m[12] + moved.x, rest.m[13] + moved.y, rest.m[14] + moved.z);
+    Mat4 turn = mat4_mul(at, mat4_rot(local));
 
     if (p < 0 || p >= m->nbones) {
         world[i] = turn;
@@ -711,6 +789,7 @@ static void carry_descendants(const Model *m, Mat4 *world, int i, const Mat4 *ol
 static void apply_pose_exact(const Model *m, Mat4 *world, const VrGripPose *p, int side) {
     unsigned char active[MODEL_MAX_BONES] = {0};
     Quat qpose[MODEL_MAX_BONES];
+    Vec3 tpose[MODEL_MAX_BONES];
     int order[MODEL_MAX_BONES];
     int n = 0, i;
 
@@ -730,9 +809,11 @@ static void apply_pose_exact(const Model *m, Mat4 *world, const VrGripPose *p, i
         qpose[b].y = p->bone[i].q[1];
         qpose[b].z = p->bone[i].q[2];
         qpose[b].w = p->bone[i].q[3];
+        tpose[b] = vec3(p->bone[i].t[0], p->bone[i].t[1], p->bone[i].t[2]);
         if (mirror) {
             qpose[b].y = -qpose[b].y;
             qpose[b].z = -qpose[b].z;
+            tpose[b].x = -tpose[b].x;
         }
         order[n++] = b;
     }
@@ -751,7 +832,7 @@ static void apply_pose_exact(const Model *m, Mat4 *world, const VrGripPose *p, i
         Quat qrest = q_from_mat(&rest);
         Mat4 old = world[b];
 
-        set_world_bone(world, m, b, q_mul(qrest, qpose[b]));
+        set_world_bone(world, m, b, q_mul(qrest, qpose[b]), tpose[b]);
         carry_descendants(m, world, b, &old, active);
     }
 }
@@ -762,12 +843,16 @@ static Vec3 point_in_rest(const Model *m, const Mat4 *world, int bone, int wrist
 }
 
 int vrgrip_selfcheck_model(const Model *m, const VrGripPose *poses, int nposes, VrGripCheck *out) {
-    static const float posed[3][3] = {{-1.096f, -0.415f, 0.261f}, {-0.888f, -0.351f, 0.412f},
-                                      {1.110f, -0.407f, 0.287f}};
+    static const char *names[4] = {"arm right finger 2a", "arm right finger 3a",
+                                   "arm right finger 5a", "arm right finger 2c"};
+    static const float posed[4][3] = {{-0.892f, 0.144f, 0.227f},
+                                      {-1.001f, 0.111f, 0.055f},
+                                      {-0.860f, 0.180f, -0.289f},
+                                      {-1.085f, -0.384f, 0.261f}};
     const VrGripPose *p = NULL;
     Mat4 world[MODEL_MAX_BONES];
-    int wrist[2], fingers[3];
-    int i, ok = 1;
+    int bones[4], wrist;
+    int i, k, ok = 1;
 
     if (out != NULL) {
         memset(out, 0, sizeof(*out));
@@ -784,12 +869,14 @@ int vrgrip_selfcheck_model(const Model *m, const VrGripPose *poses, int nposes, 
     if (p == NULL) {
         return 0;
     }
-    wrist[0] = model_bone_named(m, "bone 30");
-    wrist[1] = model_bone_named(m, "bone 46");
-    fingers[0] = model_bone_named(m, "arm right finger 2c");
-    fingers[1] = model_bone_named(m, "arm right finger 1c");
-    fingers[2] = model_bone_named(m, "arm left finger 2c");
-    if (wrist[0] < 0 || wrist[1] < 0 || fingers[0] < 0 || fingers[1] < 0 || fingers[2] < 0) {
+    wrist = model_bone_named(m, "bone 46");
+    for (i = 0; i < 4; i++) {
+        bones[i] = model_bone_named(m, names[i]);
+        if (bones[i] < 0) {
+            return 0;
+        }
+    }
+    if (wrist < 0) {
         return 0;
     }
     out->ran = 1;
@@ -797,27 +884,16 @@ int vrgrip_selfcheck_model(const Model *m, const VrGripPose *poses, int nposes, 
         world[i] = rigid_inverse(&m->bones[i].inv_bind);
     }
     apply_pose_exact(m, world, p, 1);
-    {
-        Vec3 a = point_in_rest(m, world, fingers[0], wrist[1]);
-        Vec3 b = point_in_rest(m, world, fingers[1], wrist[1]);
+    for (i = 0; i < 4; i++) {
+        Vec3 v = point_in_rest(m, world, bones[i], wrist);
 
-        out->got[0][0] = a.x; out->got[0][1] = a.y; out->got[0][2] = a.z;
-        out->got[1][0] = b.x; out->got[1][1] = b.y; out->got[1][2] = b.z;
+        out->got[i][0] = v.x;
+        out->got[i][1] = v.y;
+        out->got[i][2] = v.z;
     }
-    for (i = 0; i < m->nbones; i++) {
-        world[i] = rigid_inverse(&m->bones[i].inv_bind);
-    }
-    apply_pose_exact(m, world, p, 0);
-    {
-        Vec3 c = point_in_rest(m, world, fingers[2], wrist[0]);
-
-        out->got[2][0] = c.x; out->got[2][1] = c.y; out->got[2][2] = c.z;
-    }
-    for (i = 0; i < 3; i++) {
-        int k;
-
+    for (i = 0; i < 4; i++) {
         for (k = 0; k < 3; k++) {
-            if (fabsf(out->got[i][k] - posed[i][k]) > 0.05f) {
+            if (fabsf(out->got[i][k] - posed[i][k]) > 0.012f) {
                 ok = 0;
             }
         }
@@ -983,11 +1059,12 @@ static void model_ready(const Model *m) {
         return;
     }
 #if GRIP_POSE_LOG
-    fprintf(stderr, "[grip-poses] self-check %s: R2c (%.3f, %.3f, %.3f), R1c (%.3f, %.3f, %.3f),"
-                    " L2c (%.3f, %.3f, %.3f)\n",
+    fprintf(stderr, "[grip-poses] self-check %s: R2a (%.3f, %.3f, %.3f), R3a (%.3f, %.3f, %.3f),"
+                    " R5a (%.3f, %.3f, %.3f), R2c (%.3f, %.3f, %.3f)\n",
             chk.pass ? "PASS" : "FAIL", (double)chk.got[0][0], (double)chk.got[0][1], (double)chk.got[0][2],
             (double)chk.got[1][0], (double)chk.got[1][1], (double)chk.got[1][2], (double)chk.got[2][0],
-            (double)chk.got[2][1], (double)chk.got[2][2]);
+            (double)chk.got[2][1], (double)chk.got[2][2], (double)chk.got[3][0], (double)chk.got[3][1],
+            (double)chk.got[3][2]);
 #endif
 }
 
@@ -1092,6 +1169,18 @@ static Quat target_turn(const Model *m, GripState *s, int b, const ResolvedPose 
     return qrest;
 }
 
+/* The bone-local move the pose is heading for: the target pose's t, the shown pose's t while
+ * steady, or zero when the hand is leaving the pose / returning to rest. */
+static Vec3 target_move(GripState *s, int b, const ResolvedPose *to, const ResolvedPose *cur) {
+    if (to != NULL) {
+        return resolved_t(to, b);
+    }
+    if (s->mode == GRIP_STEADY && cur != NULL) {
+        return resolved_t(cur, b);
+    }
+    return vec3(0.0f, 0.0f, 0.0f);
+}
+
 static void apply_side(Actor *a, Mat4 *world, int side, float dt) {
     const Model *m = &a->model;
     GripState *s = &sGrip[side];
@@ -1193,10 +1282,13 @@ static void apply_side(Actor *a, Mat4 *world, int side, float dt) {
         Quat qcur = local_turn(world, m, b);
         Quat qtgt = target_turn(m, s, b, to, cur);
         Quat qr = q_identity();
+        Vec3 ta = resolved_t(from, b);
+        Vec3 tb = target_move(s, b, to, cur);
+        Vec3 tr = vec3_add(vec3_scale(ta, 1.0f - tt), vec3_scale(tb, tt));
         Mat4 old = world[b];
 
         vrgrip_slerp((float *)&qcur, (float *)&qtgt, tt, (float *)&qr);
-        set_world_bone(world, m, b, qr);
+        set_world_bone(world, m, b, qr, tr);
         carry_descendants(m, world, b, &old, active);
     }
     weight = s->mode == GRIP_IN ? smooth01(s->t) : s->mode == GRIP_OUT ? 1.0f - smooth01(s->t) :

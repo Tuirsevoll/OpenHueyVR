@@ -348,31 +348,36 @@ A mod can also shape the fingers around the item. `library/data/PROPS/grip_poses
 through the same files layer as `grips.txt`:
 
 ```
-# pose <name>, then one line a finger bone: <bone name> qx qy qz qw
+# pose <name>, then one line a finger bone: <bone name> qx qy qz qw [tx ty tz]
 pose grip_orb
-arm right finger 2a -0.487758 0.029052 0.000203 0.872496
+arm right finger 2a -0.487758 0.029052 0.000203 0.872496 -0.000669 -0.011448 0.031618
 arm right finger 2b -0.064588 -0.305268 0.049872 0.948764
 ...
 ```
 
 - `pose <name>` starts a pose; the name matches the optional word in `grips.txt` (up to 31
-  characters). A following line is `<bone name> qx qy qz qw`: the **last four words** are the
-  turn, everything before them is the bone name (so names with spaces work). Comments start `#`;
-  blank lines and malformed lines are ignored.
-- The quaternion is the bone's pose rotation **relative to its rest, in the bone's own axes**:
-  `local_posed = local_rest * R(q)`, as Blender's pose rotation. The translation stays the rest
-  one; bones a pose does not list keep the hand's normal shape.
+  characters). A following line is `<bone name> qx qy qz qw [tx ty tz]`: the numbers are read from
+  the end, and everything before them is the bone name (so names with spaces work). Four numbers
+  are the old format, with `t = (0, 0, 0)`. Comments start `#`; blank lines and malformed lines
+  are ignored.
+- `q` is the bone's pose rotation **relative to its rest, in the bone's own axes**. `t` is the
+  optional bone-local move in model units, in the same rest axes (`t` is omitted when it is ~0):
+  `local_posed = local_rest * T(t) * R(q)`, exactly Blender's pose basis order. Adding `t` to the
+  parent-space rest translation is wrong; it must be turned by the rest rotation first. Bones a
+  pose does not list keep the hand's normal shape.
 - The left hand uses the matching `arm left finger ...` bone with the mirrored turn
-  `(qx, -qy, -qz, qw)` - the same mirror as `grips.txt`. If a pose lists `arm left ...` lines
-  itself, those are used for the left hand as they are.
+  `(qx, -qy, -qz, qw)` and move `(-tx, ty, tz)` - the same mirror as `grips.txt`. Model X is
+  left-right; the finger bones' local X is the odd axis under that reflection. If a pose lists
+  `arm left ...` lines itself, those are used for the left hand as they are.
 - A hand blends into the pose over 0.10 s when the item starts being held or shown, and back out
   over 0.10 s when it lets go. Switching straight from one item to another blends between the two
-  poses. The hand morph (fist/point) eases to its rest shape while a pose is in, because the poses
-  were authored on the rest hand.
+  poses, rotation and move together. The hand morph (fist/point) eases to its rest shape while a
+  pose is in, because the poses were authored on the rest hand.
 - The game writes only bones named `... finger ...`; its own bones 0-48, the wrist, palm and the
   `vr ...` helpers are never touched. A missing pose name logs once and leaves the hand as it was.
   The built-in check runs once on Fiona's VR model at load and logs `self-check PASS` with the
-  three fingertip positions; `[grip-poses]` lines on stderr report what is applied.
+  right finger 2a / 3a / 5a / 2c positions; `[grip-poses]` lines on stderr report what is applied,
+  including the loaded pose and knuckle-offset counts.
 - Poses apply only in VR gameplay, after the arms and body are posed - never to a cutscene, a
   canned animation, a menu or the flat screen.
 
