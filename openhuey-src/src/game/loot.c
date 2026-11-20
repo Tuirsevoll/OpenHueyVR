@@ -84,6 +84,11 @@ typedef struct LootProp {
     int holders; /* bit 0 / 1 */
     int pending;
     int spark;
+    /* the room's pickup offered by `offer` (story/kit.fs) for a physical grab: gripping it takes
+     * it, as her action button would. `offer_tick` is the tick it was last offered on (a stale
+     * offer, after she has walked away, does not). */
+    int offer;
+    long offer_tick;
     /* in a hand: `held` 1 when this draw took the frame from that hand (`draw`), 0 when it draws
      * where the world has it. Only ever set for a draw (loot_draw_from_hands). */
     int held;
@@ -1241,10 +1246,13 @@ static int grants(Forth *f, Word *w, int depth) {
         return 0;
     }
     if (give == NULL) {
-        give = forth_find(f, "give-item", 9);
-        picks = forth_find(f, "picks-up", 8);
-        takes = forth_find(f, "takes-up", 8);
-        the = forth_find(f, "takes-the", 9);
+        /* (a colon word: its `code` is docol, which every room pickup word has too. "give-item" is
+         * a message, a constant word, and `give` lives in items' private vocabulary: the old
+         * lookups found neither, and grants then said no to every pickup.) */
+        give = forth_find(f, "items.private:give", 18);
+        picks = forth_find(f, "story.kit:picks-up", 18);
+        takes = forth_find(f, "story.kit:takes-up", 18);
+        the = forth_find(f, "story.kit:takes-the", 19);
     }
     if (w == give || w == picks || w == takes || w == the) {
         return 1;
@@ -1292,14 +1300,14 @@ static int grants(Forth *f, Word *w, int depth) {
     return depth > 0 && (strstr(w->name, "pick") || strstr(w->name, "take"));
 }
 
+/* where she is, for how near a prop is to her (a VR hand's offer, loot_offer): her model's own
+ * place. (It used to look her body up by a *kind* name - `hactor_kind("fiona")`, which is a
+ * message kind and finds no actor: every offer was measured from the world's origin, so no room's
+ * pickup was ever offered to a prop for a physical grab.) */
 static Vec3 fiona_at(void) {
-    int id = hactor_kind("fiona");
-    HBody *b = id >= 0 ? hactor_body(id) : NULL;
+    Actor *a = loot_fiona();
 
-    if (b == NULL || !b->has) {
-        return vec3(0, 0, 0);
-    }
-    return vec3(b->pos[0], b->pos[1], b->pos[2]);
+    return a != NULL ? a->pos : vec3(0.0f, 0.0f, 0.0f);
 }
 
 static float dist2(Vec3 a, Vec3 b) {
@@ -1977,7 +1985,7 @@ void loot_offer(Forth *f, void *xt) {
     Word *w = xt;
     Vec3 at;
     int i, best = -1;
-    float bd = 6.5f * 6.5f;
+    float bd = 8.0f * 8.0f;   /* (a place's touches area is 5 units across each way: its corners are 7.07) */
 
     if (!vr_active() || !grants(f, w, 0)) {
         return;
@@ -1998,6 +2006,8 @@ void loot_offer(Forth *f, void *xt) {
     if (best >= 0) {
         sProp[best].xt = xt;
         sProp[best].mode = MODE_XT;
+        sProp[best].offer = 1;
+        sProp[best].offer_tick = gEngine.ticks;
     }
 }
 
@@ -2203,15 +2213,17 @@ int loot_nearest(Vec3 hand, int skip, float *d2) {
     return found;
 }
 
-void loot_grab(int index, int side) {
+/* a hand takes the prop: 1 when it is held in that hand, 0 when it is not - the room's pickup it
+ * was offered for a physical grab ran instead (gripping it is taking it, as her action button
+ * would: the cutscene, the item given). A prop with a mod's own pickup word (loot_script) is held
+ * as before: only `offer`'s are taken on the grip. */
+int loot_grab(int index, int side) {
     LootProp *p;
 
     if (index < 0 || index >= LOOT_N || !sProp[index].used) {
-        return;
+        return 0;
     }
     p = &sProp[index];
-    loot_preload_held(p->item, side);   /* (loaded now, off the render pass: the hand's draw only reads it) */
-    p->holders |= 1 << side;
     if (p->style == ST_PART) {
         group_set(p->group, 0);
     }
@@ -2222,6 +2234,14 @@ void loot_grab(int index, int side) {
         queue_spark(p->fx);
         p->spark = 1;
     }
+    if (p->offer && !p->pending && gEngine.ticks - p->offer_tick <= 2) {
+        queue_prop(p);   /* (the pickup: the room's own rule, as the menu's Use runs it) */
+        p->offer = 0;
+        return 0;
+    }
+    loot_preload_held(p->item, side);   /* (loaded now, off the render pass: the hand's draw only reads it) */
+    p->holders |= 1 << side;
+    return 1;
 }
 
 void loot_follow(int index, Vec3 at, Vec3 right, Vec3 up, Vec3 fwd) {

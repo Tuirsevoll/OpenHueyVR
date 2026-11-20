@@ -44,7 +44,10 @@ int loot_item_prop_slot(int item, int side);
 void loot_preload_held(int item, int side);
 
 int loot_nearest(Vec3 hand, int skip, float *d2);
-void loot_grab(int index, int side);
+/* a hand takes the prop at `index` (side 0 the left, 1 the right): 1 when it is held there, 0
+ * when it is not - the room's pickup it was offered for a physical grab ran instead (the same
+ * taking her action button would do: the cutscene, the item given). */
+int loot_grab(int index, int side);
 void loot_follow(int index, Vec3 at, Vec3 right, Vec3 up, Vec3 fwd);
 void loot_let_go(int index, int side);
 int loot_claims_placed(int placed_index);

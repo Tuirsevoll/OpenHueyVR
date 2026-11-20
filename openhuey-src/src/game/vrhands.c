@@ -3272,14 +3272,14 @@ int vrhands_hand_item_at(Vec3 *out) {
 }
 
 /* drawn from the live hand frame, as the equipped thing is, so it sits in the hand on every
- * drawn frame. Nothing to draw in a menu, a cutscene, or flat screen. */
+ * drawn frame - a menu's frame too (the hand is still there). Nothing to draw in a cutscene
+ * (her eyes' anchor is cleared then) or flat screen. */
 static void hand_item_draw(const Mat4 *view_proj) {
     Mat4 m;
     Vec3 at, right, up, fwd;
     float grip = 0.0f, index = 0.0f, thumb = 0.0f;
 
-    if (!sHand.shown || sHand.item < 0 || view_proj == NULL || !vr_active() || gEngine.paused ||
-        gEngine.console.open) {
+    if (!sHand.shown || sHand.item < 0 || gEngine.hand_item < 0 || view_proj == NULL || !vr_active()) {
         return;
     }
     at = sHand.at;
@@ -3739,12 +3739,13 @@ void vrhands_tick(Engine *e) {
 
                 if (loot >= 0 && (door < 0 || lootD < doorD) && (prop < 0 || lootD <= propD) &&
                     (ward < 0 || lootD <= wardD)) {
-                    sHold[side] = HOLD_LOOT;
-                    sHoldId[side] = loot;
-                    loot_grab(loot, side);
-                    loot_follow(loot, at, right, up, fwd);
                     door = -1;
                     prop = -1;
+                    if (loot_grab(loot, side)) {   /* (0: the room's pickup ran on the grip) */
+                        sHold[side] = HOLD_LOOT;
+                        sHoldId[side] = loot;
+                        loot_follow(loot, at, right, up, fwd);
+                    }
                 }
             }
             if (sHold[side] == HOLD_NONE && ward >= 0 && (door < 0 || wardD <= doorD) &&
