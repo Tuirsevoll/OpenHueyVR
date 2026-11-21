@@ -33,8 +33,9 @@ int saudio_available(void);
 int saudio_start(void);
 void saudio_stop(void);
 /* 3-D audio (vr.audio3d) and the cutscene's bypass, read live and ramped over 100 ms: on, the
- * placed sounds are binaural *and* occluded - there is no switch of its own for the occlusion.
- * start() is tried the first time it is switched on. */
+ * placed sounds are binaural (the occlusion muffling is switched off in sound3d.c, so nothing is
+ * attenuated - only the hiding spot's widening applies). start() is tried the first time it is
+ * switched on. */
 void saudio_set_enabled(int on);
 int saudio_on(void);
 
@@ -63,7 +64,8 @@ float saudio_voice_weight(int voice);
 void saudio_voice_render(int voice, const float *mono, int frames, float gain, float *out, float weight);
 
 /* occlusion, 0 clear .. 1 blocked (sound3d.c, once a tick): muffled and attenuated, eased over
- * time here */
+ * time here. Not driven at all while the muffling is switched off (sound3d.c SOUND3D_OCCLUSION),
+ * so every source stays clear and the low-pass never engages. */
 void saudio_occlude(int voice, float blocked);
 /* how enclosed the ears are, 0 open .. 1 inside a shut hiding spot (sound3d.c): the HRTF's
  * direction widened toward the plain signal, so what is outside is harder to place. Eased. */

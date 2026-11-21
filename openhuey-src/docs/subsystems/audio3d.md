@@ -1,4 +1,4 @@
-# 3-D audio: binaural HRTF and occlusion
+# 3-D audio: binaural HRTF (the occlusion is switched off)
 
 ## Purpose
 
@@ -22,23 +22,23 @@ stereo, untouched.
 | Function | Meaning |
 |---|---|
 | `saudio_available()` / `saudio_start()` / `saudio_stop()` | the SDK in this build / make the context, HRTF and 48 binaural effects / drop them |
-| `saudio_set_enabled(on)` | 3-D audio on / off (occlusion comes with it), and a cutscene's bypass; ramped over 100 ms |
-| `saudio_on()` | it is on now (the occlusion work is skipped when it isn't) |
+| `saudio_set_enabled(on)` | 3-D audio on / off, and a cutscene's bypass; ramped over 100 ms |
+| `saudio_on()` | it is on now (the sound3d work is skipped when it isn't) |
 | `saudio_listener(world_to_ear)` | the listener: the world -> ear matrix `engine_set_ear` is given (the headset's pose over Fiona's head, or the camera flat) |
 | `saudio_listener_at(at)` | where the ears are, world units |
 | `saudio_source(v, spatial, world, gain, gen)` | a voice's source: its world point, its amplitude (the original left/right pair's energy), and a key-on count (a new sound snaps, it does not glide from the last one's point) |
 | `saudio_source_off(v)` | not a placed sound (a menu sound, a bank going) |
-| `saudio_block(frames)` | the audio thread's 4 ms block: the ramp, the sources' occlusion/low-pass, and the 16 voices the HRTF runs for |
+| `saudio_block(frames)` | the audio thread's 4 ms block: the ramp, the sources' gain / occlusion / low-pass (the muffling is off for now), and the 16 voices the HRTF runs for |
 | `saudio_voice_weight(v)` / `saudio_voice_render(...)` | this voice's binaural share (0: the original pans) and its mono samples through the HRTF |
-| `saudio_occlude(v, blocked)` | 0 clear .. 1 blocked (from `sound3d.c`, once a tick) |
+| `saudio_occlude(v, blocked)` | 0 clear .. 1 blocked (from `sound3d.c`, once a tick; not driven while the muffling is off) |
 | `saudio_enclosed(v, enclosed)` | 0 open .. 1 inside a shut hiding spot: the HRTF's `spatialBlend` lowered toward the plain signal, so direction is widened |
-| `saudio_sources(...)` | the spatial voices playing, and their points (for the occlusion rays) |
+| `saudio_sources(...)` | the spatial voices playing, and their points (for the hiding spot's state) |
 
 `src/game/sound3d.h`:
 
 | Function | Meaning |
 |---|---|
-| `sound3d_tick(e)` | once a game tick: each spatial sound's occlusion, and a wardrobe hide (`fiona-hidden`) muffling the room |
+| `sound3d_tick(e)` | once a game tick: how enclosed the ears are at a hiding spot (and the occlusion, while it is switched on) |
 | `sound3d_blocked(nav, from, to)` | 1 if the room's line of walk meets a wall or a shut door first (or leaves the mesh: another room) - the shared "is there a wall between" test, for a stalker's line of sight too later |
 
 ## State
@@ -79,16 +79,19 @@ each tick from the room's nav mesh and `gProgress`'s `fiona-hidden`).
    block straight through was the first version's bug: every 1024-frame SDL buffer is five
    192-sample slices and one of 64, so a quarter of the stream was convolved with stale data and
    discarded - a loud 250 Hz buzz.)
-6. **Occlusion.** `sound3d_tick` walks the game's own line of walk from the ears to each spatial
-   sound over the room's nav mesh (`navmesh_wall_masked`: navmesh.c), with the flags a sound
-   cannot pass - a wall (0x4000) and a shut door's passage flags (0x60000, which `Doors_RoomIn`
-   moves as the door swings). A wall, a shut door, or a sound off this room's mesh (another
-   room) is blocked: its gain x 0.55 and a one-pole low-pass from 12 kHz to 900 Hz. A base hiding
-   (a bed, `fiona-hidden`, `gProgress` bit 9) blocks everything but her own body's sounds (within
-   0.5 m). Inside a physical hiding spot with every door shut (`vrspot_enclosed`), the room is
-   blocked the same way and `saudio_enclosed` lowers `spatialBlend` to about 0.4: the direction is
-   widened, so what is outside is hard to place. The ears off the floor (a ladder) leave a sound
-   clear, not blocked.
+6. **Occlusion - switched off for now** (`SOUND3D_OCCLUSION 0`, `sound3d.c`): the 3-D audio is
+   the HRTF alone - a sound behind a wall is heard through it, placed, never attenuated or
+   low-passed, and no rays are cast. With the constant set to 1, `sound3d_tick` walks the game's
+   own line of walk from the ears to each spatial sound over the room's nav mesh
+   (`navmesh_wall_masked`: navmesh.c), with the flags a sound cannot pass - a wall (0x4000) and a
+   shut door's passage flags (0x60000, which `Doors_RoomIn` moves as the door swings). A wall, a
+   shut door, or a sound off this room's mesh (another room) is blocked: its gain x 0.55 and a
+   one-pole low-pass from 12 kHz to 900 Hz. A base hiding (a bed, `fiona-hidden`, `gProgress` bit
+   9) blocks everything but her own body's sounds (within 0.5 m). The ears off the floor (a
+   ladder) leave a sound clear, not blocked.
+   The hiding spot's **widening** is not the occlusion and applies either way: inside a physical
+   hiding spot with every door shut (`vrspot_enclosed`), `saudio_enclosed` lowers `spatialBlend`
+   to about 0.4, so what is outside is hard to place.
 7. **The cap.** The HRTF runs for 16 voices at once: the loudest and nearest
    (`gain * 1000 / (100 + distance)`). A voice outside those, or within the 0.75 m of the ears,
    keeps the driver's original left / right mix for that block - so nothing is lost, only less
@@ -99,7 +102,8 @@ each tick from the room's nav mesh and `gProgress`'s `fiona-hidden`).
 9. **Cost and level.** One HRTF filter per spatial voice per 4 ms block. Measured (Steam Audio
    4.8.1, a desktop CPU, 48 kHz, 192-sample blocks, bilinear): **16 voices = about 10.7 ms of CPU a
    second of audio - 1.1% of one core** (2.7 us a voice a block); nearest-neighbour interpolation
-   is about a third of that. The occlusion rays run on the game thread at 30 Hz.
+   is about a third of that. No occlusion rays are cast while the muffling is off; with it on they
+   run on the game thread at 30 Hz.
    `HGA_AUDIO3D_STATS=1` prints the real thing every five seconds of audio.
    The HRTF's own gain peaks about 1.37x for a full-scale sound (measured), so the binaural path
    is scaled by `SAUDIO_HEADROOM` (0.8, -1.9 dB): a 3-D sound is within 1 dB of the original pan's

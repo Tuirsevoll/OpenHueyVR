@@ -80,8 +80,8 @@ right placement.
    `phonon.dll` beside `openhuey.exe` (and `spu-check.exe`). `phonon.dll` must ship with the game.
 
 The **VR options page** (the title's `VR OPTIONS`, or the sub screen's last page) has
-**3D Audio** (On by default, and the occlusion is part of it - there is no separate switch),
-kept in `user/vr-options.fs`; off, the
+**3D Audio** (On by default: the binaural HRTF; the occlusion's muffling is switched off in
+`sound3d.c` for now), kept in `user/vr-options.fs`; off, the
 game plays its original mono / stereo / Pro Logic mix (no environment variable is needed: the
 option is the switch). `HGA_AUDIO3D_STATS=1` prints the HRTF's cost to stderr every five seconds
 of audio (16 voices ≈ 11 ms of CPU a second, about 1% of a core), and

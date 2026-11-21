@@ -99,7 +99,7 @@ First Person, **Body: Camera Back** and **Body: Camera Height** - the camera's s
 0.01 m a step, 0..0.12 m back and -0.05..0.05 m up): 3D Audio (Off, On),
   Hiding Spot Door Transparency (Off, On), Held Item Debug Axes (Off, On) and Body: Hide Head in
   First Person (Off, On) - the 3D audio the
-  binaural HRTF, its occlusion coming with it (docs/subsystems/audio3d.md), the hiding spot's door
+  binaural HRTF (its muffling is switched off for now: docs/subsystems/audio3d.md), the hiding spot's door
   the see-through door of a walked-into spot (docs/subsystems/hiding.md), the axes at a held
   item's mod model and the wrist it sits on (docs/modding.md, "Held items"), and the VR body's head
   gone from her own eyes (docs/subsystems/vrbody.md). **Panic Effects**:

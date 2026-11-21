@@ -4260,7 +4260,7 @@ void engine_tick(Engine *e) {
     vrspotprobe_tick(e);   /* (DEBUG-ONLY: the spots, their objects and her feet - remove with it) */
     freecam_tick(e);   /* (last: over the shots and the cutscenes) */
     render_look_tick();
-    sound3d_tick(e);   /* (the 3-D audio's occlusion: after everything moved this tick) */
+    sound3d_tick(e);   /* (the 3-D audio: the hiding spot's enclosed state, after everything moved) */
     cutscene_audio(cutscene_heard(e), 1);
 }
 

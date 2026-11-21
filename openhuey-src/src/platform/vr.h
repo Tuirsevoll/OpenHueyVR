@@ -44,8 +44,8 @@ typedef struct VrOptions {
     /* the 3-D audio (platform/saudio.*): binaural effects through the headset's HRTF - and, with
      * them, the muffling of what a wall or a shut door is between (0: the game's own left / right,
      * as it was) */
-    int32_t audio3d;          /* 1: placed sounds through the HRTF, occlusion included (off: the
-                               * original stereo) */
+    int32_t audio3d;          /* 1: placed sounds through the HRTF (the occlusion muffling is off
+                               * for now: sound3d.c SOUND3D_OCCLUSION); off: the original stereo */
     /* the hiding spots a player walks into (scripts/story/vr-hiding.fs): a door drawn see-through
      * while she is fully hidden, instead of the flat screen's camera on the stalker */
     int32_t hide_door_see_through;   /* 1: the active hiding spot's doors at about half alpha */
