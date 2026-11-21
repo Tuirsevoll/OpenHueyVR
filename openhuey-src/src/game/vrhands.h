@@ -55,6 +55,9 @@ void vrhands_forget_stops(void);
 /* Both hands let go of what they hold, their arm stops and ladder holds with them (a teleport:
  * nothing a hand had is dragged to the new place). */
 void vrhands_drop_all(void);
+/* A hand on a hiding spot lets go at once (a script is about to play the spot's parts): no coast,
+ * nothing left held */
+void vrhands_spot_let_go(void);
 /* 1 when that controller is on Hewie. A touch also gives that hand a mild buzz. */
 int vrhands_petting(int side);
 /* 1 while a hand holds Hewie's raised front paw (the voice's "shake"): the hand near the paw,

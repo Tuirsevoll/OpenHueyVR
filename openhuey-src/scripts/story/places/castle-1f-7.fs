@@ -144,6 +144,12 @@ $30 constant not-landed   $34 constant speed   -25.3e fconstant shut-y
     spark-part hide-part  breaker-lowered fact!  40 trust+
     castle-1f-7 stalker-slot 0 doors-into  breaker-floor keeps-hewie-off floor-off  breaker-door unlock
     fiona wait-anim  breaker-file give-file ;
+\ the headset's pull (game/vrlevers.c): the same event in the same order, without her canned motion
+: vr-lowers-it ( -- )
+    50 frames  breaker-sound -44e 18e 36e room-sound  hum-sound room-bank stop-sound
+    spark-part hide-part  breaker-lowered fact!  40 trust+
+    castle-1f-7 stalker-slot 0 doors-into  breaker-floor keeps-hewie-off floor-off  breaker-door unlock
+    breaker-file give-file ;
 : breaker ( -- )
     lowered? if  fiona wait-move  lowered-msg say  exit  then
     fiona reach-motions motions-for
@@ -161,7 +167,10 @@ $30 constant not-landed   $34 constant speed   -25.3e fconstant shut-y
     in-panic?  chased? or if  fiona rattle-front-slow-anim play  fiona -1 idle  7 frames  exit  then
     fiona rattle-front-anim play  fiona -1 idle  7 frames  locked-msg say ;
 : spots ( -- )
-    fiona breaker-area in-area?  fiona -90 45 heading? and if  ['] breaker unhurried offer  then
+    fiona breaker-area in-area?  fiona -90 45 heading? and
+    vr? if  s" breaker" vr-lever-here? 0=  else  true  then  and if   \ (the headset's lever replaces the prompt)
+        ['] breaker unhurried offer
+    then
     lowered? 0=  floor-plate-pressed fact? 0= and  fiona gate-area in-area? and  fiona -90 45 heading? and if
         ['] gate-shut-msg unhurried offer  then
     fiona $A in-area?  fiona -90 45 heading? and  fiona $B in-area?  fiona 180 45 heading? and or
@@ -197,7 +206,9 @@ create entries  0 , 0 ,   0 , 0 ,             \ (by exit 0, 1: the camera)
     hums  0 exit-out  player-exit-area gate-exit leaves-by  cameras 4 cameras-at
     fiona leaving-0-area left? if  0 prepare-exit  then
     fiona near-exit-1-area entered? if  gate-exit prepare-exit  then ;
-: each-frame ( -- )  ways  gate-watch  wires  spots  walls-shade ;
+: each-frame ( -- )
+    vr? if  s" breaker" vr-lever-pulled? if  ['] vr-lowers-it start drop  then  then
+    ways  gate-watch  wires  spots  walls-shade ;
 : person-in ( i -- )
     dup fiona-p = if  drop
         events-held state? if  hewie send part-from-fiona  ['] replayed fiona start-holding drop exit  then

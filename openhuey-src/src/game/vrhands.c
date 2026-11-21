@@ -28,6 +28,8 @@
 #include "loot.h"
 #include "things.h"
 #include "vrbody.h"
+#include "vrspots.h"
+#include "vrlevers.h"
 
 #include "engine.h"
 #include "progress.h"
@@ -73,8 +75,18 @@ void vrhands_take_times(unsigned *pose, unsigned *stop) {
 #define HOLD_PROP 2
 #define HOLD_LOOT 3
 #define HOLD_WARD 4
+#define HOLD_SPOT 5   /* a hiding spot's hand: one part's handle scrubs the whole spot (vrspots.c) */
+#define HOLD_LEVER 6  /* a lever's hand: pulled along its handle's path (vrlevers.c) */
 
 static int sHold[2], sHoldId[2], sDoorAxis[2];
+/* the hiding spot that hand scrubs: the part it took, the offset from that part's handle to the
+ * hand (so nothing jumps to it), and the closure it was at with its speed a tick (the coast a
+ * let-go hand leaves the spot) */
+static int sSpotPart[2];
+static Vec3 sSpotOffset[2];
+static float sSpotC[2], sSpotSpeed[2];
+/* the lever that hand pulls: the offset from its handle to the hand (nothing jumps to it) */
+static Vec3 sLeverOffset[2];
 /* the door itself (its id in the world's table), not the room's exit: the two rooms a door joins
  * need not number it alike (215 of the game's 303 doors have another exit on their far side), so
  * an exit index is the old room's once a room change has happened */
@@ -1978,7 +1990,7 @@ static int nearest_prop(PlacedSet *s, Vec3 hand, int other, float *best) {
         float edge, d2;
 
         if (!p->shown || (other >= 0 && sHold[other] == HOLD_PROP && sHoldId[other] == i) || loot_claims_placed(i) ||
-            ward_leaf(p)) {   /* (a leaf is turned by hand, not carried) */
+            ward_leaf(p) || vrspot_placed_part(i) || vrlever_placed(i)) {   /* (a leaf, a spot's part or a lever is not carried) */
             continue;
         }
         ext = vec3_sub(p->mesh.hi, p->mesh.lo);
@@ -2013,6 +2025,10 @@ static void release_hand(Room *r, int side) {
         }
     } else if (sHold[side] == HOLD_WARD && id >= 0 && id < r->placed.n) {
         ward_release(&r->placed, side, id);   /* (a leaf still turning keeps its speed) */
+    } else if (sHold[side] == HOLD_SPOT) {
+        vrspot_let_go(id, sSpotSpeed[side]);   /* (a spot still moving keeps its speed to the stop) */
+    } else if (sHold[side] == HOLD_LEVER) {
+        vrlever_let_go(id);   /* (a lever let go before home springs back to rest) */
     }
     sHold[side] = HOLD_NONE;
     sHoldDoor[side] = -1;
@@ -2144,6 +2160,22 @@ void vrhands_forget_poses(void) {
 void vrhands_forget_stops(void) {
     sHandStopHave[0] = sHandStopHave[1] = 0;
     vrbody_forget_place();   /* (and the hands' smoothed frames: they are the old place's too) */
+}
+
+/* A hand on a hiding spot lets go at once (a script is about to play the spot's parts): no coast,
+ * nothing left held. The parts are the script's from here (vrspots.c reads the closure back when
+ * its animation ends). */
+void vrhands_spot_let_go(void) {
+    int side;
+
+    for (side = 0; side < 2; side++) {
+        if (sHold[side] == HOLD_SPOT) {
+            sHold[side] = HOLD_NONE;
+            sHoldId[side] = -1;
+            sSpotPart[side] = -1;
+            sSpotSpeed[side] = 0.0f;
+        }
+    }
 }
 
 /* Both hands let go of what they hold (a teleport: a door, a prop, a leaf or loot is not dragged
@@ -3940,6 +3972,32 @@ float ladder_pull_step(Vec3 *anchor, Vec3 play) {
     return down;      /* (a rise of that y moves her body up: the body's y goes down, the game's y running the other way) */
 }
 
+/* (DEBUG: a grip that came near a hiding spot and missed it - the box tuning; `vr-spot-debug!`) */
+static void spot_miss_log(int id, Vec3 at, float grab_d, float edge_d) {
+    char msg[192];
+
+    snprintf(msg, sizeof(msg), "vrspots: miss %s at(%.2f %.2f %.2f) edge-dist %.2f grab-dist %.2f\n",
+             vrspot_name(id), at.x, at.y, at.z, edge_d, grab_d);
+    if (gEngine.forth != NULL) {
+        forth_printf(gEngine.forth, "%s", msg);
+    } else {
+        fprintf(stderr, "%s", msg);
+    }
+}
+
+/* (DEBUG: a grip that came near a lever and missed it - the box tuning) */
+static void lever_miss_log(int id, Vec3 at, float box_d, float handle_d) {
+    char msg[192];
+
+    snprintf(msg, sizeof(msg), "vrlevers: miss '%s' at(%.2f %.2f %.2f) box-dist %.2f handle-dist %.2f\n",
+             vrlever_name(id), at.x, at.y, at.z, box_d, handle_d);
+    if (gEngine.forth != NULL) {
+        forth_printf(gEngine.forth, "%s", msg);
+    } else {
+        fprintf(stderr, "%s", msg);
+    }
+}
+
 void vrhands_tick(Engine *e) {
     Vec3 eye;
     float yaw;
@@ -3974,6 +4032,11 @@ void vrhands_tick(Engine *e) {
         sDoorShove = -1;                        /* (the two hands' shove names an exit too) */
         sDoorTick[0] = sDoorTick[1] = -1;
         sDoorHit[0] = sDoorHit[1] = -1;
+        for (i = 0; i < 2; i++) {
+            if (sHold[i] == HOLD_SPOT || sHold[i] == HOLD_LEVER) {
+                sHold[i] = HOLD_NONE;   /* (another room's spots and levers are not these) */
+            }
+        }
         sPushRoom = e->room.id;
     }
     for (side = 0; side < 2; side++) {
@@ -4066,6 +4129,68 @@ void vrhands_tick(Engine *e) {
                 release_hand(&e->room, side);
             }
         } else if (sHold[side] == HOLD_NONE && rising) {
+            /* a hiding spot's hand first: its GRAB box (grown), or one of its parts' edge wherever
+             * that is now - so a spot's door is neither carried as a prop nor taken as an exit door */
+            {
+                int sp = -1, spPart = -1;
+                float dBox = 0.0f, dEdge = 0.0f;
+                int box = vrspot_grab_box(at, VRSPOT_GRAB_MARGIN, &dBox);
+                int edge = vrspot_grab_edge(at, VRSPOT_EDGE_R, &dEdge, &spPart);
+
+                if (box >= 0 && (edge < 0 || dBox <= dEdge)) {
+                    sp = box;
+                } else if (edge >= 0) {
+                    sp = edge;
+                }
+                if (sp >= 0 && vrspot_take(sp, at, &spPart, &sSpotOffset[side])) {
+                    if (sHold[side ^ 1] == HOLD_SPOT && sHoldId[side ^ 1] == sp) {
+                        sHold[side ^ 1] = HOLD_NONE;   /* (a second hand on the same spot takes over) */
+                    }
+                    sHold[side] = HOLD_SPOT;
+                    sHoldId[side] = sp;
+                    sSpotPart[side] = spPart;
+                    sSpotC[side] = vrspot_closure_of(sp);
+                    sSpotSpeed[side] = 0.0f;
+                }
+                if (sHold[side] == HOLD_NONE && vrspot_debug_on()) {
+                    float gd = -1.0f, ed = -1.0f;
+                    int epart = -1;
+                    int nearBox = vrspot_grab_box(at, 6.0f, &gd);
+                    int nearEdge = vrspot_grab_edge(at, 6.0f, &ed, &epart);
+                    int near = nearBox >= 0 ? nearBox : nearEdge;
+
+                    if (near >= 0) {   /* (a press that came near a spot and missed: the box tuning) */
+                        spot_miss_log(near, at, nearBox >= 0 ? gd : -1.0f, nearEdge >= 0 ? ed : -1.0f);
+                    }
+                }
+            }
+            /* then a lever's: its box grown, or its handle wherever it is at the current pose */
+            if (sHold[side] == HOLD_NONE) {
+                int lv = -1;
+                float dLBox = 0.0f, dLEdge = 0.0f;
+                int lbox = vrlever_grab_box(at, VRLEVER_GRAB_MARGIN, &dLBox);
+                int ledge = vrlever_grab_edge(at, VRLEVER_EDGE_R, &dLEdge);
+
+                if (lbox >= 0 && (ledge < 0 || dLBox <= dLEdge)) {
+                    lv = lbox;
+                } else if (ledge >= 0) {
+                    lv = ledge;
+                }
+                if (lv >= 0 && vrlever_take(lv, at, &sLeverOffset[side])) {
+                    sHold[side] = HOLD_LEVER;
+                    sHoldId[side] = lv;
+                }
+                if (sHold[side] == HOLD_NONE && vrlever_debug_on()) {
+                    float bd = -1.0f, hd = -1.0f;
+                    int nearLBox = vrlever_grab_box(at, 6.0f, &bd);
+                    int nearLEdge = vrlever_grab_edge(at, 6.0f, &hd);
+                    int near = nearLBox >= 0 ? nearLBox : nearLEdge;
+
+                    if (near >= 0) {
+                        lever_miss_log(near, at, nearLBox >= 0 ? bd : -1.0f, nearLEdge >= 0 ? hd : -1.0f);
+                    }
+                }
+            }
             door = -1;
             doorD = DOOR_REACH_MAX * DOOR_REACH_MAX;   /* (the widest reach a knob may be taken at) */
             for (i = 0; i < ROOM_DOORS; i++) {
@@ -4090,7 +4215,7 @@ void vrhands_tick(Engine *e) {
                 float lootD = 0;
                 int loot = loot_nearest(at, skip, &lootD);
 
-                if (loot >= 0 && (door < 0 || lootD < doorD) && (prop < 0 || lootD <= propD) &&
+                if (sHold[side] == HOLD_NONE && loot >= 0 && (door < 0 || lootD < doorD) && (prop < 0 || lootD <= propD) &&
                     (ward < 0 || lootD <= wardD)) {
                     door = -1;
                     prop = -1;
@@ -4108,14 +4233,14 @@ void vrhands_tick(Engine *e) {
                 door = -1;
                 prop = -1;
             }
-            if (door >= 0 && (prop < 0 || doorD <= propD)) {
+            if (sHold[side] == HOLD_NONE && door >= 0 && (prop < 0 || doorD <= propD)) {
                 sHold[side] = HOLD_DOOR;
                 sHoldId[side] = door;
                 sDoorAxis[side] = axis;
                 sHoldDoor[side] = door_index(e, door);
                 sHoldFresh[side] = 0;
                 drive_door(e, door, axis, at);
-            } else if (prop >= 0) {
+            } else if (sHold[side] == HOLD_NONE && prop >= 0) {
                 sHold[side] = HOLD_PROP;
                 sHoldId[side] = prop;
                 sGrabYaw[side] = atan2f(fwd.x, fwd.z);
@@ -4155,6 +4280,38 @@ void vrhands_tick(Engine *e) {
                  * taken again where it now stands, and then turned by the hand as before) */
                 if (ward_retake(&e->room.placed, side, sHoldId[side], p, at)) {
                     ward_drive(&e->room.placed, side, sHoldId[side], p, at);
+                }
+            }
+        } else if (sHold[side] == HOLD_SPOT) {
+            int id = sHoldId[side];
+
+            if (!vrspot_scrubbable(id)) {
+                release_hand(&e->room, side);   /* (a script owns it now, or the spot is gone) */
+            } else {
+                Vec3 target = vec3_sub(at, sSpotOffset[side]);
+                float c = vrspot_scrub(id, sSpotPart[side], target, vrspot_closure_of(id), VRSPOT_WINDOW);
+
+                sSpotSpeed[side] = c - sSpotC[side];
+                vrspot_set_closure(id, c);   /* (every part of the spot, from the one closure) */
+                if ((c <= 0.0f || c >= 1.0f) && sSpotC[side] != c) {
+                    vr_haptic(side, 0.2f, 0.05f);   /* (the stop it reached) */
+                }
+                sSpotC[side] = c;
+            }
+        } else if (sHold[side] == HOLD_LEVER) {
+            int id = sHoldId[side];
+
+            if (!vrlever_scrubbable(id)) {
+                release_hand(&e->room, side);   /* (done, or a script has taken it) */
+            } else {
+                Vec3 target = vec3_sub(at, sLeverOffset[side]);
+                float c = vrlever_scrub(id, target, vrlever_closure(id), VRLEVER_WINDOW);
+
+                vrlever_set(id, c);
+                if (c >= VRLEVER_DONE) {   /* (home: it is pulled, the event queued) */
+                    vrlever_complete(id);
+                    vr_haptic(side, 0.7f, 0.12f);
+                    release_hand(&e->room, side);
                 }
             }
         }

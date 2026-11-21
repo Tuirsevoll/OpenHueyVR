@@ -70,6 +70,7 @@ enum { U_MVP, U_USE_TEX, U_SOLID_TEX, U_LIT, U_COVERAGE, U_LIGHT_DIR, U_LIGHT_CO
        U_ROOM_LIT, U_LPOS = 12, U_LCOL = 15, U_LRANGE = 18, U_AMBIENT128 = 21, U_NSHADOWS = 22, U_SHADOW_VP = 23,
        U_SHADOW_INFO = 35, U_SHADOW_STRENGTH = 47, U_RECEIVE = 59, U_CHAR_LIGHT = 60, U_ALPHA = 61,
        U_REJECT = 62, U_UNFOGGED = 63, U_SHADOW_LIGHT = 64, U_NBLOCKERS = 76, U_BLOCKER = 77,   /* (12 shadows, 16 blockers) */
+       U_FADE_SOLID = 178,   /* (a faded placed part: exactly its own alpha, not its texture's) */
        U_PS2 = 180, U_PDIR = 181, U_PFALL = 184 };
 
 /* the PS2's lighting (gfx.ps2-lighting; src/game/model.c light_rgba): each light one direction
@@ -160,6 +161,7 @@ static const char *kMeshFs =
     "layout(location = 64) uniform vec4 u_shadow_light[12];\n"   /* where its light shades from, its shadows' reach */
     "layout(location = 76) uniform int u_nblockers;\n"
     "layout(location = 77) uniform vec3 u_blocker[96];\n"   /* 6 each: 4 corners, the facing, the top middle */
+    "layout(location = 178) uniform float u_fade_solid;\n"   /* a faded placed part: 1 */
     "layout(location = 0) out vec4 o_color;\n"
     /* the lights' blockers (room.c room_blocked, the original's Shadow_BlockerVolumes): shadow i's
      * light shaded from p by one - p behind a quad facing away from it, in the pyramid from the
@@ -265,6 +267,7 @@ static const char *kMeshFs =
     "            c.rgb *= pow(1.0 - u_shadow_strength[i] * (1.0 - lit) * fade, 2.2);\n"
     "        }\n"
     "    }\n"
+    "    if (u_fade_solid != 0.0) c.a = 1.0;\n"   /* (a faded placed part: its own alpha alone) */
     "    if (u_use_tex != 0) {\n"
     "        if (u_coverage != 0) {\n"   /* a sharp edge where alpha crosses the cut-off */
     "            c.a = clamp((c.a - 0.02) / max(fwidth(c.a), 1e-4) + 0.5, 0.0, 1.0);\n"
@@ -970,6 +973,7 @@ void render_mesh_free(GpuMesh *g) {
 
 static float sTint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 static float sObjectAlpha = 1.0f;
+static int sFadeSolid;   /* (a placed object faded as a whole: its solid draws use sObjectAlpha alone) */
 
 /* the character microprograms' clip test (tools/vudis.py: CLIP each corner, FCAND over the
  * triangle's three, the ADC bit then drops it): a triangle with a corner outside the PS2's clip
@@ -1011,6 +1015,15 @@ void render_mesh_alpha(float a) {
     sObjectAlpha = a < 0.0f ? 0.0f : a > 1.0f ? 1.0f : a;
 }
 
+/* the same, for a placed object faded as a whole: its solid draws use exactly that alpha, ignoring
+ * the alpha their vertices and textures carry (the PS2 never blended those, so a wardrobe's texture
+ * alpha is often 0 - faded, such a door vanished instead of showing through). Cut-out draws
+ * (blend), additive ones and the bloom mask keep their own alpha, times this. */
+void render_mesh_alpha_solid(float a) {
+    render_mesh_alpha(a);
+    sFadeSolid = 1;
+}
+
 void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, const GpuTexture *textures,
                  int ntextures, const uint32_t groups[8]) {
     float alpha = sTint[3] * sObjectAlpha;
@@ -1018,10 +1031,12 @@ void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, c
 
     if (g->vao == 0) {
         sObjectAlpha = 1.0f;
+        sFadeSolid = 0;
         return;
     }
     glProgramUniformMatrix4fv(R.mesh_prog, U_MVP, 1, GL_FALSE, mvp->m);
     glProgramUniform4f(R.mesh_prog, U_ALPHA, sTint[0], sTint[1], sTint[2], alpha);
+    glProgramUniform1f(R.mesh_prog, U_FADE_SOLID, 0.0f);
     glUseProgram(R.mesh_prog);
     glDisable(GL_BLEND);   /* (for both targets: only the colour one ever blends) */
     glBindSampler(0, R.sampler);
@@ -1082,6 +1097,8 @@ void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, c
         glProgramUniform1i(R.mesh_prog, U_LIT, x->lit);
         glProgramUniform1i(R.mesh_prog, U_COVERAGE, coverage);
         glProgramUniform1i(R.mesh_prog, U_RECEIVE, !x->mask);
+        glProgramUniform1f(R.mesh_prog, U_FADE_SOLID,
+                           sFadeSolid && !x->blend && !x->additive && !x->mask ? 1.0f : 0.0f);
         glBindTextureUnit(0, tex);
         glDrawArrays(GL_TRIANGLES, x->first, x->count);
         if (x->mask) {
@@ -1094,6 +1111,7 @@ void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, c
     glDisable(GL_BLEND);
     glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
     sObjectAlpha = 1.0f;
+    sFadeSolid = 0;
 }
 
 /* ---- 2D ---- */

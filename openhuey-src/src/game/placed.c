@@ -339,6 +339,80 @@ void placed_frame_set(PlacedSet *s, Placed *p, int frame) {
     p->paused = 1;   /* (held here: the track stays loaded, placed_tick does not advance it) */
 }
 
+/* a key of the loaded track: its turn and place (formats 7 and 9; the rest keeps the defined ones) */
+static void placed_key_at(const Placed *p, int frame, Vec3 *rot, Vec3 *pos) {
+    const uint8_t *k;
+
+    *rot = p->def_rot;
+    *pos = p->def_pos;
+    if (p->keys == NULL || p->frames <= 0 || frame < 0 || frame >= p->frames) {
+        return;
+    }
+    if (p->format == 7) {   /* (Track_Sample's format 7: the turn, then the place) */
+        k = p->keys + frame * 24;
+        *rot = vec3(rdf(k), rdf(k + 4), rdf(k + 8));
+        *pos = vec3(rdf(k + 12), rdf(k + 16), rdf(k + 20));
+    } else if (p->format == 8) {
+        k = p->keys + frame * 12;
+        *rot = vec3(rdf(k), rdf(k + 4), rdf(k + 8));
+    } else if (p->format == 9) {
+        k = p->keys + frame * 12;
+        *pos = vec3(rdf(k), rdf(k + 4), rdf(k + 8));
+    }
+}
+
+/* an angle's step from a to b the shortest way round, and the angle that far from a */
+static float angle_step(float a, float b) { return remainderf(b - a, 6.28318531f); }
+
+void placed_pose_at(const Placed *p, float frame, Vec3 *rot, Vec3 *pos) {
+    Vec3 r0, p0, r1, p1;
+    int i0, i1;
+    float t;
+
+    if (rot == NULL || pos == NULL) {
+        return;
+    }
+    if (p->keys == NULL || p->frames <= 0) {
+        *rot = p->def_rot;
+        *pos = p->def_pos;
+        return;
+    }
+    if (frame < 0.0f) {
+        frame = 0.0f;
+    } else if (frame > (float)(p->frames - 1)) {
+        frame = (float)(p->frames - 1);
+    }
+    i0 = (int)frame;
+    i1 = i0 + 1 < p->frames ? i0 + 1 : i0;
+    t = frame - (float)i0;
+    placed_key_at(p, i0, &r0, &p0);
+    placed_key_at(p, i1, &r1, &p1);
+    *rot = vec3(r0.x + angle_step(r0.x, r1.x) * t, r0.y + angle_step(r0.y, r1.y) * t,
+                r0.z + angle_step(r0.z, r1.z) * t);
+    *pos = vec3(p0.x + (p1.x - p0.x) * t, p0.y + (p1.y - p0.y) * t, p0.z + (p1.z - p0.z) * t);
+}
+
+void placed_frame_set_f(PlacedSet *s, Placed *p, float frame) {
+    Vec3 rot, pos;
+
+    (void)s;
+    if (p == NULL) {
+        return;
+    }
+    if (frame < 0.0f) {
+        frame = 0.0f;
+    } else if (p->frames > 0 && frame > (float)(p->frames - 1)) {
+        frame = (float)(p->frames - 1);
+    }
+    p->frame = (int)(frame + 0.5f);   /* (the rounded frame placed-frame@ reads) */
+    if (p->keys != NULL && p->frames > 0) {
+        placed_pose_at(p, frame, &rot, &pos);
+        p->rot = rot;
+        p->pos = pos;
+    }
+    p->paused = 1;   /* (held here: the track stays loaded, placed_tick does not advance it) */
+}
+
 void placed_tick(PlacedSet *s) {
     int i;
 
@@ -422,7 +496,7 @@ void placed_draw(PlacedSet *s, const Mat4 *view_proj, const GpuTexture *textures
         if (p->shown && p->mesh.nd > 0 && placed_layer(p) == layer) {
             Mat4 mvp = mat4_mul(*view_proj, placed_world(p));
 
-            render_mesh_alpha(p->alpha);
+            render_mesh_alpha_solid(p->alpha);   /* (a spot's part seen through: its own 0.5, not its texture's) */
             render_mesh(&p->gpu, &mvp, p->mesh.d, p->mesh.nd, textures, ntextures, kAll);
         }
     }

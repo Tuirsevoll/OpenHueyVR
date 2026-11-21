@@ -3,81 +3,125 @@
 ## Purpose
 
 The base game hides Fiona in a cupboard, wardrobe or under a bed with a canned animation: the room
-walks her in, holds her and walks her out. In a headset the player walks herself, so the four
-wardrobes/cabinets with real placed doors use a small volume instead: the doors are pulled by hand,
-the closure decides how well hidden she is, and the step that leaves the volume is blocked only
-while a door is fully shut. Beds and every hiding spot without a placed door keep the base game's
-scripted hiding.
+walks her in, holds her and walks her out. In a headset the player walks herself, so the spots the
+mod's Blender exporter marks (`PROPS/hidespots.txt`) get a small volume instead: their parts are
+pulled by hand (a wardrobe's two bifold panels, the gallery curtain), one closure decides how well
+hidden she is, and she may step through the spot's edge only while it is open enough. Beds and every
+spot without a marker keep the base game's scripted hiding.
+
+## Where a spot comes from
+
+`PROPS/hidespots.txt` (a mod's library data, read by `game/vrmarkers.c`) gives each spot a GRAB box
+(where a hand takes it) and a BOUND box (where she is hidden), in the room's own space, **+y up**.
+`game/vrspots.c` registers one spot per marker on room entry and picks its parts:
+
+- a place that still types its own box with `vr-hiding-spot` names its leaves; when a marker spot is
+  near them (6 units of either box) they are that spot's parts and the typed box is ignored
+  (`vrspots: <room> using marker box, script box ignored`);
+- otherwise every shown placed object within 4 units of either box that is a door: a track 0 with two
+  flat ends that moves some vertex more than 2 units, or a morph (kind 1 / 3). The nursery's chairs
+  and its plain `right` / `left` are never parts.
+
+The parts are logged once: `vrspots: <room> <spot> parts: <name>(fmt F, track 0 lo..hi) ...`.
+
+A room with a `vr-hiding-spot` call and no marker (old-mansion-1f-22) keeps the typed box and the
+hands' `ward_*` leaves, as before.
+
+## One closure per spot
+
+Every part is posed from the spot's one closure `c` (0 open .. 1 closed) every tick, so a wardrobe's
+two panels always fold and slide together:
+
+| Spot | Parts | Scrub source | c = 0 (open) | c = 1 (closed) |
+|---|---|---|---|---|
+| castle-2f-12 (nursery) | `right_door` (fmt 7), `left_door` (fmt 8) | track 0 | frame 31 | frame 54 (the default pose) |
+| old-mansion-b1-4 (ST_050) | `l_door0` (fmt 7), `r_door0` (fmt 8) | track 0 | frame 31 | frame 54 |
+| old-mansion-b1-5 (ST_051) | `l_door0` #18 (fmt 7), `r_door0` #19 (fmt 8) | track 0 | frame 31 | frame 54 |
+| old-mansion-2f-8 (ST_05C) | `Curtain` (kind 3 morph) | its words | a 0, b 1, t 0 | a 0, b 1, t 1 |
+
+The stops are the track's two flat ends (the closed one is the one that matches the object's defined
+pose; a track whose ends do not match logs `vrspots: <room> closed end mismatch`). A rigid part is
+posed at `frame = lo + c*(hi-lo)` through `placed_pose_at` / `placed_frame_set_f`; the curtain is
+written as kit.fs's `morph` writes it (words `+0x74` 0, `+0x78` 1, `+0x7C` c). On room entry `c` is
+read back from the parts' poses and words: the wardrobes start shut, the curtain open.
+
+A script that plays a part owns the spot: the hands let go at once, the spot is not posed, and when
+its animation ends `c` is read back from the pose it left.
+
+## Grabbing and scrubbing
+
+`HOLD_SPOT` in `vrhands.c`: a rising grip takes the spot when the hand is inside its GRAB box grown by
+1 unit, or within 3 units of a part's handle (the vertex that travels furthest), wherever that handle
+is at the current pose. The hand keeps an offset from the handle, so nothing jumps; each tick the
+hand's target is projected on the handle's path (`game/vrpath.c`) within ±0.25 of the current closure,
+and the result poses every part. A stop (0 or 1) buzzes once. Letting go faster than 0.02 a tick keeps
+that speed to the stop. A spot's parts are never carried as props nor taken as exit doors.
+
+`vr-spot-closure` (0..100) reads the active spot's closure; `vr-spot-closure!` sets it (tests,
+console); `vr-spot-let-go` makes any hand let go (a script about to play the spot); `vr-spot-debug!`
+turns on the debug lines (the misses `vrspots: miss <spot> at(x,y,z) edge-dist D grab-dist G`, and the
+first fade).
+
+## The hidden state
+
+- **Inside**: her feet's footprint in the BOUND's own horizontal axes (0.3 margin) and her hip point
+  (feet + 8 units, +y up) within the box's height grown by 2. The box's bottom is above her feet, so
+  the hip is what the height is asked of.
+- **Full** while inside and `c ≥ 0.85` (once full it holds down to 0.80); **half** while inside and
+  `c > 0.40`; **enclosed** at `c ≥ 0.995`. Outside the BOUND all clear at once.
+- `kit.fs` `vr-hiding-flags` sets `fiona-hidden` / `fiona-half-hidden`, the avoid prompts and
+  `no-stalker-camera` from those, unchanged; a discovery (`found-her`, held) still owns them.
+
+## Getting in and out
+
+- A step across the BOUND's footprint edge, in or out, is allowed only while `c ≤ 0.40`
+  (`VRSPOT_ENTER_MAX_CLOSURE`). Wardrobes start shut, so she must pull them 60% open to walk in; the
+  curtain starts open. Once in and past 40% she cannot walk out until she opens it again.
+- Inside with `c > 0.40` her step is kept a body's width (`VRSPOT_BODY_R` 1.0) from the footprint's
+  sides; outside with `c > 0.40` a step into the footprint is stopped at the face she came to.
+- `vrspot_noclip()` is true while her feet are within the footprint grown by 4 units and `c ≤ 0.40`
+  (or she is already inside), so the room's solid nav stops counting there: she can step onto the
+  wardrobe's floor or into the curtain alcove. `scripts/fiona/moving.fs`'s `vr-spot-move` uses it in
+  every room. Her position is only ever moved there and by her animation's root motion (the scripts'
+  `vr-head` is Hewie's); there is no separate head-driven move to route.
+
+## The door seen through
+
+`vr.hide-door` (default on): inside, full, the active spot's parts are drawn at alpha 0.5. Every part,
+in every room - the old cabinet doors went fully invisible because a faded placed part blended with
+its vertices' and texture's alpha (the PS2 never blended those, so their alpha is often 0):
+`placed_draw` now fades them through `render_mesh_alpha_solid`, whose solid draws use exactly 0.5 and
+ignore the vertex and texture alpha (cut-out, additive and bloom-mask draws keep their own).
+
+## Scripts
+
+The places keep their `vr-hiding-spot` calls (they name the leaves). castle-2f-12's
+`wardrobe-floor-follows` / `wardrobe-noclip-follows` read `vr-spot-closure` ("open" at 40% or less).
+old-mansion-2f-8 offers its scripted `hides` only on the flat screen (`vr? 0=`) and in the headset
+watches the curtain spot (`vr-curtain-watch` / `vr-hides`, as the nursery's), opening the curtain at
+`came-in`.
 
 ## API
 
-`src/game/vrspots.h` (the geometry, closure and step; C) and `story/kit.fs` (the game's flags):
-
 | Word / function | Meaning |
 |---|---|
-| `vr-hiding-spot ( a1 n1 a2 n2 F: ox oz yaw half depth ix iz -- )` | a place registers its two door leaves, the doorway's origin and yaw, its half width and depth, and a point inside it. The leaves are marked `hiding_leaf`. |
-| `vr-spot-here ( F: x y z -- )` | Fiona's place from the scripts' own `her-at` (C's `Actor.pos` is taken at a draw, not a headless tick) |
-| `vr-spot-inside?` / `vr-spot-full?` / `vr-spot-half?` / `vr-spot-enclosed?` | her state at the active spot |
-| `vr-spot-closure ( F: -- pct )` | the least closed leaf, 0..100 |
-| `vr-spot-noclip?` / `vr-spot-step ( F: dx dz -- dx' dz' )` | she may stand on the room's solid floor there; her player step is clamped to the box |
+| `vr-hiding-spot ( a1 n1 a2 n2 F: ox oz yaw half depth ix iz -- )` | a place registers its leaves and its typed box; a marker spot nearby takes the leaves as its parts |
+| `vr-markers-line ( addr len levers -- flag )` | one hidespots / levers line, as `vrmarkers_parse_line` reads it (the tests) |
+| `vr-spot-here ( F: x y z -- )` | Fiona's place from the scripts' own `her-at` |
+| `vr-spot-inside?` / `-full?` / `-half?` / `-enclosed?` | her state at the active spot |
+| `vr-spot-closure ( F: -- pct )` / `vr-spot-closure! ( pct -- )` | the active spot's one closure, read / set |
+| `vr-spot-noclip?` / `vr-spot-step ( F: dx dz -- dx' dz' )` | her step at the spot: the doorway rule |
 | `vr-spot-release ( on -- )` | a discovery has her: no state, noclip or clamp until she is outside again |
-| `vr-hiding-flags` | once a frame (in `every-room`): sets `fiona-hidden` / `fiona-half-hidden`, the avoid prompt and `no-stalker-camera` from the spot |
-| `vr-hides` / `vr-hides-in-cabinet` | the headset's watch: the place's own search and discovery take over; a discovery uses `hold-posed` for the canned animation and sets `vr-hiding-caught` until she leaves |
-
-## Rules
-
-1. **The box.** The place gives the doorway's origin, yaw, half width and depth; the inside is the
-   normal side of the doorway line through the given inside point. The doorway is `v = 0`, the
-   inside `v = 0..depth`; the sides are `u = ±half_width`, the back `v = depth`.
-2. **The closure.** Each leaf's first track is loaded at registration and held at its shut end. Its
-   current turn is compared with the flat open and shut ends of that track; the smallest closure of
-   the leaves is the spot's. Format 7 (turn and place) and 8 (turn) both work. A leaf is **shut**
-   at 99.5% or more.
-3. **Full, half, exposed.** Inside the box:
-   - full at 85% or more; once full it holds down to 80%;
-   - half above 40% and below the full rule;
-   - exposed at 40% or less.
-   Outside the box both flags clear at once. A discovery (`found-her` or held) owns the flags until
-   she leaves; `vr-hiding-caught` keeps the spot from hiding her again in that visit and
-   `vr-spot-release` turns the spot's state, noclip and clamp off until she is outside again.
-4. **The step.** While she is in or at the box her step is clamped to it: the sides and back always;
-   the doorway only where a leaf is shut. She may stand on the room's solid nav there (the step
-   uses mask 0), so no room needs new floor flags. Canned moves, stalkers, room doors and beds are
-   untouched. Teleporting is left out while a spot is active.
-5. **The crouch flag.** `fiona-half-hidden` is shared with the headset crouch (`fiona.sneak`); the
-   spot clears it only when the crouch is not using it.
-6. **The door seen through.** `vr.hide-door` (default on) draws the active spot's leaves at about
-   half alpha in the see-through layer while she is inside and fully hidden. Off, they stay opaque.
-7. **The prompts.** Entering the spot shows the “Hiding…” avoid row once (`0 avoid-prompt`); the
-   avoid actor clears it after its second, and it is not re-sent while she stays. Coast clear
-   (`1 avoid-prompt`) is shown only if `chased?` was true while she was in the spot and the stalker
-   has since lost her and left (`vr-hiding-chased`); a spot entered out of danger never shows it.
-8. **The audio.** Inside and every leaf shut (`vr-spot-enclosed?`), `sound3d.c` muffles the room and
-   `saudio.c` lowers `spatialBlend` to about 0.4, so outside sounds are hard to place. Her own body's
-   sounds stay clear. A base hiding (a bed) keeps the old `fiona-hidden` muffling.
-
-## Spots
-
-| Room | Leaves | Doorway origin, yaw | Half width, depth | Inside point |
-|---|---|---|---|---|
-| castle-2f-12 (nursery) | `left_door`, `right_door` | (19.28, 38.49), 135° | 6.8, 6.0 | (20.69, 39.91) |
-| old-mansion-1f-22 | `l_door0`, `r_door0` | (149.9, 70.0), 0° | 3.5, 7.0 | (156.9, 70.0) |
-| old-mansion-b1-4 | `l_door0`, `r_door0` | (14.5, 30.0), 90° | 3.5, 7.0 | (14.5, 37.0) |
-| old-mansion-b1-5 | `l_door0`, `r_door0` | (21.5, -30.0), 90° | 3.5, 7.0 | (21.5, -37.0) |
-
-The other non-bed hiding spots (curtains, gaps, alcoves, the cinematic lockers) have no door and
-mostly no walkable interior; they stay scripted. Beds stay as they are. The place's `came-in`
-registers a spot only when `vr?` is true, so the flat screen keeps the base game exactly (its
-scripted `hides`/`hides-in-cabinet`).
+| `vr-spot-let-go ( -- )` | any hand on a spot lets go (a script plays it) |
+| `vr-spot-debug! ( on -- )` | the spot's debug lines (the misses and the first fade; on at start, `0` off) |
+| `vr-hiding-flags` | once a frame: the flags, the prompt, `no-stalker-camera` |
 
 ## Status
 
-Built and tested headless (`tests/story/test_vr_hiding.fs`: the nursery's thresholds, the hysteresis,
-one door, leaving the box and the clamped step; `tests/story/test_vr_hiding_cabinets.fs`: the three
-old-mansion cabinets). The nursery's box and the cabinets' were measured from their room data; a
-spot whose geometry differs is given its own values in its place script.
+Built and tested headless: `tests/story/test_vr_hiding.fs` (the nursery's marker spot: one closure for
+both panels, the 85/80 hysteresis, 90% full but not enclosed, the BOUND's footprint, the doorway rule
+in and out), `tests/story/test_vr_hiding_cabinets.fs` (the two cabinets' marker spots, the old
+mansion's marker-less 1f-22 cabinet, and the curtain enterable at entry) and `tests/vrspots_check.c`
+(the handle path's projection and a fractional frame's pose). The markers are injected with
+`vr-markers-line`, the same parser the file is read with.
 
-The left/right leaves are both hand-driven; `placed_tick` and `placed_frame_set` now support the
-format 7 tracks (the right leaf and one leaf of each cabinet), which also makes the flat screen's
-scripted cabinet animations move those leaves. `old-mansion-b1-5`'s cabinet doors are objects 18
-and 19 (the script used 8 and 9) - fixed.

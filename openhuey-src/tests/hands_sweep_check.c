@@ -79,6 +79,31 @@ void placed_frame_set(PlacedSet *s, Placed *p, int frame) {
     (void)frame;
 }
 
+/* placed.c's fractional pose, by its defined one: this check never poses a spot's part or a lever
+ * (they are only linked for vrhands.c's grabs), and placed.c itself is not linked - its placed_anim,
+ * placed_frame_set and placed_world stand in above */
+void placed_pose_at(const struct Placed *p, float frame, Vec3 *rot, Vec3 *pos) {
+    (void)frame;
+    *rot = p->def_rot;
+    *pos = p->def_pos;
+}
+
+void placed_frame_set_f(PlacedSet *s, Placed *p, float frame) {
+    (void)s;
+    if (p == NULL) {
+        return;
+    }
+    placed_pose_at(p, frame, &p->rot, &p->pos);
+    p->frame = (int)(frame + 0.5f);
+    p->paused = 1;
+}
+
+Placed *placed_named(PlacedSet *s, const char *name) {
+    (void)s;
+    (void)name;
+    return NULL;   /* (no room here: no placed object to name) */
+}
+
 /* src/game/placed.c placed_world, line for line: scaled, turned about X, then Y, then Z, then
  * placed (the original's obj_mvp). The check does not link placed.c, so it stands in here - the
  * same fields of the same object, so a placed thing's real place and turn are used. */

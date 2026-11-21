@@ -136,6 +136,10 @@ void render_mesh_tint(float r, float g, float b, float a);
 /* one mesh drawn faded by its own alpha, on top of the tint (a hiding spot's door seen through:
  * 0.5 about half). The next render_mesh call takes it; it is back to 1 after that call. */
 void render_mesh_alpha(float a);
+/* the same for a placed object: its solid draws use exactly `a`, ignoring the alpha their vertices
+ * and textures carry (a wardrobe's texture alpha often 0 - faded, it used to vanish); cut-out,
+ * additive and bloom-mask draws keep their own alpha */
+void render_mesh_alpha_solid(float a);
 /* the characters' clip test, as the original's microprograms: a triangle with a corner outside
  * the PS2's clip volume (the near and far planes, the GS's drawing space round the screen) not
  * drawn at all, not cut at the screen (on for the draws until turned off) */

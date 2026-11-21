@@ -185,6 +185,25 @@ not read there and her root motion is not used (`scripts/fiona/ladder.fs`, `vr-c
   ladder, and `ladder-pull` ( F: -- dy ), the pending total in the game's y, taken (cleared) by the
   call.
 
+## Pulling a lever
+
+A lever from `PROPS/levers.txt` (`src/game/vrlevers.c`) is a placed object near its box whose track 0
+is scrubbed from its rest pose (the end its own pose sits at) to its pulled one. A rising grip takes
+it when the hand is inside the box grown by 1 unit, or within 3 units of its handle (the vertex that
+travels furthest) as it is posed now - the same forgiving rules as a hiding spot's. `HOLD_LEVER`
+keeps the offset from that handle to the hand, so nothing jumps; each tick the hand's target is
+projected on the handle's path within ±0.25 of the closure and poses the object
+(`placed_frame_set_f`). At 0.97 it snaps home, buzzes the controller strongly, is done (never taken
+again) and queues the event the place script reads once (`vr-lever-pulled?`, `vr-lever-here?`); let go
+before that, it springs back to rest in about 0.3 s. A script that plays the object takes it - the
+hand lets go and the closure is read back when its animation ends - and a room change or
+`hands-drop` drops the hold. A hand near a lever that misses is logged (`vrlevers: miss ...`) for the
+box tuning.
+
+The flat screen is untouched: its button prompt and the scripted pull still run (`vr? 0=`) and the
+lever's object is left to the script. In VR the place scripts' `vr-pulls-it` / `vr-lowers-it` run the
+very same event, in the same order, without Fiona's canned motion.
+
 - **A held thing is drawn with the hand** (`src/game/loot.c`, "a held thing, drawn with the hand";
   `vrhands_hand_frame` in `src/game/vrhands.c`). The game moves at its 30 ticks a second, but a
   headset draws every frame it can, and her arms are posed afresh for each drawn frame (the pose

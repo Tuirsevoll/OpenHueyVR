@@ -134,6 +134,15 @@ create holes  $38B , $1B9 , $38C , $38D , $386 , $38E ,   \ (things lying about 
     gate-door unlock  fiona -1 idle  fiona wait-anim
     c1f-2-flag1 fact!  $5F $1F9 room-noise  ['] cage-rises start drop
     got-saturnus-key fact? 0= if  castle-1f-1 0 443 4 0 creature-in  castle-1f-9 0 217 4 0 creature-in  then ;
+\ the headset's pull (game/vrlevers.c): the same event in the same order, without her canned motion -
+\ the physical lever is pulled by hand and this runs once it is home. The two sounds stay a beat apart.
+: vr-pulls-it ( -- )
+    stalkers-stay state!
+    lever-sound 50e -5e 171e room-sound  62 frames  gate-sound 50e -5e 171e room-sound
+    gate-door unlock
+    c1f-2-flag1 fact!  $5F $1F9 room-noise  ['] cage-rises start drop
+    got-saturnus-key fact? 0= if  castle-1f-1 0 443 4 0 creature-in  castle-1f-9 0 217 4 0 creature-in  then
+    bark-scene @ 0= if  stalkers-stay state-off  then ;
 : lever ( -- )
     gate-open? if  fiona wait-move  pulled-msg say exit  then
     stalkers-stay state!  fiona wait-move  fiona lever-motions motions-for
@@ -319,7 +328,10 @@ create holes  $38B , $1B9 , $38C , $38D , $386 , $38E ,   \ (things lying about 
     fiona hiding-area in-area?  fiona 0 60 heading? and if
         stalker-in? 0=  stalker unseen? or if  ['] hides hiding-spot offer  else  no-time-message offer-remark-now  then
     then
-    fiona lever-area in-area?  fiona 0 50 heading? and if  ['] lever unhurried offer  then
+    fiona lever-area in-area?  fiona 0 50 heading? and
+    vr? if  s" gate" vr-lever-here? 0=  else  true  then  and if   \ (the headset's lever replaces the prompt)
+        ['] lever unhurried offer
+    then
     fiona hole-area in-area?  fiona 0 50 heading? and if  ['] the-hole unhurried offer  then
     fiona fence-area in-area?  fiona -90 50 heading? and if  ['] fence unhurried offer  then
     fiona gate-far-area in-area?  fiona 180 50 heading? and if  ['] flowers unhurried offer  then
@@ -419,6 +431,7 @@ create entries  0 , 0 ,   5 , 4 ,   0 , 0 ,   3 , 3 ,   \ (by exit 0..3: the cam
     through-gate @  stalker-in? and if  0 through-gate !  then ;
 : each-frame ( -- )
     sounds  events-held state? if  exit  then
+    vr? if  s" gate" vr-lever-pulled? if  ['] vr-pulls-it start drop  then  then
     ways  hewie-sniffs  by-the-fire  search-due  shove-due  hewie-notices  looks 1 hewie-looks-at  splashes
     fiona-hidden state? if  his-camera? if  fiona follow  else  stalker follow  then  then
     under-the-gate  spots  walls-shade ;

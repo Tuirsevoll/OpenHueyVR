@@ -128,15 +128,14 @@ variable wardrobe-target-set
 : wardrobe-target-clear ( -- )  0 wardrobe-target-set ! ;
 \ (console: the wardrobe's left leaf - the frame its animation is at now, as a hand may have left it)
 : door-frame-now ( -- )  ." door-frame " s" left_door" placed-frame@ . cr ;
-\ the wardrobe's floor, in the headset: the left leaf is the hands' own (left_door), so the floor
-\ follows its frame - below the swing's open end it is open, from there the doors are shut and it
-\ bars. `wardrobe-floor-open` is what was last set (2: not yet, so the first frame sets it)
-53 constant wardrobe-door-open-frame
+\ the wardrobe's floor, in the headset: the spot's one closure (the marker boxes), not a leaf's
+\ frame - open at 40% or less, the same rule the step in uses. `wardrobe-floor-open` is what was
+\ last set (2: not yet, so the first frame sets it)
 variable wardrobe-floor-open   2 wardrobe-floor-open !
+: wardrobe-open? ( -- flag )  vr-spot-active? if  vr-spot-closure 40e f<=  else  false  then ;
 : wardrobe-floor-follows ( -- )
     vr? 0= if  exit  then
-    s" left_door" placed-frame@  dup 0< if  drop exit  then
-    wardrobe-door-open-frame <  dup wardrobe-floor-open @ = if  drop exit  then
+    wardrobe-open?  dup wardrobe-floor-open @ = if  drop exit  then
     dup wardrobe-floor-open !
     if  wardrobe-floor barred-floor floor-off  else  wardrobe-floor barred-floor floor-on  then ;
 \ the headset: noclip in the wardrobe's mouth only, while its door is open, so the stick can cross the
@@ -148,17 +147,10 @@ variable wardrobe-in-noclip   2 wardrobe-in-noclip !
     x 12e f>=  x 19e f<= and  z 36e f>= and  z 48e f<= and ;
 : wardrobe-noclip-follows ( -- )
     vr? 0= if  exit  then
-    \ (the first frame of a visit: the door's frame, as the test below finds it)
-    wardrobe-in-noclip @ 2 = if
-        ." door frame " s" left_door" placed-frame@ . cr
-    then
-    s" left_door" placed-frame@  wardrobe-door-open-frame <
-    at-wardrobe-door?  and
+    wardrobe-open?  at-wardrobe-door?  and
     dup wardrobe-in-noclip @ = if  drop exit  then
     dup wardrobe-in-noclip !
-    \ (it changed: the door's frame, and then which way it went)
-    ." door frame " s" left_door" placed-frame@ . cr
-    if  ." wardrobe: noclip on" cr  fiona true noclip  else  ." wardrobe: noclip off" cr  fiona false noclip  then ;
+    if  fiona true noclip  else  fiona false noclip  then ;
 
 : out-quietly ( -- )   \ (her own way out: the doors shut behind her; the wardrobe shut)
     1 hide-step +!  fiona follow  fiona-hidden state-off

@@ -47,6 +47,24 @@ own: wall-seen  own: looked-round  own: spot-noticed  own: sounds-on  own: frame
     found-her @ if  2 avoid-prompt  then
     fiona follow  fiona-hidden state-off  curtain-flung
     found-her @ 0= if  stalker let-go  stalker-in? if  0 stalker-order  then  then ;
+\ ---- the headset: the curtain spot of the markers (PROPS/hidespots.txt), watched as the nursery's ----
+\ (she walks in and out herself; the curtain is scrubbed by hand, game/vrspots.c, and this only keeps
+\ her state and lets the place's own search take over)
+: vr-hides ( -- )
+    0 came-while-hidden !  0 found-her !  0 vr-hiding-chased !
+    begin
+        vr-spot-inside? 0= if  out-and-free exit  then
+        in-panic? found-her @ or if
+            found-her @ 0<> if  2 avoid-prompt  then
+            vr-spot-let-go  -1 vr-hiding-caught !  fiona hold-posed  pulled-back  0 pose-her!  exit
+        then
+        vr-hidden-calm  yield
+    again ;
+: vr-curtain-watch ( -- )
+    vr? 0= if  exit  then
+    vr-spot-inside? 0= if  exit  then
+    ['] vr-hides running? if  exit  then
+    ['] vr-hides start drop ;
 : hides ( -- )
     stalkers-stay state!  0 came-while-hidden !  fiona hold  fiona her-motions motions-for  fiona wait-move
     fiona $182 180 -67.8e -119.5e walk-to  fiona use-motions  curtain-in  fiona -1 idle
@@ -77,7 +95,8 @@ own: wall-seen  own: looked-round  own: spot-noticed  own: sounds-on  own: frame
     drop  room-sounds  0 ambient-step !  0 ambient-frames !
     wall-door closed-off? if  2 show-part  1 solid-floor floor-on  then
     om2f-8-flag1 fact? if  3 show-part  then
-    flame-fx 0 48.8e 10.3e -50.7e flame-at  1 $2300 reverb ;
+    flame-fx 0 48.8e 10.3e -50.7e flame-at  1 $2300 reverb
+    vr? if  0 1 s" Curtain" 0e morph  then ;   \ (the headset: the curtain starts open)
 : first-time ( -- )   \ (brought here the first time: Hewie by her, the doors shut behind, the spirits gone)
     fiona hold  hewie activate  old-mansion-2f-8 302 0 hewie-to
     $62 false open-mark  doors-redone  $62 lock  creatures-on state-off  spirits-gone  found-file-234 fact!
@@ -161,7 +180,7 @@ create looks  141.32e 0e -60.6e  20e 21e 21e look,   59.37e 0e 0.93e  20e 12e 12
     fiona $16 50 faces-area? if  ['] the-lamp unhurried offer  then
     fiona $17 in-area?  fiona 180 50 heading? and if  ['] the-hole unhurried offer  then
     fiona $18 in-area?  fiona 180 60 heading? and if
-        stalker-in? if  no-time-message offer-remark-now  else  ['] hides hiding-spot offer  then
+        stalker-in? if  no-time-message offer-remark-now  else  vr? 0= if  ['] hides hiding-spot offer  then  then
     then
     fiona $19 in-area?  fiona -30 50 heading? and if  ['] save-clock calm-hewie-up offer  then
     fiona $1A in-area?  fiona 90 60 heading? and if  ['] the-painting unhurried offer  then
@@ -170,6 +189,7 @@ create looks  141.32e 0e -60.6e  20e 21e 21e look,   59.37e 0e 0.93e  20e 12e 12
     1 locked-request?  fiona 0 before-door? and if  ['] water-in any-time offer  then
     om2f-8-camomile fact? 0=  fiona 48e 8e -53e 5e 5e touches? and if  ['] take-camomile calm-only offer  then
     om2f-8-lavender fact? 0=  fiona 53.1e 12e -26.2e 5e 5e touches? and if  ['] take-lavender calm-only offer  then
+    vr-curtain-watch
     shades ;
 : person-in ( i -- )
     case

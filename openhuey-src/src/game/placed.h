@@ -62,6 +62,12 @@ Placed *placed_named(PlacedSet *s, const char *name);
 void placed_anim(PlacedSet *s, Placed *p, int id, int loop);
 /* its animation's frame `frame` by hand, held there (the track stays loaded): the pose that frame gives */
 void placed_frame_set(PlacedSet *s, Placed *p, int frame);
+/* the pose the object's loaded track gives at a fractional frame: between the two keys either side,
+ * its turn's parts the shortest way round (a part driven from a closure, not a whole frame) */
+void placed_pose_at(const Placed *p, float frame, Vec3 *rot, Vec3 *pos);
+/* the same, by hand, held there: `rot` / `pos` set, the rounded frame stored (placed-frame@ reads
+ * it) and `paused` set, as placed_frame_set does - the track stays loaded */
+void placed_frame_set_f(PlacedSet *s, Placed *p, float frame);
 /* a tick: the animations step (PlacedObject_Animate) */
 void placed_tick(PlacedSet *s);
 /* its model placed in the room */
