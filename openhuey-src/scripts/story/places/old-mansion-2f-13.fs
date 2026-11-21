@@ -17,6 +17,7 @@ own: came-forward   \ in by the forced way: no going back (till the stalker's he
 own: drawing        \ her curtain under way
 own: smashing       \ Daniella at the mirror
 own: frames-in      \ the curtain's frames
+own: mirror-vr      \ (the headset: the curtain drawn by hand)
 0 constant medallion-fx   $1B constant glass-fx   0 constant her-motions   1 constant daniella-motions
 0 constant struggle-sound   1 constant smash-sound   5 constant smash-start-sound   $E00 constant smash-anim
 2 constant curtain-object   $E constant mirror-area
@@ -28,6 +29,22 @@ $1C constant scene-figure   $21 constant other-figure
 : curtain-by ( lo hi a b F: div -- )   \ ((frames - lo) / div, the frames kept to lo..hi)
     {: lo hi a b F: div :}  a b  frames-in @ lo max hi min lo - s>f div f/  curtain ;
 : drawn-back ( -- )  0 1 0e curtain ;   : drawn-across ( -- )  0 1 1e curtain ;
+
+\ ---- the headset: the curtain drawn by hand (the flag, the glass and the smash stay this room's) ----
+: vr-bare ( -- )  glass  struggle-sound room-bank fiona sound-by  om2f-13-flag1 fact! ;
+: vr-cover ( -- )  struggle-sound room-bank fiona sound-by  om2f-13-flag1 fact-off  glass-fx effect-off ;
+: vr-mirror-ok? ( loud? -- why )   \ (0 may be pulled; 1 no time, 2 broken, 3 smashing)
+    {: loud | why :}
+    0 to why
+    smashing @ if  3 to why  else  om2f-13-breakable-broken fact? if  2 to why  then  then
+    why 0=  stalker-in? and if
+        stalker mirror-area in-area?  fiona body-at stalker body-at vec-dist 40e f<=  or
+        if  1 to why  loud if  no-time-message offer-remark-now  then  then
+    then
+    why ;
+: vr-mirror-in ( -- )   \ (though her room is shown: the hand pulls it, the prompt steps aside)
+    vr? if  s" Curtain" ['] vr-mirror-ok? ['] vr-bare ['] vr-cover  vr-mirror-curtain  mirror-vr !  then ;
+
 : mirror-shown ( -- )
     om2f-13-breakable-broken fact? if  0 hide-part  1 show-part  glass-fx effect-off  0 water-floor floor-on  exit  then
     0 show-part  1 hide-part
@@ -35,7 +52,7 @@ $1C constant scene-figure   $21 constant other-figure
 : medallion-shows ( -- )
     om2f-13-rubrum-medallion-found fact?  om2f-13-rubrum-medallion fact? 0= and if  medallion-fx 88.5e 1e 71.56e flicker-at  then ;
 : came-in ( exit -- )
-    drop  room-sounds  curtain-object object-show  mirror-shown  medallion-shows  1 $3FFF reverb ;
+    drop  room-sounds  curtain-object object-show  mirror-shown  vr-mirror-in  medallion-shows  1 $3FFF reverb ;
 
 \ ---- her curtain: drawn back from the mirror, or across ----
 : pulls ( motion last lo hi a b F: div -- )   \ (her motion, its frames lo..hi the curtain's)
@@ -54,6 +71,9 @@ $1C constant scene-figure   $21 constant other-figure
         room-motion 1+ 28 12 28 0 1 16e pulls  drawn-across  om2f-13-flag1 fact-off  glass-fx effect-off
     then  0 drawing ! ;
 : the-shards ( -- )  fiona wait-move  fiona 90 turn  shattered-msg say ;
+: the-curtain-offer ( -- )   \ (the headset draws it by hand; the prompt steps aside)
+    mirror-vr @ if  exit  then
+    ['] the-curtain hiding-spot offer ;
 
 \ ---- Daniella in while the mirror's bare: she smashes it in a rage ----
 : smashes ( -- )
@@ -98,9 +118,9 @@ create entries  1 , 1 ,   1 , 1 ,   2 , 2 ,   0 , 0 ,   \ (by exit 0..3: the cam
     0 exit-open? 0=  came-forward @ and  fiona 0 before-door? and if  back-msg offer-remark-now  then
     smashing @ 0=  fiona mirror-area in-area? and  fiona 90 60 heading? and if
         om2f-13-breakable-broken fact? if  ['] the-shards unhurried offer
-        else  stalker-in? 0= if  ['] the-curtain hiding-spot offer
+        else  stalker-in? 0= if  the-curtain-offer
         else  stalker mirror-area in-area?  fiona body-at stalker body-at vec-dist 40e f<= or if  no-time-message offer-remark-now
-        else  ['] the-curtain hiding-spot offer  then  then  then
+        else  the-curtain-offer  then  then  then
     then
     om2f-13-rubrum-medallion-found fact?  om2f-13-rubrum-medallion fact? 0= and  fiona 88.5e 1e 71.56e 5e 5e touches? and if
         ['] take-medallion calm-only offer

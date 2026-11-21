@@ -16,7 +16,7 @@ own-reset
 1 constant water-msg       \ "The path is obstructed by water. I can't get through..."
 2 constant far-door-msg    \ "I can see a door on the other side. Maybe that is the way out of this hellish maze..."
 3 constant shattered-msg   \ "The glass has been shattered. This mirror is useless."
-own: water-remarked  own: drawing  own: smashing  own: frames-in  own: mirror-noticed
+own: water-remarked  own: drawing  own: smashing  own: frames-in  own: mirror-noticed  own: mirror-vr
 0 constant medallion-fx   $1B constant glass-fx   0 constant her-motions   1 constant daniella-motions
 0 constant struggle-sound   1 constant smash-sound   5 constant smash-start-sound   $E00 constant smash-anim
 $13 constant mirror-area   $26 constant scene-figure   3 constant figure-slot
@@ -27,6 +27,22 @@ $13 constant mirror-area   $26 constant scene-figure   3 constant figure-slot
 : curtain-by ( lo hi a b F: div -- )   \ ((frames - lo) / div, the frames kept to lo..hi)
     {: lo hi a b F: div :}  a b  frames-in @ lo max hi min lo - s>f div f/  curtain ;
 : drawn-back ( -- )  0 1 0e curtain ;   : drawn-across ( -- )  0 1 1e curtain ;
+
+\ ---- the headset: the curtain drawn by hand (the flag, the glass and the smash stay this room's) ----
+: vr-bare ( -- )  glass  struggle-sound room-bank fiona sound-by  om1f-11-flag1 fact! ;
+: vr-cover ( -- )  struggle-sound room-bank fiona sound-by  om1f-11-flag1 fact-off  glass-fx effect-off ;
+: vr-mirror-ok? ( loud? -- why )   \ (0 may be pulled; 1 no time, 2 broken, 3 smashing)
+    {: loud | why :}
+    0 to why
+    smashing @ if  3 to why  else  om1f-11-breakable-broken fact? if  2 to why  then  then
+    why 0=  stalker-in? and if
+        stalker mirror-area in-area?  fiona body-at stalker body-at vec-dist 40e f<=  or
+        if  1 to why  loud if  no-time-message offer-remark-now  then  then
+    then
+    why ;
+: vr-mirror-in ( -- )   \ (though her room is shown: the hand pulls it, the prompt steps aside)
+    vr? if  s" Curtain" ['] vr-mirror-ok? ['] vr-bare ['] vr-cover  vr-mirror-curtain  mirror-vr !  then ;
+
 : mirror-shown ( -- )
     om1f-11-breakable-broken fact? if  2 show-part  3 hide-part  glass-fx effect-off  4 water-floor floor-on  exit  then
     2 hide-part  3 show-part
@@ -38,7 +54,7 @@ $13 constant mirror-area   $26 constant scene-figure   3 constant figure-slot
 : medallion-shows ( -- )
     om1f-11-album-medallion-found fact?  om1f-11-album-medallion fact? 0= and if  medallion-fx 13.96e 51e -5.34e flicker-at  then ;
 : came-in ( exit -- )
-    drop  room-sounds  $11 1e background  floor-shown  mirror-shown  medallion-shows
+    drop  room-sounds  $11 1e background  floor-shown  mirror-shown  vr-mirror-in  medallion-shows
     8 $80808080  -8.7654e -7.4e -0.0072e  120e 0.5e 0.1e  effects:caustic drop
     1 $2300 reverb ;
 
@@ -59,6 +75,9 @@ $13 constant mirror-area   $26 constant scene-figure   3 constant figure-slot
         room-motion 1+ 28 12 28 0 1 16e pulls  drawn-across  om1f-11-flag1 fact-off  glass-fx effect-off
     then  0 drawing ! ;
 : the-shards ( -- )  fiona wait-move  fiona 0 turn  shattered-msg say ;
+: the-curtain-offer ( -- )   \ (the headset draws it by hand; the prompt steps aside)
+    mirror-vr @ if  exit  then
+    ['] the-curtain hiding-spot offer ;
 
 \ ---- Daniella at the bare mirror: she smashes it in a rage ----
 : shards-from ( F: x y z floor -- )  {: F: x y z fl :}  $20202020 4 7  x y z  0.4e 0e 0.2e 0.5e  fl shards ;
@@ -99,9 +118,9 @@ create ahead  4 , 0 ,   5 , 1 ,   \ (area, exit loaded ahead)
     smashing @ if  smash-given-up  exit  then
     fiona mirror-area in-area?  fiona 0 60 heading? and 0= if  exit  then
     om1f-11-breakable-broken fact? if  ['] the-shards unhurried offer  exit  then
-    stalker-in? 0= if  ['] the-curtain hiding-spot offer  exit  then
+    stalker-in? 0= if  the-curtain-offer  exit  then
     stalker mirror-area in-area?  fiona body-at stalker body-at vec-dist 40e f<= or if  no-time-message offer-remark-now  exit  then
-    ['] the-curtain hiding-spot offer ;
+    the-curtain-offer ;
 : each-frame ( -- )
     4 exits-out  cameras 4 cameras-at  ahead 2 ways-out  the-figure
     om1f-11-breakable-broken fact? 0=  om1f-11-flag1 fact? and if

@@ -3,11 +3,11 @@ Folder: F:\Haunting Ground VR Cursor\OpenHuey-master\openhuey-src\examples\mods\
 
 Wrote:
   F:\Haunting Ground VR Cursor\OpenHuey-master\openhuey-src\examples\mods\item-props\library\data\PROPS\triggers.txt  (22 boxes)
-  F:\Haunting Ground VR Cursor\OpenHuey-master\openhuey-src\examples\mods\item-props\library\data\PROPS\hidespots.txt  (12 boxes)
+  F:\Haunting Ground VR Cursor\OpenHuey-master\openhuey-src\examples\mods\item-props\library\data\PROPS\hidespots.txt  (14 boxes)
   F:\Haunting Ground VR Cursor\OpenHuey-master\openhuey-src\examples\mods\item-props\library\data\PROPS\levers.txt  (3 boxes)
 
-Found: 22 TRIG, 6 GRAB, 6 BOUND, 3 LEVER
-Hiding spots: ST_026 wardrobe, ST_04C ironmaiden, ST_050 wardrobe, ST_051 wardrobe, ST_05C curtain, ST_08E wardrobe
+Found: 22 TRIG, 7 GRAB, 7 BOUND, 3 LEVER
+Hiding spots: ST_014 curtain, ST_026 wardrobe, ST_04C ironmaiden, ST_050 wardrobe, ST_051 wardrobe, ST_05C curtain, ST_08E wardrobe
 
 WARNINGS (0):
   none

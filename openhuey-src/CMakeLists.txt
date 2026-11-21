@@ -159,7 +159,7 @@ add_executable(hga
     src/game/room.c src/game/console.c src/game/actor.c src/game/doglegs.c src/game/humanlegs.c src/game/vrhands.c src/game/vrbody.c src/game/gripposes.c src/game/loot.c src/game/itemprops.c src/game/chair.c src/game/cloth.c src/game/world.c
     src/game/camdirector.c src/game/areas.c src/game/exits.c src/game/messages.c src/game/cutscene.c src/game/placed.c src/game/sprites.c src/game/mods.c src/game/particles.c src/game/things.c src/game/obstacles.c src/game/swimpath.c src/game/rumble.c src/game/props.c
     src/game/sound3d.c src/game/vrspots.c src/game/triggerprobe.c src/game/triggers.c src/game/vrmarkers.c
-    src/game/vrspotprobe.c src/game/vrpath.c src/game/vrlevers.c
+    src/game/vrspotprobe.c src/game/vrpath.c src/game/vrlevers.c src/game/vrmirror.c
     src/forth/bind_engine.c)
 target_link_libraries(hga PRIVATE hgadata forth gamestate hactor SDL3::SDL3 whisper)
 if(HGA_HAVE_STEAMAUDIO)
@@ -281,7 +281,7 @@ add_test(NAME spu_check COMMAND spu-check)
 # vrhands.c's grabs call the hiding spots' and levers' modules, so they come along (their own readers
 # and the code that names a room); placed.c stays out - this check stubs the parts of it it needs.
 add_executable(hands-sweep-check tests/hands_sweep_check.c src/game/vrhands.c src/game/vrbody.c src/game/gripposes.c src/game/itemprops.c
-    src/game/vrspots.c src/game/vrlevers.c src/game/vrmarkers.c src/game/vrpath.c src/game/triggers.c)
+    src/game/vrspots.c src/game/vrlevers.c src/game/vrmirror.c src/game/vrmarkers.c src/game/vrpath.c src/game/triggers.c)
 target_link_libraries(hands-sweep-check PRIVATE hgadata forth)
 add_test(NAME hands_sweep_check COMMAND hands-sweep-check "${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/fiona-vr-rig/library")
 
@@ -324,6 +324,12 @@ add_test(NAME vrmarkers_check COMMAND vrmarkers-check)
 add_executable(vrspots-check tests/vrspots_check.c src/game/vrpath.c src/game/placed.c)
 target_link_libraries(vrspots-check PRIVATE hgadata)
 add_test(NAME vrspots_check COMMAND vrspots-check)
+
+# the curtained mirrors a hand draws: a fire once per crossing, a let-go springing back to its
+# flag's end, and a hiding spot's curtain never registered (vrmirror.c; the morph decode, placed.c)
+add_executable(vrmirror-check tests/vrmirror_check.c src/game/vrmirror.c src/game/vrpath.c src/game/placed.c)
+target_link_libraries(vrmirror-check PRIVATE hgadata forth)
+add_test(NAME vrmirror_check COMMAND vrmirror-check)
 
 # the movies' conversion: every SFD split as the import splits it - the same video packets, the same sound
 add_executable(movie-check tests/movie_check.c)

@@ -22,7 +22,7 @@ own-reset
 5 constant title-msg     \ "'Glowing Sun, Radiant Star, Luminescent Moonlight'"
 6 constant words-msg     \ "Glowing SUN, radiant STAR, MOONLIT sky... The words from the title are highlighted in red."
 own: locked-remarked  own: locked-2-remarked  own: drawing  own: smashing  own: frames-in  own: reads
-own: mirror-noticed  own: noticed-4  own: noticed-5  own: noticed-6
+own: mirror-noticed  own: noticed-4  own: noticed-5  own: noticed-6  own: mirror-vr
 0 constant viola-fx   1 constant rubrum-fx   2 constant magnesia-fx   $1B constant glass-fx
 0 constant struggle-sound   1 constant smash-sound   2 constant key-sound   5 constant smash-start-sound
 0 constant her-motions   1 constant daniella-motions   $E00 constant smash-anim   $1A constant mirror-area   $609 constant key-turn-anim
@@ -38,6 +38,22 @@ rubrum-vase $80101010 0 4 shard-look  rubrum-vase 0.5e 0.5e 0.25e 0.5e shard-uv 
 : curtain-by ( lo hi a b F: div -- )   \ ((frames - lo) / div, the frames kept to lo..hi)
     {: lo hi a b F: div :}  a b  frames-in @ lo max hi min lo - s>f div f/  curtain ;
 : drawn-back ( -- )  0 1 0e curtain ;   : drawn-across ( -- )  0 1 1e curtain ;
+
+\ ---- the headset: the curtain drawn by hand (the flag, the glass and the smash stay this room's) ----
+: vr-bare ( -- )  glass  struggle-sound room-bank fiona sound-by  omb1-2-flag1 fact! ;
+: vr-cover ( -- )  struggle-sound room-bank fiona sound-by  omb1-2-flag1 fact-off  glass-fx effect-off ;
+: vr-mirror-ok? ( loud? -- why )   \ (0 may be pulled; 1 no time, 2 broken, 3 smashing)
+    {: loud | why :}
+    0 to why
+    smashing @ if  3 to why  else  omb1-2-breakable3-broken fact? if  2 to why  then  then
+    why 0=  stalker-in? and if
+        stalker mirror-area in-area?  fiona body-at stalker body-at vec-dist 40e f<=  or
+        if  1 to why  loud if  no-time-message offer-remark-now  then  then
+    then
+    why ;
+: vr-mirror-in ( -- )   \ (though her room is shown: the hand pulls it, the prompt steps aside)
+    vr? if  s" Curtain" ['] vr-mirror-ok? ['] vr-bare ['] vr-cover  vr-mirror-curtain  mirror-vr !  then ;
+
 : mirror-shown ( -- )
     omb1-2-breakable3-broken fact? if  4 show-part  5 hide-part  glass-fx effect-off  2 water-floor floor-on  exit  then
     4 hide-part  5 show-part
@@ -58,6 +74,9 @@ rubrum-vase $80101010 0 4 shard-look  rubrum-vase 0.5e 0.5e 0.25e 0.5e shard-uv 
         room-motion 1+ 28 12 28 0 1 16e pulls  drawn-across  omb1-2-flag1 fact-off  glass-fx effect-off
     then  0 drawing ! ;
 : the-shards ( -- )  fiona wait-move  fiona 0 turn  shattered-msg say ;
+: the-curtain-offer ( -- )   \ (the headset draws it by hand; the prompt steps aside)
+    mirror-vr @ if  exit  then
+    ['] the-curtain hiding-spot offer ;
 
 \ ---- Daniella at the bare mirror: she smashes it in a rage ----
 : shards-from ( F: x y z floor -- )  {: F: x y z fl :}  $18181818 4 $B  x y z  0.4e 0e 0.2e 0.5e  fl shards ;
@@ -86,6 +105,7 @@ create flames  132.4e f, -16.6e f, -76.8e f,   85.7e f, -5.3e f, -16.8e f,   85.
     viola-vase as-it-stands  viola-vase broken? if  viola-shows  then
     rubrum-vase as-it-stands  rubrum-vase broken? if  rubrum-shows  then
     mirror-shown
+    vr-mirror-in
     omb1-2-refined-magnesia fact? 0= if  magnesia-fx -109.83e 12e 72.62e flicker-at  then
     4 0 do  i 3 +  1  flames i 3 * floats +  dup f@  dup float+ f@  2 floats + f@  flame-at  loop
     1 $2300 reverb ;
@@ -149,9 +169,9 @@ create far-looks  -101.62e 0e 100.21e  20e 6e 6e look,   -132.75e 0e 71.15e  20e
     smashing @ if  smash-given-up  exit  then
     fiona mirror-area in-area?  fiona 0 60 heading? and 0= if  exit  then
     omb1-2-breakable3-broken fact? if  ['] the-shards unhurried offer  exit  then
-    stalker-in? 0= if  ['] the-curtain hiding-spot offer  exit  then
+    stalker-in? 0= if  the-curtain-offer  exit  then
     stalker mirror-area in-area?  fiona body-at stalker body-at vec-dist 40e f<= or if  no-time-message offer-remark-now  exit  then
-    ['] the-curtain hiding-spot offer ;
+    the-curtain-offer ;
 : locked-doors ( -- )
     6 locked-request? 0= if  exit  then
     fiona 0 before-door? if  ['] unlocks-it any-time offer  then

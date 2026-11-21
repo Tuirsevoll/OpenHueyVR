@@ -30,6 +30,7 @@
 #include "vrbody.h"
 #include "vrspots.h"
 #include "vrlevers.h"
+#include "vrmirror.h"
 
 #include "engine.h"
 #include "progress.h"
@@ -77,6 +78,7 @@ void vrhands_take_times(unsigned *pose, unsigned *stop) {
 #define HOLD_WARD 4
 #define HOLD_SPOT 5   /* a hiding spot's hand: one part's handle scrubs the whole spot (vrspots.c) */
 #define HOLD_LEVER 6  /* a lever's hand: pulled along its handle's path (vrlevers.c) */
+#define HOLD_MIRROR 7 /* a curtained mirror's hand: the curtain scrubbed along its handle's path (vrmirror.c) */
 
 static int sHold[2], sHoldId[2], sDoorAxis[2];
 /* the hiding spot that hand scrubs: the part it took, the offset from that part's handle to the
@@ -87,8 +89,12 @@ static Vec3 sSpotOffset[2];
 static float sSpotC[2], sSpotSpeed[2];
 /* the lever that hand pulls: the offset from its handle to the hand (nothing jumps to it) */
 static Vec3 sLeverOffset[2];
+/* the mirror curtain that hand draws: the offset from its handle to the hand (nothing jumps to it) */
+static Vec3 sMirrorOffset[2];
 /* (DEBUG) the reason a spot's hand is ending, for the log line */
 static const char *sSpotWhy = "let-go";
+/* (DEBUG) the same for a mirror's curtain */
+static const char *sMirrorWhy = "let-go";
 /* (DEBUG) the spot's hand lines (defined with the other debug logs below) */
 static void spot_take_log(int id, const char *how, Vec3 at);
 static void spot_release_log(int id, const char *why);
@@ -1995,7 +2001,7 @@ static int nearest_prop(PlacedSet *s, Vec3 hand, int other, float *best) {
         float edge, d2;
 
         if (!p->shown || (other >= 0 && sHold[other] == HOLD_PROP && sHoldId[other] == i) || loot_claims_placed(i) ||
-            ward_leaf(p) || vrspot_placed_part(i) || vrlever_placed(i)) {   /* (a leaf, a spot's part or a lever is not carried) */
+            ward_leaf(p) || vrspot_placed_part(i) || vrlever_placed(i) || vrmirror_placed(i)) {   /* (a leaf, a spot's part, a lever or a mirror's curtain is not carried) */
             continue;
         }
         ext = vec3_sub(p->mesh.hi, p->mesh.lo);
@@ -2035,9 +2041,13 @@ static void release_hand(Room *r, int side) {
         vrspot_let_go(id, sSpotSpeed[side]);   /* (a spot still moving keeps its speed to the stop) */
     } else if (sHold[side] == HOLD_LEVER) {
         vrlever_let_go(id);   /* (a lever let go before home springs back to rest) */
+    } else if (sHold[side] == HOLD_MIRROR) {
+        vrmirror_log_release(id, sMirrorWhy);   /* (DEBUG: why the mirror's hand ended) */
+        vrmirror_let_go(id);   /* (a curtain let go eases to the end its flag has) */
     }
     sHold[side] = HOLD_NONE;
     sSpotWhy = "let-go";
+    sMirrorWhy = "let-go";
     sHoldDoor[side] = -1;
     sHoldFresh[side] = 0;
     sLadderHold[side] = -1;   /* (a hand let go of its ladder with whatever it held) */
@@ -2196,6 +2206,7 @@ void vrhands_drop_all(void) {
             loot_let_go(sHoldId[side], side);
         } else if (sHold[side] != HOLD_NONE) {
             sSpotWhy = "drop-all";
+            sMirrorWhy = "drop-all";
             release_hand(&gEngine.room, side);
         }
         sHold[side] = HOLD_NONE;
@@ -4068,11 +4079,14 @@ void vrhands_tick(Engine *e) {
         sDoorTick[0] = sDoorTick[1] = -1;
         sDoorHit[0] = sDoorHit[1] = -1;
         for (i = 0; i < 2; i++) {
-            if (sHold[i] == HOLD_SPOT || sHold[i] == HOLD_LEVER) {
+            if (sHold[i] == HOLD_SPOT || sHold[i] == HOLD_LEVER || sHold[i] == HOLD_MIRROR) {
                 if (sHold[i] == HOLD_SPOT) {
                     spot_release_log(sHoldId[i], "room");   /* (DEBUG) */
                 }
-                sHold[i] = HOLD_NONE;   /* (another room's spots and levers are not these) */
+                if (sHold[i] == HOLD_MIRROR) {
+                    vrmirror_log_release(sHoldId[i], "room");   /* (DEBUG) */
+                }
+                sHold[i] = HOLD_NONE;   /* (another room's spots, levers and mirror are not these) */
             }
         }
         sPushRoom = e->room.id;
@@ -4234,6 +4248,18 @@ void vrhands_tick(Engine *e) {
                     }
                 }
             }
+            /* then a curtained mirror's curtain: its handle's edge, wherever it is at the current c.
+             * (There is no GRAB box: the curtain itself is the handle.) */
+            if (sHold[side] == HOLD_NONE) {
+                float dMirror = 0.0f;
+                int mr = vrmirror_grab_edge(at, VRMIRROR_EDGE_R, &dMirror);
+
+                if (mr >= 0 && vrmirror_take(mr, at, &sMirrorOffset[side])) {
+                    sHold[side] = HOLD_MIRROR;
+                    sHoldId[side] = mr;
+                    vrmirror_log_take(mr, at);   /* (DEBUG) */
+                }
+            }
             door = -1;
             doorD = DOOR_REACH_MAX * DOOR_REACH_MAX;   /* (the widest reach a knob may be taken at) */
             for (i = 0; i < ROOM_DOORS; i++) {
@@ -4356,6 +4382,24 @@ void vrhands_tick(Engine *e) {
                     vrlever_complete(id);
                     vr_haptic(side, 0.7f, 0.12f);
                     release_hand(&e->room, side);
+                }
+            }
+        } else if (sHold[side] == HOLD_MIRROR) {
+            int id = sHoldId[side];
+
+            if (!vrmirror_scrubbable(id)) {
+                sMirrorWhy = vrmirror_script_owned(id) ? "script" : "other";
+                release_hand(&e->room, side);   /* (a script plays it now, or the room put it away) */
+            } else if (vrmirror_ok(id, 0) != 0) {
+                sMirrorWhy = "blocked";   /* (no time, broken or a smash: the room's own words say) */
+                release_hand(&e->room, side);
+            } else {
+                Vec3 target = vec3_sub(at, sMirrorOffset[side]);
+                float c = vrmirror_scrub(id, target, vrmirror_closure(id), VRMIRROR_WINDOW);
+
+                if (vrmirror_set(id, c) != 0) {   /* (a branch ran: one buzz a crossing) */
+                    vr_haptic(side, 0.5f, 0.09f);
+                    (void)vrmirror_fire_take(id);
                 }
             }
         }

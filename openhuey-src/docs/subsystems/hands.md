@@ -207,6 +207,49 @@ The flat screen is untouched: its button prompt and the scripted pull still run 
 lever's object is left to the script. In VR the place scripts' `vr-pulls-it` / `vr-lowers-it` run the
 very same event, in the same order, without Fiona's canned motion.
 
+## Drawing a curtain across a mirror
+
+Three rooms have a curtained mirror - old-mansion-1f-11 (ST_04E), b1-2 (ST_04B) and 2f-13 (ST_06A) -
+and each registers its own `Curtain` morph in `came-in`, `vr?` only, with `vr-mirror-curtain
+( addr len xt-ok xt-bare xt-cover -- ok )` (`src/game/vrmirror.c`). The curtain's t is the closure:
+0 drawn back (the mirror bare), 1 drawn across. Nothing is registered on the flat screen, where
+`the-curtain`, her walk and the `pulls` run as they always did.
+
+- **The grab** is the curtain itself, no box: a rising grip takes it when the hand is within 4 units
+  of its handle **horizontally** (x/z) with the hand's height inside the curtain's own world height
+  grown by 2, and the room's `ok?` says 0. `HOLD_MIRROR` keeps the offset from the handle to the
+  hand, so nothing jumps; each tick the hand's target is projected on the handle's path (33 samples,
+  ±0.25 of the closure, the same `vrpath` as the levers) and written as a 0, b 1, t c - exactly the
+  words `kit.fs`'s `morph` writes, so `mirror-shown` and the hand agree.
+- **Firing** is once per crossing: covered, drawn back to 0.20 or less runs the room's `bare`; bare,
+  drawn across to 0.80 or more runs its `cover`. Each buzzes the controller once. The flag therefore
+  only changes at the thresholds, so `smash-due` (Daniella's rage at a bare mirror) always sees a
+  clean state, and `drawing @` stays 0 throughout a VR pull.
+- **Let go** between the thresholds and the curtain eases to the end its flag has (0 bare, 1 covered)
+  in about 0.3 s - it never rests half-way. Let go at an end and it stays there.
+- **The room's own words**: `vr-bare ( -- )` is the open branch of `the-curtain` without her walk or
+  motion (`glass`, the struggle sound, the flag set); `vr-cover ( -- )` the shut one (the flag off,
+  the glass out). `vr-mirror-ok? ( loud? -- why )` is the gate, the same rule as the prompt's
+  `no-time-message` case: 0 may be pulled, 1 no time (a stalker in the mirror's area or within 40
+  units), 2 broken, 3 smashing. `loud?` asks for the no-time remark, so a blocked press says why
+  once, while a held pull asks silently.
+- While a hand holds it the gate is asked each tick: if a smash starts (or the mirror breaks, or he
+  comes) the hand lets go at once, and a script that plays the morph takes it the same way. A room
+  change or `hands-drop` drops the hold.
+- **The hiding spots are untouched.** A curtain that is a hiding spot's part is never registered
+  (the spots' own `vrspot_placed_part`, read-only, asked only when the room has a spot marker):
+  `vrmirror: <room> '<obj>' skipped (hiding spot)`. Neither ST_014 / ST_0E5 (`Cartain`, kept for a
+  hiding spot) nor ST_045 (a room part, no mirror) is registered anywhere.
+- **The prompt**: in VR each room's `the-curtain-offer` steps aside while its curtain is registered,
+  so the physical pull replaces the button; `the-shards` and the no-time remark stay as they were.
+
+The debug lines (`vr-mirror-debug!`, on by default) print, on entering each of the three rooms,
+`vrmirror: <room> '<obj>' registered c=.. bare=.. broken=.. handle c0 world(..) c1 world(..)`, then
+`take` / `release reason=..` / `fire bare|cover` / `spring-back` / `blocked: no time|broken|smashing`
+and the registration refusals. Tests: `tests/vrmirror_check.c` (a fire once per crossing, the
+spring to the flag's end, a spot's curtain refused) and `tests/story/test_vr_mirror.fs` (the room's
+branches and its gate).
+
 - **A held thing is drawn with the hand** (`src/game/loot.c`, "a held thing, drawn with the hand";
   `vrhands_hand_frame` in `src/game/vrhands.c`). The game moves at its 30 ticks a second, but a
   headset draws every frame it can, and her arms are posed afresh for each drawn frame (the pose
