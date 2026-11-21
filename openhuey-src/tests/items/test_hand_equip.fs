@@ -154,4 +154,20 @@ T{ 2 equipped -> magnesia }T
 2 game:items send slot-let-go deliver
 T{ 2 equipped  magnesia items-of -> -1 1 }T
 
+testing a remedy at her mouth: the same Use - the rule, one spent, the hand emptied (Part B)
+lavender 1 gives
+lavender equip-id
+T{ hand-item -> lavender }T
+mouth-use
+T{ hand-item  lavender items-of  calm-boost boost-on? -> -1 1 -1 }T
+
+testing ... Weltigo while its hush is on: the rule says nothing - nothing spent, it stays in hand
+weltigo 2 gives
+weltigo equip-id
+mouth-use
+T{ hand-item  weltigo items-of -> -1 1 }T
+weltigo equip-id
+mouth-use
+T{ hand-item  weltigo items-of -> weltigo 1 }T
+
 test-summary

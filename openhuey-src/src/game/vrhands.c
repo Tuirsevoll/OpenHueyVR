@@ -3679,6 +3679,80 @@ static void hand_item_log(void) {
     }
 }
 
+/* the mouth use (a remedy held to her mouth): how near the item must come, how long it must stay
+ * there, and the one-shot the scripts take (hand-mouth?) */
+#define MOUTH_DOWN_M 0.08f       /* the mouth is this far below the headset ... */
+#define MOUTH_FORWARD_M 0.05f    /* ... and this far in front of it, metres */
+#define MOUTH_NEAR_M 0.12f       /* the item this near the mouth point ... */
+#define MOUTH_HOLD_TICKS 9       /* ... this many ticks running (0.3 s at 30 a second) is a use */
+static int sMouthLast = -1;   /* the hand item the count was for (a change lets it fire again) */
+static int sMouthArmed = 1;   /* a mouth use may fire for this one (not since it did) */
+static int sMouthTicks;       /* the ticks it has been at the mouth running */
+static int sMouthFire;        /* the one-shot, waiting for the scripts (hand-mouth?) */
+
+/* metres in the room's units, as the body scales them (hand_length's own conversion) */
+static float metres_to_room(float m) {
+    float body = 1.0f;
+
+    vr_body(NULL, &body);
+    if (body < 0.2f) {
+        body = 1.0f;
+    }
+    return m * VR_UNITS_PER_METER / body;
+}
+
+/* A remedy held at her mouth: the headset's point less a little down and forward, the item's own
+ * place asked of vrhands_hand_item_at. Near it for the hold, once a hand item, a mouth use is
+ * raised and that controller pulses. Nothing while the world is held, nor while the hand item is
+ * not shown (a menu, a cutscene). */
+static void hand_item_mouth(void) {
+    Vec3 head, fwd, at, mouth, zero = vec3(0.0f, 0.0f, 0.0f);
+    float yaw, near, m, d;
+    int item = gEngine.hand_item;
+
+    if (item != sMouthLast) {   /* (another item - or none: the guard starts afresh) */
+        sMouthLast = item;
+        sMouthArmed = 1;
+        sMouthTicks = 0;
+    }
+    if (item < 0 || !sHand.shown || sHand.item != item || world_held() || !sMouthArmed) {
+        sMouthTicks = 0;
+        return;
+    }
+    if (!vr_head_at(&head) || !vr_head_forward(&fwd) || !vr_anchor_get(NULL, &yaw) ||
+        !vrhands_hand_item_at(&at)) {
+        sMouthTicks = 0;
+        return;
+    }
+    fwd = vec3_norm(play_to_world(zero, yaw, fwd));   /* (the headset's facing, in the room) */
+    near = metres_to_room(MOUTH_NEAR_M);
+    mouth = vec3(head.x + fwd.x * metres_to_room(MOUTH_FORWARD_M),
+                 head.y - metres_to_room(MOUTH_DOWN_M),
+                 head.z + fwd.z * metres_to_room(MOUTH_FORWARD_M));
+    d = vec3_len(vec3_sub(at, mouth));
+    if (d > near) {
+        sMouthTicks = 0;
+        return;
+    }
+    if (++sMouthTicks < MOUTH_HOLD_TICKS) {
+        return;
+    }
+    sMouthTicks = 0;
+    sMouthArmed = 0;
+    sMouthFire = 1;
+    vr_haptic(sHand.side, 0.25f, 0.08f);
+    m = metres_to_room(1.0f);
+    fprintf(stderr, "hands: mouth use - item %d at %.2f m, buzz %c\n", item, (double)(m > 0.0f ? d / m : 0.0f),
+            sHand.side == 0 ? 'L' : 'R');
+}
+
+int vrhands_mouth_take(void) {
+    int on = sMouthFire;
+
+    sMouthFire = 0;
+    return on;
+}
+
 /* a tick: is the hand item shown, and in which hand (the left in left-handed play, else the right;
  * the other one only when the preferred one is not tracked). The magnesia/antimony in slot 2 has
  * the hand instead, and nothing is shown while VR does not play (a menu, a cutscene - her eyes'
@@ -3691,6 +3765,7 @@ static void hand_item_tick(void) {
     if (item < 0 || !vr_active() || sDef.shown) {
         hand_item_hide();
         hand_item_log();
+        hand_item_mouth();
         return;
     }
     side = gVrOptions.left_handed ? 0 : 1;
@@ -3699,6 +3774,7 @@ static void hand_item_tick(void) {
         if (!sArmFound[side] || !hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
             hand_item_hide();
             hand_item_log();
+            hand_item_mouth();
             return;
         }
     }
@@ -3711,6 +3787,7 @@ static void hand_item_tick(void) {
     sHand.shown = 1;
     loot_preload_held(item, side);   /* (its model, off the render pass) */
     hand_item_log();
+    hand_item_mouth();   /* (a remedy held at her mouth: the one-shot hand-mouth? raises) */
 }
 
 /* where the hand item's model sits in the room - her wrist and the item's grip line, the matrix

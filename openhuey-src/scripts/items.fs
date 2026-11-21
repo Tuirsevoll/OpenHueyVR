@@ -510,6 +510,20 @@ defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
         then
     then ;
 
+\ her mouth's Use (the tick's, and the tests'): the hand item must be a remedy - the rule, one
+\ spent, the hand emptied (use-place). Baits and key things never come here.
+: mouth-use ( -- )
+    hand-item 0< if  exit  then
+    hand-item item-kind remedy = 0= if  exit  then
+    find-hand-place {: at :}
+    at 0= if  exit  then
+    at id@ {: id :}  at use-place swap drop {: r :}
+    ." items: remedy " id n>s type space
+    ." used at mouth (result " r n>s type [char] , emit space
+    id items-of n>s type space ." left)" cr ;
+\ ... and the one vrhands.c raises when a remedy was held at her mouth (hand-mouth?)
+: hand-mouth ( -- )  hand-mouth? if  mouth-use  then ;
+
 behaviour keeping-items
   on spawned ( -- )
       3 0 do  #places 0 do  j i held-at empty  loop  loop
@@ -518,7 +532,7 @@ behaviour keeping-items
       progress pr.boosts 8 /boost * 0 fill
       self subscribe tick  self subscribe hewie-doing  self subscribe fiona-doing  self subscribe leaving-room  self subscribe game-loaded ;
   on tick ( -- )   \ (the counters not while the world is frozen: Items_Update under flag $17)
-      world-frozen state-flag? panic-starting state-flag? or 0= if  count-up  then  cam-scene? 0= if  timed-effects run-down  then  hand-trigger ;
+      world-frozen state-flag? panic-starting state-flag? or 0= if  count-up  then  cam-scene? 0= if  timed-effects run-down  then  hand-trigger  hand-mouth ;
   \ (SceneGame's room change: everything heard full again - Weltigo's fade, if silent, only back
   \ as it fades in; and at the game's end)
   on leaving-room ( room exit -- )  2drop  1e world-volume! ;
