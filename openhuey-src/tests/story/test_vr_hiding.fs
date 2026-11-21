@@ -15,7 +15,10 @@ USING: tester engine game-state actors messages keys room-names game debug facts
 : outside ( -- )  14e 0e 33e put-at  2 run-frames ;
 : closure! ( pct -- )  vr-spot-closure!  4 run-frames ;
 : frames-both ( -- f f )  s" left_door" placed-frame@  s" right_door" placed-frame@ ;
-
+\ (the hide loop itself is the place's own doing: its start and end are the `vrspots: script vr-hides
+\  started|ended` lines castle-2f-12.fs prints, and the loop only starts on vr-spot-full? - so what
+\  these checks hold it to is the state it starts and stops by.)
+: loop-flag-set ( -- )  5 came-while-hidden ! ;
 free-play  10 run-frames
 true vr!
 s" ST_026 wardrobe bound 21.5715 12.6923 40.8213 3.8153 7.5129 11.7158 0.270598 -0.270598 0.653282 0.653281" marker
@@ -55,6 +58,26 @@ inside  100 closure!
 T{ hidden? -> -1 }T
 outside
 T{ hidden?  half?  vr-spot-inside? -> 0 0 0 }T
+
+testing inside with the doors open: nothing
+inside  0 closure!
+T{ hidden?  half?  vr-spot-full? -> 0 0 0 }T
+
+testing 86%: full
+inside  86 closure!
+T{ hidden?  vr-spot-full? -> -1 -1 }T
+
+testing 81%: still full, the gap opened again
+inside  81 closure!
+T{ hidden?  vr-spot-enclosed? -> -1 0 }T
+
+testing 79%: not full (half still, above the 40% rule)
+inside  79 closure!
+T{ hidden?  half?  vr-spot-full? -> 0 -1 0 }T
+
+testing outside with the doors shut: nothing
+outside  100 closure!
+T{ hidden?  half?  vr-spot-full?  vr-spot-inside? -> 0 0 0 0 }T
 
 testing the doorway: shut doors stop a step in, open ones let it through
 17.68e 0e 36.93e put-at  2 run-frames

@@ -72,7 +72,7 @@ create flames  -3.3e f, 31.4e f, -4.3e f,   -5.7e f, 31.4e f, 0.3e f,   -2.8e f,
 : vr-cabinet-hides ( -- )  shriek-sound hide-shriek !  the-cabinet hides-in-cabinet ;
 : vr-cabinet-watch ( -- )
     vr? 0= if  exit  then
-    vr-spot-inside? 0= if  exit  then
+    vr-spot-full? 0= if  exit  then   \ (inside with the doors open: no hiding yet)
     ['] vr-cabinet-hides running? if  exit  then
     ['] vr-cabinet-hides start drop ;
 : stalker-came ( -- )  the-cabinet cabinet-stalker-came ;

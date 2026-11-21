@@ -52,7 +52,10 @@ calibration changes it.
 - **A hiding spot's leaves** are marked `hiding_leaf` by `vr-hiding-spot` (`docs/subsystems/hiding.md`);
   `nearest_ward` takes either leaf of the spot, one per hand. A leaf's track may be format 8 (the
   turn) or 7 (the turn and the place, the hinge moving as it swings); both are scrubbed the same way,
-  so the right leaf of a pair is no longer inert.
+  so the right leaf of a pair is no longer inert. In the headset the marker spot's `HOLD_SPOT` takes
+  the leaf first by its **edge** (x/z only, any height along the door) and by the GRAB box as the
+  fallback, so the grab follows the door; with `vr-spot-debug!` on, the spot's hand prints
+  `vrspots: take '<spot>' by edge|box ...` and `vrspots: release '<spot>' reason=... ...`.
 - The room's draws are read as `room_touch` reads them: a batch with fewer than three vertices, the
   bloom mask, and a batch whose visibility group is hidden are left out.
 - A hand entering a wall, a leaf or a placed object buzzes its controller once

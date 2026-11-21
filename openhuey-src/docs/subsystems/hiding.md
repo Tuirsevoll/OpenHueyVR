@@ -50,17 +50,32 @@ its animation ends `c` is read back from the pose it left.
 
 ## Grabbing and scrubbing
 
-`HOLD_SPOT` in `vrhands.c`: a rising grip takes the spot when the hand is inside its GRAB box grown by
-1 unit, or within 3 units of a part's handle (the vertex that travels furthest), wherever that handle
-is at the current pose. The hand keeps an offset from the handle, so nothing jumps; each tick the
-hand's target is projected on the handle's path (`game/vrpath.c`) within ±0.25 of the current closure,
-and the result poses every part. A stop (0 or 1) buzzes once. Letting go faster than 0.02 a tick keeps
-that speed to the stop. A spot's parts are never carried as props nor taken as exit doors.
+`HOLD_SPOT` in `vrhands.c`: a rising grip takes the spot **by a part's edge first** - the hand within
+`VRSPOT_EDGE_R` (4.0) of the part's handle **horizontally** (x/z only), with the hand's height inside
+the part's own world bounds grown by 2 (the BOUND's height when the part has no bounds). The handle is
+where it is at the current pose, so an opened door is grabbed at its open edge and a shut one at its
+shut edge: the grab follows the door. The GRAB box grown by 1 unit stays as the fallback. The hand
+keeps an offset from the handle, so nothing jumps; each tick the hand's target is projected on the
+handle's path (`game/vrpath.c`, `vrpath_edge_gap` is the same x/z rule) within ±0.25 of the current
+closure, and the result poses every part. A stop (0 or 1) buzzes once. Letting go faster than 0.02 a
+tick keeps that speed to the stop. A spot's parts are never carried as props nor taken as exit doors.
+
+A morph part (the curtain) is read and written through its own three words; a script's takeover is
+judged by the **weight** they make (`w = (b == 1 ? t : 0) + (a == 1 ? 1 - t : 0)`, within 0.01), so
+our own write - or a swap of a/b, or a wrapped t - never looks like a script's.
 
 `vr-spot-closure` (0..100) reads the active spot's closure; `vr-spot-closure!` sets it (tests,
 console); `vr-spot-let-go` makes any hand let go (a script about to play the spot); `vr-spot-debug!`
-turns on the debug lines (the misses `vrspots: miss <spot> at(x,y,z) edge-dist D grab-dist G`, and the
-first fade).
+turns on the debug lines:
+
+- `vrspots: take '<spot>' by box|edge c C hand (x y z)` and `vrspots: release '<spot>' reason R c C`
+  (`let-go`, `script-anim`, `morph-words-changed`, `room`, `drop-all`, `other`);
+- `vrspots: <room> '<spot>' state inside F full F half F enclosed F c C` on a change;
+- `vrspots: script <word> started|ended`, `vrspots: flag fiona-hidden on|off`, `vrspots: avoid-prompt`;
+- `vrspots: fade <part> idx I alpha A layer L shown S draws N` and, per draw, its blend / additive /
+  mask / no_zwrite / solid_tex / group and its vertex-alpha range;
+- `vrspots: edge '<spot>' part K <name> handle(x y z) c C` once per grip press near a spot;
+- `vrspots: miss <spot> at(x,y,z) edge-dist D grab-dist G`.
 
 ## The hidden state
 
@@ -70,7 +85,14 @@ first fade).
 - **Full** while inside and `c ≥ 0.85` (once full it holds down to 0.80); **half** while inside and
   `c > 0.40`; **enclosed** at `c ≥ 0.995`. Outside the BOUND all clear at once.
 - `kit.fs` `vr-hiding-flags` sets `fiona-hidden` / `fiona-half-hidden`, the avoid prompts and
-  `no-stalker-camera` from those, unchanged; a discovery (`found-her`, held) still owns them.
+  `no-stalker-camera` from those, unchanged; a discovery (`found-her`, held) still owns them. The
+  hiding prompt (`0 avoid-prompt`) and `vr-hiding-on` are set only on the tick she becomes **full**:
+  inside with the doors or the curtain open is not hidden, and shows no prompt.
+- Every headset watcher (`vr-wardrobe-watch` in castle-2f-12, `vr-cabinet-watch` in old-mansion-b1-4,
+  b1-5 and 1f-22, `vr-curtain-watch` in old-mansion-2f-8) starts its hiding loop only on
+  `vr-spot-full?`, and each loop leaves by its own exit path when `vr-spot-inside? 0=` **or**
+  `vr-spot-full? 0=`; the C hysteresis keeps full down to 0.80. `vr-hidden-calm` runs only while full.
+  The discoveries inside those loops (found, panicking, held) are as they were.
 
 ## Getting in and out
 
@@ -90,8 +112,11 @@ first fade).
 `vr.hide-door` (default on): inside, full, the active spot's parts are drawn at alpha 0.5. Every part,
 in every room - the old cabinet doors went fully invisible because a faded placed part blended with
 its vertices' and texture's alpha (the PS2 never blended those, so their alpha is often 0):
-`placed_draw` now fades them through `render_mesh_alpha_solid`, whose solid draws use exactly 0.5 and
-ignore the vertex and texture alpha (cut-out, additive and bloom-mask draws keep their own).
+`placed_draw` fades them through `render_mesh_alpha_solid`, whose solid draws use exactly 0.5 and
+ignore the vertex **and texture** alpha (`U_SOLID_TEX` is forced on for them, as well as
+`u_fade_solid`; cut-out, additive and bloom-mask draws keep their own). A fade line in the debug log
+prints, for each part, its alpha, layer, `shown` and every draw's flags, so a part that is not drawn
+like its room's siblings can be told at once.
 
 ## Scripts
 
@@ -113,15 +138,17 @@ watches the curtain spot (`vr-curtain-watch` / `vr-hides`, as the nursery's), op
 | `vr-spot-noclip?` / `vr-spot-step ( F: dx dz -- dx' dz' )` | her step at the spot: the doorway rule |
 | `vr-spot-release ( on -- )` | a discovery has her: no state, noclip or clamp until she is outside again |
 | `vr-spot-let-go ( -- )` | any hand on a spot lets go (a script plays it) |
-| `vr-spot-debug! ( on -- )` | the spot's debug lines (the misses and the first fade; on at start, `0` off) |
+| `vr-spot-debug! ( on -- )` | the spot's debug lines (take / release, state, script, flag, fade, edge, miss; on at start, `0` off) |
 | `vr-hiding-flags` | once a frame: the flags, the prompt, `no-stalker-camera` |
 
 ## Status
 
 Built and tested headless: `tests/story/test_vr_hiding.fs` (the nursery's marker spot: one closure for
-both panels, the 85/80 hysteresis, 90% full but not enclosed, the BOUND's footprint, the doorway rule
-in and out), `tests/story/test_vr_hiding_cabinets.fs` (the two cabinets' marker spots, the old
-mansion's marker-less 1f-22 cabinet, and the curtain enterable at entry) and `tests/vrspots_check.c`
-(the handle path's projection and a fractional frame's pose). The markers are injected with
-`vr-markers-line`, the same parser the file is read with.
+both panels, the 85/80 hysteresis, inside with the doors open at nothing, 86% full, 81% still full,
+79% not full while half, 90% full but not enclosed, outside with the doors shut at nothing, the
+BOUND's footprint, the doorway rule in and out), `tests/story/test_vr_hiding_cabinets.fs` (the two
+cabinets' marker spots, the old mansion's marker-less 1f-22 cabinet, and the curtain enterable at
+entry) and `tests/vrspots_check.c` (the handle path's projection, the edge grab's x/z distance for a
+track part and a morph part at c = 0 and c = 1, the height rule, and a fractional frame's pose). The
+markers are injected with `vr-markers-line`, the same parser the file is read with.
 

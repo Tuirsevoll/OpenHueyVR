@@ -366,22 +366,23 @@ create cameras  4 , 1 , -1 ,   5 , 0 , 0 ,   \ (area, set, path)
 create ahead  2 , 0 ,   3 , 1 ,   \ (area, exit)
 create entries  1 , -1 ,   1 , -1 ,   \ (by exit 0, 1: the camera)
 : vr-hides ( -- )   \ (the headset: she walked in; watch her, and the place's own search takes over)
+    ." vrspots: script vr-hides started" cr
     0 came-while-hidden !  0 stage !  0 shaking !  open? 0= first-time !  0 hide-step !  0 hewie-along !  0 hewie-in-place !  0 left-in-panic !  0 vr-hiding-chased !
     fiona her-motions motions-for  stalker stalker-motions motions-for
     begin
-        vr-spot-inside? 0= if  out-and-free exit  then
+        vr-spot-inside? 0= vr-spot-full? 0= or if  ." vrspots: script vr-hides ended" cr  out-and-free exit  then
         stage @ 1 = debilitas? and if
             0 shaking !  seized-sound common-bank fiona sound-by  -1 vr-hiding-caught !
-            fiona hold-posed  dragged-out  0 pose-her!  exit
+            fiona hold-posed  dragged-out  0 pose-her!  ." vrspots: script vr-hides ended" cr  exit
         then
-        in-panic? if  -1 vr-hiding-caught !  fiona hold-posed  out-in-panic  0 pose-her!  exit  then
-        found-her @ 0<> if  -1 vr-hiding-caught !  exit  then   \ (the place's own finds-her starts the exit)
-        vr-hidden-calm  yield
+        in-panic? if  -1 vr-hiding-caught !  fiona hold-posed  out-in-panic  0 pose-her!  ." vrspots: script vr-hides ended" cr  exit  then
+        found-her @ 0<> if  -1 vr-hiding-caught !  ." vrspots: script vr-hides ended" cr  exit  then   \ (the place's own finds-her starts the exit)
+        vr-spot-full? if  vr-hidden-calm  then  yield
     again ;
 ' vr-hides is vr-hides-do
 : vr-wardrobe-watch ( -- )
     vr? 0= if  exit  then
-    vr-spot-inside? 0= if  exit  then
+    vr-spot-full? 0= if  exit  then   \ (inside with the doors open: no hiding yet)
     ['] vr-hides running? if  exit  then
     ['] vr-hides start drop ;
 

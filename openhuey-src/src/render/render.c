@@ -1070,6 +1070,9 @@ void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, c
         const MeshDraw *x = &d[i];
         GLuint tex = x->texture >= 0 && x->texture < ntextures ? textures[x->texture] : 0;
         int coverage = multisampled && tex != 0 && !x->blend && !x->additive && !faded;
+        /* (a faded placed part's solid draws: its own alpha alone - the texture's is ignored too, so
+         * no data alpha can vanish it) */
+        int fsolid = sFadeSolid && !x->blend && !x->additive && !x->mask;
 
         if (x->group != 0 && !(groups[x->group >> 5] >> (x->group & 31) & 1)) {
             continue;
@@ -1093,12 +1096,11 @@ void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, c
         glColorMaski(1, GL_TRUE, x->no_zwrite || x->mask ? GL_FALSE : GL_TRUE, GL_FALSE, GL_FALSE);
         glProgramUniform1f(R.mesh_prog, U_MASK, x->mask ? 1.0f : 0.0f);
         glProgramUniform1i(R.mesh_prog, U_USE_TEX, tex != 0);
-        glProgramUniform1i(R.mesh_prog, U_SOLID_TEX, x->solid_tex);
+        glProgramUniform1i(R.mesh_prog, U_SOLID_TEX, fsolid ? 1 : x->solid_tex);
         glProgramUniform1i(R.mesh_prog, U_LIT, x->lit);
         glProgramUniform1i(R.mesh_prog, U_COVERAGE, coverage);
         glProgramUniform1i(R.mesh_prog, U_RECEIVE, !x->mask);
-        glProgramUniform1f(R.mesh_prog, U_FADE_SOLID,
-                           sFadeSolid && !x->blend && !x->additive && !x->mask ? 1.0f : 0.0f);
+        glProgramUniform1f(R.mesh_prog, U_FADE_SOLID, fsolid ? 1.0f : 0.0f);
         glBindTextureUnit(0, tex);
         glDrawArrays(GL_TRIANGLES, x->first, x->count);
         if (x->mask) {

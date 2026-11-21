@@ -1425,16 +1425,18 @@ variable vr-hiding-chased   \ (she hid while a stalker chased her: the coast cle
     0 vr-spot-release
     vr-spot-active? 0= if  vr-hiding-on @ if  vr-hiding-clear  then  exit  then
     vr-spot-inside? 0= if  0 vr-hiding-caught !  vr-hiding-on @ if  vr-hiding-clear  then  exit  then
-    vr-hiding-on @ 0= if  0 avoid-prompt  then   \ (the hiding prompt once, a second: not re-shown)
-    -1 vr-hiding-on !
     vr-hiding-busy? if  exit  then
-    vr-spot-full? if
-        fiona-hidden state!  vr-half-clear
-    else
-        fiona-hidden state-off
-        vr-spot-half? if  fiona-half-hidden state!  else  vr-half-clear  then
+    vr-spot-full? 0= if   \ (inside with the doors or the curtain open: no hiding, and no prompt)
+        vr-hiding-on @ if  vr-hiding-clear  then
+        fiona-hidden state? if  fiona-hidden state-off  ." vrspots: flag fiona-hidden off" cr  then
+        vr-spot-half? if  fiona-half-hidden state!  vr-hiding-cam-on  else  vr-half-clear  vr-hiding-cam-off  then
+        exit
     then
-    vr-spot-full? vr-spot-half? or if  vr-hiding-cam-on  else  vr-hiding-cam-off  then ;
+    vr-hiding-on @ 0= if  0 avoid-prompt  ." vrspots: avoid-prompt" cr  then   \ (the hiding prompt once, on becoming full)
+    -1 vr-hiding-on !
+    fiona-hidden state? 0= if  fiona-hidden state!  ." vrspots: flag fiona-hidden on" cr  then
+    vr-half-clear
+    vr-hiding-cam-on ;
 
 \ ---- a hiding place (the rooms' cupboards and wardrobes): she walks to it, slips in and lies low,
 \ calming; out by the circle button - or, found (or panicking, or he is in), hauled out. The room's
@@ -1592,18 +1594,20 @@ variable cab-searched
         then
     again ;
 : vr-hides-in-cabinet ( cb -- )   \ (the headset: she walked in; watch her, the place's search as it is)
-    {: a :}  a cab !
+    {: a :}  ." vrspots: script vr-hides-in-cabinet started" cr  a cab !
     0 came-while-hidden !  0 cab-stage !  0 cab-held !  a cb.fact @ fact? cab-closed !  0 cab-steps !  0 cab-dog !  0 cab-dog-in !  0 cab-burst !  0 vr-hiding-chased !
     begin
-        vr-spot-inside? 0= if  0 barred-floor floor-off  out-and-free exit  then
+        vr-spot-inside? 0= vr-spot-full? 0= or if
+            0 barred-floor floor-off  ." vrspots: script vr-hides-in-cabinet ended" cr  out-and-free exit
+        then
         cab-stage @ 1 = if
             -1 vr-hiding-caught !
             fiona hold-posed
             stalker-in? if  cab-pulled-out  else  cab-steps-out  then
-            0 pose-her!  exit
+            0 pose-her!  ." vrspots: script vr-hides-in-cabinet ended" cr  exit
         then
-        in-panic? if  -1 vr-hiding-caught !  fiona hold-posed  cab-bursts-out  0 pose-her!  exit  then
-        vr-hidden-calm  yield
+        in-panic? if  -1 vr-hiding-caught !  fiona hold-posed  cab-bursts-out  0 pose-her!  ." vrspots: script vr-hides-in-cabinet ended" cr  exit  then
+        vr-spot-full? if  vr-hidden-calm  then  yield
     again ;
 : hides-in-cabinet ( cb -- )   \ (a place's doing: in it, lying low)
     vr? if  vr-hides-in-cabinet  exit  then

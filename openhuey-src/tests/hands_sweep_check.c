@@ -104,6 +104,16 @@ Placed *placed_named(PlacedSet *s, const char *name) {
     return NULL;   /* (no room here: no placed object to name) */
 }
 
+/* placed.c's renderer layer by the object's name, line for line (the fade check reads it) */
+int placed_layer(const struct Placed *p) {
+    char c = p->name[0] | 0x20;
+
+    if (p->alpha < 1.0f) {
+        return 0x19;
+    }
+    return p->name[1] != '_' ? 1 : c == 'g' ? 0x26 : c == 'a' ? 0x19 : 1;
+}
+
 /* src/game/placed.c placed_world, line for line: scaled, turned about X, then Y, then Z, then
  * placed (the original's obj_mvp). The check does not link placed.c, so it stands in here - the
  * same fields of the same object, so a placed thing's real place and turn are used. */

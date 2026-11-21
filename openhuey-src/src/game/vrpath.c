@@ -45,3 +45,29 @@ float vrpath_project(const Vec3 *path, int n, Vec3 target, float c_now, float wi
     }
     return best < 0.0f ? 0.0f : best > 1.0f ? 1.0f : best;
 }
+
+float vrpath_edge_gap(const Vec3 *path, int n, float c, Vec3 at, float y_lo, float y_hi) {
+    Vec3 h;
+    float f, dx, dz;
+    int i0, i1;
+
+    if (path == NULL || n < 1 || at.y < y_lo || at.y > y_hi) {
+        return -1.0f;
+    }
+    if (c < 0.0f) {
+        c = 0.0f;
+    } else if (c > 1.0f) {
+        c = 1.0f;
+    }
+    f = c * (float)(n - 1);
+    i0 = (int)f;
+    if (i0 >= n - 1) {
+        h = path[n - 1];
+    } else {
+        i1 = i0 + 1;
+        h = vec3_add(path[i0], vec3_scale(vec3_sub(path[i1], path[i0]), f - (float)i0));
+    }
+    dx = at.x - h.x;
+    dz = at.z - h.z;
+    return sqrtf(dx * dx + dz * dz);
+}

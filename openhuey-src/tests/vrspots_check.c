@@ -77,6 +77,29 @@ int main(void) {
     CHECK("both ends clamp", near(vrpath_project(line, 33, vec3(-9, 0, 0), 0.0f, 0.25f), 0.0f) &&
                                  near(vrpath_project(line, 33, vec3(99, 0, 0), 1.0f, 0.25f), 1.0f));
 
+    {   /* the edge grab's distance: x/z only, any height along the door (a morph's path as well as a
+         * track's) - never -1 when the hand is in front of the door's own height */
+        Vec3 morph[33], track[33];
+        Vec3 at;
+
+        for (i = 0; i < 33; i++) {
+            float t = (float)i / 32.0f;
+
+            track[i] = vec3(23.0f * t, 10.0f, 0.0f);                     /* (a swing along x) */
+            morph[i] = vec3(-60.438f - 5.234f * t, 12.984f, -123.686f);  /* (the curtain's own line) */
+        }
+        at = vec3(1.0f, 0.0f, 1.0f);   /* (a hand at chest height, 1 and 1 away in x/z) */
+        CHECK("the edge grab's distance at c = 0 and c = 1, a track part",
+              vrpath_edge_gap(track, 33, 0.0f, at, -14.0f, 26.0f) >= 0.0f &&
+                  vrpath_edge_gap(track, 33, 1.0f, vec3(22.0f, 0.0f, 1.0f), -14.0f, 26.0f) >= 0.0f);
+        CHECK("the edge grab's distance at c = 0 and c = 1, a morph part",
+              fabsf(vrpath_edge_gap(morph, 33, 0.0f, vec3(-59.438f, 0.0f, -123.686f), -16.0f, 30.0f) - 1.0f) < 0.001f &&
+                  fabsf(vrpath_edge_gap(morph, 33, 1.0f, vec3(-64.672f, 20.0f, -123.686f), -16.0f, 30.0f) - 1.0f) <
+                      0.001f);
+        CHECK("out of the door's height the edge grab gives none",
+              vrpath_edge_gap(track, 33, 0.5f, vec3(11.0f, 40.0f, 0.0f), -14.0f, 26.0f) < 0.0f);
+    }
+
     memset(&p, 0, sizeof(p));
     for (i = 0; i < 44; i++) {   /* (a track of 44 frames, its turn y = 0.1 a frame) */
         float zero = 0.0f, y = 0.1f * (float)i;

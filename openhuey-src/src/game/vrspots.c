@@ -45,6 +45,7 @@ typedef struct VrSpot {
     int nparts;
     float c;           /* the one closure: 0 open .. 1 closed */
     int script_owned;  /* a script is playing the parts: hands off until it ends */
+    int script_morph;  /* (the change that took it was a morph's words: the debug reason) */
     int idle;          /* (a morph the script left alone: ticks unchanged) */
     int coast;         /* 1: c keeps its speed to the end it was heading for */
     float coast_speed;
@@ -75,6 +76,8 @@ static int sReleased;
 static Vec3 sHere;
 static int sHereHave;
 static int sDebug = 1;   /* (the spots' debug lines: the misses and the first fade - `0 vr-spot-debug!` off) */
+/* (DEBUG) her state at each spot as the last tick left it: the change the state line reports) */
+static int sWasInside[VRSPOT_MAX], sWasFull[VRSPOT_MAX], sWasHalf[VRSPOT_MAX], sWasEnclosed[VRSPOT_MAX];
 
 static void spot_log(const char *fmt, ...) {
     char msg[512];
@@ -117,6 +120,14 @@ static float wrap_rad(float a) {
 }
 
 static float clamp01(float v) { return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v; }
+
+/* a morph's weight w from its three words: (b == 1 ? t : 0) + (a == 1 ? 1 - t : 0) */
+static float morph_weight(uint32_t a, uint32_t b, uint32_t t_bits) {
+    float t = 0.0f;
+
+    memcpy(&t, &t_bits, 4);
+    return clamp01(((int)b == 1 ? t : 0.0f) + ((int)a == 1 ? 1.0f - t : 0.0f));
+}
 
 /* ---- the boxes (vrmarkers.c): a point in a box's own space, its up axis, and the tests on it ---- */
 
@@ -221,6 +232,26 @@ static float box_gap(const VrBox *b, Vec3 p) {
         }
     }
     return sqrtf(d);
+}
+
+/* the box's own world y range (its eight corners): the height a hand may reach a spot at when its
+ * part has no bounds of its own */
+static void box_y_range(const VrBox *b, float *lo, float *hi) {
+    int i;
+
+    *lo = 1.0e30f;
+    *hi = -1.0e30f;
+    for (i = 0; i < 8; i++) {
+        Vec3 c = vrbox_to_room(b, vec3(i & 1 ? b->h[0] : -b->h[0], i & 2 ? b->h[1] : -b->h[1],
+                                       i & 4 ? b->h[2] : -b->h[2]));
+
+        if (c.y < *lo) {
+            *lo = c.y;
+        }
+        if (c.y > *hi) {
+            *hi = c.y;
+        }
+    }
 }
 
 /* the object's room bounds: every vertex through placed_world, the transform it is drawn with */
@@ -505,8 +536,12 @@ static int part_changed(const VrSpot *s, int i) {
         return 0;
     }
     if (pt->morph) {
-        return p->words[0x74 / 4] != s->words[i][0] || p->words[0x78 / 4] != s->words[i][1] ||
-               p->words[0x7C / 4] != s->words[i][2];
+        /* (the weight alone: a script's or placed_tick's swap of a/b, or its wrapping of t, is not
+         * a change - our own write must never look like a script's) */
+        float ww = morph_weight(s->words[i][0], s->words[i][1], s->words[i][2]);
+        float wn = morph_weight(p->words[0x74 / 4], p->words[0x78 / 4], p->words[0x7C / 4]);
+
+        return fabsf(wn - ww) > 0.01f;
     }
     return p->keys != s->keys[i] || p->frames != s->frames[i] || !p->paused || p->frame != s->frame[i];
 }
@@ -516,11 +551,7 @@ static float part_read_c(const VrPart *pt) {
     Placed *p = &cur_set()->p[pt->id];
 
     if (pt->morph) {   /* (w = (b == 1 ? t : 0) + (a == 1 ? 1 - t : 0), as kit.fs's blend) */
-        int a = (int)p->words[0x74 / 4], b = (int)p->words[0x78 / 4];
-        float t = 0.0f;
-
-        memcpy(&t, &p->words[0x7C / 4], 4);
-        return clamp01((b == 1 ? t : 0.0f) + (a == 1 ? 1.0f - t : 0.0f));
+        return morph_weight(p->words[0x74 / 4], p->words[0x78 / 4], p->words[0x7C / 4]);
     }
     {
         Placed own = *p;
@@ -1056,59 +1087,74 @@ static int spot_bound_inside(const VrSpot *s, Vec3 feet) {
     return box_footprint(&s->bound, feet, 0.3f) && box_height(&s->bound, hip, 2.0f);
 }
 
-/* the first fade of the active spot: what each part is drawn with, once (the see-through check) */
-static void spot_fade_log(VrSpot *s) {
-    int i;
+/* (DEBUG) her state at the spot changed: one line */
+static void spot_state_log(const VrSpot *s) {
+    char room[16];
 
-    if (!sDebug || s->fade_logged) {
+    spot_room_name(room, sizeof(room));
+    spot_log("vrspots: %s '%s' state inside=%d full=%d half=%d enclosed=%d c=%.3f\n", room, s->name, s->inside,
+             s->full, s->half, s->enclosed, (double)s->c);
+}
+
+/* (DEBUG) a part's alpha changed: its layer, whether it is drawn, and every draw's own flags and
+ * alpha ranges (the texture's alpha is not readable from here: the draw holds its GPU id) */
+static void spot_fade_line(const VrSpot *s, int i, float a) {
+    Placed *p = &cur_set()->p[s->part[i].id];
+    int d;
+
+    spot_log("vrspots: fade %s idx %d alpha %.2f layer %d shown %d draws %d\n", p->name, i, (double)a,
+             placed_layer(p), p->shown, p->mesh.nd);
+    for (d = 0; d < p->mesh.nd; d++) {
+        const MeshDraw *x = &p->mesh.d[d];
+        int k, n = x->count, amin = 255, amax = 0;
+
+        for (k = x->first; k < x->first + x->count && k < p->mesh.nv; k++) {
+            int va = p->mesh.v[k].rgba[3];
+
+            if (va < amin) {
+                amin = va;
+            }
+            if (va > amax) {
+                amax = va;
+            }
+        }
+        if (n <= 0 || amin > amax) {
+            amin = amax = 0;
+        }
+        spot_log("vrspots: fade %s idx %d draw %d blend %d additive %d mask %d no_zwrite %d solid_tex %d group %d "
+                 "tex alpha ?/? vertex alpha %d/%d\n",
+                 p->name, i, d, x->blend, x->additive, x->mask, x->no_zwrite, x->solid_tex, x->group, amin, amax);
+    }
+}
+
+/* (DEBUG) every part of that spot and its handle's place now: once per grip press near it */
+void vrspot_log_edge(int id) {
+    VrSpot *s;
+    int k;
+
+    if (!sDebug || id < 0 || id >= sNSpots || !sSpots[id].used) {
         return;
     }
-    s->fade_logged = 1;
-    for (i = 0; i < s->nparts; i++) {
-        Placed *p = &cur_set()->p[s->part[i].id];
-        int d, n = 0, blend = 0, solid = 0, mask = 0, add = 0, amin = 255, amax = 0;
+    s = &sSpots[id];
+    for (k = 0; k < s->nparts; k++) {
+        Vec3 h = part_vertex(&s->part[k], s->part[k].handle, s->c);
 
-        for (d = 0; d < p->mesh.nd; d++) {
-            const MeshDraw *x = &p->mesh.d[d];
-
-            n++;
-            if (x->blend) {
-                blend++;
-            }
-            if (x->solid_tex) {
-                solid++;
-            }
-            if (x->mask) {
-                mask++;
-            }
-            if (x->additive) {
-                add++;
-            }
-        }
-        for (d = 0; d < p->mesh.nv; d++) {
-            int a = p->mesh.v[d].rgba[3];
-
-            if (a < amin) {
-                amin = a;
-            }
-            if (a > amax) {
-                amax = a;
-            }
-        }
-        spot_log("vrspots: fade %s draws %d: blend %d solid_tex %d mask %d additive %d tex alpha ?/? "
-                 "vertex alpha %d/%d\n",
-                 p->name, n, blend, solid, mask, add, amin, amax);
+        spot_log("vrspots: edge '%s' part %d %s handle(%.3f %.3f %.3f) c=%.3f\n", s->name, k,
+                 cur_set()->p[s->part[k].id].name, (double)h.x, (double)h.y, (double)h.z, (double)s->c);
     }
 }
 
 /* a tick of a marker spot: a script's takeover and its end, the coast a let-go hand left, and every
  * part posed from the one closure */
 static void spot_update(VrSpot *s) {
-    int i, changed = 0;
+    int i, changed = 0, changed_morph = 0;
 
     for (i = 0; i < s->nparts; i++) {
         if (part_changed(s, i)) {
             changed = 1;
+            if (s->part[i].morph) {
+                changed_morph = 1;
+            }
         }
     }
     if (!s->script_owned) {
@@ -1117,9 +1163,11 @@ static void spot_update(VrSpot *s) {
 
             spot_room_name(room, sizeof(room));
             s->script_owned = 1;
+            s->script_morph = changed_morph;
             s->coast = 0;
             s->idle = 0;
-            spot_log("vrspots: %s %s script owns it\n", room, s->name);
+            spot_log("vrspots: %s %s script owns it (%s)\n", room, s->name,
+                     changed_morph ? "morph-words-changed" : "script-anim");
         }
     } else {
         int done = 1;
@@ -1257,6 +1305,12 @@ void vrspot_tick(Engine *e) {
             spot_update(&sSpots[i]);   /* (the closure posed on every part, before her state is read) */
         }
     }
+    for (i = 0; i < sNSpots && i < VRSPOT_MAX; i++) {   /* (her state as it was: the debug line's change) */
+        sWasInside[i] = sSpots[i].inside;
+        sWasFull[i] = sSpots[i].full;
+        sWasHalf[i] = sSpots[i].half;
+        sWasEnclosed[i] = sSpots[i].enclosed;
+    }
     pick = spot_pick(e, at);
     sActive = pick;
     for (i = 0; i < sNSpots; i++) {
@@ -1294,6 +1348,11 @@ void vrspot_tick(Engine *e) {
                 s->full = s->half = s->enclosed = 0;
                 s->was_full = 0;
             }
+            if (sDebug && i < VRSPOT_MAX &&
+                (sWasInside[i] != s->inside || sWasFull[i] != s->full || sWasHalf[i] != s->half ||
+                 sWasEnclosed[i] != s->enclosed)) {
+                spot_state_log(s);
+            }
             a = (i == pick && s->inside && s->full && gVrOptions.hide_door_see_through) ? 0.5f : 1.0f;
             for (k = 0; k < s->nleaves; k++) {
                 e->room.placed.p[s->leaf[k]].alpha = a;
@@ -1320,11 +1379,19 @@ void vrspot_tick(Engine *e) {
             s->was_full = 0;
         }
         a = (i == pick && s->inside && s->full && gVrOptions.hide_door_see_through) ? 0.5f : 1.0f;
-        if (a < 1.0f) {
-            spot_fade_log(s);
+        if (sDebug && i < VRSPOT_MAX &&
+            (sWasInside[i] != s->inside || sWasFull[i] != s->full || sWasHalf[i] != s->half ||
+             sWasEnclosed[i] != s->enclosed)) {
+            spot_state_log(s);
         }
         for (k = 0; k < s->nparts; k++) {
-            cur_set()->p[s->part[k].id].alpha = a;
+            Placed *pp = &cur_set()->p[s->part[k].id];
+            float was = pp->alpha;
+
+            pp->alpha = a;
+            if (sDebug && was != a) {
+                spot_fade_line(s, k, a);   /* (each time a part's alpha changes: the see-through check) */
+            }
         }
     }
 }
@@ -1510,15 +1577,28 @@ int vrspot_grab_edge(Vec3 at, float radius, float *dist, int *part) {
 
     for (i = 0; i < sNSpots; i++) {
         VrSpot *s = &sSpots[i];
+        float blo, bhi;
 
         if (!s->used || !s->marker || s->script_owned) {
             continue;
         }
+        box_y_range(&s->bound, &blo, &bhi);
         for (k = 0; k < s->nparts; k++) {
-            Vec3 h = part_vertex(&s->part[k], s->part[k].handle, s->c);
-            float d = vec3_len(vec3_sub(at, h));
+            const VrPart *pt = &s->part[k];
+            Vec3 lo, hi;
+            float d, ylo, yhi;
 
-            if (d <= bd) {
+            /* (the door's or the curtain's own height, grown by 2 - the hand reaches it anywhere
+             * along it; the BOUND's height when the part has no bounds) */
+            if (placed_bounds(&cur_set()->p[pt->id], &lo, &hi)) {
+                ylo = lo.y - 2.0f;
+                yhi = hi.y + 2.0f;
+            } else {
+                ylo = blo - 2.0f;
+                yhi = bhi + 2.0f;
+            }
+            d = vrpath_edge_gap(pt->path, VRSPOT_PATH_N, s->c, at, ylo, yhi);   /* (x/z only) */
+            if (d >= 0.0f && d <= bd) {
                 bd = d;
                 best = i;
                 bp = k;
@@ -1601,6 +1681,13 @@ void vrspot_let_go(int id, float speed) {
 
 int vrspot_script_owned(int id) {
     return id >= 0 && id < sNSpots && sSpots[id].used && sSpots[id].script_owned;
+}
+
+const char *vrspot_script_reason(int id) {
+    if (id < 0 || id >= sNSpots) {
+        return "other";
+    }
+    return sSpots[id].script_morph ? "morph-words-changed" : "script-anim";
 }
 
 float vrspot_closure_of(int id) {

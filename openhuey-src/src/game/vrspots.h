@@ -35,7 +35,9 @@ struct Engine;
 #define VRSPOT_BODY_R 1.0f
 /* how far into the GRAB box (grown) and how near a part's handle a hand takes the spot */
 #define VRSPOT_GRAB_MARGIN 1.0f
-#define VRSPOT_EDGE_R 3.0f
+/* how near a part's handle a hand takes the spot, horizontally: the hand may be anywhere along the
+ * door's height, so only x/z count */
+#define VRSPOT_EDGE_R 4.0f
 /* the hand's scrub: how far from the current closure its target may ask in one tick */
 #define VRSPOT_WINDOW 0.25f
 /* the doorway: a step across the BOUND's footprint edge is allowed only while c is this open */
@@ -95,10 +97,14 @@ void vrspot_set_closure(int id, float c);
 void vrspot_let_go(int id, float speed);
 /* 1 while a script owns the spot's parts: a hand takes nothing, and lets go */
 int vrspot_script_owned(int id);
+/* (DEBUG) why a script owns it: "morph-words-changed" or "script-anim" */
+const char *vrspot_script_reason(int id);
 float vrspot_closure_of(int id);   /* 0..1 */
 const char *vrspot_name(int id);
 /* the spot's debug lines (the misses, the first fade): on unless turned off */
 void vrspot_debug(int on);
 int vrspot_debug_on(void);
+/* (DEBUG) every part of that spot and its handle's place now: once per grip press near it */
+void vrspot_log_edge(int id);
 
 #endif

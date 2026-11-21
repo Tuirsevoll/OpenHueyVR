@@ -87,6 +87,11 @@ static Vec3 sSpotOffset[2];
 static float sSpotC[2], sSpotSpeed[2];
 /* the lever that hand pulls: the offset from its handle to the hand (nothing jumps to it) */
 static Vec3 sLeverOffset[2];
+/* (DEBUG) the reason a spot's hand is ending, for the log line */
+static const char *sSpotWhy = "let-go";
+/* (DEBUG) the spot's hand lines (defined with the other debug logs below) */
+static void spot_take_log(int id, const char *how, Vec3 at);
+static void spot_release_log(int id, const char *why);
 /* the door itself (its id in the world's table), not the room's exit: the two rooms a door joins
  * need not number it alike (215 of the game's 303 doors have another exit on their far side), so
  * an exit index is the old room's once a room change has happened */
@@ -2026,11 +2031,13 @@ static void release_hand(Room *r, int side) {
     } else if (sHold[side] == HOLD_WARD && id >= 0 && id < r->placed.n) {
         ward_release(&r->placed, side, id);   /* (a leaf still turning keeps its speed) */
     } else if (sHold[side] == HOLD_SPOT) {
+        spot_release_log(id, sSpotWhy);   /* (DEBUG: why the spot's hand ended) */
         vrspot_let_go(id, sSpotSpeed[side]);   /* (a spot still moving keeps its speed to the stop) */
     } else if (sHold[side] == HOLD_LEVER) {
         vrlever_let_go(id);   /* (a lever let go before home springs back to rest) */
     }
     sHold[side] = HOLD_NONE;
+    sSpotWhy = "let-go";
     sHoldDoor[side] = -1;
     sHoldFresh[side] = 0;
     sLadderHold[side] = -1;   /* (a hand let go of its ladder with whatever it held) */
@@ -2170,6 +2177,7 @@ void vrhands_spot_let_go(void) {
 
     for (side = 0; side < 2; side++) {
         if (sHold[side] == HOLD_SPOT) {
+            spot_release_log(sHoldId[side], "script-anim");   /* (DEBUG) */
             sHold[side] = HOLD_NONE;
             sHoldId[side] = -1;
             sSpotPart[side] = -1;
@@ -2187,6 +2195,7 @@ void vrhands_drop_all(void) {
         if (sHold[side] == HOLD_LOOT) {
             loot_let_go(sHoldId[side], side);
         } else if (sHold[side] != HOLD_NONE) {
+            sSpotWhy = "drop-all";
             release_hand(&gEngine.room, side);
         }
         sHold[side] = HOLD_NONE;
@@ -3972,6 +3981,32 @@ float ladder_pull_step(Vec3 *anchor, Vec3 play) {
     return down;      /* (a rise of that y moves her body up: the body's y goes down, the game's y running the other way) */
 }
 
+static void spot_log_line(const char *msg) {
+    if (gEngine.forth != NULL) {
+        forth_printf(gEngine.forth, "%s", msg);
+    } else {
+        fprintf(stderr, "%s", msg);
+    }
+}
+
+/* (DEBUG) the spot that hand takes, and how */
+static void spot_take_log(int id, const char *how, Vec3 at) {
+    char msg[192];
+
+    snprintf(msg, sizeof(msg), "vrspots: take '%s' by %s c=%.3f hand=(%.2f %.2f %.2f)\n", vrspot_name(id), how,
+             (double)vrspot_closure_of(id), at.x, at.y, at.z);
+    spot_log_line(msg);
+}
+
+/* (DEBUG) the spot that hand lets go of, and why */
+static void spot_release_log(int id, const char *why) {
+    char msg[192];
+
+    snprintf(msg, sizeof(msg), "vrspots: release '%s' reason=%s c=%.3f\n", vrspot_name(id), why,
+             (double)vrspot_closure_of(id));
+    spot_log_line(msg);
+}
+
 /* (DEBUG: a grip that came near a hiding spot and missed it - the box tuning; `vr-spot-debug!`) */
 static void spot_miss_log(int id, Vec3 at, float grab_d, float edge_d) {
     char msg[192];
@@ -4034,6 +4069,9 @@ void vrhands_tick(Engine *e) {
         sDoorHit[0] = sDoorHit[1] = -1;
         for (i = 0; i < 2; i++) {
             if (sHold[i] == HOLD_SPOT || sHold[i] == HOLD_LEVER) {
+                if (sHold[i] == HOLD_SPOT) {
+                    spot_release_log(sHoldId[i], "room");   /* (DEBUG) */
+                }
                 sHold[i] = HOLD_NONE;   /* (another room's spots and levers are not these) */
             }
         }
@@ -4134,13 +4172,16 @@ void vrhands_tick(Engine *e) {
             {
                 int sp = -1, spPart = -1;
                 float dBox = 0.0f, dEdge = 0.0f;
+                const char *how = NULL;
                 int box = vrspot_grab_box(at, VRSPOT_GRAB_MARGIN, &dBox);
                 int edge = vrspot_grab_edge(at, VRSPOT_EDGE_R, &dEdge, &spPart);
 
-                if (box >= 0 && (edge < 0 || dBox <= dEdge)) {
-                    sp = box;
-                } else if (edge >= 0) {
+                if (edge >= 0) {   /* (the edge first: it follows the door, wherever its handle is) */
                     sp = edge;
+                    how = "edge";
+                } else if (box >= 0) {
+                    sp = box;
+                    how = "box";
                 }
                 if (sp >= 0 && vrspot_take(sp, at, &spPart, &sSpotOffset[side])) {
                     if (sHold[side ^ 1] == HOLD_SPOT && sHoldId[side ^ 1] == sp) {
@@ -4151,6 +4192,8 @@ void vrhands_tick(Engine *e) {
                     sSpotPart[side] = spPart;
                     sSpotC[side] = vrspot_closure_of(sp);
                     sSpotSpeed[side] = 0.0f;
+                    spot_take_log(sp, how, at);   /* (DEBUG: how the spot was taken) */
+                    vrspot_log_edge(sp);          /* (DEBUG: every part's handle, in world space) */
                 }
                 if (sHold[side] == HOLD_NONE && vrspot_debug_on()) {
                     float gd = -1.0f, ed = -1.0f;
@@ -4286,6 +4329,7 @@ void vrhands_tick(Engine *e) {
             int id = sHoldId[side];
 
             if (!vrspot_scrubbable(id)) {
+                sSpotWhy = vrspot_script_owned(id) ? vrspot_script_reason(id) : "other";
                 release_hand(&e->room, side);   /* (a script owns it now, or the spot is gone) */
             } else {
                 Vec3 target = vec3_sub(at, sSpotOffset[side]);

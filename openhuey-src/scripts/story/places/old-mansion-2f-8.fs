@@ -51,18 +51,19 @@ own: wall-seen  own: looked-round  own: spot-noticed  own: sounds-on  own: frame
 \ (she walks in and out herself; the curtain is scrubbed by hand, game/vrspots.c, and this only keeps
 \ her state and lets the place's own search take over)
 : vr-hides ( -- )
+    ." vrspots: script vr-hides (curtain) started" cr
     0 came-while-hidden !  0 found-her !  0 vr-hiding-chased !
     begin
-        vr-spot-inside? 0= if  out-and-free exit  then
+        vr-spot-inside? 0= vr-spot-full? 0= or if  ." vrspots: script vr-hides (curtain) ended" cr  out-and-free exit  then
         in-panic? found-her @ or if
             found-her @ 0<> if  2 avoid-prompt  then
-            vr-spot-let-go  -1 vr-hiding-caught !  fiona hold-posed  pulled-back  0 pose-her!  exit
+            vr-spot-let-go  -1 vr-hiding-caught !  fiona hold-posed  pulled-back  0 pose-her!  ." vrspots: script vr-hides (curtain) ended" cr  exit
         then
-        vr-hidden-calm  yield
+        vr-spot-full? if  vr-hidden-calm  then  yield
     again ;
 : vr-curtain-watch ( -- )
     vr? 0= if  exit  then
-    vr-spot-inside? 0= if  exit  then
+    vr-spot-full? 0= if  exit  then   \ (behind the curtain drawn open: no hiding yet)
     ['] vr-hides running? if  exit  then
     ['] vr-hides start drop ;
 : hides ( -- )

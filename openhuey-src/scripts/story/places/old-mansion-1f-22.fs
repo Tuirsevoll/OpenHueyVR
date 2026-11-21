@@ -25,7 +25,7 @@ om1f-22-flag1 $10 2  $47 90  $47 90  $47 90  $4F 80
 : vr-cabinet-hides ( -- )  the-cabinet hides-in-cabinet ;
 : vr-cabinet-watch ( -- )
     vr? 0= if  exit  then
-    vr-spot-inside? 0= if  exit  then
+    vr-spot-full? 0= if  exit  then   \ (inside with the doors open: no hiding yet)
     ['] vr-cabinet-hides running? if  exit  then
     ['] vr-cabinet-hides start drop ;
 : stalker-came ( -- )  the-cabinet cabinet-stalker-came ;
