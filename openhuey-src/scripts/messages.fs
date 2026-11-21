@@ -492,7 +492,8 @@ message discard-item ( list place -- )        \ (the items) one of the item ther
 message equip-item ( list place -- )          \ (the items) worn, in its kind's slot
 message unequip-item ( list place -- )        \ (the items) taken off
 message equip-hand-item ( list place -- )     \ (the items) hga's own `Equip`: the key thing into her hand (it stays in its list)
-message unequip-hand-item ( -- )              \ (the items) hga's own `Equip`'s other side: the key thing out of her hand
+message unequip-hand-item ( -- )              \ (the items) hga's own `Equip`'s other side: the item out of her hand
+message slot-let-go ( slot -- )               \ (the items) the VR hand let the slot 2 thing go: one spent, the slot emptied
 message sort-items ( list -- )                \ (the items) a list put in order
 message item-bit ( n -- )                     \ (the items) item n marked as used (its note changes; the scripts' 0x5D)
 message equipment ( boots earrings costume choker -- )   \ broadcast: what she wears changed (ids, -1 none)

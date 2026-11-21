@@ -6,8 +6,10 @@
 \ menu, the story's conditions, Fiona's equipment); only this actor changes it.
 \ Using an item (`use-item`, from the menu) follows its own rule: at its place in its room an
 \ action script of the room's starts (`item-event`); a remedy calms her (`remedy`, `soothe`); a
-\ bait feeds Hewie (`fed`); a sketch marks its map as held. Each frame the counters count (the
-\ Fresh Flowers wither after 9000 frames) and the timed effects run down.
+\ bait feeds Hewie (`fed`); a sketch marks its map as held. The item in her hand, once used, leaves
+\ the hand even when more of it remain (`use-place`; she must Equip the next from the menu). Each
+\ frame the counters count (the Fresh Flowers wither after 9000 frames) and the timed effects run
+\ down.
 IN: items
 USING: engine game-state actors messages common facts flag-names story-names room-names hewie-names items.tables items.names ;
 
@@ -468,12 +470,28 @@ PRIVATE>
 \ spend one ----
 defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
 
-\ the rule run on a place (Items_Use), without the menu's answer
+\ what a rule's result did: anything but nothing, a hint or a mod's done-quietly used the item
+: use-counts? ( r -- flag )
+    case
+        no-use of  false  endof
+        hinted of  false  endof
+        done-quietly of  false  endof
+        >r true r>
+    endcase ;
+
+\ the rule run on a place (Items_Use), without the menu's answer. A use of what she holds empties
+\ her hand, even when more of it remain (3 Lavender: one used, 2 left - she must Equip the next).
+\ A use of another place (not the hand's) leaves the hand alone.
 : use-place ( at -- id r )
     {: at :}
     at empty? if  -1 no-use exit  then
+    find-hand-place at = {: was-hand :}
     at id@ {: id :}  at item-use-rule {: r :}
     r 3 and  at id@ id = and if  at spend  then   \ (still there: a rule may have moved it)
+    was-hand r use-counts? and if
+        -1 hand-item!
+        ." items: item " id . ." used from her hand - hand cleared (" id items-of . ." left)" cr
+    then
     id r ;
 
 \ an item's Use met at a trigger box: a key thing's or a word plate's, not a remedy's or a bait's
@@ -525,6 +543,16 @@ behaviour keeping-items
       slot 0< if  exit  then  list at item-at slot equip-slot l!  tell-equipment ;
   on unequip-item ( list held-at -- )
       2dup equip-state worn = if  slot-of equip-slot -1 swap l!  tell-equipment  else  2drop  then ;
+  \ the VR hand let the slot 2 thing go (fiona/letgo.fs hand-defense: a magnesia set down, an
+  \ antimony thrown): one spent, as take-item does, and the slot emptied as the menu's take-off
+  \ does - so the next one needs Equip again
+  on slot-let-go ( slot -- )
+      {: slot | id :}
+      slot equipped to id
+      id 0< if  exit  then
+      id find-item ?dup if  spend  then
+      slot equipped id = if  -1 slot equip-slot l!  tell-equipment  then
+      ." items: slot " slot . ." item " id . ." let go - unequipped (" id items-of . ." left)" cr ;
   \ hga's own `Equip` (hga's menu, scripts/subscreen/lists.fs): the key thing, word plate, remedy
   \ or bait in her hand, where it stays in its list place. Nothing is worn, nothing is thrown, and
   \ it is not saved.

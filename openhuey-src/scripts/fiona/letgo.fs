@@ -80,8 +80,8 @@ $20020008 constant hand-stops   \ (the floors her hand can't pass over)
     flag 0= if exit then
     k -1 x f>cell y f>cell z f>cell vx f>cell vy f>cell vz f>cell
     s" things" actor-named send thing-made
-    throw-slot equipped dup 0< if drop exit then
-    s" items" actor-named send take-item ;
+    throw-slot equipped 0< if  exit  then   \ (nothing there: nothing spent)
+    throw-slot s" items" actor-named send slot-let-go ;   \ (one spent, slot 2 emptied)
 : try-let-go ( -- )
     vr? if exit then   \ (a grip is the triangle here: its release is hand-defense, never her animation)
     her-mode @ own-mode <>  her-doing @ free-doing <> or  no-flee state-flag? or  her-panic-stage @ panicking >= or if  exit  then

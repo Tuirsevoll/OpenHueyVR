@@ -106,20 +106,52 @@ testing Remove a bait: out of her hand, still in the list with its count
 key: X tap  key: Down tap  key: X tap  2 run-frames
 T{ mode@ hand-item  chicken-jerky items-of -> 0 -1 1 }T
 
-testing Use from the menu still uses one: a stack of two loses one and stays in her hand
-camomile 1 gives
+testing a used item leaves the hand: Camomile x3, Use once - 2 left, the hand empty (Part U)
+camomile 2 gives
 key: Up tap  key: X tap  2 run-frames
 T{ mode@ cursor-item -> 1 camomile }T
 key: Down tap  key: X tap  2 run-frames
-T{ mode@ hand-item  camomile items-of -> 0 camomile 2 }T
+T{ mode@ hand-item  camomile items-of -> 0 camomile 3 }T
 key: X tap  key: X tap  2 run-frames
-T{ hand-item  camomile items-of -> camomile 1 }T
+T{ hand-item  camomile items-of -> -1 2 }T
 key: X tap  2 run-frames
 T{ mode@ -> 0 }T
-testing ... the last one used: it goes, and the hand with it (remove clears it)
+testing ... Equip again for each: the next and the last both leave the hand
+key: X tap  key: Down tap  key: X tap  2 run-frames
+T{ mode@ hand-item -> 0 camomile }T
+key: X tap  key: X tap  2 run-frames
+T{ hand-item  camomile items-of -> -1 1 }T
+key: X tap  2 run-frames
+key: X tap  key: Down tap  key: X tap  2 run-frames
+T{ mode@ hand-item -> 0 camomile }T
 key: X tap  key: X tap  2 run-frames
 T{ hand-item  camomile items-of -> -1 0 }T
 key: X tap  2 run-frames
 T{ mode@ -> 0 }T
+
+: list-place-of ( id -- list i )   \ (where it is: the list, and its place in it)
+    find-item  progress pr.item-lists -  /held /  #places /mod  swap ;
+: equip-id ( id -- )  list-place-of hand-equip ;   \ (into her hand, by its place)
+: wear-id ( id -- )  list-place-of  game:subscreen enter  game:items send equip-item  leave-actor  deliver ;
+
+testing Lavender x2: Use on the hand's place leaves the hand, one left
+lavender 2 gives
+lavender equip-id
+T{ hand-item -> lavender }T
+lavender find-item use-place 2drop
+T{ hand-item  lavender items-of -> -1 1 }T
+
+testing a key thing whose rule does nothing here: its Use leaves it in her hand
+study-key equip-id
+T{ hand-item -> study-key }T
+study-key find-item use-place 2drop
+T{ hand-item  study-key items-of -> study-key 1 }T
+
+testing a set-down magnesia in slot 2: the VR hand's let-go spends one and empties the slot
+magnesia 2 gives
+magnesia wear-id
+T{ 2 equipped -> magnesia }T
+2 game:items send slot-let-go deliver
+T{ 2 equipped  magnesia items-of -> -1 1 }T
 
 test-summary
