@@ -152,6 +152,12 @@ Two things in the original, both read from `lights.c` / `doors.c` (Door_Draw) an
 Fiona uses doors (docs/subsystems/fiona.md): she holds a door, opens or shuts it by hand along
 her animation, and lets it go as she steps out.
 
+In a headset a hand takes the knob itself (docs/subsystems/hands.md, "Doors"): a room change
+carries the hold to the same door in the room now in (a door is held by the door, not by the exit a
+room numbers it by), and a door the hands were still finishing is let go there the way it was
+travelling - a door dragged shut as she crosses shuts - or by the 45° rule when it was let go still,
+rather than left at the angle a hand last held it at.
+
 Used by the stalker in her room too (`stalker/doorway.fs`: his door animation with `use-door`),
 and slammed or burst open by Fiona (`fiona/slam.fs`). Also built: the event
 commands' door bits (the story's `door-lock`, `door-close-off-lock`, `door-lock-for`,

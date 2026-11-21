@@ -302,6 +302,44 @@ create kn-at /vec allot
         stand-trick-2-act of  stand-pose stand-trick-2-anim trick  endof
     endcase ;
 
+\ ---- the voice's "shake": his paw lifted and held for her to take ----
+\ patted-anim ($1C05) is the paw lift; the sit trick ($1C06) is the yawn, not this. The frame
+\ the paw is highest is held (no time of its own) while a hand at it may take and shake it. Let
+\ go: the same praise reaction and pet-time a pat gives; a paw it never took is let down after
+\ a while, so a missed grab does not leave him waiting forever.
+45 constant paw-hold-frame
+: paw-release ( -- )
+    vr-paw-release
+    his-paw-held @ if  1e rate!  then
+    0 his-paw-held !  0 his-paw-grabbed !  0 his-paw-shakes !
+    to-default ;
+: paw-reward ( -- )
+    his-paw-shakes @ 0> if
+        praise-reaction self send reaction
+        300 his-pet-time !
+        his-paw-shakes @ 3 >= if  pleased-mood -1 set-mood  then
+    then ;
+: st-shake-paw ( -- )
+    his-danger @ calm <> if  paw-release exit  then
+    his-paw-held @ 0= if
+        anim@ shake-paw-anim <> if  shake-paw-anim play  exit  then
+        him-model act.frame sf@  paw-hold-frame s>f f< if  exit  then
+        paw-hold-frame s>f  him-model act.frame sf!
+        0e rate!
+        1 his-paw-held !
+        420 his-t1 !
+    then
+    -1 his-t1 +!
+    vr-paw? {: held :}
+    vr-paw-shake ?dup if  his-paw-shakes @ +  his-paw-shakes !  then
+    held if  1 his-paw-grabbed !  0 his-t1 !  then
+    his-paw-grabbed @ if
+        held 0= if  paw-reward  paw-release  exit  then
+    else
+        his-t1 @ 0<= if  paw-release  exit  then
+    then
+    1 his-no-root ! ;
+
 \ ---- sniffing, facing, barking at something ----
 \ Hewie_StateFaceScent (sniff-act): sniffing toward his target (or a scent), alert
 : st-face-scent ( -- )

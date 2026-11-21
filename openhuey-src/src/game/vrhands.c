@@ -11,7 +11,14 @@
  * already moving, in which case it coasts to the stop it is heading for. A locked door never
  * moves; gripping its knob rattles once. A placed leaf - the nursery wardrobe's doors - is held
  * by its animation's frame instead: the hand's angle about its hinge is the frame its track gives,
- * and a leaf let go while it was turning keeps that speed to the stop it was heading for. */
+ * and a leaf let go while it was turning keeps that speed to the stop it was heading for.
+ * A door is held by the door, not by the room's exit (the two rooms it joins number it apart), so
+ * a room change carries the hold to the same door in the room now in - the knob under the hand -
+ * and any other door the hands were still finishing ends at its stop there and then: the ease runs
+ * in the played room only, and an exit index means nothing in the room just left. The leaf's last
+ * motion is remembered, so one being dragged shut as she crosses finishes shut (the way it was
+ * going); one let go still takes the 45° rule. A knob past the doorway, the leaf swung away, is
+ * taken from over the threshold: the reach is measured there, not at the knob. */
 /* temporary, for the headset smoothing test; remove later */
 #define VR_STEP_LOG 0
 
@@ -68,6 +75,13 @@ void vrhands_take_times(unsigned *pose, unsigned *stop) {
 #define HOLD_WARD 4
 
 static int sHold[2], sHoldId[2], sDoorAxis[2];
+/* the door itself (its id in the world's table), not the room's exit: the two rooms a door joins
+ * need not number it alike (215 of the game's 303 doors have another exit on their far side), so
+ * an exit index is the old room's once a room change has happened */
+static int sHoldDoor[2] = {-1, -1};
+/* a hold just carried to the room now in: the hand's place is a point in the room, so it has moved
+ * with the room - the leaf is driven from the next tick, not this one */
+static int sHoldFresh[2];
 /* an equipped magnesia (dropped) or antimony (thrown), shown in the right hand until a grip
  * closes after it appears and then opens (the grip pose asks what that hand is showing). */
 static struct {
@@ -151,6 +165,17 @@ static int sPoseRoom = -2;
 /* one pose per door, shared by both rooms it joins */
 static float sDoorSwing[DOORS];
 static unsigned char sDoorHave[DOORS], sDoorOpen[DOORS];
+/* the doors the hands still answer for - driven, pushed or eased, and the doors actor's let-go
+ * (written at rest, in the played room) not come back yet. By door, not by exit: a room change
+ * leaves the old room's exits behind (sHoldDoor). */
+static unsigned char sDoorHand[DOORS];
+/* the doors whose held bit this side set (claim_for_letgo), so its own claim can be taken back
+ * without touching one a script holds */
+static unsigned char sDoorClaim[DOORS];
+/* how fast each door's leaf was going, degrees a tick, as the last tick left it (poses_save): a
+ * room change takes the room's ease with it, and this is which way the leaf was travelling then -
+ * a door dragged shut as she crossed finishes shut, not by the angle alone */
+static float sDoorVel[DOORS];
 
 static const Model *sArmModel;
 static int sArmBones, sArmVerts;
@@ -1273,13 +1298,15 @@ static float clamp_swing(float s) {
     return s;
 }
 
+#define DOOR_KNOB 10.0f   /* the knob's distance from its hinge, in the leaf's own frame (handle_at) */
+
 static Vec3 handle_at(const RoomDoor *d, int axis) {
     float y = d->rot.y + d->swing * (3.14159265f / 180.0f);
 
     if (axis) {
-        return vec3(d->pos.x + sinf(y) * 10.0f, d->pos.y + 11.0f, d->pos.z + cosf(y) * 10.0f);
+        return vec3(d->pos.x + sinf(y) * DOOR_KNOB, d->pos.y + 11.0f, d->pos.z + cosf(y) * DOOR_KNOB);
     }
-    return vec3(d->pos.x + cosf(y) * 10.0f, d->pos.y + 11.0f, d->pos.z - sinf(y) * 10.0f);
+    return vec3(d->pos.x + cosf(y) * DOOR_KNOB, d->pos.y + 11.0f, d->pos.z - sinf(y) * DOOR_KNOB);
 }
 
 static float dist2(Vec3 a, Vec3 b) {
@@ -1289,16 +1316,52 @@ static float dist2(Vec3 a, Vec3 b) {
 }
 
 #define DOOR_TOUCH 4.0f     /* world units: reach for a knob */
+#define DOOR_TOUCH_AWAY 6.5f /* ... and over the doorway's line for a knob past it, the leaf swung
+                              * away from the hand: the knob is then a step into the room beyond, so
+                              * the reach over the threshold is longer */
+/* the widest a knob may be taken at: the reach over the line, plus the knob's own way past it */
+#define DOOR_REACH_MAX (DOOR_TOUCH_AWAY + DOOR_KNOB)
+/* the hand's reach for its own door after a room change: the knob under it, with the arrival's own
+ * move allowed for (the room is another frame, and she may have stepped while crossing) */
+#define DOOR_CARRY_REACH 10.0f
+#define SWING_OPEN 8.0f     /* degrees: a leaf off its latch at all */
 #define DOOR_LATCH 1.0f     /* within this of shut, only a gripped knob moves it */
 #define DOOR_HALF  45.0f    /* past this far open, either way, a slow release finishes open */
 #define DOOR_WIDE  90.0f    /* open stop, both directions */
 #define DOOR_SHUT  0.0f
 #define COAST_SPEED 1.5f    /* degrees a frame: a release faster than this keeps going */
+#define DOOR_MOVING 0.5f    /* degrees a tick: a leaf moving more than this is travelling - its way
+                             * decides the stop a room change gives it (a hand's tracking noise is
+                             * under it) */
 #define PUSH_GRACE  12      /* frames the throwing hand ignores the leaf */
 #define RATTLE_SOUND 0x71u  /* Fiona's bank: the locked handle */
 #define RATTLE_BANK  5
 #define LADDER_RUNG_SOUND 0x14u   /* the base game's rung sound (scripts/fiona/moving.fs, rungs-sound) */
 #define LADDER_RUNG_BANK 4        /* Fiona's bank for it (moving.fs: rungs-sound 4 0 0) */
+
+/* the stop a leaf let go at `s` finishes at (the 45° rule): started past 45, it goes on to the open
+ * stop that way; else it shuts */
+static float door_stop(float s) {
+    if (s < -DOOR_HALF) {
+        return -DOOR_WIDE;
+    }
+    if (s > DOOR_HALF) {
+        return DOOR_WIDE;
+    }
+    return DOOR_SHUT;
+}
+
+/* The stop a leaf at `s`, last travelling `v` degrees a tick, finishes at: a leaf that was moving
+ * goes on the way it was going, as a throw's coast does; a leaf let go still takes the 45° rule. */
+static float door_stop_for(float s, float v) {
+    if (v <= -DOOR_MOVING) {
+        return s > DOOR_SHUT ? DOOR_SHUT : -DOOR_WIDE;
+    }
+    if (v >= DOOR_MOVING) {
+        return s < DOOR_SHUT ? DOOR_SHUT : DOOR_WIDE;
+    }
+    return door_stop(s);
+}
 
 static Mat4 door_place_at(const RoomDoor *d, float swing) {
     float y = d->rot.y + swing * 3.14159265f / 180.0f;
@@ -1322,15 +1385,37 @@ static int in_box(Vec3 p, Vec3 lo, Vec3 hi, float margin) {
            p.z >= lo.z - margin && p.z <= hi.z + margin;
 }
 
-static int touching_knob(const RoomDoor *d, Vec3 hand, int *axis) {
+/* the nearer of a door's two knobs within `reach` of the hand; *axis which (0 / 1) */
+static int knob_near(const RoomDoor *d, Vec3 hand, float reach, int *axis) {
     float a0 = dist2(hand, handle_at(d, 0));
     float a1 = dist2(hand, handle_at(d, 1));
-    float reach = DOOR_TOUCH * DOOR_TOUCH;
+    float r2 = reach * reach;
 
-    if (a0 > reach && a1 > reach) {
+    if (a0 > r2 && a1 > r2) {
         return 0;
     }
     *axis = a0 <= a1 ? 0 : 1;
+    return 1;
+}
+
+/* The nearer knob within this hand's reach - the plain one, unless the leaf is swung away from this
+ * side of the doorway and the knob is past it. The reach is then measured over the doorway's line,
+ * not the knob: the knob's own way past the line (DOOR_KNOB sin swing) is added, so a leaf wide
+ * open is as reachable from the near side as a shut one - no step through the threshold first. */
+static int touching_knob(const Engine *e, int exit, const RoomDoor *d, Vec3 hand, int *axis) {
+    float a0 = dist2(hand, handle_at(d, 0));
+    float a1 = dist2(hand, handle_at(d, 1));
+    int ax = a0 <= a1 ? 0 : 1;
+    float reach = DOOR_TOUCH;
+
+    if ((d->swing <= -SWING_OPEN || d->swing >= SWING_OPEN) &&
+        room_door_side(&e->room, exit, handle_at(d, ax)) != room_door_side(&e->room, exit, hand)) {
+        reach = DOOR_TOUCH_AWAY + DOOR_KNOB * fabsf(sinf(d->swing * (3.14159265f / 180.0f)));
+    }
+    if ((ax == 0 ? a0 : a1) > reach * reach) {
+        return 0;
+    }
+    *axis = ax;
     return 1;
 }
 
@@ -1381,6 +1466,7 @@ static void claim_for_letgo(Engine *e, int exit, int open) {
         return;
     }
     gProgress.doors[d] = state | 1u;
+    sDoorClaim[d] = 1;   /* (this side's own claim: a room change may take it back) */
 }
 
 static Vec3 door_local_at(const RoomDoor *d, Vec3 hand, float swing) {
@@ -1929,8 +2015,17 @@ static void release_hand(Room *r, int side) {
         ward_release(&r->placed, side, id);   /* (a leaf still turning keeps its speed) */
     }
     sHold[side] = HOLD_NONE;
+    sHoldDoor[side] = -1;
+    sHoldFresh[side] = 0;
     sLadderHold[side] = -1;   /* (a hand let go of its ladder with whatever it held) */
     sLadderFresh[side] = 0;
+}
+
+/* a door the hands answer for (sDoorHand): a leaf they drive, push or ease */
+static void door_hand(int d) {
+    if (d >= 0 && d < DOORS) {
+        sDoorHand[d] = 1;
+    }
 }
 
 static void drive_door(Engine *e, int id, int axis, Vec3 hand) {
@@ -1949,6 +2044,7 @@ static void drive_door(Engine *e, int id, int axis, Vec3 hand) {
     sCoast[id] = 0;
     room_door_swing(&e->room, id, next, 1);
     sSettle[id] = 0;
+    door_hand(door_index(e, id));
 }
 
 /* the 5°-a-frame ease to shut, or to open at -90 / +90, then the doors actor writes the state */
@@ -1962,6 +2058,7 @@ static void ease_door(Engine *e, int id, float goal) {
     d->sounded = 0;
     d->keys = NULL;
     claim_for_letgo(e, id, open);
+    door_hand(door_index(e, id));
 }
 
 /* still moving when the grip let go: keep that speed until the stop it is heading for */
@@ -2004,7 +2101,7 @@ static void coast_door(Engine *e, int id) {
 }
 
 static int swing_open(float s) {
-    return s <= -8.0f || s >= 8.0f;
+    return s <= -SWING_OPEN || s >= SWING_OPEN;
 }
 
 static int door_locked_id(int d) {
@@ -2024,7 +2121,22 @@ static void match_progress(Engine *e, int exit, int d, float swing) {
 }
 
 void vrhands_forget_poses(void) {
+    int side;
+
     memset(sDoorHave, 0, sizeof(sDoorHave));
+    memset(sDoorHand, 0, sizeof(sDoorHand));
+    memset(sDoorClaim, 0, sizeof(sDoorClaim));
+    for (side = 0; side < 2; side++) {   /* (a load's own doors: nothing a hand held is carried in) */
+        if (sHold[side] == HOLD_DOOR) {
+            sHold[side] = HOLD_NONE;
+            sHoldDoor[side] = -1;
+            sHoldFresh[side] = 0;
+        }
+    }
+    memset(sSettle, 0, sizeof(sSettle));   /* (the exits' own: the room is the save's now) */
+    memset(sCoast, 0, sizeof(sCoast));
+    memset(sVel, 0, sizeof(sVel));
+    memset(sDoorVel, 0, sizeof(sDoorVel));
     sPoseRoom = -2;
     vrgrip_idle();
 }
@@ -2046,6 +2158,8 @@ void vrhands_drop_all(void) {
             release_hand(&gEngine.room, side);
         }
         sHold[side] = HOLD_NONE;
+        sHoldDoor[side] = -1;
+        sHoldFresh[side] = 0;
         sLadderHold[side] = -1;
         sLadderFresh[side] = 0;
         sLadderAnchorHave[side] = 0;
@@ -2092,13 +2206,115 @@ static void poses_save(Engine *e) {
             continue;
         }
         s = e->room.doors[i].swing;
+        /* which way, and how fast, the leaf was going this tick: a room change's finish takes it */
+        sDoorVel[d] = sDoorHave[d] ? s - sDoorSwing[d] : 0.0f;
         if (sDoorHave[d] && !door_locked_id(d) && (s - sDoorSwing[d] > 0.5f || sDoorSwing[d] - s > 0.5f)) {
             match_progress(e, i, d, s);   /* a hand moved it: the passage follows the leaf */
         }
         sDoorSwing[d] = s;
         sDoorOpen[d] = (unsigned char)swing_open(s);
         sDoorHave[d] = 1;
+        if (sDoorClaim[d] && (gProgress.doors[d] & 1u) == 0) {
+            sDoorClaim[d] = 0;   /* (the doors actor let it go at rest: the claim is over) */
+        }
+        /* the leaves are the hands' no longer: at rest, no hold on it, its let-go written */
+        if (sDoorHand[d] && sHoldDoor[0] != d && sHoldDoor[1] != d && sSettle[i] == 0 && sCoast[i] == 0 &&
+            e->room.doors[i].mode == 0 && (gProgress.doors[d] & 1u) == 0) {
+            sDoorHand[d] = 0;
+        }
     }
+}
+
+/* ---- a room change: what the hands still had ---- */
+
+/* The stop the doors actor's let-go would have written at rest, written now: a door the hands were
+ * still driving, easing or settling when the room changed. The ease (5 a frame, room.c Door_Swing)
+ * runs in the played room only, so it dies with the room; the stop its angle and last motion give
+ * is applied here with the state word, and the leaf of the room now in (if it has one) is put at
+ * it. The held bit is taken back only if this side set it (sDoorClaim): a script's own hold is the
+ * script's. */
+static void door_finish(Engine *e, int d) {
+    float stop = door_stop_for(sDoorSwing[d], sDoorVel[d]);
+    int open = swing_open(stop);
+    int exit = world_door_exit(&e->world, d, e->room.id);
+
+    sDoorSwing[d] = stop;
+    sDoorOpen[d] = (unsigned char)open;
+    sDoorVel[d] = 0.0f;
+    if (sDoorClaim[d]) {
+        gProgress.doors[d] &= ~1u;   /* (only this side's own claim: a script's hold is the script's) */
+        sDoorClaim[d] = 0;
+    }
+    if (!door_locked_id(d)) {   /* (a locked door's state is the scripts': as poses_save has it) */
+        gProgress.doors[d] = (gProgress.doors[d] & ~2u) | (open ? 2u : 0u);
+    }
+    sDoorHand[d] = 0;
+    if (exit < 0 || exit >= ROOM_DOORS || !e->room.doors[exit].present) {
+        return;
+    }
+    room_door_swing(&e->room, exit, stop, 1);
+    if (!door_locked_id(d)) {
+        match_progress(e, exit, d, stop);
+    }
+}
+
+/* The hand still on its door in the room now in: the same door, at this room's exit, its knob
+ * under the hand (a leaf is placed in its own room's frame, so the same knob is another
+ * coordinate). It is not carried when the grip opened on the way through, when the hand is not at
+ * that door's knob (she left by another way), or when the room has no free leaf for it. */
+static int door_carry(Engine *e, int side, int exit) {
+    Vec3 at, right, up, fwd;
+    float grip, index, thumb;
+    int axis = 0;
+
+    if (!hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb) || grip <= 0.4f) {
+        return 0;
+    }
+    if (!knob_near(&e->room.doors[exit], at, DOOR_CARRY_REACH, &axis)) {
+        return 0;
+    }
+    sHoldId[side] = exit;
+    sDoorAxis[side] = axis;
+    sHoldFresh[side] = 1;   /* (the hand's place has moved with the room: driven from the next tick) */
+    return 1;
+}
+
+/* A room change, before anything of the new room is read as the old's: a door a hand still holds
+ * is carried to the same door here (its knob under the hand) and driven on; every other door the
+ * hands were still finishing ends at its stop. The per-exit timers are the old room's exits' and
+ * go with it. */
+static void doors_room_change(Engine *e, int from) {
+    int carried[2] = {-1, -1};
+    int side, d;
+
+    for (side = 0; side < 2; side++) {
+        int exit;
+
+        if (sHold[side] != HOLD_DOOR || sHoldDoor[side] < 0) {
+            continue;
+        }
+        d = sHoldDoor[side];
+        exit = world_door_exit(&e->world, d, e->room.id);
+        if (exit >= 0 && exit < ROOM_DOORS && e->room.doors[exit].present && !door_blocked(e, exit) &&
+            world_door_leads(&e->world, d, from) == e->room.id && door_carry(e, side, exit)) {
+            carried[side] = d;
+            continue;
+        }
+        sHold[side] = HOLD_NONE;
+        sHoldDoor[side] = -1;
+        sHoldFresh[side] = 0;
+        sDoorAxis[side] = 0;
+        sGrace[side] = 0;
+        sGraceDoor[side] = -1;
+    }
+    for (d = 0; d < DOORS; d++) {
+        if (sDoorHand[d] && d != carried[0] && d != carried[1]) {
+            door_finish(e, d);
+        }
+    }
+    memset(sSettle, 0, sizeof(sSettle));
+    memset(sCoast, 0, sizeof(sCoast));
+    memset(sVel, 0, sizeof(sVel));
 }
 
 /* the controller point against the posed mesh. About 6 cm: a touch, not a reach. */
@@ -2180,7 +2396,7 @@ static const Actor *hewie_mesh(void) {
     for (i = 0; i < MAX_ACTORS; i++) {
         const Actor *a = &gEngine.actors[i];
 
-        if (a->used && a->visible && a->posed != NULL && strncmp(a->name, "O_HEW", 5) == 0) {
+        if (a->used && a->visible && a->posed != NULL && strncmp(a->name, "O_HE", 4) == 0) {
             return a;
         }
     }
@@ -2259,6 +2475,14 @@ static int mesh_touch(const Actor *dog, Vec3 p, int *bone) {
 static Vec3 sPetOff[MODEL_MAX_BONES];
 static Vec3 sPetWant[MODEL_MAX_BONES];
 static int sPetTick = -1;
+/* Hewie's "shake" paw: the front paw the animation lifts (0x1C), the hand on it, and the shakes
+ * it has given. The paw is let go by the scripts when the action ends. */
+#define PAW_BONE 0x1C
+#define PAW_REACH 4.5f
+#define PAW_GRIP 0.40f
+#define PAW_SHAKE_STEP 1.0f
+static int sPawSide = -1, sPawBone = -1, sPawFresh, sPawShakes, sPawDir, sPawHave;
+static float sPawAt;
 
 static int bone_of(const Model *m, int bone, int anc) {
     int guard = 0;
@@ -2305,6 +2529,10 @@ static int pet_part(const Actor *dog, int bone) {
     }
     if (bone_of(m, bone, PET_HEAD)) {
         return 2;
+    }
+    if (sPawBone >= 0 && (bone == sPawBone ||
+        (sPawBone < m->nbones && m->bones[sPawBone].parent == bone))) {
+        return 5;   /* (the voice's "shake": the lifted paw, and the leg just above it) */
     }
     p = dog->bones[bone];
     if (p.x == 0.0f && p.y == 0.0f && p.z == 0.0f) {
@@ -2373,6 +2601,8 @@ static void pet_push(const Actor *dog, int bone, Vec3 hand) {
         maxa = 1.90f; letgo = 2.55f; reach = 8.0f;
     } else if (kind == 4) {
         maxa = 0.50f; letgo = 1.20f; reach = 5.5f;
+    } else if (kind == 5) {
+        maxa = 0.85f; letgo = 1.65f; reach = 8.0f;
     } else {
         maxa = 1.05f; letgo = 1.90f; reach = 9.0f;
     }
@@ -3468,6 +3698,110 @@ int vrhands_petting(int side) {
     return 1;
 }
 
+/* The voice's "shake": a hand on Hewie's lifted front paw. The paw the animation holds up is
+ * PAW_BONE; a hand within PAW_REACH of it, its grip closed, has it. The paw and the leg above
+ * are turned towards the hand (pet_push's kind 5), and the hand's side-to-side turns in the dog's
+ * frame are the shakes. A new grab buzzes once; each counted shake buzzes too. The scripts read
+ * this while the shake action lasts (scripts/hewie/states.fs, st-shake-paw). */
+void vrhands_paw_release(void) {
+    sPawSide = -1;
+    sPawBone = -1;
+    sPawFresh = 0;
+    sPawShakes = 0;
+    sPawDir = 0;
+    sPawHave = 0;
+}
+
+int vrhands_paw_shake(void) {
+    int n = sPawShakes;
+
+    sPawShakes = 0;
+    return n;
+}
+
+int vrhands_paw(void) {
+    const Actor *dog;
+    Vec3 bestAt = vec3(0.0f, 0.0f, 0.0f);
+    float bestD = PAW_REACH * PAW_REACH;
+    int side, bestSide = -1, parent;
+
+    pet_open();   /* (the paw's push is this tick's, as the petting's is) */
+    dog = hewie_mesh();
+    if (dog == NULL || dog->model.nbones <= PAW_BONE) {
+        sPawSide = -1;
+        sPawBone = -1;
+        sPawFresh = 0;
+        sPawHave = 0;
+        return 0;
+    }
+    for (side = 0; side < 2; side++) {
+        Vec3 at, right, up, fwd, paw;
+        float grip, index, thumb, dx, dy, dz, d2;
+
+        if (!hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb) || grip < PAW_GRIP) {
+            continue;
+        }
+        paw = dog->bones[PAW_BONE];
+        dx = at.x - paw.x;
+        dy = at.y - paw.y;
+        dz = at.z - paw.z;
+        d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 <= bestD) {
+            bestD = d2;
+            bestSide = side;
+            bestAt = at;
+        }
+    }
+    if (bestSide < 0) {
+        /* let go of the paw, keeping the shakes not yet taken (the take is the scripts') */
+        sPawSide = -1;
+        sPawBone = -1;
+        sPawFresh = 0;
+        sPawHave = 0;
+        return 0;
+    }
+    if (sPawSide != bestSide) {
+        sPawSide = bestSide;
+        sPawBone = PAW_BONE;
+        sPawFresh = 1;
+        sPawShakes = 0;
+        sPawDir = 0;
+        sPawHave = 0;
+    }
+    pet_push(dog, PAW_BONE, bestAt);
+    parent = dog->model.bones[PAW_BONE].parent;
+    if (parent >= 0) {
+        pet_push(dog, parent, bestAt);
+    }
+    {
+        Vec3 right = vec3(cosf(dog->yaw), 0.0f, -sinf(dog->yaw));
+        float at = (bestAt.x - dog->pos.x) * right.x + (bestAt.z - dog->pos.z) * right.z;
+
+        if (!sPawHave) {
+            sPawAt = at;
+            sPawHave = 1;
+        } else {
+            float d = at - sPawAt;
+
+            if (fabsf(d) >= PAW_SHAKE_STEP) {
+                int dir = d > 0.0f ? 1 : -1;
+
+                if (sPawDir != 0 && dir != sPawDir) {
+                    sPawShakes++;
+                    vr_haptic(sPawSide, 0.12f, 0.02f);
+                }
+                sPawDir = dir;
+                sPawAt = at;
+            }
+        }
+    }
+    if (sPawFresh) {
+        vr_haptic(sPawSide, 0.15f, 0.04f);
+        sPawFresh = 0;
+    }
+    return 1;
+}
+
 /* ---- a ladder's grab zone ---- */
 #define LADDER_GRAB_REACH 8.0f   /* world units: how near the line a ladder makes across the floor a hand grabs it */
 #define LADDER_GRAB_RISE 5.0f    /* world units: how far past its top or its foot a hand still reaches it */
@@ -3618,6 +3952,9 @@ void vrhands_tick(Engine *e) {
     swing_begin();
     pet_settle();
     poses_restore(e);
+    if (sPushRoom != e->room.id) {
+        doors_room_change(e, sPushRoom);   /* (a hold must not outlive its room: an exit is not a door) */
+    }
     if (!vr_active() || !vr_anchor_get(&eye, &yaw)) {
         poses_save(e);
         leaf_scan(e);
@@ -3634,6 +3971,9 @@ void vrhands_tick(Engine *e) {
         sLadderFresh[0] = sLadderFresh[1] = 0;
         sLadderAnchorHave[0] = sLadderAnchorHave[1] = 0;
         sLadderPull = 0.0f;
+        sDoorShove = -1;                        /* (the two hands' shove names an exit too) */
+        sDoorTick[0] = sDoorTick[1] = -1;
+        sDoorHit[0] = sDoorHit[1] = -1;
         sPushRoom = e->room.id;
     }
     for (side = 0; side < 2; side++) {
@@ -3671,14 +4011,14 @@ void vrhands_tick(Engine *e) {
         rising = grip > 0.65f && sGripWas[side] <= 0.4f;
         if (rising) {
             int rattled = -1, rattAxis = 0;
-            float rattD = DOOR_TOUCH * DOOR_TOUCH;
+            float rattD = DOOR_REACH_MAX * DOOR_REACH_MAX;   /* (the widest reach a knob may be taken at) */
 
             for (i = 0; i < ROOM_DOORS; i++) {
                 RoomDoor *d = &e->room.doors[i];
                 int ax = 0;
                 float kn;
 
-                if (!d->present || !door_locked(e, i) || !touching_knob(d, at, &ax)) {
+                if (!d->present || !door_locked(e, i) || !touching_knob(e, i, d, at, &ax)) {
                     continue;
                 }
                 kn = dist2(at, handle_at(d, ax));
@@ -3727,13 +4067,13 @@ void vrhands_tick(Engine *e) {
             }
         } else if (sHold[side] == HOLD_NONE && rising) {
             door = -1;
-            doorD = DOOR_TOUCH * DOOR_TOUCH;
+            doorD = DOOR_REACH_MAX * DOOR_REACH_MAX;   /* (the widest reach a knob may be taken at) */
             for (i = 0; i < ROOM_DOORS; i++) {
                 RoomDoor *d = &e->room.doors[i];
                 int ax = 0;
                 float kn = 0.0f;
 
-                if (!d->present || d->mode == 1 || door_blocked(e, i) || !touching_knob(d, at, &ax)) {
+                if (!d->present || d->mode == 1 || door_blocked(e, i) || !touching_knob(e, i, d, at, &ax)) {
                     continue;
                 }
                 kn = dist2(at, handle_at(d, ax));
@@ -3772,6 +4112,8 @@ void vrhands_tick(Engine *e) {
                 sHold[side] = HOLD_DOOR;
                 sHoldId[side] = door;
                 sDoorAxis[side] = axis;
+                sHoldDoor[side] = door_index(e, door);
+                sHoldFresh[side] = 0;
                 drive_door(e, door, axis, at);
             } else if (prop >= 0) {
                 sHold[side] = HOLD_PROP;
@@ -3782,6 +4124,8 @@ void vrhands_tick(Engine *e) {
         } else if (sHold[side] == HOLD_DOOR) {
             if (door_blocked(e, sHoldId[side])) {
                 release_hand(&e->room, side);
+            } else if (sHoldFresh[side]) {
+                sHoldFresh[side] = 0;   /* (carried across a room: the leaf is driven from here on) */
             } else {
                 drive_door(e, sHoldId[side], sDoorAxis[side], at);
             }
@@ -3851,6 +4195,7 @@ void vrhands_tick(Engine *e) {
                 }
                 sPushNow[i] = 1;
                 sCoast[i] = 0;
+                door_hand(door_index(e, i));
                 room_door_swing(&e->room, i, d->swing + step, 1);
                 if (d->swing > -DOOR_LATCH && d->swing < DOOR_LATCH) {
                     sSettle[i] = 0;
@@ -3948,15 +4293,7 @@ void vrhands_tick(Engine *e) {
         } else if (sCoast[i]) {
             coast_door(e, i);
         } else if (sSettle[i] > 0 && --sSettle[i] == 0 && e->room.doors[i].present && !door_blocked(e, i)) {
-            float s = e->room.doors[i].swing;
-            float goal = DOOR_SHUT;
-
-            if (s < -DOOR_HALF) {
-                goal = -DOOR_WIDE;
-            } else if (s > DOOR_HALF) {
-                goal = DOOR_WIDE;
-            }
-            ease_door(e, i, goal);
+            ease_door(e, i, door_stop(e->room.doors[i].swing));
         }
     }
     ward_tick(e);

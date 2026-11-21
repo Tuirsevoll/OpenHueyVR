@@ -89,6 +89,51 @@ calibration changes it.
   `vrhands_tick`), the door push (`push_step`) and every grab and swing read the controller's own
   position, unchanged. Only the arm is stopped.
 
+## Hewie's paw
+
+The voice's "shake" holds his front paw (bone `0x1C`, the one animation `$1C05` lifts) at frame 45.
+A hand within `PAW_REACH` (4.5) of it whose grip is above `PAW_GRIP` (0.40) has it
+(`vrhands_paw`): the paw and the leg above it turn towards the hand (the petting's push, kind 5),
+the grab buzzes once, and a side-to-side turn of `PAW_SHAKE_STEP` (1.0) back the other way counts a
+shake and buzzes. `vrhands_paw_shake` gives the shakes, taken by the call;
+`vrhands_paw_release` lets go when the action ends. The scripts are `scripts/hewie/states.fs`
+(`st-shake-paw`), checked in `tests/hewie/test_commands.fs`; the hand's side is `vrhands_paw`.
+
+## Doors
+
+A grip on a door's knob takes the leaf (`HOLD_DOOR`), and a knob is a hand's reach away
+(`DOOR_TOUCH`, 4.0 world units). A leaf swung away from the hand, its knob past the doorway's stand
+line (`room_door_side`), is in a reach measured **over that line**, not at the knob: the knob's own
+way past the line (`DOOR_KNOB sin swing`, 10 units from the hinge at most) is added to
+`DOOR_TOUCH_AWAY` (6.5). So the hand may be 6.5 units on its own side of the opening whatever the
+swing: a leaf wide open is as reachable as a shut one, and no step through the threshold comes
+first. A leaf not swung at all is the plain reach from either side.
+
+- **Held by the door, not by the room's exit.** A hold keeps the door's own id (`sHoldDoor`), not the
+  exit index it was taken at: the two rooms a door joins need not number it alike (215 of the
+  game's 303 doors have another exit on their far side), so an exit index is only the old room's
+  once a room change has happened.
+- **A room change carries the hold** (`doors_room_change` -> `door_carry`): the same door's exit in
+  the room now in, its leaf present and free, the door joining the room she left to this one, and
+  its knob under the hand (`knob_near` at `DOOR_CARRY_REACH`, the arrival's own move allowed for).
+  driven from the next tick, not the one the room changed in (`sHoldFresh`): the hand's place is a
+  point in the room and has moved with it. A grip that opened on the way through, a hand at no
+  knob, a room without that leaf, a locked door or one a script holds: the hold ends instead.
+- **A door the hands were still finishing ends at its stop** (`door_finish`), in the same tick the
+  room changes: **the way it was going.** `sDoorVel` keeps each leaf's last tick of motion (degrees,
+  `poses_save`), and `door_stop_for` finishes a leaf that moved more than a hand's tracking noise
+  (`DOOR_MOVING`, 0.5° a tick) at the stop that way - a door dragged shut as she crosses shuts, one
+  dragged open opens, even past the 45° rule's own answer - while a leaf let go still takes the 45°
+  rule (`door_stop`). `sDoorSwing` is put at the stop, the state's open bit with it, and the leaf of
+  the room now in (when it has one) put there too. The ease itself (5° a frame, `room.c` Door_Swing)
+  runs in the played room only, so it dies with the room; without this a leaf stayed at the angle a
+  hand last held it at, for good. Only the held bit this side set (`claim_for_letgo`, `sDoorClaim`)
+  is taken back - never a script's own hold.
+- **The per-exit timers go with the room** (`sSettle`, `sCoast`, `sVel`, the two hands' shove):
+  they are the old room's exits', and an exit index means nothing in the room just left.
+- **A load** (`door-poses-clear`) drops the hands' doors and those timers
+  (`vrhands_forget_poses`): the save's doors are the save's.
+
 ## Ladder grab
 
 A free hand whose grip is held above `LADDER_GRAB_GRIP` (0.5) in the air beside a ladder takes that
@@ -210,6 +255,16 @@ Pulling a hand on a ladder now climbs her (`docs/subsystems/fiona.md`, F5:
 `vr-climb`), and an end is taken when her height has reached it. Letting go with one hand at the top
 dismounts her; letting go with both hands at the bottom places her there (unchanged); the mid-ladder
 both-hands fall is not built yet.
+
+A held door is carried across a room change to the same door in the room now in, and a door left
+mid-swing finishes **the way it was travelling** there - a door dragged shut as she crosses shuts -
+rather than staying at the angle a hand last held it at (Doors, above). Checked by
+`tests/hands_sweep_check.c` (`hands_sweep_check`): a door whose two sides number it apart, its hold
+carried and driving on in the room now in; a door with no leaf in that room finished at its stop
+with its state word, and found at that stop when its own room is entered again; a leaf dragged shut
+at 50 degrees finishing shut and one dragged open at 40 finishing open (the 45° rule alone would do
+the opposite); and the reach over the threshold taken where the plain one is not, a leaf wide open
+included, with a leaf swung toward the hand let alone at the same distance.
 
 Both touch buzzes are off (WALL_BUZZ 0 and STOP_PULSE 0 in vrhands.c); detection and the arm stop
 still run.

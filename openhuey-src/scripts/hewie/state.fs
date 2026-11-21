@@ -119,6 +119,8 @@ state: hewie-state
   cell field his-joining        \ asked to join before Fiona was in the house: on her arrival
   \ a joint action with her (the meeting by his side): its type (-1 none), and its part (0 asked, 1 the second)
   cell field his-meet  cell field his-meet-part
+  \ the voice's "shake": the paw held up for her, a hand that took it, and how often she shook it
+  cell field his-paw-held  cell field his-paw-grabbed  cell field his-paw-shakes
   \ told by others: the danger (0 calm, 1 followed, 2 chased), the panic's stage, what Fiona does
   cell field his-danger
   cell field his-panic

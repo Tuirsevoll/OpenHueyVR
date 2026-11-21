@@ -175,10 +175,10 @@ commands taken (Hewie_FionaCommand / CommandAction / ActOnCommand: stay, come, c
 there, go for it, praise and scold from afar with his mood, her cry for help by his trust),
 her reactions, the meeting (Hewie_FindSpot, his calls 12), the behaviours for them (turning
 with her, praised / petted / patted, scolded, won't, walking to the spot she showed, readying).
-Checked by `tests/hewie/test_commands.fs` (17 tests): no gestures without `hewie-commandable`; her
-reading his broadcast; come back (0x2C → 0x1D → 0xD); go there (0x23 → 0x63, the spot kept);
-the meeting (praise close: 0x48, sits, 0x4A petted, her 0xC07); her cry for help (0x30); a
-reaction spending his patience.
+Checked by `tests/hewie/test_commands.fs` (32 in its full run): no gestures without `hewie-commandable`; her
+reading his broadcast; come back (0x2C → 0x1D → 0xD); go there (0x23 → 0x63, the spot kept); the
+meeting (praise close: 0x48, sits, 0x4A petted, her 0xC07); the voice's shake (0x89, $1C05 held at
+frame 45); her cry for help (0x30); a reaction spending his patience.
 
 Her head turns to him after a command (her looks: `fiona/looks.fs`, the look held a while); the
 scripts' "can she command him" is the story's cond 0x4C (`hewie-can-command?`).
@@ -407,3 +407,11 @@ none of calm / followed / chased - before the first is told - dropped a cell of 
   by the same gesture and Fiona's `command` reaches him a few frames after the room's hold: it used
   to break into the script's bark/walk and turn the fetch into her "go there", leaving the room's
   activity waiting. Checked in `test_commands.fs`.
+- **The voice's "shake"** (`asked-shake` → `shake-paw-act`, $89): the paw lift is `shake-paw-anim`
+  ($1C05, the pat's own animation), not the sit trick ($1C06, which is the yawn). `st-shake-paw`
+  plays it and holds frame 45, the paw at its highest, with no time of its own. `vr-paw?` takes a
+  hand at the paw (its grip closed), `vr-paw-shake` counts the side-to-side shakes, and
+  `vrhands_paw` turns the paw and the leg above it towards that hand. Let go: the petting's praise
+  reaction (`praise-reaction`) and 300 frames of pet-time, as a pat; three shakes or more also
+  please him. A paw no hand took is let down after 420 frames, so it never waits forever. Checked
+  in `test_commands.fs`.

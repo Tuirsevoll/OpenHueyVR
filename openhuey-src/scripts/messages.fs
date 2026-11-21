@@ -279,7 +279,7 @@ message reaction ( n -- )                    \ how her doing strikes him (Fiona_
 5 constant voice-praise  6 constant voice-scold  7 constant voice-shake  8 constant voice-attack
 message voice-order ( kind -- )              \ (Fiona) that phrase: Hewie hears the command, she keeps moving
 message asked-stay ( -- )                    \ (Hewie) stay where he is, without the sit that stay-cmd plays
-message asked-shake ( -- )                   \ (Hewie) the sitting trick, once he is sitting, facing her and close
+message asked-shake ( -- )                   \ (Hewie) the paw-lift trick, once he is sitting, facing her and close
 0 value voice-issued                          \ set for one spoken command
 0 value voice-hold                            \ that command, kept while Hewie resolves it
 \ what she did, as it strikes Hewie: her "go", "come back", "come" / "stay", a scolding and a praise

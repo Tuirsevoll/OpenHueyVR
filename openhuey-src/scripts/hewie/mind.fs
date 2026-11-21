@@ -528,6 +528,7 @@ create foot-bones  $B , $F , $17 , $1C ,   \ (front right, front left, hind righ
         0 to pet-held  pet-look-off  heard-her-act 0 want
     else  0 to pet-held  pet-look-off  bark-sound make-sound  then ;
 : pet-hands ( -- )
+    his-action @ shake-paw-act = his-paw-held @ or if  exit  then
     his-in-cast @ if  0 to pet-frames  0 to pet-gap  0 to pet-held  exit  then
     his-away @ if  0 to pet-frames  0 to pet-gap  exit  then
     pet-held pet-behaviour? 0= and if
@@ -598,6 +599,7 @@ $1F constant bite-bone   \ (his head: where his bite is)
 \ Hewie_Activate: his state as he comes into the game (calm, the default action)
 : fresh ( -- )
     -1 his-done !  0 his-busy !  -1 his-meet !  -1 his-target !  -1 his-target2 !  -1 his-look-char !  -1 his-door !  -1 his-noise-room !
+    vr-paw-release  0 his-paw-held !  0 his-paw-grabbed !  0 his-paw-shakes !
     2 his-way !   \ (Hewie_Activate: either half)
     no-call his-call !  $FF his-by !  -1 his-yelp !  -1 his-snd-anim !  1e his-floor-k f!
     -1 his-follows !

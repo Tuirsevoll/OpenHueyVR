@@ -105,6 +105,14 @@ T{ 400 $4A takes? -> -1 }T
 T{ 200 $C07 her-anim? -> -1 }T
 400 run-frames
 
+testing the voice's "shake" (asked-shake): the paw lift ($1C05), held at its paw-up frame, not the sit trick's yawn
+ready  [: 0 his-cooldown ! ;] his!
+T{ hewie send asked-shake  deliver  2 run-frames  action -> hewie-names:shake-paw-act }T
+T{ 60 run-frames  [: hewie.model:anim@ ;] his@ -> hewie.anims:shake-paw-anim }T
+T{ [: hewie.model:him-model act.frame sf@ ;] his@  hewie.states:paw-hold-frame s>f f= -> -1 }T
+[: hewie.states:paw-release ;] his!
+ready
+
 testing her cry for help when panicking: a command 0x30 he weighs
 ready
 T{ [: 2 her-fear-bits !  0 her-cmd ! ;] fiona enter execute leave-actor  2 run-frames  [: his-cmd-was @ ;] his@ -> $30 }T

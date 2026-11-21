@@ -13,6 +13,20 @@
  * hand's play-space motion, pulled down 2 giving the body -2 (up) and the anchor following it,
  * pushed up 2 giving +2, and a hand held still - or asked again where it already is - giving none.
  *
+ * Checked too: a door held across a room change (vrhands.c doors_room_change). A door is held by
+ * the door, not by the room's exit - the game's two rooms number 215 of its 303 doors apart - so a
+ * hold is carried to the same door in the room now in (its knob under the hand) and goes on driving
+ * that leaf; a door the hands were still finishing, with no leaf in the room now in, ends at the
+ * stop the 45° rule gives (a shut door, 30 degrees at the change), its state word with it, and is
+ * found at that stop when its own room is entered again - not left at the angle a hand last held
+ * it at. And a knob past the doorway, the leaf swung away from the hand, is in a reach measured
+ * over the threshold (DOOR_TOUCH_AWAY, the knob's own way past the line added), while one on the
+ * hand's own side is not: a leaf 20 degrees open either way, the hand a reach away, is taken one
+ * way and not the other, and a leaf wide open is still taken from 13 units - its knob's own way
+ * past the line, over the threshold. The leaf's last motion is remembered, too: one dragged shut
+ * at 50 degrees as the room changed finishes shut (the 45° rule alone would open it), and one
+ * dragged open at 40 finishes open.
+ *
  *   hands-sweep-check */
 #include <stdio.h>
 #include <string.h>
@@ -84,10 +98,17 @@ Mat4 placed_world(const struct Placed *p) {
 }
 
 void room_door_swing(Room *r, int exit, float degrees, int at_once) {
-    (void)r;
-    (void)exit;
-    (void)degrees;
-    (void)at_once;
+    if (r == NULL || exit < 0 || exit >= ROOM_DOORS) {
+        return;
+    }
+    if (at_once) {
+        r->doors[exit].swing = r->doors[exit].target = degrees;
+        r->doors[exit].mode = 0;
+    } else {
+        r->doors[exit].mode = 2;
+        r->doors[exit].closing = degrees < -45.0f;
+        r->doors[exit].target = degrees;
+    }
 }
 
 void room_door_passage(Room *r, int exit, int open, uint32_t locks) {
@@ -95,6 +116,52 @@ void room_door_passage(Room *r, int exit, int open, uint32_t locks) {
     (void)exit;
     (void)open;
     (void)locks;
+}
+
+/* src/game/room.c room_door_side, line for line: which side of the doorway's stand line a point
+ * is on (the check does not link room.c) */
+int room_door_side(const Room *r, int exit, Vec3 p) {
+    const RoomDoor *d;
+
+    if (exit < 0 || exit >= ROOM_DOORS || !r->doors[exit].present) {
+        return -1;
+    }
+    d = &r->doors[exit];
+    return !(sinf(d->rot.y) * (p.x - d->stand.x) + cosf(d->rot.y) * (p.z - d->stand.z) < 0.0f);
+}
+
+/* src/game/world.c world_door_exit / world_door_leads, line for line: a door's exit in a room,
+ * and the room on its other side (the check does not link world.c) */
+static int door_closed_off(const World *w, int d) {
+    return d < 0 || d >= w->ndoors || ((gProgress.closed_off[d / 32] >> (d % 32)) & 1);
+}
+
+int world_door_exit(const World *w, int d, int room) {
+    int s;
+
+    if (door_closed_off(w, d)) {
+        return -1;
+    }
+    for (s = 0; s < 2; s++) {
+        if (w->doors[d].side[s].room == room) {
+            return w->doors[d].side[s].exit;
+        }
+    }
+    return -1;
+}
+
+int world_door_leads(const World *w, int d, int room) {
+    int s;
+
+    if (door_closed_off(w, d)) {
+        return -1;
+    }
+    for (s = 0; s < 2; s++) {
+        if (w->doors[d].side[s].room == room) {
+            return w->doors[d].side[s ^ 1].room;
+        }
+    }
+    return -1;
 }
 
 void loot_maintain(void) {}
@@ -160,6 +227,7 @@ static Vec3 sVrEye, sVrHeadPos, sVrHeadFwd, sVrHeadUp;
 static float sVrYaw, sVrPitch;
 static Vec3 sVrHand[2];
 static int sVrTracked[2];
+static float sVrGrip[2];
 
 int vr_active(void) { return sVrOn; }
 
@@ -224,7 +292,7 @@ int vr_controller(int hand, VrController *out) {
     out->right = vec3(1.0f, 0.0f, 0.0f);
     out->up = vec3(0.0f, 1.0f, 0.0f);
     out->forward = vec3(0.0f, 0.0f, -1.0f);
-    out->grip = 0.0f;
+    out->grip = sVrGrip[hand];
     out->index = 0.0f;
     out->thumb = 1.0f;
     return 1;
@@ -610,12 +678,242 @@ static void placed_of(PlacedSet *s, MeshVertex *v, int nv) {
     s->p[0].mesh.nv = nv;
 }
 
+/* the knob of a door's leaf (the leaf's frame in vrhands.c handle_at, axis 0) */
+static Vec3 knob_at(const RoomDoor *d, float swing) {
+    float y = d->rot.y + swing * 3.14159265f / 180.0f;
+
+    return vec3(d->pos.x + cosf(y) * 10.0f, d->pos.y + 11.0f, d->pos.z - sinf(y) * 10.0f);
+}
+
+/* a leaf's angle for a want(...): rounded to the nearest degree, either sign */
+static int deg(float d) {
+    return (int)(d < 0.0f ? d - 0.5f : d + 0.5f);
+}
+
+/* a door of a room's exit: present and shown, its hinge at `at`, its rest turn `yaw`, the
+ * doorway's stand line through it */
+static void door_leaf(RoomDoor *d, Vec3 at, float yaw) {
+    memset(d, 0, sizeof(*d));
+    d->present = 1;
+    d->shown = 1;
+    d->pos = at;
+    d->stand = at;
+    d->rot = vec3(0.0f, yaw, 0.0f);
+}
+
 static void want(const char *what, int got, int expected) {
     if (got == expected) {
         printf("hands: %s -> %d (pass)\n", what, got);
     } else {
         printf("hands: %s -> %d, wanted %d (FAIL)\n", what, got, expected);
         sFails++;
+    }
+}
+
+/* the hands put down in a room of their own: the next room's first tick resets the hand paths, so
+ * the last scenario's sweep is not taken for a push of this one's door */
+static void park_hands(Engine *e) {
+    int i;
+
+    sVrGrip[0] = sVrGrip[1] = 0.0f;
+    sVrHand[0] = sVrHand[1] = vec3(0.0f, 30.0f, 0.0f);
+    e->room.id = 99;
+    for (i = 0; i < ROOM_DOORS; i++) {
+        e->room.doors[i].present = 0;
+    }
+    vrhands_tick(e);
+    vrhands_forget_poses();
+}
+
+/* ---- the doors' room change (vrhands.c doors_room_change) and the knob reach past the
+ * threshold (touching_knob / DOOR_TOUCH_AWAY) ---- */
+
+/* (the arms are not posed here: this asks the tick, the room handed to it by hand) */
+static void check_doors(void) {
+    static Room room0, room1, room2;
+    int r, e, side;
+
+    memset(&gEngine, 0, sizeof(gEngine));
+    memset(&gProgress, 0, sizeof(gProgress));
+    memset(&room0, 0, sizeof(room0));
+    memset(&room1, 0, sizeof(room1));
+    memset(&room2, 0, sizeof(room2));
+
+    /* door 0 joins room 0's exit 0 to room 1's exit 3 (the exits differ, as most of the game's
+     * do); door 1 joins room 0's exit 1 to room 2's exit 1, and is not the door the hand takes */
+    for (r = 0; r < WORLD_ROOMS; r++) {
+        for (e = 0; e < ROOM_EXITS; e++) {
+            gEngine.world.exits[r][e].door = -1;
+        }
+    }
+    gEngine.world.ndoors = 2;
+    gEngine.world.doors[0].side[0] = (DoorSide){0, 0, -1};
+    gEngine.world.doors[0].side[1] = (DoorSide){1, 3, -1};
+    gEngine.world.doors[1].side[0] = (DoorSide){0, 1, -1};
+    gEngine.world.doors[1].side[1] = (DoorSide){2, 1, -1};
+    gEngine.world.exits[0][0].door = 0;
+    gEngine.world.exits[1][3].door = 0;
+    gEngine.world.exits[0][1].door = 1;
+    gEngine.world.exits[2][1].door = 1;
+
+    room0.id = 0;
+    door_leaf(&room0.doors[0], vec3(0.0f, 0.0f, 0.0f), 0.0f);
+    door_leaf(&room0.doors[1], vec3(100.0f, 0.0f, 10.0f), 0.0f);
+    room1.id = 1;
+    door_leaf(&room1.doors[3], vec3(50.0f, 0.0f, 0.0f), 0.0f);
+    room2.id = 2;
+    door_leaf(&room2.doors[1], vec3(0.0f, 0.0f, 0.0f), 0.0f);
+
+    /* a session: her eyes on the room's own origin, the play space the room's frame (eye 0, yaw
+     * 0, so a controller's place is a place in the room) */
+    sVrOn = 1;
+    sVrEye = vec3(0.0f, 0.0f, 0.0f);
+    sVrYaw = 0.0f;
+    sVrHeadPos = vec3(0.0f, 11.0f, 0.0f);
+    sVrHeadFwd = vec3(0.0f, 0.0f, -1.0f);
+    sVrHeadUp = vec3(0.0f, 1.0f, 0.0f);
+    sVrPitch = 0.0f;
+    sVrTracked[0] = 1;
+    sVrTracked[1] = 0;
+    sVrGrip[0] = sVrGrip[1] = 0.0f;
+
+    /* ---- carried across: the same door, at room 1's exit 3 ---- */
+    park_hands(&gEngine);
+    gEngine.room = room0;
+    gEngine.room.doors[0].swing = 30.0f;
+    sVrHand[0] = knob_at(&gEngine.room.doors[0], 30.0f);
+    sVrGrip[0] = 0.9f;
+    vrhands_tick(&gEngine);            /* (a rising grip: the leaf is the hand's) */
+    sVrHand[0] = knob_at(&gEngine.room.doors[0], 60.0f);
+    vrhands_tick(&gEngine);
+    want("a grip on a knob swings its leaf to the hand", deg(gEngine.room.doors[0].swing), 60);
+    gEngine.room = room1;              /* (a fresh load: its leaf at 0) */
+    gEngine.room.doors[3].swing = 0.0f;
+    sVrHand[0] = knob_at(&gEngine.room.doors[3], 60.0f);
+    vrhands_tick(&gEngine);
+    want("a room change puts the same door's leaf where the hand had it",
+         deg(gEngine.room.doors[3].swing), 60);
+    want("another door of the room is not the old exit's", deg(gEngine.room.doors[0].swing), 0);
+    sVrHand[0] = knob_at(&gEngine.room.doors[3], 20.0f);
+    vrhands_tick(&gEngine);
+    want("the hold carried across the room change goes on driving the leaf",
+         deg(gEngine.room.doors[3].swing), 20);
+
+    /* ---- finished at the change: no leaf for the door in the room now in ---- */
+    park_hands(&gEngine);
+    memset(&gProgress, 0, sizeof(gProgress));
+    gEngine.room = room0;
+    gEngine.room.doors[0].swing = 30.0f;
+    gEngine.room.doors[1].swing = 20.0f;
+    sVrHand[0] = knob_at(&gEngine.room.doors[0], 30.0f);
+    sVrGrip[0] = 0.9f;
+    vrhands_tick(&gEngine);
+    want("the leaf is held at 30 before the room changes", deg(gEngine.room.doors[0].swing), 30);
+    gEngine.room = room2;              /* (door 0 has no leaf here) */
+    sVrHand[0] = vec3(0.0f, 30.0f, 0.0f);
+    vrhands_tick(&gEngine);
+    want("a door left mid-swing is at its stop's state as the room changes", (int)(gProgress.doors[0] & 2u), 0);
+    want("and the state's held bit is the hands' no longer", (int)(gProgress.doors[0] & 1u), 0);
+    gEngine.room = room0;
+    gEngine.room.doors[0].swing = 0.0f;
+    gEngine.room.doors[1].swing = 20.0f;
+    sVrGrip[0] = 0.0f;
+    sVrHand[0] = vec3(0.0f, 30.0f, 0.0f);
+    vrhands_tick(&gEngine);
+    want("its own room entered again finds it at the stop, not at 30",
+         deg(gEngine.room.doors[0].swing), 0);
+
+    /* ---- the knob past the threshold: the reach is measured over the doorway's line ---- */
+    park_hands(&gEngine);
+    memset(&gProgress, 0, sizeof(gProgress));
+    gEngine.room = room0;
+    gEngine.room.doors[0].swing = 20.0f;
+    gEngine.room.doors[1].swing = 0.0f;
+    {
+        Vec3 far = knob_at(&gEngine.room.doors[0], 20.0f);
+
+        sVrHand[0] = vec3(far.x, far.y, far.z + 4.9f);   /* (its reach from the hand: 4.9) */
+        sVrGrip[0] = 0.9f;
+        vrhands_tick(&gEngine);
+        want("a knob past the doorway is taken from over the threshold", gEngine.room.doors[0].swing < 0.0f, 1);
+    }
+    park_hands(&gEngine);
+    memset(&gProgress, 0, sizeof(gProgress));
+    gEngine.room = room0;
+    gEngine.room.doors[0].swing = 90.0f;   /* (wide open: the knob is 10 past the line) */
+    gEngine.room.doors[1].swing = 0.0f;
+    {
+        Vec3 far = knob_at(&gEngine.room.doors[0], 90.0f);
+
+        /* (15 units from the knob, 5 over the threshold: the knob's own way past the line, over it,
+         * and clear of the leaf's other knob candidate) */
+        sVrHand[0] = vec3(far.x, far.y, far.z + 15.0f);
+        sVrGrip[0] = 0.9f;
+        vrhands_tick(&gEngine);
+        want("a leaf wide open is still taken from over the threshold",
+             gEngine.room.doors[0].swing < 0.0f, 1);
+    }
+    park_hands(&gEngine);
+    memset(&gProgress, 0, sizeof(gProgress));
+    gEngine.room = room0;
+    gEngine.room.doors[0].swing = -20.0f;   /* (swung toward the hand: its knob on this side) */
+    gEngine.room.doors[1].swing = 0.0f;
+    {
+        Vec3 near = knob_at(&gEngine.room.doors[0], -20.0f);
+
+        sVrHand[0] = vec3(near.x, near.y, near.z + 4.9f);
+        sVrGrip[0] = 0.9f;
+        vrhands_tick(&gEngine);
+        want("a knob on the hand's own side is not taken from 4.9",
+             deg(gEngine.room.doors[0].swing), -20);
+    }
+
+    /* ---- which way the leaf was going: a room change finishes it that way, past the 45° rule's
+     * own answer (a leaf dragged shut at 50 finishes shut; one dragged open at 40 finishes open) ---- */
+    park_hands(&gEngine);
+    memset(&gProgress, 0, sizeof(gProgress));
+    gEngine.room = room0;
+    gEngine.room.doors[0].swing = 60.0f;
+    sVrHand[0] = knob_at(&gEngine.room.doors[0], 60.0f);
+    sVrGrip[0] = 0.9f;
+    vrhands_tick(&gEngine);                                /* (the grab) */
+    sVrHand[0] = knob_at(&gEngine.room.doors[0], 50.0f);
+    vrhands_tick(&gEngine);                                /* (10 degrees shut this tick: its motion) */
+    gEngine.room = room2;                                  /* (no leaf for it here) */
+    sVrHand[0] = vec3(0.0f, 30.0f, 0.0f);
+    vrhands_tick(&gEngine);
+    gEngine.room = room0;
+    gEngine.room.doors[0].swing = 0.0f;
+    gEngine.room.doors[1].swing = 20.0f;
+    sVrGrip[0] = 0.0f;
+    sVrHand[0] = vec3(0.0f, 30.0f, 0.0f);
+    vrhands_tick(&gEngine);
+    want("a leaf dragged shut across the change finishes shut, not at the 45 rule's open",
+         deg(gEngine.room.doors[0].swing), 0);
+    park_hands(&gEngine);
+    memset(&gProgress, 0, sizeof(gProgress));
+    gEngine.room = room0;
+    gEngine.room.doors[0].swing = 30.0f;
+    sVrHand[0] = knob_at(&gEngine.room.doors[0], 30.0f);
+    sVrGrip[0] = 0.9f;
+    vrhands_tick(&gEngine);
+    sVrHand[0] = knob_at(&gEngine.room.doors[0], 40.0f);
+    vrhands_tick(&gEngine);                                /* (10 degrees open this tick) */
+    gEngine.room = room2;
+    sVrHand[0] = vec3(0.0f, 30.0f, 0.0f);
+    vrhands_tick(&gEngine);
+    gEngine.room = room0;
+    gEngine.room.doors[0].swing = 0.0f;
+    gEngine.room.doors[1].swing = 20.0f;
+    sVrGrip[0] = 0.0f;
+    sVrHand[0] = vec3(0.0f, 30.0f, 0.0f);
+    vrhands_tick(&gEngine);
+    want("a leaf dragged open across the change finishes open, not at the 45 rule's shut",
+         deg(gEngine.room.doors[0].swing), 90);
+    sVrOn = 0;
+    sVrGrip[0] = 0.0f;
+    for (side = 0; side < 2; side++) {
+        sVrTracked[side] = 0;
     }
 }
 
@@ -831,6 +1129,7 @@ int main(int argc, char **argv) {
     }
     printf("hands: faces counted: %d of 2 (the wall), %d of 1 (the floor), %d of 1 (the table top)\n",
            face_tris(&wall), face_tris(&floor), face_tris(&table));
+    check_doors();
     if (argc > 1) {   /* (the mod's library: the arms posed, as the game poses them) */
         check_arm_pose(argv[1]);
     }

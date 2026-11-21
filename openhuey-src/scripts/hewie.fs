@@ -173,7 +173,7 @@ behaviour hewie-own
       his-busy @ if  exit  then
       his-cooldown @ if  exit  then
       his-mode @ struck-mode = if  exit  then
-      sit-trick-act 0 want  60 his-cooldown !  0 his-broke !  tell-doing ;
+      shake-paw-act 0 want  60 his-cooldown !  0 his-broke !  tell-doing ;
   on command ( code tri yaw x z -- )   \ (Hewie_StateBlock's 13)
       along? 0= if  2drop 2drop drop exit  then
       his-busy @ if  0 to voice-issued  2drop 2drop drop exit  then   \ (a script or scene has him: its

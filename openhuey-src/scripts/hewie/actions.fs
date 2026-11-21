@@ -137,6 +137,7 @@ create idle-tricks  sit-trick-act , sit-trick-2-act , lie-down-trick-act , stand
     scolded-close-act of  meeting-mode mode!  ahead-look look!  on-command on-praise-due or his-cmd !  ['] st-praise-start behave  endof
     petted-act of  meeting-mode mode!  ahead-look look!  on-command on-praise-due or his-cmd !  ['] st-praise-start behave  endof
     patted-act of  meeting-mode mode!  ahead-look look!  on-command on-praise-due or his-cmd !  ['] st-praise-start behave  endof
+    shake-paw-act of  ahead-look breaks-any on-command on-alert or but ['] st-shake-paw holding  endof
     show-off-act of  after-4d  endof
     after-coming-out-act of  0 his-hold-call !  after-coming-out  endof
     go-there-act of
@@ -258,6 +259,9 @@ create idle-tricks  sit-trick-act , sit-trick-2-act , lie-down-trick-act , stand
     >r  r@ if  to-default  then  r>
     endcase ;
 : set-action-now ( act arg -- )   \ Hewie_SetAction
+    his-paw-held @ if  1e rate!  then
+    0 his-paw-held !  0 his-paw-grabbed !  0 his-paw-shakes !
+    vr-paw-release
     his-next !  dup his-action !  0 his-pending !
     dup yelp-anim-act <>  over hidden-act <> and  over 0<> and if  -1 his-yelp !  then
     10 roll 30 * 90 + his-wait !

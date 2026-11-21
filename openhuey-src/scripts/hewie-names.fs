@@ -144,6 +144,7 @@ enum: hewie-action
     back-on-floor-act     \ $86
     run-up-jump-act       \ $87 (not built)
     through-act           \ $88 through the exit with her: at it in her room at once (Hewie_Vt34)
+    shake-paw-act         \ $89 the voice's "shake": his paw lifted and held for her
 ;
 
 \ his move mode (his-mode; the characters' move modes): his own; out of reach (on a ladder, off

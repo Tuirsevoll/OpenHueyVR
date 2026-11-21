@@ -55,7 +55,8 @@ $1C01 constant refuse-anim       \ sitting, his head turned away
 $1C02 constant ears-up-anim      \ stopped, his ears pricked
 $1C03 constant sit-a-while-anim  \ (the story's)
 $1C04 constant ears-down-anim    \ sitting, his ears down (scolded)
-$1C05 constant patted-anim
+$1C05 constant patted-anim      \ sitting, one front paw lifted (the pat's; the shake trick's)
+$1C05 constant shake-paw-anim   \ the same for the voice's "shake"
 $1C06 constant sit-trick-anim
 $1C07 constant sit-trick-lying-anim
 $1C08 constant stand-trick-anim

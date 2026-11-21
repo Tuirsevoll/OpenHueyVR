@@ -57,6 +57,13 @@ void vrhands_forget_stops(void);
 void vrhands_drop_all(void);
 /* 1 when that controller is on Hewie. A touch also gives that hand a mild buzz. */
 int vrhands_petting(int side);
+/* 1 while a hand holds Hewie's raised front paw (the voice's "shake"): the hand near the paw,
+ * its grip closed. The call also turns that paw towards the hand, and buzzes a new grab. */
+int vrhands_paw(void);
+/* the shakes (side-to-side turns of the hand) since the last call, then cleared. */
+int vrhands_paw_shake(void);
+/* the paw let go: the action ended (a hand's next grab is a new one). */
+void vrhands_paw_release(void);
 /* a hard swing that met the room or a placed mesh. The point is Fiona's blow for one script frame. */
 int vrhands_blow_at(float out[3]);
 /* 1 when a hand moved fast enough to count, whether or not it touched anything. */
