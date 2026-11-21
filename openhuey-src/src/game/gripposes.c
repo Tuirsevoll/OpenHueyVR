@@ -470,7 +470,7 @@ static VrGripPose sPoses[VRGRIP_POSES];
 static int sPoseN;
 static int sLoaded;
 static int sDisabled;
-static const Model *sModel;
+static char sModelName[64];
 static int sModelBones;
 static int sModelVerts;
 
@@ -957,6 +957,17 @@ static void reset_all_motion(void) {
     sStateInit = 1;
 }
 
+void vrgrip_forget_model(void) {
+    sModelName[0] = 0;
+    sModelBones = 0;
+    sModelVerts = 0;
+    sDisabled = 0;
+    memset(sResolved, 0, sizeof(sResolved));
+    memset(sResolvedDone, 0, sizeof(sResolvedDone));
+    memset(sResolvedLogged, 0, sizeof(sResolvedLogged));
+    reset_all_motion();
+}
+
 void vrgrip_idle(void) {
     reset_all_motion();
 }
@@ -970,7 +981,7 @@ void vrgrip_reset(void) {
     sPoseN = 0;
     sLoaded = 0;
     sDisabled = 0;
-    sModel = NULL;
+    sModelName[0] = 0;
     sModelBones = 0;
     sModelVerts = 0;
     sMissingN = 0;
@@ -1330,8 +1341,11 @@ void vrgrip_apply(Actor *a, Mat4 *world, float dt) {
         return;
     }
     poses_load();
-    if (sModel != &a->model || sModelBones != a->model.nbones || sModelVerts != a->model.nv) {
-        sModel = &a->model;
+    /* by the model's file, not the actor's address: a second actor wearing the same model (a
+     * scene's double) is the same skeleton, and must not restart the grip pose */
+    if (strcmp(sModelName, a->name) != 0 || sModelBones != a->model.nbones ||
+        sModelVerts != a->model.nv) {
+        snprintf(sModelName, sizeof(sModelName), "%s", a->name);
         sModelBones = a->model.nbones;
         sModelVerts = a->model.nv;
         memset(sResolved, 0, sizeof(sResolved));

@@ -1,5 +1,8 @@
 #include "actor.h"
+#include "gripposes.h"
+#include "vrbody.h"
 #include "vrhands.h"
+#include "vrbones.h"
 
 #include <math.h>
 
@@ -12,6 +15,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int fiona_name(const char *name);
+static void forget_vr_model(void);
 
 static void load_textures(Actor *a, const char *name) {
     char path[96];
@@ -119,6 +125,9 @@ int actor_load_textured(Actor *actors, const char *name, const char *tex) {
     }
     a->used = 1;
     snprintf(a->name, sizeof(a->name), "%s", name);
+    if (fiona_name(a->name)) {
+        forget_vr_model();
+    }
     load_textures(a, tex);
     a->cloth = cloth_for(name);
     a->posed = malloc((size_t)a->model.nv * sizeof(MeshVertex));
@@ -181,9 +190,25 @@ void actor_use_motions(Actor *a, int on) {
     a->model.motions2_size = on ? a->loaded_motions_size : 0;
 }
 
+/* Every per-model VR cache is Fiona's, by her model's file: a model freed or loaded (wear, a new
+ * game) drops it, so the new costume is read and logged again instead of the old one being kept. */
+static int fiona_name(const char *name) {
+    return name != NULL && strncmp(name, "O_FI", 4) == 0;
+}
+
+static void forget_vr_model(void) {
+    vrbones_forget();
+    vrhands_forget_model();
+    vrbody_forget_model();
+    vrgrip_forget_model();
+}
+
 void actor_free(Actor *a) {
     int i;
 
+    if (fiona_name(a->name)) {
+        forget_vr_model();
+    }
     if (a->swap_sel >= 0) {
         render_texture_free(a->swap_orig);
         a->swap_sel = -1;

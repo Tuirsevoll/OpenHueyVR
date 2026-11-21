@@ -643,7 +643,9 @@ static void cache_bones(const struct Actor *a) {
     float floor_y = 0.0f, p0[3], p1[3], eye;
     int side, ok, eyes, eye2;
 
-    if (sBones.model == m && sBones.bones == m->nbones && sBones.verts == m->nv &&
+    /* by the model's file, not the actor's address: a second actor wearing the same model (a
+     * scene's double) is the same skeleton and must not rebuild or re-log it */
+    if (sBones.bones == m->nbones && sBones.verts == m->nv &&
         sBones.scale == scale && strcmp(sBones.name, a->name) == 0) {
         return;
     }
@@ -2099,6 +2101,11 @@ void vrbody_forget_place(void) {
     sHandSeen[0] = sHandSeen[1] = 0;
     sTwistHave[0] = sTwistHave[1] = 0;
     sRollHave[0] = sRollHave[1] = 0;
+}
+
+void vrbody_forget_model(void) {
+    memset(&sBones, 0, sizeof(sBones));
+    sActive = 0;
 }
 
 void vrbody_idle(void) {

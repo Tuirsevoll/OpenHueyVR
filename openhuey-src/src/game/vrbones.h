@@ -74,6 +74,10 @@ struct Actor;
  * any of them changes (wear frees and loads a new actor, so the name changes). Never NULL. */
 const VrBones *vrbones_for(const struct Actor *a);
 
+/* forget the cached table: the next vrbones_for reads its file afresh (a costume change, a new
+ * game, a Fiona model loaded or freed) */
+void vrbones_forget(void);
+
 /* The role a vr_bones.txt key names ("L wrist", "waist", ...), or -1 for an unknown key. Public for
  * the checks and the console's `vrbones` command. */
 int vrbones_role_named(const char *name);

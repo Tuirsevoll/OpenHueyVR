@@ -13,6 +13,12 @@ struct PlacedSet;
 
 int vrhands_wants(const struct Actor *a);
 void vrhands_pose(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace);
+/* a Fiona model was loaded or freed (a costume change, a new game): the arm chain, its lengths
+ * and the hand measure are worked out again for the model now loaded */
+void vrhands_forget_model(void);
+/* one line a model and reason when her pose will not run this frame (the same suppression as the
+ * pose's own skips): so a silent skip can never happen again */
+void vrhands_note_skip(const struct Actor *a, const char *why);
 /* (temporary, for the headset smoothing test) the microseconds vrhands_pose and its hand_stop()
  * calls have added up since the last call, then cleared. Either pointer may be NULL. */
 void vrhands_take_times(unsigned *pose, unsigned *stop);

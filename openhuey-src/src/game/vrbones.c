@@ -102,6 +102,13 @@ static void reset_table(void) {
     }
 }
 
+void vrbones_forget(void) {
+    sHave = 0;
+    sBonesCount = 0;
+    sVerts = 0;
+    reset_table();
+}
+
 /* trim the spaces (and a CR the line may carry) off both ends of a string in place */
 static char *trim(char *s) {
     char *end;

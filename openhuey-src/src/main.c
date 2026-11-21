@@ -857,7 +857,16 @@ static void prepare_shadows(Engine *e) {
         Actor *a = &e->actors[i];
 
         a->lights[0] = a->lights[1] = a->lights[2] = -1;
-        if (actor_shown(a)) {
+        if (!actor_shown(a)) {
+            /* Fiona's pose is not run at all when she is not drawn: the VR body and the arms
+             * would be left where they were. Say why once a model, in VR. */
+            if (vr_active() && a->used && strncmp(a->name, "O_FI", 4) == 0) {
+                vrhands_note_skip(a, a->visible ? "she is not drawn this frame (the world is frozen)" :
+                                                  "she is not shown");
+            }
+            continue;
+        }
+        {
             actor_prepare(a);
             /* The headset is at her eyes: her head, face and hair are collapsed in the drawn mesh
              * so the view is not inside them. The VR body's own shrink (game/vrbody.c) does the

@@ -201,10 +201,11 @@ static unsigned char sDoorClaim[DOORS];
  * a door dragged shut as she crossed finishes shut, not by the angle alone */
 static float sDoorVel[DOORS];
 
-static const Model *sArmModel;
 static int sArmBones, sArmVerts;
 static char sArmName[64];   /* the model file: the same counts in another costume number their bones differently */
-static char sNoRigName[64]; /* the model that had no VR bones: its one log line */
+static char sSkipName[64];  /* the model the last skip line was for, and why */
+static char sSkipWhy[128];
+static char sNoArmName[64]; /* the model whose arm chain was not found (its one log line) */
 static int sShoulder[2], sElbow[2], sHandBone[2], sArmFound[2];
 /* the bind pose's upper arm and forearm, model units scaled to room units: once per model */
 static float sArmLen[2][2];
@@ -263,8 +264,11 @@ static Vec3 sCenter[2];
  * length) */
 #define HAND_RELEASE 5.0f
 
+/* Is this Fiona's actor? The pose hook must be installed for her in every mode, VR or not: the
+ * pose is where the VR state is idled and where a skip is logged. VR activity is checked there,
+ * not here. The name test takes every outfit (O_FIN, O_FIS, O_FIH, ...). */
 int vrhands_wants(const Actor *a) {
-    return a != NULL && a->used && vr_active() && strncmp(a->name, "O_FI", 4) == 0;
+    return a != NULL && a->used && strncmp(a->name, "O_FI", 4) == 0;
 }
 
 static int leg_bone(const Actor *a, int b) {
@@ -323,11 +327,12 @@ static void find_arms(Actor *a, const Mat4 *world) {
     float best[2] = {-1.0f, -1.0f};
     int i, k, near_sh[2], near_el[2], near_ha[2], named[6];
 
-    if (sArmModel == m && sArmBones == m->nbones && sArmVerts == m->nv &&
+    /* by the model's file, not the actor's address: a second actor wearing the same model (a
+     * scene's double) must not re-run this or restart anything keyed to it */
+    if (sArmBones == m->nbones && sArmVerts == m->nv &&
         strcmp(sArmName, a->name) == 0 && sArmFound[0] && sArmFound[1]) {
         return;
     }
-    sArmModel = m;
     sArmBones = m->nbones;
     sArmVerts = m->nv;
     snprintf(sArmName, sizeof(sArmName), "%s", a->name);
@@ -407,6 +412,60 @@ static void find_arms(Actor *a, const Mat4 *world) {
             sShoulder[1], sElbow[1], sHandBone[1], sPalmBone[1],
             named[0] >= 0 && named[1] >= 0 ? "by name" : "by geometry",
             sMeasureBone[0], sMeasureBone[1]);
+}
+
+/* One line a reason, a model: a pose that was skipped must never be silent. */
+static void log_skip_once(const Actor *a, const char *why) {
+    if (a == NULL) {
+        return;
+    }
+    if (strcmp(sSkipName, a->name) == 0 && strcmp(sSkipWhy, why) == 0) {
+        return;
+    }
+    snprintf(sSkipName, sizeof(sSkipName), "%s", a->name);
+    snprintf(sSkipWhy, sizeof(sSkipWhy), "%s", why);
+    fprintf(stderr, "hands: VR arms/body off for %s - %s\n", a->name, why);
+}
+
+void vrhands_note_skip(const Actor *a, const char *why) {
+    log_skip_once(a, why);
+}
+
+static void log_no_arm_once(const Actor *a) {
+    if (a == NULL || strcmp(sNoArmName, a->name) == 0) {
+        return;
+    }
+    snprintf(sNoArmName, sizeof(sNoArmName), "%s", a->name);
+    fprintf(stderr, "hands: arm IK off for %s - no arm chain found (L %d R %d)\n",
+            a->name, sArmFound[0], sArmFound[1]);
+}
+
+/* Her model is about to go (actor_free) or has just come (actor_load_textured): everything worked
+ * out from the old one is dropped, so the new costume's chain, lengths and hand measure are found
+ * afresh. This is also what makes a new game log its table again. */
+void vrhands_forget_model(void) {
+    sArmBones = sArmVerts = 0;
+    sArmName[0] = 0;
+    sSkipName[0] = 0;
+    sSkipWhy[0] = 0;
+    sNoArmName[0] = 0;
+    sArmFound[0] = sArmFound[1] = 0;
+    sPalmBone[0] = sPalmBone[1] = -1;
+    sMeasureBone[0] = sMeasureBone[1] = -1;
+    sWristT[0] = sWristT[1] = 0.0f;
+    sGripCenter[0] = sGripCenter[1] = vec3(0.0f, 0.0f, 0.0f);
+    sBendHave[0] = sBendHave[1] = 0;
+    sTwistHave[0] = sTwistHave[1] = 0;
+    sUpHave[0] = sUpHave[1] = 0;
+    sArmLenHave[0] = sArmLenHave[1] = 0;
+    sArmLenK[0] = sArmLenK[1] = 0.0f;
+    sLenModel = NULL;
+    sLenBones = sLenVerts = 0;
+    sExtentModel = NULL;
+    sExtentVerts = 0;
+    sExtent[0] = sExtent[1] = 0.0f;
+    sCenter[0] = sCenter[1] = vec3(0.0f, 0.0f, 0.0f);
+    sHandLogDone = 0;
 }
 
 /* play space matches the camera: +X right, +Y up, -Z forward. `p` is an offset from her eyes. */
@@ -1203,7 +1262,24 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
     Uint64 t_pose = SDL_GetPerformanceCounter();   /* (temporary: the pose's own time) */
 #endif
 
-    if (!vrhands_wants(a) || !a->visible || world == NULL) {
+    if (a == NULL || !a->used || strncmp(a->name, "O_FI", 4) != 0) {
+        /* Another actor's model. The VR body and the grip state are Fiona's: idling them here
+         * (as this did for every hooked actor - Hewie, a stalker, a figure) turned her body off
+         * and restarted her grip pose every frame. Leave them alone. */
+        return;
+    }
+    if (!vr_active()) {
+        log_skip_once(a, "VR is not active");
+        vrbody_idle();
+        vrgrip_idle();
+        grip_pose_forget_clock();
+#if VR_STEP_LOG
+        pose_us += perf_us(t_pose, SDL_GetPerformanceCounter());
+#endif
+        return;
+    }
+    if (!a->visible || world == NULL) {
+        log_skip_once(a, !a->visible ? "she is not shown" : "the model-space world is missing");
         vrbody_idle();
         vrgrip_idle();
         grip_pose_forget_clock();
@@ -1224,12 +1300,10 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         /* No per-outfit table (no vr_bones.txt, and not the FIN layout): her own animation plays
          * exactly as it does in a cutscene - no arm IK, no VR body, not one matrix twisted. The
          * grip poses still run: they find the finger bones by name. */
-        if (strcmp(sNoRigName, a->name) != 0) {
-            snprintf(sNoRigName, sizeof(sNoRigName), "%s", a->name);
-            fprintf(stderr,
-                    "hands: no VR bones for %s (no vr_bones.txt and not the FIN layout):"
-                    " arm IK and VR body off\n", a->name);
-        }
+        const VrBones *vb = vrbones_for(a);
+
+        log_skip_once(a, vb->from_file ? "its vr_bones.txt does not match the skeleton" :
+                                         "no usable vr_bones.txt (and not the FIN layout)");
         vrbody_idle();
         sArmFound[0] = sArmFound[1] = 0;   /* (no stale arm: the key item is not shown at one) */
         for (side = 0; side < 2; side++) {
@@ -1247,6 +1321,9 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         return;
     }
     find_arms(a, world);
+    if (!sArmFound[0] || !sArmFound[1]) {
+        log_no_arm_once(a);
+    }
     arm_lengths(a);
     /* the VR body (vrbody.h): its yaw, and the body under the headset with the feet kept. Off
      * wherever the arms are off (a cutscene, a scene, no anchor): then not one matrix is touched. */

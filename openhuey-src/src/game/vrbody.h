@@ -110,4 +110,8 @@ void vrbody_forget_place(void);
  * by the camera or the near plane */
 void vrbody_idle(void);
 
+/* a Fiona model was loaded or freed (a costume change, a new game): the bones, ratios and
+ * calibration are worked out again for the model now loaded */
+void vrbody_forget_model(void);
+
 #endif

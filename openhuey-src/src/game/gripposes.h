@@ -41,6 +41,10 @@ void vrgrip_reset(void);
  * cutscene, a new model) */
 void vrgrip_idle(void);
 
+/* a Fiona model was loaded or freed (a costume change, a new game): forget the model readiness
+ * and the grip state, so the next pose is found and started once for the model now loaded */
+void vrgrip_forget_model(void);
+
 /* What one hand wants this frame: a pose name (empty/NULL: none) and the item it belongs to,
  * for the log. Called by vrhands_pose for both hands before vrgrip_apply. */
 void vrgrip_want(int side, const char *pose, int item);
