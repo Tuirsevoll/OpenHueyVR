@@ -252,6 +252,10 @@ create idle-tricks  sit-trick-act , sit-trick-2-act , lie-down-trick-act , stand
     near-target-2-act of  near-target  endof
     flank-act of  flank  endof
     fetch-act of  fetch  endof
+    treat-act of   \ (a bait she let go: the same breaks as a fetch, walking fetch.fs's way)
+        free-mode mode!  -1 his-target2 !  0 his-target !  900 his-wait !
+        on-waiting on-danger or on-command or on-alert or on-praise-due or his-cmd !
+        ['] st-treat behave  endof
     draw-off-act of  draw-off  endof
     rush-act of  close-in  endof
     tackle-act of  tackle  endof   \ (the story's tackle: Hewie_StateTargetPursuer, the leap at his leg)

@@ -135,7 +135,5 @@ enum: skill  going-skill watching-skill eager-skill picking-up-skill telling-ski
 : treat-go ( -- )   \ (Hewie_Start to it: the same things may break in as the ball's fetch)
     ." hewie: going to treat " treat-i n>s type space
     ." (dist " his-at treat-at vec-dist 1 f>s$ type [char] ) emit cr
-    free-mode his-mode !  0 his-target !
-    on-waiting on-danger or on-command or on-wait-over or on-alert or on-praise-due or
-    ['] st-treat behave  his-cmd ! ;
+    treat-act 0 want ;
 

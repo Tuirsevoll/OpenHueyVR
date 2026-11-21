@@ -2538,10 +2538,11 @@ static int draw_room_group(int group, const Mat4 *hand, const Mat4 *vp) {
 }
 
 /* An item lying about (not in a hand) drawn with its own model, from the right hand's grip line
- * (model= and tint), at the prop's world matrix. Room up is -y, so the floor side of the model is
- * the larger y: the model is moved so that point is on the item's spot and the rest is above it
- * (smaller y). The model is only looked up here: loot_at/loot_sparkle/fill_from_cat preload it. */
-static int item_rest_draw(const LootProp *p, const Mat4 *vp) {
+ * (model= and tint), at the prop's world matrix. `up_plus` puts the model's floor side (its lowest
+ * y) on the item's spot and the rest above it - what a thing lying on the room's floor wants, the
+ * room's +Y being up. Without it (the loot props' own line) the spot is the model's largest y, as
+ * that path has always had it. The model is only looked up here: the callers preload it. */
+static int item_rest_draw(const LootProp *p, const Mat4 *vp, int up_plus) {
     static const uint32_t all[8] = {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u};
     ItemModel *m;
     ItemGrip grip_store;
@@ -2576,7 +2577,7 @@ static int item_rest_draw(const LootProp *p, const Mat4 *vp) {
         max_y = w.y > max_y ? w.y : max_y;
     }
     spot_y = world.m[13];
-    delta = spot_y - max_y;   /* (room up is -y: max y is the floor side) */
+    delta = up_plus ? spot_y - min_y : spot_y - max_y;   /* (floor side on the spot; up is +y) */
     world.m[13] += delta;
     min_y += delta;
     max_y += delta;
@@ -2584,10 +2585,15 @@ static int item_rest_draw(const LootProp *p, const Mat4 *vp) {
     engine_lights_at(middle);
     if (p->item < ITEMPROPS_ITEMS && !sItemRestLogged[p->item]) {
         sItemRestLogged[p->item] = 1;
-        fprintf(stderr,
-                "loot: item %d at rest: spot y %.3f, model y %.3f .. %.3f (room up is -y; model should be "
-                "ABOVE the spot: its lowest y (ceiling side) is smaller than the spot, its floor side at the spot)\n",
-                p->item, spot_y, min_y, max_y);
+        if (up_plus) {
+            fprintf(stderr, "loot: item %d at rest: spot y %.3f, model y %.3f .. %.3f (floor side on the spot, up +y)\n",
+                    p->item, (double)spot_y, (double)min_y, (double)max_y);
+        } else {
+            fprintf(stderr,
+                    "loot: item %d at rest: spot y %.3f, model y %.3f .. %.3f (room up is -y; model should be "
+                    "ABOVE the spot: its lowest y (ceiling side) is smaller than the spot, its floor side at the spot)\n",
+                    p->item, (double)spot_y, (double)min_y, (double)max_y);
+        }
     }
     if (grip != NULL) {
         r = grip->tint[0];
@@ -2602,8 +2608,8 @@ static int item_rest_draw(const LootProp *p, const Mat4 *vp) {
 }
 
 /* The item's own model lying at a point (a treat on the floor, things.c's kind 11): the rest draw's
- * upright placement, its floor side on the point. The caller preloads the model (loot_preload_held
- * does the same path), so nothing is loaded in a draw. */
+ * upright placement with the model's floor side on the point and its body above it. The caller
+ * preloads the model (loot_preload_held does the same path), so nothing is loaded in a draw. */
 int loot_item_rest_draw(int item, Vec3 at, const Mat4 *view_proj) {
     LootProp p;
 
@@ -2612,7 +2618,7 @@ int loot_item_rest_draw(int item, Vec3 at, const Mat4 *view_proj) {
     p.item = item;
     p.fx = -1;
     p.home = p.pos = at;
-    return item_rest_draw(&p, view_proj);
+    return item_rest_draw(&p, view_proj, 1);
 }
 
 static void draw_spawned(LootProp *p, const Mat4 *vp) {
@@ -2626,7 +2632,7 @@ static void draw_spawned(LootProp *p, const Mat4 *vp) {
             return;
         }
     }
-    if (!p->holders && item_rest_draw(p, vp)) {   /* (lying about: its own model on the spot) */
+    if (!p->holders && item_rest_draw(p, vp, 0)) {   /* (lying about: its own model on the spot) */
         return;
     }
     if (gfm_of(p->item, &model, &pal) && things_model_draw(model, pal, &world, vp)) {

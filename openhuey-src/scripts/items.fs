@@ -545,10 +545,8 @@ defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
     body-room room-id = ;
 : hewie-along? ( -- flag )  hewie-id dup 0< if  drop false exit  then  body? 0<> ;   \ (in the game, a body)
 : hewie-room ( -- r )  hewie-id dup 0< if  drop -1 exit  then  dup body? 0= if  drop -1 exit  then  body-room ;
-: treat-reach? ( -- flag )   \ (his own step to it, as at-hand? checks hers)
-    hewie-id dup 0< if  drop false exit  then
-    dup body? 0= if  drop false exit  then
-    dup body-tri  swap body-at  treat-at  $20008 v-walk  hewie-id body-tri = ;
+: treat-reach? ( -- flag )   \ (the floor point is her hand's: at-hand?'s own walk, and its reach)
+    at-hand? ;
 : treat-ready ( -- flag addr len )   \ (will he come - else why not)
     hewie-with-her? 0= if  false s" not with her" exit  then
     treat-reach? 0= if  false s" unreachable" exit  then

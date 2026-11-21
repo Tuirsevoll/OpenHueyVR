@@ -3,7 +3,7 @@
 \ map or a sketch has no Equip, and holding a remedy or a bait spends nothing. Headless:
 \   build/openhuey-src/openhuey --test openhuey-src/tests/items/test_hand_equip.fs
 IN: test-hand-equip
-USING: tester engine game-state actors messages keys facts flag-names story-names room-names game items items.names items.tables subscreen subscreen.state subscreen.lists hewie.state hewie.body debug ;
+USING: tester engine game-state actors messages keys facts flag-names story-names room-names game items items.names items.tables subscreen subscreen.state subscreen.lists hewie.state hewie.body things debug ;
 
 : tap ( key -- )  dup true key-hold  game-tick  false key-hold  game-tick ;
 : menu@ ( xt -- x )  game:subscreen enter  execute  leave-actor ;
@@ -189,5 +189,15 @@ testing ... a treat nobody eats: the room left, it goes - and is not spent
 T{ chicken-jerky items-of -> 1 }T
 front-garden-2 -1 game:rooms send go-to-room  20 run-frames
 T{ chicken-jerky items-of -> 1 }T
+
+testing ... and it lies there: 60 frames on, the thing is still used and nothing is spent
+game:hewie send part-from-fiona  20 run-frames   \ (no Hewie to eat it)
+: floor-treats ( -- n )   \ (the kind-11 things there are)
+    0 #things 0 do  i thing-used? if  i thing-kind treat-thing = if  1+  then  then  loop ;
+[: chicken-jerky game:fiona body-pos treat-drop ;] items!
+2 run-frames   \ (the things actor's message takes a tick)
+T{ floor-treats -> 1 }T
+60 run-frames
+T{ floor-treats  chicken-jerky items-of -> 1 1 }T
 
 test-summary
