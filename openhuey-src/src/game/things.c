@@ -4,6 +4,7 @@
 #include "things.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -74,6 +75,10 @@ int things_new(int kind, int room, int tri, Vec3 at, Vec3 v) {
             t->kind = kind;
             t->room = room;
             t->tri = tri >= 0 ? tri : navmesh_find(nav(), at, 1000.0f, &h);
+            if (kind == THING_TREAT && t->tri < 0) {
+                fprintf(stderr, "things: treat made with no triangle (at %.2f %.2f %.2f, room %d)\n", (double)at.x,
+                        (double)at.y, (double)at.z, room);
+            }
             t->at = t->was = at;
             t->v = v;
             t->alpha = 1.0f;
@@ -88,7 +93,16 @@ void things_free(int i) {
         sThings[i].used = 0;
     }
 }
-void things_clear(void) { memset(sThings, 0, sizeof(sThings)); }
+void things_clear(void) {
+    int i;
+
+    for (i = 0; i < THINGS_MAX; i++) {
+        if (sThings[i].used && sThings[i].kind == THING_TREAT) {
+            fprintf(stderr, "things: treat thing %d freed - things cleared (age %d)\n", i, sThings[i].age);
+        }
+    }
+    memset(sThings, 0, sizeof(sThings));
+}
 int things_used(int i) { return get(i) != NULL; }
 int things_spent(int i) { return get(i) ? sThings[i].spent : 0; }
 int things_kind(int i) { return get(i) ? sThings[i].kind : -1; }
@@ -329,6 +343,9 @@ void things_step(int room, int running) {
             continue;
         }
         if (t->spent) {   /* (its owner has seen it go) */
+            if (t->kind == THING_TREAT) {
+                fprintf(stderr, "things: treat thing %d freed - the engine (spent, age %d)\n", i, t->age);
+            }
             t->used = 0;
             continue;
         }

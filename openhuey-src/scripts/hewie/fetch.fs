@@ -119,12 +119,13 @@ enum: skill  going-skill watching-skill eager-skill picking-up-skill telling-ski
     treat-i thing-room self body-room = ;
 : treat-forget ( -- )  -1 his-treat ! ;
 : treat-ate ( -- )
-    treat-i dup 0< if  drop  to-default exit  then
+    treat-i dup 0< if  drop  ." hewie: treat walk ended - no treat" cr  to-default exit  then
+    ." hewie: treat walk ended - at it, eating" cr
     items-id send treat-eaten   \ (its rule, then one spent - the items')
     treat-forget  to-default ;
 : st-treat ( -- )
-    treat-there? 0= if  treat-forget  to-default exit  then
-    treat-tri treat-at plan-and-go if  treat-forget  to-default exit  then
+    treat-there? 0= if  ." hewie: treat walk ended - gone, or in another room" cr  treat-forget  to-default exit  then
+    treat-tri treat-at plan-and-go if  ." hewie: treat walk ended - no way to it" cr  treat-forget  to-default exit  then
     rest
     stride-len fabs 0.8e f<  fdup 6e f<  and if  fdrop treat-ate exit  then
     fdrop

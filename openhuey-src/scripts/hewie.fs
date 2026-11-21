@@ -231,7 +231,14 @@ behaviour hewie-own
   on fetch-this ( thing -- )   \ (Fiona_StateLetGo: her ball thrown, while all's calm)
       along? his-danger @ calm = and his-action @ fetch-act <> and if  his-follows !  else  drop  then ;
   on treat-here ( i -- )   \ (the things: a bait she dropped lies on the floor - go and eat it)
-      along? his-danger @ calm = and if  his-treat !  treat-go  else  drop  then ;
+      ." hewie: treat-here received (along " along? n>s type space ." busy " his-busy @ n>s type space
+      ." mode " his-mode @ n>s type space ." action " his-action @ n>s type space
+      ." danger " his-danger @ n>s type space [char] ) emit cr
+      along? his-danger @ calm = and if  his-treat !  treat-go
+      else
+          drop
+          ." hewie: treat-here ignored - " along? 0= if  s" no body"  else  s" not calm"  then  type cr
+      then ;
   on shaken-off ( -- )  along? if  his-act @ ['] st-bite-hold = if  thrown-off his-biting !  then  then ;   \ (thrown off: only while he holds on)
   on blow-from ( kind damage how x y z -- )   \ (from a point: Progress_Noise)
       cells>xyz his-blow-pt vec!  along? 0= if  2drop drop exit  then  -2 take-blow drop ;

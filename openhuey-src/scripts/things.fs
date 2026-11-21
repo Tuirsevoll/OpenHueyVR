@@ -35,6 +35,12 @@ end-state
 
 \ ---- the one looked at ----
 : kind ( -- n )  it @ thing-kind ;
+\ (DEBUG) one line each time a treat thing goes, so a drop shows its whole path (kind 11 only)
+: treat-free-log ( i addr len -- )   \ (the thing still used: its index, then the reason)
+    {: i why-a why-n :}
+    i 0< if  exit  then
+    ." things: treat thing " i n>s type space ." freed - " why-a why-n type
+    space ." (age " i thing-age n>s type [char] ) emit cr ;
 : its-room ( -- room )  it @ thing-room ;
 : its-tri ( -- tri )  it @ thing-tri ;
 : age ( -- n )  it @ thing-age ;
@@ -43,7 +49,7 @@ end-state
 : here? ( -- flag )  its-room room-id = ;
 \ the ball gone (its time, a hole, cleared away): hers again if she has none (Ball_dtor)
 : ball-back ( -- )  ball items-of 0= if  ball 1 items-id send give-item  then ;
-: gone ( -- )  kind  it @ thing-free  ball-thing = if  ball-back  then ;
+: gone ( -- )  kind treat-thing = if  it @ s" gone" treat-free-log  then  kind  it @ thing-free  ball-thing = if  ball-back  then ;
 : thing-sound ( id -- )  5 0 0 at vec@ sound-at ;
 : running? ( -- flag )   \ (Thing_Frame: the game going - no scene has the camera, the world not held)
     cam-scene? 0=  world-held state-flag? 0= and  panic-starting state-flag? 0= and ;   \ (her panic's start too: held still)
@@ -123,6 +129,7 @@ variable trodden
     kicked? @ if  drop exit  then
     at vec-dist 5e f> if  exit  then
     -1 kicked? !
+    kind treat-thing = if  ." things: treat thing " it @ n>s type space ." kicked (age " it @ thing-age n>s type [char] ) emit cr  then
     0e 2e her body-yaw rotate-by  up fswap  it @  thing-kick ;
 
 \ ---- the story's own (house-of-truth-1f-9): kind 9 carries a room object "keri<k>" with it
@@ -213,8 +220,9 @@ $1F constant doll-noise
     then ;
 : one-frame ( -- )
     powder-meets  it @ thing-used? 0= if exit then
-    burst-event event? if  powder-splash exit  then   \ (freed next step)
+    burst-event event? if  kind treat-thing = if  it @ s" burst-event" treat-free-log  then  powder-splash exit  then   \ (freed next step)
     fell-event event? if   \ (through a hole: freed next step)
+        kind treat-thing = if  it @ s" fell-event" treat-free-log  then
         kind ball-thing = if  ball-back  then  kind keri-thing = if  keri-gone  then  exit
     then
     bounced-event event? if  bounce-sound thing-sound  then
@@ -244,6 +252,7 @@ $1F constant doll-noise
 1000000 constant spent-age   \ (the original's age -1, past every limit: it goes off, or goes, next frame)
 : make-room ( k -- )
     {: k | n oldest :}  -1 to oldest
+    k treat-thing = if  ." things: treat make-room called (not kept: nothing done)" cr  then
     k kept? k trap-thing = or 0= if  exit  then
     #things 0 do
         k i of-kind? if
@@ -291,23 +300,28 @@ behaviour keeping-things
   \ the save, and only one at a time - a new one frees the old
   on treat-made ( item tri x y z ready -- )
       {: item tri x y z ready | i :}
-      floor-treat @ 0>= if  floor-treat @ thing-free  then
+      floor-treat @ 0>= if  floor-treat @ s" replaced" treat-free-log  floor-treat @ thing-free  then
       treat-thing room-id tri  x cell>f y cell>f z cell>f  0e 0e 0e  thing-new to i
-      i 0< if  -1 floor-treat !  -1 treat-item !  else
+      i 0< if  -1 floor-treat !  -1 treat-item !
+          ." things: treat " item n>s type ." NOT made (things_new returned -1)" cr
+      else
           i item swap thing-item!
           i floor-treat !  item treat-item !
+          ." things: treat " item n>s type space ." made as thing " i n>s type space
+          ." (tri " i thing-tri n>s type ." , room " i thing-room n>s type [char] ) emit cr
           ready if  i hewie-id send treat-here  then
       then ;
   on treat-gone ( -- )
-      floor-treat @ 0>= if  floor-treat @ thing-free  then
+      floor-treat @ 0>= if  floor-treat @ s" treat-gone" treat-free-log  floor-treat @ thing-free  then
       -1 floor-treat !  -1 treat-item ! ;
   on story-things-off ( -- )   \ (the story's kinds 9 and 10 all gone - their objects left where they are)
       #things 0 do  i thing-used? if  i it !  kind keri-thing = kind trap-thing = or if  -1 keri !  i thing-free  then  then  loop ;
   on clear-things ( -- )   \ (the story's $D2, PlacedThings_Clear: each gone as it ends - the ball back to her)
       false  #things 0 do  i thing-used? if          \ (a ball among them: hers back once - her items told after)
-          i it !  kind ball-thing = or  kind keri-thing = if  -1 keri !  then  i thing-free
+          i it !  kind treat-thing = if  i s" clear-things" treat-free-log  then
+          kind ball-thing = or  kind keri-thing = if  -1 keri !  then  i thing-free
       then  loop  if  ball-back  then ;
-  on thing-taken ( i -- )  dup thing-used? if  it !  gone  else  drop  then ;   \ (Hewie picked it up)
+  on thing-taken ( i -- )  dup thing-used? if  dup thing-kind treat-thing = if  dup s" thing-taken" treat-free-log  then  it !  gone  else  drop  then ;   \ (Hewie picked it up)
   on write-save ( -- )  write-things ;
   on creature-doing ( slot room mode up -- )
       {: slot room mode up :}  slot first-homunculus dup 3 + within if  sender slot first-homunculus - cells homunculi + !  then ;
