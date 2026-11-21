@@ -1,5 +1,6 @@
-\ The menu's Equip for key things (hga's own): Use, Equip, Cancel; the item in her right hand,
-\ and Remove back to the list. A map or a sketch has no Equip. Headless:
+\ The menu's Equip for the key things and for the remedies and baits she carries (hga's own): Use,
+\ Equip, Discard, Cancel; the item in her right hand with its grip, and Remove back to the list. A
+\ map or a sketch has no Equip, and holding a remedy or a bait spends nothing. Headless:
 \   build/openhuey-src/openhuey --test openhuey-src/tests/items/test_hand_equip.fs
 IN: test-hand-equip
 USING: tester engine game-state actors messages keys facts flag-names story-names game items items.names items.tables subscreen subscreen.state subscreen.lists debug ;
@@ -18,12 +19,21 @@ USING: tester engine game-state actors messages keys facts flag-names story-name
 
 100 run-frames
 study-key 1 gives  castle-sketch 1 gives  word-plate-key 1 gives
+camomile 1 gives  chicken-jerky 1 gives
 
-testing what a hand may hold: a key thing or a word plate, not a map or a sketch
+testing what a hand may hold: a key thing, a word plate, a remedy or a bait - not a map or a
+\ sketch, what she wears, what she throws, a document or a medallion
 T{ study-key hand-equippable?  garden-key hand-equippable? -> -1 -1 }T
 T{ word-plate-key hand-equippable? -> -1 }T
+T{ camomile hand-equippable?  lavender hand-equippable?  paptisma hand-equippable? -> -1 -1 -1 }T
+T{ chicken-jerky hand-equippable?  esca hand-equippable?  bennenam-esca hand-equippable? -> -1 -1 -1 }T
 T{ castle-sketch hand-equippable?  forest-map hand-equippable?  tower-sketch hand-equippable? -> 0 0 0 }T
-T{ camomile hand-equippable?  feather-boots hand-equippable? -> 0 0 }T
+T{ camomile hand-equippable?  chicken-jerky hand-equippable?  feather-boots hand-equippable? -> -1 -1 0 }T
+T{ ball hand-equippable?  old-parchment hand-equippable?  album-medallion hand-equippable? -> 0 0 0 }T
+
+testing a trigger box: a key thing's Use or a word plate's - not a remedy's or a bait's (no drink, no feed)
+T{ study-key trigger-use?  word-plate-key trigger-use? -> -1 -1 }T
+T{ camomile trigger-use?  paptisma trigger-use?  chicken-jerky trigger-use?  bennenam-esca trigger-use? -> 0 0 0 0 }T
 
 testing the key's actions: Use, Equip, Cancel (use first)
 key: Tab tap  10 run-frames
@@ -64,5 +74,52 @@ T{ 0 3 held-at letters c@ -> 'E' }T
 T{ hand-item -> word-plate-key }T
 hand-unequip
 T{ find-hand-place -> 0 }T
+
+testing a remedy's actions: Use, Equip, Discard, Cancel (the menu is left on the list: Select shuts it)
+key: Tab tap  20 run-frames
+T{ stage@ -> 0 }T
+key: Tab tap  10 run-frames
+T{ stage@ page@ -> 2 0 }T
+key: E tap
+T{ page@ cursor-item -> 1 camomile }T
+key: X tap  2 run-frames
+T{ mode@ cursor-item -> 1 camomile }T
+T{ acts@ act1@ act2@ -> 4 can-equip 4 }T
+
+testing Equip a remedy: in her hand, still in its place with its count
+key: Down tap  key: X tap  2 run-frames
+T{ mode@ hand-item  camomile items-of -> 0 camomile 1 }T
+testing Remove: out of her hand, still in the list with its count
+key: X tap  key: Down tap  key: X tap  2 run-frames
+T{ mode@ hand-item  camomile items-of -> 0 -1 1 }T
+
+testing a bait's actions too: Use, Equip, Discard, Cancel
+key: Down tap  key: X tap  2 run-frames
+T{ mode@ cursor-item -> 1 chicken-jerky }T
+T{ acts@ act1@ act2@ -> 4 can-equip 4 }T
+testing Equip a bait: in her hand; frames pass and nothing is fed, nothing spent
+key: Down tap  key: X tap  2 run-frames
+T{ mode@ hand-item  chicken-jerky items-of -> 0 chicken-jerky 1 }T
+50 run-frames
+T{ hand-item  chicken-jerky items-of -> chicken-jerky 1 }T
+testing Remove a bait: out of her hand, still in the list with its count
+key: X tap  key: Down tap  key: X tap  2 run-frames
+T{ mode@ hand-item  chicken-jerky items-of -> 0 -1 1 }T
+
+testing Use from the menu still uses one: a stack of two loses one and stays in her hand
+camomile 1 gives
+key: Up tap  key: X tap  2 run-frames
+T{ mode@ cursor-item -> 1 camomile }T
+key: Down tap  key: X tap  2 run-frames
+T{ mode@ hand-item  camomile items-of -> 0 camomile 2 }T
+key: X tap  key: X tap  2 run-frames
+T{ hand-item  camomile items-of -> camomile 1 }T
+key: X tap  2 run-frames
+T{ mode@ -> 0 }T
+testing ... the last one used: it goes, and the hand with it (remove clears it)
+key: X tap  key: X tap  2 run-frames
+T{ hand-item  camomile items-of -> -1 0 }T
+key: X tap  2 run-frames
+T{ mode@ -> 0 }T
 
 test-summary

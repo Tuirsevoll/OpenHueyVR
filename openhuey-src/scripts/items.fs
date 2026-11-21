@@ -34,9 +34,10 @@ enum: item-list  key-list kit-list material-list ;
 : item-sort ( id -- key )  class-of i.sort @ ;
 : stacks? ( id -- flag )  item-held stack = ;
 
-\ the things a hand may hold (hga's own: `Equip`, src/game/vrhands.c): the key things and the
-\ word plate, but not the maps and sketches (what she holds up to read), nor a remedy, bait or
-\ what she wears
+\ the things a hand may hold (hga's own: `Equip`, src/game/vrhands.c): the key things, the word
+\ plate, a remedy or a bait (shown in her hand as a key thing is; only the menu's Use spends one),
+\ but not the maps and sketches (what she holds up to read), nor what she wears, what she throws,
+\ a document or a medallion
 : map-or-sketch? ( id -- flag )
     case
         castle-sketch of  true  endof    mansion-sketch of  true  endof
@@ -44,12 +45,12 @@ enum: item-list  key-list kit-list material-list ;
         mystery-sketch of true  endof
         >r false r>
     endcase ;
-: hand-equippable? ( id -- flag )   \ a key thing or a word plate, not a map or a sketch
+: hand-equippable? ( id -- flag )   \ a key thing, a word plate, a remedy or a bait - not a map or a sketch
     dup item-class? 0= if  drop false exit  then
-    dup item-kind {: k :}  k key-thing =  k word-plate =  or 0= if  drop false exit  then
+    dup item-kind {: k :}  k key-thing =  k word-plate =  or  k remedy =  or  k bait =  or 0= if  drop false exit  then
     map-or-sketch? 0= ;
 : hand-item? ( id -- flag )  hand-item = ;
-: hand-equip ( list i -- )   \ (the key thing or word plate there, into her hand; its place kept)
+: hand-equip ( list i -- )   \ (the key thing, word plate, remedy or bait there, into her hand; its place kept)
     held-at {: at :}  at id@ {: id :}
     id hand-equippable? if
         id hand-item!
@@ -475,13 +476,19 @@ defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
     r 3 and  at id@ id = and if  at spend  then   \ (still there: a rule may have moved it)
     id r ;
 
+\ an item's Use met at a trigger box: a key thing's or a word plate's, not a remedy's or a bait's
+\ (only the menu's Use spends one of those: walking a held camomile into a box must not drink it -
+\ remedy-her - nor a held bait feed Hewie - feed)
+: trigger-use? ( id -- flag )  item-kind dup remedy = swap bait = or 0= ;
 \ a trigger box of this room met by the item in her hand: the Use the menu would run, once
 : hand-trigger ( -- )
     {: | at :}
     cam-scene? world-frozen state-flag? or 0= if
         trigger-hit? if
             find-hand-place to at
-            at if  at use-place 2drop  then
+            at 0= if  exit  then
+            at id@ trigger-use? 0= if  exit  then
+            at use-place 2drop
         then
     then ;
 
@@ -518,8 +525,9 @@ behaviour keeping-items
       slot 0< if  exit  then  list at item-at slot equip-slot l!  tell-equipment ;
   on unequip-item ( list held-at -- )
       2dup equip-state worn = if  slot-of equip-slot -1 swap l!  tell-equipment  else  2drop  then ;
-  \ hga's own `Equip` (hga's menu, scripts/subscreen/lists.fs): the key thing in her hand, where it
-  \ stays in its list place. Nothing is worn, nothing is thrown, and it is not saved.
+  \ hga's own `Equip` (hga's menu, scripts/subscreen/lists.fs): the key thing, word plate, remedy
+  \ or bait in her hand, where it stays in its list place. Nothing is worn, nothing is thrown, and
+  \ it is not saved.
   on equip-hand-item ( list i -- )  hand-equip ;
   on unequip-hand-item ( -- )  hand-unequip ;
   on sort-items ( list -- )   \ (Items_Sort: by their places in a sort)

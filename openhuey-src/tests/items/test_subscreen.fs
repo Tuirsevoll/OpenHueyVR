@@ -38,8 +38,8 @@ T{ mode@  [: shown @ ;] menu@  camomile items-of -> 3 $4055 2 }T
 key: X tap
 T{ mode@ -> 0 }T
 
-testing thrown away: asked first, then one gone
-key: X tap  key: Down tap  key: X tap
+testing thrown away: asked first, then one gone (its actions: Use, Equip, Discard, Cancel)
+key: X tap  key: Down tap  key: Down tap  key: X tap
 T{ mode@  [: shown @ ;] menu@  [: picked @ ;] menu@ -> 3 $4056 1 }T   \ (on "no" first: the question's 0x0E 2)
 key: Left tap  key: X tap  2 run-frames
 T{ camomile items-of  [: shown @ ;] menu@ -> 1 $4057 }T

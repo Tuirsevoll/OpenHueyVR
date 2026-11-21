@@ -117,13 +117,16 @@ static struct {
     int histN;
     Vec3 pat, pvel;
 } sDef = {.item = -1, .kind = -1, .side = 1};
-/* the key item the scripts put in her right hand (items.fs's `Equip`, gEngine.hand_item): shown
- * in VR while she plays, with the grip pose its grip line names. Never thrown: no arming, and
- * the defense path is left as it is. The magnesia/antimony in slot 2 has the hand instead. */
+/* the key item, remedy or bait the scripts put in her hand (items.fs's `Equip`,
+ * gEngine.hand_item): shown in VR while she plays, with the grip pose its grip line names. Never
+ * thrown: no arming, and the defense path is left as it is. The magnesia/antimony in slot 2 has
+ * the hand instead. */
 static struct {
     int item, side, shown;
     Vec3 at, right, up, fwd;
 } sHand = {.item = -1, .side = 1};
+/* (DEBUG) the hand item and side the log last named (-1: none), so a change gives one line */
+static int sHandLogItem = -1, sHandLogSide = -1;
 /* the ladder each hand holds (a nav link of the room, -1 none): the air beside a ladder while
  * Fiona climbs, and the pull of that hand, which is what climbs her (docs/subsystems/hands.md,
  * "Pull to climb") */
@@ -1244,7 +1247,7 @@ static void grip_pose_want(int side) {
         item = sDef.item;
     }
     if (item < 0 && sHand.shown && sHand.side == side) {
-        item = sHand.item;   /* (the key item the menu equipped in her hand) */
+        item = sHand.item;   /* (the hand item the menu equipped in her hand) */
     }
     if (item >= 0 && itemprops_grip(item, side == 0 ? 30 : 46, &g) && g.pose[0] != 0) {
         vrgrip_want(side, g.pose, item);
@@ -1305,7 +1308,7 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         log_skip_once(a, vb->from_file ? "its vr_bones.txt does not match the skeleton" :
                                          "no usable vr_bones.txt (and not the FIN layout)");
         vrbody_idle();
-        sArmFound[0] = sArmFound[1] = 0;   /* (no stale arm: the key item is not shown at one) */
+        sArmFound[0] = sArmFound[1] = 0;   /* (no stale arm: the hand item is not shown at one) */
         for (side = 0; side < 2; side++) {
             Vec3 at, right, up, fwd;
             float grip, index, thumb;
@@ -3638,14 +3641,44 @@ static Vec3 defense_place(Vec3 at, Vec3 up, Vec3 fwd) {
     return vec3_add(at, vec3_add(vec3_scale(up, 0.35f), vec3_scale(fwd, 0.6f)));
 }
 
-/* ---- the key item the menu equipped in her hand (gEngine.hand_item) ---- */
+/* ---- the hand item the menu equipped in her hand (gEngine.hand_item) ---- */
 
 static void hand_item_hide(void) {
     sHand.item = -1;
     sHand.shown = 0;
 }
 
-/* a tick: is the key item shown, and in which hand (the right, or the left when that is the only
+/* One line a change, not every tick: the item in the hand, the hand it is in (the right, or the
+ * left when that is the only one tracked) and the grip pose its grip line names. `hands: hand item
+ * 64 in R hand (grip grip_flowers)`; `hands: hand item cleared` once the scripts put it away. A
+ * menu or a cutscene merely stops it being shown: the same item is not said again when it comes
+ * back. */
+static void hand_item_log(void) {
+    ItemGrip g;
+
+    if (sHand.shown && sHand.item >= 0) {
+        if (sHand.item == sHandLogItem && sHand.side == sHandLogSide) {
+            return;
+        }
+        sHandLogItem = sHand.item;
+        sHandLogSide = sHand.side;
+        if (itemprops_grip(sHand.item, sHand.side == 0 ? 30 : 46, &g) && g.pose[0] != 0) {
+            fprintf(stderr, "hands: hand item %d in %c hand (grip %s)\n", sHand.item,
+                    sHand.side == 0 ? 'L' : 'R', g.pose);
+        } else {
+            fprintf(stderr, "hands: hand item %d in %c hand (no grip pose)\n", sHand.item,
+                    sHand.side == 0 ? 'L' : 'R');
+        }
+        return;
+    }
+    if (gEngine.hand_item < 0 && sHandLogItem >= 0) {
+        sHandLogItem = -1;
+        sHandLogSide = -1;
+        fprintf(stderr, "hands: hand item cleared\n");
+    }
+}
+
+/* a tick: is the hand item shown, and in which hand (the right, or the left when that is the only
  * one tracked). The magnesia/antimony in slot 2 has the hand instead, and nothing is shown while
  * VR does not play (a menu, a cutscene - her eyes' anchor is cleared then - or flat screen). */
 static void hand_item_tick(void) {
@@ -3655,6 +3688,7 @@ static void hand_item_tick(void) {
 
     if (item < 0 || !vr_active() || sDef.shown) {
         hand_item_hide();
+        hand_item_log();
         return;
     }
     for (side = 1; side >= 0; side--) {
@@ -3667,10 +3701,12 @@ static void hand_item_tick(void) {
             sHand.fwd = fwd;
             sHand.shown = 1;
             loot_preload_held(item, side);   /* (its model, off the render pass) */
+            hand_item_log();
             return;
         }
     }
     hand_item_hide();
+    hand_item_log();
 }
 
 /* where the hand item's model sits in the room - her wrist and the item's grip line, the matrix
@@ -3788,7 +3824,7 @@ void vrhands_defense_draw(const Mat4 *view_proj) {
     Vec3 at, right, up, fwd;
     float grip = 0.0f, index = 0.0f, thumb = 0.0f;
 
-    hand_item_draw(view_proj);   /* (the key item the menu equipped: never the defense thing) */
+    hand_item_draw(view_proj);   /* (the hand item the menu equipped: never the defense thing) */
     if (!sDef.shown || sDef.kind < 0 || view_proj == NULL) {
         return;
     }
@@ -4664,5 +4700,5 @@ void vrhands_tick(Engine *e) {
     leaf_scan(e);
     loot_maintain();
     defense_tick();
-    hand_item_tick();   /* (the key item the menu equipped, if slot 2's magnesia has not the hand) */
+    hand_item_tick();   /* (the hand item the menu equipped, if slot 2's magnesia has not the hand) */
 }
