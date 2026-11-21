@@ -100,8 +100,6 @@ static int32_t s32(const uint8_t *p) {
     return x;
 }
 
-static int16_t s16(const uint8_t *p) { return (int16_t)(p[0] | p[1] << 8); }
-
 static float rdf(const uint8_t *p) {
     float x;
 
@@ -234,24 +232,52 @@ static float box_gap(const VrBox *b, Vec3 p) {
     return sqrtf(d);
 }
 
-/* the box's own world y range (its eight corners): the height a hand may reach a spot at when its
- * part has no bounds of its own */
-static void box_y_range(const VrBox *b, float *lo, float *hi) {
+/* 1 when two [lo..hi] ranges meet */
+static int ranges_overlap(float alo, float ahi, float blo, float bhi) {
+    return alo <= bhi && blo <= ahi;
+}
+
+/* the box's own world bounds, its eight corners */
+static void box_world(const VrBox *b, Vec3 *lo, Vec3 *hi) {
     int i;
 
-    *lo = 1.0e30f;
-    *hi = -1.0e30f;
     for (i = 0; i < 8; i++) {
         Vec3 c = vrbox_to_room(b, vec3(i & 1 ? b->h[0] : -b->h[0], i & 2 ? b->h[1] : -b->h[1],
                                        i & 4 ? b->h[2] : -b->h[2]));
 
-        if (c.y < *lo) {
-            *lo = c.y;
+        if (i == 0) {
+            *lo = *hi = c;
+            continue;
         }
-        if (c.y > *hi) {
-            *hi = c.y;
+        if (c.x < lo->x) {
+            lo->x = c.x;
+        }
+        if (c.y < lo->y) {
+            lo->y = c.y;
+        }
+        if (c.z < lo->z) {
+            lo->z = c.z;
+        }
+        if (c.x > hi->x) {
+            hi->x = c.x;
+        }
+        if (c.y > hi->y) {
+            hi->y = c.y;
+        }
+        if (c.z > hi->z) {
+            hi->z = c.z;
         }
     }
+}
+
+/* the box's own world y range: the height a hand may reach a spot at when its part has no bounds
+ * of its own */
+static void box_y_range(const VrBox *b, float *lo, float *hi) {
+    Vec3 a, c;
+
+    box_world(b, &a, &c);
+    *lo = a.y;
+    *hi = c.y;
 }
 
 /* the object's room bounds: every vertex through placed_world, the transform it is drawn with */
@@ -314,25 +340,16 @@ static int part_span(const Placed *p, int *lo, int *hi) {
     return 1;
 }
 
-/* a morph's vertex `v` at blend t between its frames 0 and 1, model space (as placed.c's morph_fill) */
+/* a morph's vertex `v` at blend t between its frames 0 and 1, model space: placed.c's own decode of
+ * a frame vertex (placed_morph_vertex, with the model's +0x60 start), so the curtain drawn and the
+ * edge grabbed are the same point */
 static int morph_pos(const Placed *p, float t, int v, Vec3 *out) {
-    const uint8_t *def = p->def, *end = p->def_end, *pa, *pb;
-    float w = 1.0f - t;
+    Vec3 a, b;
 
-    if (def == NULL || end == NULL || def + 0x80 > end) {
+    if (!placed_morph_vertex(p, 0, v, &a) || !placed_morph_vertex(p, 1, v, &b)) {
         return 0;
     }
-    if (s32(def + 0x74) < 0 || s32(def + 0x7C) < 0) {
-        return 0;
-    }
-    pa = def + s32(def + 0x74);   /* (frame 0's positions) */
-    pb = def + s32(def + 0x7C);   /* (frame 1's) */
-    if (pa + (v + 1) * 6 > end || pb + (v + 1) * 6 > end) {
-        return 0;
-    }
-    out->x = (s16(pa + v * 6) / 4096.0f) * w + (s16(pb + v * 6) / 4096.0f) * t;
-    out->y = (s16(pa + v * 6 + 2) / 4096.0f) * w + (s16(pb + v * 6 + 2) / 4096.0f) * t;
-    out->z = (s16(pa + v * 6 + 4) / 4096.0f) * w + (s16(pb + v * 6 + 4) / 4096.0f) * t;
+    *out = vec3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
     return 1;
 }
 
@@ -678,6 +695,87 @@ static void part_auto(VrSpot *s) {
     }
 }
 
+/* (DEBUG) a morph's world bounds at one frame, with the model's +0x60 start and without it: the room
+ * entry line that shows where a curtain (or any morph) is really drawn */
+static int morph_bounds(const Placed *p, int frame, Vec3 *lo, Vec3 *hi, Vec3 *lo0, Vec3 *hi0) {
+    Mat4 w = placed_world(p);
+    Vec3 start;
+    int n, i, got = 0;
+
+    if (p->def == NULL || !placed_morph_start(p, &start)) {
+        return 0;
+    }
+    n = s32(p->def + 0x40);
+    for (i = 0; i < n && i <= 0x10000; i++) {
+        Vec3 m, a, b;
+
+        if (!placed_morph_vertex(p, frame, i, &m)) {
+            continue;
+        }
+        a = mat4_point(&w, m);                                                  /* (as drawn) */
+        b = mat4_point(&w, vec3(m.x - start.x, m.y - start.y, m.z - start.z));   /* (the start left out) */
+        if (!got) {
+            *lo = *hi = a;
+            *lo0 = *hi0 = b;
+            got = 1;
+            continue;
+        }
+        lo->x = a.x < lo->x ? a.x : lo->x;
+        lo->y = a.y < lo->y ? a.y : lo->y;
+        lo->z = a.z < lo->z ? a.z : lo->z;
+        hi->x = a.x > hi->x ? a.x : hi->x;
+        hi->y = a.y > hi->y ? a.y : hi->y;
+        hi->z = a.z > hi->z ? a.z : hi->z;
+        lo0->x = b.x < lo0->x ? b.x : lo0->x;
+        lo0->y = b.y < lo0->y ? b.y : lo0->y;
+        lo0->z = b.z < lo0->z ? b.z : lo0->z;
+        hi0->x = b.x > hi0->x ? b.x : hi0->x;
+        hi0->y = b.y > hi0->y ? b.y : hi0->y;
+        hi0->z = b.z > hi0->z ? b.z : hi0->z;
+    }
+    return got;
+}
+
+/* (DEBUG) the room's morphs, where each frame lands with the definition's start and without it */
+static void spot_log_morphs(void) {
+    PlacedSet *set = cur_set();
+    int i, f;
+
+    if (!sDebug) {
+        return;
+    }
+    for (i = 0; i < set->n; i++) {
+        Placed *p = &set->p[i];
+        Vec3 start, o30 = vec3(0.0f, 0.0f, 0.0f);
+
+        if (p->kind != 1 && p->kind != 3) {
+            continue;
+        }
+        if (!placed_morph_start(p, &start)) {
+            continue;
+        }
+        if (p->def + 0x3C <= p->def_end) {   /* (the float vector the definition holds beside the s32 one) */
+            o30 = vec3(rdf(p->def + 0x30), rdf(p->def + 0x34), rdf(p->def + 0x38));
+        }
+        spot_log("placed: morph '%s' kind %d def_pos(%.3f %.3f %.3f) off30(%.3f %.3f %.3f) "
+                 "start60*32/4096(%.3f %.3f %.3f)\n",
+                 p->name, p->kind, (double)p->def_pos.x, (double)p->def_pos.y, (double)p->def_pos.z,
+                 (double)o30.x, (double)o30.y, (double)o30.z, (double)(start.x * 32.0f),
+                 (double)(start.y * 32.0f), (double)(start.z * 32.0f));
+        for (f = 0; f < 2; f++) {
+            Vec3 lo, hi, lo0, hi0;
+
+            if (morph_bounds(p, f, &lo, &hi, &lo0, &hi0)) {
+                spot_log("placed: morph '%s' f%d without(%.2f %.2f %.2f)..(%.2f %.2f %.2f) | "
+                         "with(%.2f %.2f %.2f)..(%.2f %.2f %.2f)\n",
+                         p->name, f, (double)lo0.x, (double)lo0.y, (double)lo0.z, (double)hi0.x, (double)hi0.y,
+                         (double)hi0.z, (double)lo.x, (double)lo.y, (double)lo.z, (double)hi.x, (double)hi.y,
+                         (double)hi.z);
+            }
+        }
+    }
+}
+
 /* the current room's marker spots, a reset first when the room changed */
 static void spots_room(struct Engine *e) {
     if (e == NULL || sRoom == e->room.id) {
@@ -688,6 +786,7 @@ static void spots_room(struct Engine *e) {
     }
     vrspot_reset();
     sRoom = e->room.id;
+    spot_log_morphs();   /* (DEBUG: every morph of the room, as drawn and without its model's start) */
     {
         int ids[VRMARKERS_SPOTS], n, i;
 
@@ -716,26 +815,56 @@ static void spots_room(struct Engine *e) {
             sNSpots++;
             spot_log_parts(s);
             if (sDebug) {
-                /* (the curtain check: the handle as drawn, and without placed_world, at both ends) */
+                /* (the curtain check: the handle as drawn, and at both ends of its travel) */
                 int k;
 
                 for (k = 0; k < s->nparts; k++) {
                     const VrPart *pt = &s->part[k];
                     Placed *p = &cur_set()->p[pt->id];
-                    Vec3 m0 = p->pos, m1 = p->pos, w0, w1;
+                    Vec3 m0, m1, w0, w1;
                     Mat4 w = placed_world(p);
 
-                    if (!pt->morph) {
+                    if (!pt->morph || !morph_pos(p, 0.0f, pt->handle, &m0) || !morph_pos(p, 1.0f, pt->handle, &m1)) {
                         continue;
                     }
-                    morph_pos(p, 0.0f, pt->handle, &m0);
-                    morph_pos(p, 1.0f, pt->handle, &m1);
                     w0 = mat4_point(&w, m0);
                     w1 = mat4_point(&w, m1);
                     spot_log("vrspots: %s %s '%s' handle c0 model(%.3f %.3f %.3f) world(%.3f %.3f %.3f) "
                              "c1 model(%.3f %.3f %.3f) world(%.3f %.3f %.3f) (world used)\n",
-                             s->name, "morph", p->name, m0.x, m0.y, m0.z, w0.x, w0.y, w0.z, m1.x, m1.y, m1.z, w1.x,
-                             w1.y, w1.z);
+                             s->name, "morph", p->name, (double)m0.x, (double)m0.y, (double)m0.z, (double)w0.x,
+                             (double)w0.y, (double)w0.z, (double)m1.x, (double)m1.y, (double)m1.z, (double)w1.x,
+                             (double)w1.y, (double)w1.z);
+                }
+                if (s->nparts > 0) {   /* (the marker's boxes against the parts' whole travel: do they cover it?) */
+                    char room[16];
+                    Vec3 blo, bhi, glo, ghi, p0, p1;
+                    int j, k2, have = 0;
+
+                    spot_room_name(room, sizeof(room));
+                    box_world(&s->bound, &blo, &bhi);
+                    box_world(&s->grab, &glo, &ghi);
+                    for (k2 = 0; k2 < s->nparts; k2++) {
+                        for (j = 0; j < VRSPOT_PATH_N; j++) {
+                            Vec3 q = s->part[k2].path[j];
+
+                            if (!have) {
+                                p0 = p1 = q;
+                                have = 1;
+                                continue;
+                            }
+                            p0.x = q.x < p0.x ? q.x : p0.x;
+                            p0.z = q.z < p0.z ? q.z : p0.z;
+                            p1.x = q.x > p1.x ? q.x : p1.x;
+                            p1.z = q.z > p1.z ? q.z : p1.z;
+                        }
+                    }
+                    spot_log("vrspots: %s '%s' bound x(%.2f..%.2f) z(%.2f..%.2f) grab x(%.2f..%.2f) z(%.2f..%.2f) "
+                             "path x(%.2f..%.2f) z(%.2f..%.2f) overlap bound %d grab %d\n",
+                             room, s->name, (double)blo.x, (double)bhi.x, (double)blo.z, (double)bhi.z,
+                             (double)glo.x, (double)ghi.x, (double)glo.z, (double)ghi.z, (double)p0.x, (double)p1.x,
+                             (double)p0.z, (double)p1.z,
+                             ranges_overlap(blo.x, bhi.x, p0.x, p1.x) && ranges_overlap(blo.z, bhi.z, p0.z, p1.z),
+                             ranges_overlap(glo.x, ghi.x, p0.x, p1.x) && ranges_overlap(glo.z, ghi.z, p0.z, p1.z));
                 }
             }
         }

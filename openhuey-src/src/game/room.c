@@ -1,4 +1,5 @@
 #include "room.h"
+#include "engine.h"   /* (engine_skip: a subsystem switched off for a mod's test) */
 #include "loot.h"
 
 #include "../core/files.h"

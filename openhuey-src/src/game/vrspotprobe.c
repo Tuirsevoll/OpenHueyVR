@@ -214,31 +214,23 @@ static const uint8_t *anim_record(const PlacedSet *set, const Placed *p) {
     return NULL;
 }
 
-/* a morph's n vertices at frames a and b blended by t, model space: the same maths as placed.c's
- * morph_fill (its s16 positions / 4096, 8 bytes a frame at the model's +0x70; the colours and the
- * UVs are not needed here) */
+/* a morph's n vertices at frames a and b blended by t, model space: placed.c's own decode of a frame
+ * vertex (placed_morph_vertex, with the model's +0x60 start), so the probe reads what is drawn (the
+ * colours and the UVs are not needed here) */
 static int morph_positions(const Placed *p, int a, int b, float t, MeshVertex *v, int n) {
-    const uint8_t *def = p->def, *end = p->def_end, *pa, *pb;
     float w = 1.0f - t;
     int i;
 
-    if (def == NULL || end == NULL || a < 0 || b < 0 || a > 255 || b > 255 ||
-        def + 0x78 + (a > b ? a : b) * 8 > end) {
-        return 0;
-    }
-    if (prd32(def + 0x74 + a * 8) < 0 || prd32(def + 0x74 + b * 8) < 0) {
-        return 0;
-    }
-    pa = def + prd32(def + 0x74 + a * 8);
-    pb = def + prd32(def + 0x74 + b * 8);
-    if (pa + n * 6 > end || pb + n * 6 > end) {
-        return 0;
-    }
     for (i = 0; i < n; i++) {
+        Vec3 va, vb;
+
         memset(&v[i], 0, sizeof(v[i]));
-        v[i].x = prd16(pa + i * 6) / 4096.0f * w + prd16(pb + i * 6) / 4096.0f * t;
-        v[i].y = prd16(pa + i * 6 + 2) / 4096.0f * w + prd16(pb + i * 6 + 2) / 4096.0f * t;
-        v[i].z = prd16(pa + i * 6 + 4) / 4096.0f * w + prd16(pb + i * 6 + 4) / 4096.0f * t;
+        if (!placed_morph_vertex(p, a, i, &va) || !placed_morph_vertex(p, b, i, &vb)) {
+            return 0;
+        }
+        v[i].x = va.x * w + vb.x * t;
+        v[i].y = va.y * w + vb.y * t;
+        v[i].z = va.z * w + vb.z * t;
     }
     return 1;
 }

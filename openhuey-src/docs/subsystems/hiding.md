@@ -45,6 +45,26 @@ posed at `frame = lo + c*(hi-lo)` through `placed_pose_at` / `placed_frame_set_f
 written as kit.fs's `morph` writes it (words `+0x74` 0, `+0x78` 1, `+0x7C` c). On room entry `c` is
 read back from the parts' poses and words: the wardrobes start shut, the curtain open.
 
+### A morph's model
+
+A morph (kinds 1 / 3) is its two frames' s16 steps **from the model's own start** — `+0x60/0x64/0x68`,
+s32 in 1/4096 units, exactly the vector the rigid kind (0) adds. Without it a curtain is drawn in the
+wall beside its frame and half under the floor: old-mansion-2f-8's curtain sat at
+`x −60.4..−56.3, y −14..14` instead of `x −65.1..−61.0, y 1.5..29.5` (open) → `x −70.3..−61.0`
+(drawn), where its rail and its fixed left drape are. One decode does it for everything:
+`placed_morph_start` / `placed_morph_vertex` in `game/placed.c` (drawing, the spot's handle and path,
+the edge grab, the probe and the bounds), so the curtain seen and the edge grabbed cannot disagree.
+Room entry logs, behind `vr-spot-debug!` (`0 vr-spot-debug!` off):
+
+```
+placed: morph 'Curtain' kind 3 def_pos(...) off30(...) start60*32/4096(...)
+placed: morph 'Curtain' f0 without(lo)..(hi) | with(lo)..(hi)
+placed: morph 'Curtain' f1 without(lo)..(hi) | with(lo)..(hi)
+vrspots: <room> '<spot>' bound x(..) z(..) grab x(..) z(..) path x(..) z(..) overlap bound N grab N
+```
+
+The last line answers whether a marker's boxes still cover the door as drawn, and changes nothing.
+
 A script that plays a part owns the spot: the hands let go at once, the spot is not posed, and when
 its animation ends `c` is read back from the pose it left.
 

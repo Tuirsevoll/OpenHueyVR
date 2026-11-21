@@ -54,6 +54,12 @@ static int fails;
 
 static int near(float a, float b) { return fabsf(a - b) < 0.001f; }
 
+static void wr32(uint8_t *p, int32_t v) { memcpy(p, &v, 4); }
+static void wr16(uint8_t *p, int16_t v) {
+    p[0] = (uint8_t)(v & 0xFF);
+    p[1] = (uint8_t)((v >> 8) & 0xFF);
+}
+
 int main(void) {
     Vec3 line[33], ell[33];
     Vec3 rot, pos;
@@ -133,6 +139,41 @@ int main(void) {
         p.frames = 2;
         placed_pose_at(&p, 0.5f, &rot, &pos);
         CHECK("an angle wraps the shortest way round", rot.y > 3.1f && rot.y < 3.15f);
+    }
+
+    {   /* a morph's decode: the model's +0x60 start is added (without it a curtain hangs in the wall
+         * beside its frame - ST_05C's Curtain, and the other rooms' curtains) */
+        uint8_t def[0x100];
+        Placed m;
+        Vec3 s, f0, f1;
+
+        memset(def, 0, sizeof(def));
+        memcpy(def, "Curtain", 7);
+        memset(&m, 0, sizeof(m));
+        m.kind = 3;
+        m.def = def;
+        m.def_end = def + sizeof(def);
+        wr32(def + 0x40, 1);         /* (one vertex) */
+        wr32(def + 0x4C, 0x98);      /* (its UV) */
+        wr32(def + 0x60, 2 * 4096);  /* (the start: 2, 3, 4 model units) */
+        wr32(def + 0x64, 3 * 4096);
+        wr32(def + 0x68, 4 * 4096);
+        wr32(def + 0x70, 0x8C);      /* (frame 0's colours) */
+        wr32(def + 0x74, 0x80);      /* (frame 0's s16 positions) */
+        wr32(def + 0x78, 0x90);      /* (frame 1's colours) */
+        wr32(def + 0x7C, 0x86);      /* (frame 1's s16 positions) */
+        wr16(def + 0x80, 4096);      /* (frame 0's vertex: 1, 0, 0 model units) */
+        wr16(def + 0x82, 0);
+        wr16(def + 0x84, 0);
+        wr16(def + 0x86, 8192);      /* (frame 1's: 2, 0, 0) */
+        wr16(def + 0x88, 0);
+        wr16(def + 0x8A, 0);
+        CHECK("the morph's start is read (+0x60, s32 / 4096)",
+              placed_morph_start(&m, &s) && near(s.x, 2.0f) && near(s.y, 3.0f) && near(s.z, 4.0f));
+        CHECK("a morph vertex is the start plus its frame's s16",
+              placed_morph_vertex(&m, 0, 0, &f0) && near(f0.x, 3.0f) && near(f0.y, 3.0f) && near(f0.z, 4.0f));
+        CHECK("... and at frame 1 as well",
+              placed_morph_vertex(&m, 1, 0, &f1) && near(f1.x, 4.0f) && near(f1.y, 3.0f) && near(f1.z, 4.0f));
     }
 
     printf("vr spots: %d failed\n", fails);

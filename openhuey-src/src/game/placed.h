@@ -7,8 +7,9 @@
  * a count, +0x14 the offset of 16-byte tracks: frames, format, keys' offset).
  *
  * Model kinds: 0 rigid (s16 steps from an s32 start / 4096, scale 32), 2 the room's batch
- * layout (floats, its own colours), 1 / 3 two-frame morphs (s16 / 4096, scale 32; 1 lit, 3
- * coloured) - here their first frame. A name "a_..." is see-through, "g_..." marks the bloom mask (no colour).
+ * layout (floats, its own colours), 1 / 3 two-frame morphs (s16 steps from the same s32 start
+ * (+0x60) / 4096, scale 32; 1 lit, 3 coloured) - here their first frame. A name "a_..." is
+ * see-through, "g_..." marks the bloom mask (no colour).
  * They start shown: the scripts hide them (event 0x50 - the original's +0 byte, 1 hidden). */
 #ifndef PLACED_H
 #define PLACED_H
@@ -70,6 +71,12 @@ void placed_pose_at(const Placed *p, float frame, Vec3 *rot, Vec3 *pos);
 void placed_frame_set_f(PlacedSet *s, Placed *p, float frame);
 /* a tick: the animations step (PlacedObject_Animate) */
 void placed_tick(PlacedSet *s);
+/* a morph's model: the start its frames step from (+0x60, s32, the vector the rigid kind adds as
+ * well) and one vertex of one frame, both in model units (before the object's 32 scale). The one
+ * decode the drawing, a spot's handle and the probe use, so what is drawn and what is grabbed can
+ * never disagree. 0 when the definition or the frame falls outside the section. */
+int placed_morph_start(const struct Placed *p, Vec3 *out);
+int placed_morph_vertex(const struct Placed *p, int frame, int v, Vec3 *out);
 /* its model placed in the room */
 Mat4 placed_world(const struct Placed *p);
 /* its renderer layer by its name (PlacedObject_Draw): "g_..." $26 (the bloom mask only), "a_..."

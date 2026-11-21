@@ -104,6 +104,22 @@ Placed *placed_named(PlacedSet *s, const char *name) {
     return NULL;   /* (no room here: no placed object to name) */
 }
 
+/* placed.c's morph decode, stubbed: this check has no room data, and a spot's morph is never built
+ * here (a null answer leaves a part at its defined place) */
+int placed_morph_start(const struct Placed *p, Vec3 *out) {
+    (void)p;
+    (void)out;
+    return 0;
+}
+
+int placed_morph_vertex(const struct Placed *p, int frame, int v, Vec3 *out) {
+    (void)p;
+    (void)frame;
+    (void)v;
+    (void)out;
+    return 0;
+}
+
 /* placed.c's renderer layer by the object's name, line for line (the fade check reads it) */
 int placed_layer(const struct Placed *p) {
     char c = p->name[0] | 0x20;

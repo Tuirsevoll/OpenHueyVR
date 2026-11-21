@@ -48,11 +48,47 @@ static void strip_to_mesh(RoomMesh *m, const MeshVertex *v, const uint8_t *no_tr
     m->nd = m->nv > 0;
 }
 
+/* a morph model's start: +0x60/0x64/0x68, s32 in 1/4096 model units - the vector every frame's
+ * vertices step from, exactly what the rigid kind (kind 0) adds too. 0 when the section is short. */
+int placed_morph_start(const Placed *p, Vec3 *out) {
+    const uint8_t *def = p->def, *end = p->def_end;
+
+    if (def == NULL || end == NULL || def + 0x6C > end) {
+        return 0;
+    }
+    *out = vec3((float)rd32(def + 0x60) / 4096.0f, (float)rd32(def + 0x64) / 4096.0f,
+                (float)rd32(def + 0x68) / 4096.0f);
+    return 1;
+}
+
+/* a morph's vertex `v` of frame `frame` (0 or 1), model units: (start + the frame's s16) / 4096 */
+int placed_morph_vertex(const Placed *p, int frame, int v, Vec3 *out) {
+    const uint8_t *def = p->def, *end = p->def_end, *pv;
+    Vec3 start;
+    int32_t off;
+
+    if (def == NULL || end == NULL || frame < 0 || frame > 255 || v < 0 || def + 0x78 + frame * 8 > end) {
+        return 0;
+    }
+    off = rd32(def + 0x74 + frame * 8);
+    if (off < 0) {
+        return 0;
+    }
+    pv = def + off;
+    if (pv + (v + 1) * 6 > end || !placed_morph_start(p, &start)) {
+        return 0;
+    }
+    *out = vec3(start.x + rd16(pv + v * 6) / 4096.0f, start.y + rd16(pv + v * 6 + 2) / 4096.0f,
+                start.z + rd16(pv + v * 6 + 4) / 4096.0f);
+    return 1;
+}
+
 /* a morph's n vertices, frames a and b blended by t (gl_morph: the frame table at the model's
  * +0x70, 8 bytes a frame - +0x4 its s16 positions / 4096, +0x0 its RGBA colours; the lit kind
  * (1) always 0x80); 0 if they fall outside the section */
 static int morph_fill(Placed *p, const uint8_t *def, const uint8_t *end, MeshVertex *v, int n, int a, int b, float t) {
     const uint8_t *pa, *pb, *ca, *cb, *uv;
+    Vec3 start;
     float w = 1.0f - t;
     int i, c;
 
@@ -69,13 +105,14 @@ static int morph_fill(Placed *p, const uint8_t *def, const uint8_t *end, MeshVer
     cb = def + rd32(def + 0x70 + b * 8);
     uv = def + rd32(def + 0x4C);
     if (pa + n * 6 > end || pb + n * 6 > end || uv + n * 4 > end ||
-        (p->kind == 3 && (ca + n * 4 > end || cb + n * 4 > end))) {
+        (p->kind == 3 && (ca + n * 4 > end || cb + n * 4 > end)) || !placed_morph_start(p, &start)) {
         return 0;
     }
     for (i = 0; i < n; i++) {
-        v[i].x = rd16(pa + i * 6) / 4096.0f * w + rd16(pb + i * 6) / 4096.0f * t;
-        v[i].y = rd16(pa + i * 6 + 2) / 4096.0f * w + rd16(pb + i * 6 + 2) / 4096.0f * t;
-        v[i].z = rd16(pa + i * 6 + 4) / 4096.0f * w + rd16(pb + i * 6 + 4) / 4096.0f * t;
+        /* (the start the rigid kind adds too: without it a curtain hangs in the wall beside its frame) */
+        v[i].x = start.x + rd16(pa + i * 6) / 4096.0f * w + rd16(pb + i * 6) / 4096.0f * t;
+        v[i].y = start.y + rd16(pa + i * 6 + 2) / 4096.0f * w + rd16(pb + i * 6 + 2) / 4096.0f * t;
+        v[i].z = start.z + rd16(pa + i * 6 + 4) / 4096.0f * w + rd16(pb + i * 6 + 4) / 4096.0f * t;
         v[i].s = (uint16_t)rd16(uv + i * 4) / 32768.0f;
         v[i].t = (uint16_t)rd16(uv + i * 4 + 2) / 32768.0f;
         for (c = 0; c < 4; c++) {
