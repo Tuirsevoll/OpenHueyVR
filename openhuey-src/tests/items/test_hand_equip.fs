@@ -170,19 +170,12 @@ weltigo equip-id
 mouth-use
 T{ hand-item  weltigo items-of -> weltigo 1 }T
 
-testing a treat on the floor: the bait let go, Hewie eats it - his rule, one spent (Part A)
+testing treats on the floor (Part A): the menu shut, then a drop nobody eats, then Hewie's own
 key: Tab tap  20 run-frames   \ (the menu shut: the world runs, and the items' tick with it)
 T{ stage@ -> 0 }T
-game:hewie send join-fiona  20 run-frames   \ (his body: the story's $8F can play its eating)
-: his@ ( xt -- x )  game:hewie enter  execute  leave-actor ;
-: his! ( xt -- )  game:hewie enter  execute  leave-actor ;
 : items! ( xt -- )  game:items enter  execute  leave-actor ;
-chicken-jerky 1 gives
-[: 50 his-hp ! ;] his!
-[: chicken-jerky game:fiona body-pos treat-drop ;] items!
-T{ chicken-jerky items-of -> 2 }T   \ (lying there: not spent yet)
-chicken-jerky game:items send treat-eaten  deliver
-T{ chicken-jerky items-of  [: his-hp @ ;] his@ -> 1 70 }T
+: floor-treats ( -- n )   \ (the kind-11 things there are)
+    0 #things 0 do  i thing-used? if  i thing-kind treat-thing = if  1+  then  then  loop ;
 
 testing ... a treat nobody eats: the room left, it goes - and is not spent
 [: chicken-jerky game:fiona body-pos treat-drop ;] items!
@@ -191,13 +184,28 @@ front-garden-2 -1 game:rooms send go-to-room  20 run-frames
 T{ chicken-jerky items-of -> 1 }T
 
 testing ... and it lies there: 60 frames on, the thing is still used and nothing is spent
-game:hewie send part-from-fiona  20 run-frames   \ (no Hewie to eat it)
-: floor-treats ( -- n )   \ (the kind-11 things there are)
-    0 #things 0 do  i thing-used? if  i thing-kind treat-thing = if  1+  then  then  loop ;
 [: chicken-jerky game:fiona body-pos treat-drop ;] items!
 2 run-frames   \ (the things actor's message takes a tick)
 T{ floor-treats -> 1 }T
 60 run-frames
 T{ floor-treats  chicken-jerky items-of -> 1 1 }T
+
+testing ... and with Hewie beside her he walks to it and eats it himself
+game:hewie send join-fiona  20 run-frames   \ (his body, afresh: the story's $8F can play its eating)
+[: chicken-jerky game:fiona body-pos treat-drop ;] items!
+2 run-frames
+T{ floor-treats -> 1 }T
+400 run-frames
+T{ floor-treats  chicken-jerky items-of -> 0 0 }T
+
+testing ... Hewie eats it: the bait's rule, one spent
+: his@ ( xt -- x )  game:hewie enter  execute  leave-actor ;
+: his! ( xt -- )  game:hewie enter  execute  leave-actor ;
+chicken-jerky 1 gives
+[: 50 his-hp ! ;] his!
+[: chicken-jerky game:fiona body-pos treat-drop ;] items!
+T{ chicken-jerky items-of -> 1 }T   \ (lying there: not spent yet)
+chicken-jerky game:items send treat-eaten  deliver
+T{ chicken-jerky items-of  [: his-hp @ ;] his@ -> 0 70 }T
 
 test-summary

@@ -581,8 +581,8 @@ defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
 \ one spent, and the floor treat gone
 : treat-eat ( id -- )
     {: id :}
-    treat? id 0>= and 0= if  exit  then
-    id treat-id @ <> if  exit  then
+    treat? 0= if  ." items: treat eaten - no treat on the floor (id " id n>s type [char] ) emit cr  exit  then
+    id treat-id @ <> if  ." items: treat eaten ignored - id " id n>s type space ." , the floor treat " treat-id @ n>s type cr  exit  then
     id bait-feed {: how ev :}
     how 0< if  exit  then
     how hewie-id send fed

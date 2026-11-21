@@ -119,8 +119,9 @@ enum: skill  going-skill watching-skill eager-skill picking-up-skill telling-ski
     treat-i thing-room self body-room = ;
 : treat-forget ( -- )  -1 his-treat ! ;
 : treat-ate ( -- )
-    treat-i dup 0< if  drop  ." hewie: treat walk ended - no treat" cr  to-default exit  then
+    treat-i 0< if  ." hewie: treat walk ended - no treat" cr  to-default exit  then
     ." hewie: treat walk ended - at it, eating" cr
+    treat-i thing-item dup 0< if  drop  treat-forget  to-default exit  then   \ (its item, for the items actor)
     items-id send treat-eaten   \ (its rule, then one spent - the items')
     treat-forget  to-default ;
 : st-treat ( -- )
