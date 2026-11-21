@@ -1,0 +1,17 @@
+HGVR marker export
+Folder: F:\Haunting Ground VR Cursor\OpenHuey-master\openhuey-src\examples\mods\item-props\library\data\PROPS
+
+Wrote:
+  F:\Haunting Ground VR Cursor\OpenHuey-master\openhuey-src\examples\mods\item-props\library\data\PROPS\triggers.txt  (22 boxes)
+  F:\Haunting Ground VR Cursor\OpenHuey-master\openhuey-src\examples\mods\item-props\library\data\PROPS\hidespots.txt  (10 boxes)
+  F:\Haunting Ground VR Cursor\OpenHuey-master\openhuey-src\examples\mods\item-props\library\data\PROPS\levers.txt  (2 boxes)
+
+Found: 22 TRIG, 5 GRAB, 5 BOUND, 2 LEVER
+Hiding spots: ST_026 wardrobe, ST_050 wardrobe, ST_051 wardrobe, ST_05C curtain, ST_08E wardrobe
+
+WARNINGS (0):
+  none
+
+Notes (2):
+  - TRIG_ST_024_EMETHPLATE: negative scale (-0.107, -0.107, -0.033) - harmless, sizes taken as positive
+  - TRIG_ST_040_REDGODSTONE: negative scale (-0.295, -0.231, -0.146) - harmless, sizes taken as positive

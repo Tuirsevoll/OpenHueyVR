@@ -70,4 +70,9 @@ $B7 tri-center 0e debug:tp-facing  game:hewie send join-fiona  30 run-frames   \
 ball-still  10 run-frames
 T{ [: 0 0 want  -1 his-follows !  go-there-cmd act-on-command  his-follows @ 0< 0=  his-action @  his-next @ ;] his@ -> -1 -1 $1D $78 }T
 [: 0 0 want ;] his!
+testing her voice's "go" with the same ball: the same context fetch
+[: 0 0 want  -1 his-follows ! ;] his!  things-clear  10 run-frames
+ball-still  10 run-frames
+voice-go fiona-id send voice-order  deliver  5 run-frames
+T{ [: his-follows @ 0< 0=  his-action @ ;] his@ -> -1 $1D }T
 test-summary

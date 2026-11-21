@@ -221,14 +221,15 @@ variable tp-go   -1 tp-go !
     free-doing her-doing !  own-mode her-mode !  0 her-sub !  6 her-still !  0 her-lock !  0 her-out-of-reach !  0 her-noclip !
     her-turn-mode @ door-steered <> if  camera-relative her-turn-mode !  then   \ (a door's held stick kept through the arrival)
     1e her-stick-k f!  -1 her-variant !  1e her-tired-w f!  0 her-rest !  0 her-run-t !
-    -1 her-cmd !  0 her-busy-t !  0 her-scripted !  0 her-move !  -1 her-move-done !  1 her-step-l !  1 her-step-r !  -1 her-door-exit !  her-path path-clear  stand  stand-free ;   \ (the turn mode as set above)
+    -1 her-cmd !  0 her-busy-t !  0 her-scripted !  0 her-move !  -1 her-move-done !  1 her-step-l !  1 her-step-r !  -1 her-door-exit !  her-path path-clear  stand  stand-free  -1 her-said-gesture !  0 her-said-t ! ;   \ (the turn mode as set above)
 
 \ arriving by an exit while walking or running on her own, she keeps on into the room: her
 \ stride and the held stick carry over (Fiona_Vt34 stops her only when she was busy)
 : going-on? ( -- flag )
     her-mode @ own-mode =  her-doing @ free-doing = and  her-scripted @ 0= and  her-sub @ walk-sub run-sub 1+ within and ;
 : carry-on ( -- )
-    -1 her-cmd !  0 her-busy-t !  0 her-move !  -1 her-move-done !  -1 her-door-exit !  her-path path-clear ;
+    -1 her-cmd !  0 her-busy-t !  0 her-move !  -1 her-move-done !  -1 her-door-exit !  her-path path-clear
+    -1 her-said-gesture !  0 her-said-t ! ;
 : arrive ( exit -- )  arrive-at  going-on? if  carry-on  else  fresh  then ;
 ' put is put-her   ' fresh is fresh-her   \ (the run's companion places her too)
 
@@ -533,7 +534,7 @@ behaviour free
       self body? 0= if  exit  then
       her-at vec@  vr-spot-here
       unseen-frame
-      her-mode @ her-sub @ her-cond @ her-cmd @ her-doing @ broadcast fiona-doing
+      her-mode @ her-sub @ her-cond @ her-shown-cmd her-doing @ broadcast fiona-doing
       her-hit-who @ broadcast fiona-struck-by
       straining? broadcast fiona-straining
       could broadcast fiona-could
@@ -541,6 +542,7 @@ behaviour free
       her-shake-count @ 0< 0= if  shakes-now her-shake-count +!  her-shake-count @ broadcast fiona-shakes  then   \ (a story counting them)
       plight  her-mode @ 3 = if  her-ladder @  else  -1  then  reach  broadcast fiona-plight
       tell-head
+      said-over
       her-move-done @  ended?  her-model @ 0 0 1 motion-events  broadcast moving ;
   \ the story's moves (fiona.moves)
   on scripted-move ( kind a b x y z yaw -- )

@@ -175,10 +175,11 @@ commands taken (Hewie_FionaCommand / CommandAction / ActOnCommand: stay, come, c
 there, go for it, praise and scold from afar with his mood, her cry for help by his trust),
 her reactions, the meeting (Hewie_FindSpot, his calls 12), the behaviours for them (turning
 with her, praised / petted / patted, scolded, won't, walking to the spot she showed, readying).
-Checked by `tests/hewie/test_commands.fs` (32 in its full run): no gestures without `hewie-commandable`; her
+Checked by `tests/hewie/test_commands.fs` (36 in its full run) and `test_fetch.fs` (14): no gestures without `hewie-commandable`; her
 reading his broadcast; come back (0x2C → 0x1D → 0xD); go there (0x23 → 0x63, the spot kept); the
 meeting (praise close: 0x48, sits, 0x4A petted, her 0xC07); the voice's shake (0x89, $1C05 held at
-frame 45); her cry for help (0x30); a reaction spending his patience.
+frame 45); the voice's go carrying the stick's up gesture to the story, so the same fetch context;
+her cry for help (0x30); a reaction spending his patience.
 
 Her head turns to him after a command (her looks: `fiona/looks.fs`, the look held a while); the
 scripts' "can she command him" is the story's cond 0x4C (`hewie-can-command?`).

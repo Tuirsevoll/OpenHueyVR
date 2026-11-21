@@ -7,6 +7,7 @@ USING: tester engine game-state actors messages common facts room-names game hew
 : his@ ( xt -- x )  hewie enter  execute  leave-actor ;
 : his! ( xt -- )  hewie enter  execute  leave-actor ;
 : her@ ( xt -- x )  fiona enter  execute  leave-actor ;
+: place@ ( xt -- x )  room-id room-name actor-named enter  execute  leave-actor ;
 : action ( -- n )  [: his-action @ ;] his@ ;
 : apart ( F: -- d )  hewie body-at fiona body-at vec-dist ;
 : press-key ( key -- )  dup true key-hold  game-tick  false key-hold  game-tick ;   \ (read, then acted on)
@@ -80,6 +81,17 @@ T{ key: I press-key  [: her-sub @ ;] her@ -> $23 }T
 T{ 300 $63 takes? -> -1 }T
 T{ [: his-to-tri @ ;] his@ 0< -> 0 }T
 300 run-frames
+
+testing the voice's "go" is the stick's up: the same command (0x23), then the same action (0x63)
+ready  [: 0 his-cmd-was ! ;] his!
+T{ voice-go fiona-id send voice-order  deliver  5 run-frames  [: his-cmd-was @ ;] his@ -> $23 }T
+T{ 300 $63 takes? -> -1 }T
+300 run-frames
+
+testing the voice's "go" tells the story the stick's up gesture (fiona-cmd-now), so her contexts see it
+ready  [: 0 his-cmd-was ! ;] his!
+T{ voice-go fiona-id send voice-order  deliver  2 run-frames  [: her-said-gesture @ ;] her@ -> go-gesture }T
+T{ [: story.kit:fiona-cmd-now @ ;] place@ -> go-gesture }T
 
 \ (the cage room's floor by her is mostly 0x80001, where he won't meet: to front-garden-2's open floor)
 front-garden-2 -1 rooms send go-to-room  5 run-frames

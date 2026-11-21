@@ -119,9 +119,10 @@ defer vr-teleport-step ( -- )
         nx her-last v.x sf!  0e her-last v.y sf!  nz her-last v.z sf!
         run-held? her-run? !
     then
-    \ her body faces where she looks: the view and her turn together, and the stick points ahead of
-    \ that (vr-aim). A story's hold or a scene keeps her facing as it has her (hands-off?)
-    hands-off? 0= if  vr-face fdup her-heading f! her-yaw f!  then
+    \ her body faces where she looks while she moves freely: the view and her turn together, and the
+    \ stick points ahead of that (vr-aim). A story's hold, a scene, a ladder, a door or a move keeps
+    \ her facing as it has her (hands-off?, her mode and doing)
+    hands-off? 0=  her-mode @ own-mode = and  her-doing @ free-doing = and if  vr-face fdup her-heading f! her-yaw f!  then
     vr-teleport-step ;
 \ the headset: a story having her turns her by her own animation, and the view turns with her (by
 \ the turn she took since the frame's start: her-yaw-was) - she crawls in where the motion takes her

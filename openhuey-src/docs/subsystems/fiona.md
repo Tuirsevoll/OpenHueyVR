@@ -71,9 +71,10 @@ behaviour.
    mesh less the triangles her mask blocks (0x28020018). If a step takes her backwards (pushed
    along a wall corner), she stays where she was.
    **In a headset** the controls are look-relative instead: the movement stick is turned by where
-   she looks (`fiona/controls.fs` `vr-aim`) and her body faces that look (`her-yaw` and
-   `her-heading` = `vr-face`, in `vr-move` and `stick-held`). A script's hold or a scene keeps
-   its own facing (`hands-off?`; `story-turned` turns the view with it). The VR aim cones
+   she looks (`fiona/controls.fs` `vr-aim`) and her body faces that look while she moves freely
+   (`her-yaw` and `her-heading` = `vr-face`, in `vr-move` and `stick-held`). A script's hold, a
+   scene, a ladder, a door or a move keeps its own facing (`hands-off?`, her mode and doing;
+   `story-turned` turns the view with it). The VR aim cones
    (`story/kit.fs` `aim-cone?`, `fiona/doors.fs` `door-ahead?`) measure from the headset's eye
    (`fiona/state.fs` `eye-xz`), not her body, so a lean or the camera seat does not put a close
    action off the crosshair.
@@ -173,6 +174,11 @@ checks take either her eyes or her body (`story/kit.fs` `faces-point?` / `faces-
 (stay / praise / scold by his side): she asks, walks to the place he finds (walk-to-spot),
 waits for him to sit, the second part and her gesture (0xC06 stay, 0xC07..0xC09 praise with
 its repeats, 0xC0D scold). Refused when asked: from afar instead (praise 0x29, scold 0x2F).
+
+A spoken order (`voice.fs` → `voice-order`) resolves through the same `command-code` as the
+stick's gesture, and tells the story that gesture for two frames (`her-said-gesture`, carried in
+`fiona-doing`). A room's context action - the magnesia fetch, a dig, a search - therefore sees the
+same `fiona-cmd-now` a stick push gives, while she does not play the gesture animation herself.
 
 (F3's leftovers came later: her looks after a command `fiona/commands.fs` face-after; a creature
 ahead for "go for it" while followed, `any-creature-ahead?`.)
@@ -382,9 +388,11 @@ Grabbing a ladder's air starts her getting
 on, the same as the button, from the
 nearer end; from the top, the walk to the spot is still used (to be changed later). A grab mounts her
 at once, with no mounting animation, at the end's front, so she can climb straight away; the button
-keeps its mounting animation. At the top, mounting (by the button or a grab) lowers her onto the first
-rung over about a second, facing the ladder, with the camera moving with her; the lowering distance is
-a first guess to be tuned.
+keeps its mounting animation. In the headset, mounting at the top (by the button or a grab) lowers her
+onto the first rung over about a second, facing the rungs, and turns the view with her - a 180 when it
+was looking away from the ladder - so the rungs can be grabbed; the lowering distance is a first guess
+to be tuned (`tests/fiona/test_ladder_vr.fs`). The keyboard keeps its mounting animation and
+climbs from there.
 
 Also fixed with it: `walk-anim` (Fiona_StateCmdWalkAnim) read the animation's key events for
 `MOTION_EVENTS` $20; it is the motion's come-round flag (`ended?`).

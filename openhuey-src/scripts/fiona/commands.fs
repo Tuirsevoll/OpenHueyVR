@@ -74,6 +74,10 @@ create ch-at /vec allot
 \ ones; the pat and the close scold are her gesture, and a spoken line does not start it.
 : voice-place ( -- )
     her-aim-yaw her-act-yaw f!  her-tri @ her-act-tri !  her-act-at her-at vec-copy ;
+\ a spoken order stands for the gesture a stick push would give, for the story's contexts
+: say-gesture ( g -- )  {: g :}  g her-said-gesture !  2 her-said-t ! ;
+: her-shown-cmd ( -- g )  her-said-t @ 0> if  her-said-gesture @  else  her-cmd @  then ;
+: said-over ( -- )  her-said-t @ 0> if  -1 her-said-t +!  then ;
 : voice-react ( code -- )
     dup go-there-cmd = if  drop  go-reaction react  exit  then
     dup go-for-it-cmd = if  drop  go-reaction react  exit  then
@@ -87,12 +91,15 @@ create ch-at /vec allot
     dup pat-cmd = if  drop  pat-reaction react  exit  then
     dup rouse-cmd = if  drop  rouse-reaction react  exit  then
     drop ;
-: voice-give ( code -- )
+: voice-give ( code g -- )
+    {: g :}
     dup 0< if  drop exit  then
     hewie-commandable state-flag? 0= if  drop exit  then
     her-busy-t @ if  drop exit  then
     voice-place
+    g say-gesture
     dup broadcast fiona-started
+    her-mode @ her-sub @ her-cond @ her-said-gesture @ her-doing @ broadcast fiona-doing
     dup go-there-cmd = if  go-spot  then
     plain-commands state-flag? 0=  hewie-played? 0= and if
         1 to voice-issued
@@ -163,15 +170,17 @@ create ch-at /vec allot
     endcase ;
 
 \ the right stick, without her playing the gesture. Sit is not R3: he sits where he is, any distance.
-: from-stick ( gesture -- )  command-code voice-give ;
+: from-stick ( gesture -- )   \ no gesture played, but the story is told the same one
+    {: g :}  g command-code dup 0< if  drop exit  then
+    g voice-give ;
 : spoken-order ( kind -- )
     dup voice-go = if  drop  go-gesture from-stick  exit  then
     dup voice-scold = if  drop  scold-gesture from-stick  exit  then
     dup voice-praise = if  drop  praise-gesture from-stick  exit  then
     dup voice-come = if  drop  back-gesture from-stick  exit  then
     dup voice-stay = if  drop  stay-gesture from-stick  exit  then
-    dup voice-sit = if  drop  stay-cmd voice-give  exit  then
-    dup voice-attack = if  drop  go-for-it-cmd voice-give  exit  then
+    dup voice-sit = if  drop  stay-cmd stay-gesture voice-give  exit  then
+    dup voice-attack = if  drop  go-for-it-cmd go-gesture voice-give  exit  then
     dup voice-shake = if  drop  voice-shake-now  exit  then
     drop ;
 

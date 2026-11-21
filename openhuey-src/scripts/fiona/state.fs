@@ -107,6 +107,8 @@ state: fiona-state
   \ Hewie (F3): her command this frame (-1 none: 0 up, 1 down, 2 R3, 3 right, 4 left), the
   \ command's code and where it was given, frames the pad isn't read, the praise's repeats
   cell field her-cmd   cell field her-busy-t
+  \ the gesture a spoken order stands for (the story's fiona-cmd-now), and frames it is still told
+  cell field her-said-gesture  cell field her-said-t
   cell field her-act-tri  1 floats field her-act-yaw  12 field her-act-at
   cell field her-held-n
   \ her hands off the controls: a script of the room has her (the original's +0xE0), or a

@@ -238,7 +238,7 @@ variable ladder-gripped                     \ (1 once a hand has gripped the lad
 
 \ ---- getting on (Fiona_StateLadder, LadderWalk): to its end's spot, facing it; there, on ----
 6 constant getting-on   7 constant on-rungs   \ (her sub on the ladder)
-\ ---- lowering onto the first rung from the top (VR): her height goes from the top's floor down to the first rung, over LOWER_ON_TICKS ticks, along the same line; then she holds on ----
+\ ---- lowering onto the first rung from the top (VR): her height goes from the top's floor down to the first rung, over LOWER_ON_TICKS ticks, onto the rung side of the edge; then she holds on ----
 30 constant LOWER_ON_TICKS    \ (about a second at the game's 30 ticks)
 : lower-drop ( -- ) ( F: -- d )   12e ;     \ (the drop from the top's floor to the first rung, in game units: a first guess, tuned in play)
 : lower-on ( -- )   \ (her lowering onto the first rung, from the top: the per-tick step, then she holds on)
@@ -248,21 +248,26 @@ variable ladder-gripped                     \ (1 once a hand has gripped the lad
         on-rungs her-sub !
         ['] on-ladder her-act !  exit
     then
-    her-yaw f@ {: F: before :}                                  \ (the view turns with her: her yaw before the step)
-    10e deg>rad turn-to-heading fdrop                           \ (toward the rungs, 10 degrees a tick, over the lowering)
-    her-yaw f@ before f- angle-wrap vr-turn-view                 \ (the step she took, given to the view)
+    vr? if                                                      \ (the view turned to the rungs at the lowering's rate:
+        her-heading f@ vr-face f- angle-wrap                    \  a 180 when it was looking away from the ladder)
+        fdup fabs 10e deg>rad f> if                             \ (a step a tick toward the rungs; the whole way when within one)
+            fdup f0< if  10e deg>rad fnegate  else  10e deg>rad  then  fnip
+        then
+        vr-turn-view
+    then
+    10e deg>rad turn-to-heading fdrop                           \ (her body too, toward the rungs, 10 degrees a tick)
     her-drop-dx f@ her-at v.x sf@ f+ her-at v.x sf!
     her-drop-dy f@ her-at v.y sf@ f+ her-at v.y sf!
     her-drop-dz f@ her-at v.z sf@ f+ her-at v.z sf!
     -1 her-drop-n +! ;
 : lower-start ( -- )   \ (a mounting at the top: she moves to the rung side of the top's edge, turns to face the rungs, and lowers onto the first rung, one step per tick)
-    her-ladder @ 0 nav-link-spot  {: F: x0 F: y0 F: z0 :}        \ (the top spot)
-    her-ladder @ 1 nav-link-spot  {: F: x1 F: y1 F: z1 :}        \ (the bottom spot: its height is only the drop's way)
+    her-ladder @ 1 nav-link-spot  {: F: xt F: yt F: zt :}        \ (the top spot: side 1, the nav foot being side 0)
+    her-ladder @ 0 nav-link-spot  {: F: xb F: yb F: zb :}        \ (the foot spot: its height is only the drop's way)
     her-drop-at her-at vec-copy                                  \ (dst src: her place, where the steps start)
-    x0  x1 x0 f- 1.2e f* f+  her-drop-at v.x sf!                 \ (1.2 of the way to the bottom spot: about 2 units past it toward the rungs, on the rung side)
-    z0  z1 z0 f- 1.2e f* f+  her-drop-at v.z sf!
-    y0  y1 y0 f- fdup fabs f/ lower-drop f* f+  her-drop-at v.y sf!   \ (the top's height, the drop toward the bottom's)
-    her-ladder @ 0 nav-link-yaw pi f+ her-heading f!             \ (the rung side's facing: the nav yaw turned round)
+    xt  xb xt f- 1.2e f* f+  her-drop-at v.x sf!                 \ (1.2 of the way to the foot spot: about 2 units past it toward the rungs, on the rung side)
+    zt  zb zt f- 1.2e f* f+  her-drop-at v.z sf!
+    yt  yb yt f- fdup fabs f/ lower-drop f* f+  her-drop-at v.y sf!   \ (the top's height, the drop toward the foot's)
+    her-ladder @ 1 nav-link-yaw her-heading f!                   \ (the rungs' facing: the top's nav yaw)
     her-drop-at 0 v-tri-in  dup 0< if  drop her-tri @  then  her-drop-tri !   \ (the triangle there; hers kept if there is none)
     LOWER_ON_TICKS her-drop-n !
     her-drop-at v.x sf@ her-at v.x sf@ f-  LOWER_ON_TICKS s>f f/  her-drop-dx f!
@@ -275,7 +280,7 @@ variable ladder-gripped                     \ (1 once a hand has gripped the lad
     0 ladder-gripped !
     her-ladder-side @ if  on-ladder-top-anim  else  on-ladder-foot-anim  then
     play-own
-    her-ladder-side @ 0= if  lower-start  else  ['] on-ladder her-act !  then ;
+    her-ladder-side @ vr? and if  lower-start  else  ['] on-ladder her-act !  then ;
 : ladder-start ( -- )
     her-ladder @ her-ladder-side @  dup if  0e 6.7e  else  0e -7.1068e  then  nav-link-front   ( tri ) ( F: x y z )
     dup 0< if  drop fdrop fdrop fdrop off-ladder exit  then
@@ -311,7 +316,7 @@ variable ladder-gripped                     \ (1 once a hand has gripped the lad
     her-ladder @ her-ladder-side @ nav-link-yaw her-yaw f!
     on-rungs her-sub !
     ladder-hold-anim play-own
-    her-ladder-side @ 0= if  lower-start  else  ['] on-ladder her-act !  then ;
+    her-ladder-side @ vr? and if  lower-start  else  ['] on-ladder her-act !  then ;
 : try-ladder-grab ( -- )   \ (a hand just grabbed a ladder's air: she gets on there, as the button does - no button needed)
     ladder-grab {: link side :}                              \ (always taken, so a grab is not kept for later)
     link 0< if  exit  then
