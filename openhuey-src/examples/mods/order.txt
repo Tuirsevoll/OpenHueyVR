@@ -1,0 +1,8 @@
+\ the mods' load order, each on or off (written by OpenHuey's mods menu; docs/library-and-mods.md)
+off: item-props
+on: fiona-vr-rig
+on: first-person
+on: flower-scent
+on: free-play-entry
+on: item-test-room
+on: room-tally

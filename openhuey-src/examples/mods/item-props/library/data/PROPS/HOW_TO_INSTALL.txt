@@ -1,0 +1,41 @@
+HGVR – Bisque Doll and Weeping Stone grips
+
+Put these files into the PROPS folder of your item models mod, the same one that
+already has grips.txt and the other item-*.gltf files:
+
+    <your item mod>\library\data\PROPS
+
+On your PC that is usually one of:
+
+    F:\Haunting Ground VR Cursor\OpenHuey-master\openhuey-src\examples\mods\item-props\library\data\PROPS
+    F:\Haunting Ground VR Cursor\OpenHuey-master\build\openhuey-src\Release\mods\item-props\library\data\PROPS
+
+If your .bat copies the item mod into the build folder, copy into the source
+folder the .bat copies from. Otherwise the next build overwrites it.
+
+What to copy (replace when Windows asks):
+
+    grips.txt
+    grip_poses.txt
+        Replace the copies already in PROPS. These are the full files, with
+        the doll and stone added. Don't use only the new lines.
+
+    item-147.gltf
+    item_147_bisque_doll.gltf
+    item_147_bisque_doll.bin
+        The Bisque Doll (item 147). Keep all three together.
+
+    item-155.gltf
+    item_155_weeping_stone.gltf
+    item_155_weeping_stone.bin
+        The Weeping Stone (item 155). Keep all three together.
+
+    2-1.png
+        The shared picture for both models. It must sit in the same PROPS
+        folder as the .gltf files (not in a subfolder).
+
+Your other item models are unchanged. Right hand only: the game mirrors the
+left hand by itself.
+
+Poses: grip_bisquedoll (item 147) and grip_weepingstone (item 155). The stone
+pose includes knuckle slides.

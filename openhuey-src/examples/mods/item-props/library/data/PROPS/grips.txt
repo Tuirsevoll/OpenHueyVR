@@ -1,6 +1,6 @@
 # grips.txt - where each item sits in Fiona's RIGHT hand (bone 46); the left hand mirrors it.
 # item bone ox oy oz qx qy qz qw [grip-pose-name]   (offset in the wrist bone's axes, game units; turn x y z w)
-# Exported from Sean's HGVR_grip_setup (Blender) by grip_export/tools/export.py.
+# Exported from Sean's HGVR grip blends by export_doll_stone.py / grip_export/tools/export.py.
 
 0 46 -0.76963 -0.27232 1.21389 0.707107 -0.000000 0.000000 0.707107 grip_marionette # broken-marionette (item_0_broken_marionette)
 1 46 -0.76548 -0.67992 0.36594 0.550700 0.071193 0.106628 0.824798 grip_freshflower # fresh-flowers (item_1_fresh_flowers)
@@ -68,5 +68,7 @@
 117 46 -1.06654 -0.09220 0.07616 0.707106 -0.001216 -0.001216 0.707106 grip_medallion # magist-medallion (medallion_shared)
 144 46 -0.79205 -0.06648 0.09459 -0.999423 0.033969 -0.000000 0.000000 grip_orb # ball (orb_ball)
 145 46 -0.79205 -0.06648 0.09459 -0.999423 0.033969 -0.000000 0.000000 grip_orb # antimony-powder (antimony_orb)
+147 46 -1.22107 -0.18853 0.24248 0.707107 -0.000000 0.000000 0.707107 grip_bisquedoll # bisque-doll (item_147_bisque_doll)
 148 46 -0.79205 -0.06648 0.09459 -0.999423 0.033969 -0.000000 0.000000 grip_orb # refined-antimony (antimony_orb)
 151 46 -0.79205 -0.06648 0.09459 -0.999423 0.033969 -0.000000 0.000000 grip_orb # antimony-tube (antimony_orb)
+155 46 -0.76741 -0.22444 0.09004 0.000000 -0.000000 0.000000 1.000000 grip_weepingstone # weeping-stone (item_155_weeping_stone)
