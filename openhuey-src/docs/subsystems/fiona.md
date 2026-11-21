@@ -372,9 +372,9 @@ that her own move cannot feed back into it. On a ladder in VR the stick does not
 the keyboard's - `off-ladder-top-anim` / `off-ladder-foot-anim`, then `ladder-off` - taken when her
 height has reached the end's (`end-y 0` at the foot; `end-y 1` within 3 at the top) and the stalker
 is not on that side, whose rules are unchanged. With no hand on it she hangs: no stick, no fall.
-On this ladder side 0 is the foot and side 1 the top (the game's y runs down, so the top's spot has
-the smaller y): a hand's climb to the top starts her stepping off it and a hand's climb to the bottom
-places her at once, neither with a step-off animation. Letting go with one hand at the top dismounts her;
+On this ladder side 0 is the physical top (the end at the larger height) and side 1 the physical
+bottom: a hand's climb to the top starts her stepping off it and a hand's climb to the bottom places
+her at once, neither with a step-off animation. Letting go with one hand at the top dismounts her;
 letting go with both hands at the bottom places her there (unchanged); mid-ladder, letting go with
 both hands makes her fall after about a third of a second (`LET_GO_TICKS`), while at either end it is
 the dismount (the top) or nothing (the bottom), as before. A fall raises the panic bar, which cannot
@@ -389,10 +389,9 @@ on, the same as the button, from the
 nearer end; from the top, the walk to the spot is still used (to be changed later). A grab mounts her
 at once, with no mounting animation, at the end's front, so she can climb straight away; the button
 keeps its mounting animation. In the headset, mounting at the top (by the button or a grab) lowers her
-onto the first rung over about a second, facing the rungs, and turns the view with her - a 180 when it
-was looking away from the ladder - so the rungs can be grabbed; the lowering distance is a first guess
-to be tuned (`tests/fiona/test_ladder_vr.fs`). The keyboard keeps its mounting animation and
-climbs from there.
+onto the first rung over about a second, facing the ladder, with the camera moving with her; the
+lowering distance is a first guess to be tuned (`tests/fiona/test_ladder_vr.fs`). The keyboard keeps
+its mounting animation and climbs from there.
 
 Also fixed with it: `walk-anim` (Fiona_StateCmdWalkAnim) read the animation's key events for
 `MOTION_EVENTS` $20; it is the motion's come-round flag (`ended?`).

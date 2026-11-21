@@ -1,6 +1,6 @@
 \ The headset at the top of a ladder (scripts/fiona/ladder.fs, docs/subsystems/fiona.md F5): mounting
-\ there lowers her onto the first rung and turns her to face the rungs, with the view turned with her
-\ (a 180 when it was looking away), so the rungs can be grabbed. Headless:
+\ there (side 0, the end the VR code lowers from) lowers her onto the first rung and turns her to face
+\ the rungs, with the view turned with her, so the rungs can be grabbed. Headless:
 \   build/openhuey-src/openhuey --test openhuey-src/tests/fiona/test_ladder_vr.fs
 IN: test-ladder-vr
 USING: tester engine game-state actors messages room-names game debug keys facts flag-names fiona.state fiona.model fiona.ladder ;
@@ -10,7 +10,7 @@ USING: tester engine game-state actors messages room-names game debug keys facts
 : ladder ( -- link side )  [: her-ladder @ her-ladder-side @ ;] hers ;
 : on? ( -- flag )  [: her-mode @ 3 = ;] hers ;
 : lowering? ( -- flag )  [: her-act @ ['] fiona.ladder:lower-on = ;] hers ;
-: faces-rungs? ( -- flag )  [: her-yaw f@ 0 1 nav-link-yaw f- fabs 0.02e f< ;] hers ;
+: faces-rungs? ( -- flag )  [: her-yaw f@ 0 0 nav-link-yaw pi f+ f- angle-wrap fabs 0.02e f< ;] hers ;
 \ Fiona at an end's spot, facing its way (or turned from it)
 : at-end ( side turn -- )
     >r  0 over  dup if  0e 6.7e  else  0e -7.1068e  then  nav-link-front drop
@@ -21,13 +21,18 @@ USING: tester engine game-state actors messages room-names game debug keys facts
 game:story send story-stop  deliver  progress pr.state 8 0 fill
 castle-1f-2 room!  20 run-frames
 
-testing in the headset, mounting at the top lowers her onto the first rung
+testing in the headset, mounting at the other end gets her on the ladder, with no lowering
 1 0 at-end
 -1 vr!
 circle press
-T{ ladder  lowering?  on? -> 0 1 -1 -1 }T
+T{ ladder  lowering?  on? -> 0 1 0 -1 }T
+10 run-frames
 
-testing ... there, holding on and facing the rungs (the view turned with her)
+testing ... mounting at the top (side 0, the end the VR lowers from) lowers her onto the first rung
+0 0 at-end
+[: 0 her-ladder !  0 her-ladder-side !  ladder-mode her-mode !  ladder-doing her-doing !
+   0 ladder-gripped !  on-rungs her-sub !  lower-start ;] hers
+T{ ladder  lowering?  on? -> 0 0 -1 -1 }T
 45 run-frames
 T{ height 5 >  height 20 <  and -> -1 }T
 T{ lowering?  on? -> 0 -1 }T

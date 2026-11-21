@@ -182,16 +182,16 @@ USING: engine vectors game-state actors messages common keys facts flag-names ru
 : hold-still ( -- )   \ (the hold animation kept: any other is replaced by the first hold)
     anim@ {: anim :}
     anim ladder-hold-anim = anim ladder-hold-2-anim = or 0= if  ladder-hold-anim play-own  then ;
-\ side 0 is the foot (the end on the ground floor); side 1 is the top (the end on the floor above).
+\ side 0 is the physical top on this ladder (the end at the larger height); side 1 is the physical bottom.
 : at-top-window? ( -- flag )   \ (her height at the top's floor, within 6 of it or past it)
-    her-at v.y sf@ 1 end-y 6e f+ f<= ;
+    her-at v.y sf@ 0 end-y 6e f- f>= ;
 variable ladder-free-ticks                 \ (ticks with no hand on a mid-ladder hold: the let-go's count)
 variable ladder-gripped                     \ (1 once a hand has gripped the ladder since she mounted: a fall needs this first)
 9 constant LET_GO_TICKS                    \ (0.3 s at the game's 30 ticks: both hands off this long mid-ladder, and she falls)
-: at-bottom? ( -- flag )                   \ (within 10 of the bottom's floor, or past it: the bottom is side 0)
-    her-at v.y sf@ 0 end-y 10e f- f>= ;
+: at-bottom? ( -- flag )                   \ (within 10 of the bottom's floor, or past it: the bottom is side 1)
+    her-at v.y sf@ 1 end-y 10e f+ f<= ;
 : let-go-fall ( -- )                       \ (both hands let go mid-ladder: she falls off, the same reaction as the panic's let-go)
-    0 end-y her-at v.y sf@ f- 0e fmax  {: F: h :}               \ (the height fallen: the bottom floor's y less hers, never below 0)
+    her-at v.y sf@ 1 end-y f- 0e fmax  {: F: h :}               \ (the height fallen: her y less the bottom floor's, never below 0)
     65e  1.2e h f*  fmin  her-panic-level f@ f+ 95e fmin  f>s  dup fall-floor !  panic-id send panic-reach   \ (the bar's new level: the fall's amount on the current bar, at most 95 - a fall alone never reaches full panic; the bar is then held for about 2.6 seconds)
     78 fall-hold-ticks !                                           \ (the bar then cannot fall for 78 ticks: about 2.6 s)
     h 55e f/ 1e fmin 1800e f* f>s  dup 168 / fall-drain-step !     \ (the slowdown: up to the whole counter, scaled by the height, drained over 168 ticks)
@@ -199,14 +199,14 @@ variable ladder-gripped                     \ (1 once a hand has gripped the lad
     drop 168 fall-drain-ticks !                                   \ (the extra drain lasts 168 ticks: about 5.6 s)
     thrown-doing her-doing !  thrown-mode her-mode !  off-ladder-r her-sub !  knocked-off ;
 : bottom-off ( -- )   \ (placed on the ground at the bottom: the end's front, free)
-    her-ladder @ 0 off-offset nav-link-front                      ( tri ) ( F: x y z )
+    her-ladder @ 1 off-offset nav-link-front                      ( tri ) ( F: x y z )
     dup 0< if  drop fdrop fdrop fdrop  else  her-tri !  her-at vec!  then
     own-mode her-mode !  off-ladder ;
 : vr-climb ( -- )
     hold-still
     ladder-both? 0= at-top-window? 0 stalker-on 0= and and if   \ (at the top, and not both hands on the ladder: she steps off)
         0 ladder-free-ticks !
-        1 walk-off-top-start exit
+        0 walk-off-top-start exit
     then
     ladder-hands? 0= if                                         \ (no hand on the ladder)
         at-top-window? 0= at-bottom? and 0 stalker-on 0= and if   \ (at the bottom, not at the top: she is put on the ground there)
@@ -225,7 +225,7 @@ variable ladder-gripped                     \ (1 once a hand has gripped the lad
     1 ladder-gripped !
     ladder-pull {: F: pull :}                                   \ (this tick's pull: down the hand is up her)
     pull her-at v.y sf@ f+ her-at v.y sf!
-    pull 0e f<  her-at v.y sf@ 0 end-y 3e f- f>= and  0 stalker-on 0= and if   \ (up this tick, at the bottom: placed there)
+    pull 0e f<  her-at v.y sf@ 1 end-y f- 3e f<= and  0 stalker-on 0= and if   \ (up this tick, at the bottom: placed there)
         bottom-off exit
     then ;
 : on-ladder ( -- )   \ (Fiona_StateOnLadder; until the move has faded in: still)
@@ -238,7 +238,7 @@ variable ladder-gripped                     \ (1 once a hand has gripped the lad
 
 \ ---- getting on (Fiona_StateLadder, LadderWalk): to its end's spot, facing it; there, on ----
 6 constant getting-on   7 constant on-rungs   \ (her sub on the ladder)
-\ ---- lowering onto the first rung from the top (VR): her height goes from the top's floor down to the first rung, over LOWER_ON_TICKS ticks, onto the rung side of the edge; then she holds on ----
+\ ---- lowering onto the first rung from the top (VR): her height goes from the top's floor down to the first rung, over LOWER_ON_TICKS ticks, along the same line; then she holds on ----
 30 constant LOWER_ON_TICKS    \ (about a second at the game's 30 ticks)
 : lower-drop ( -- ) ( F: -- d )   12e ;     \ (the drop from the top's floor to the first rung, in game units: a first guess, tuned in play)
 : lower-on ( -- )   \ (her lowering onto the first rung, from the top: the per-tick step, then she holds on)
@@ -248,26 +248,21 @@ variable ladder-gripped                     \ (1 once a hand has gripped the lad
         on-rungs her-sub !
         ['] on-ladder her-act !  exit
     then
-    vr? if                                                      \ (the view turned to the rungs at the lowering's rate:
-        her-heading f@ vr-face f- angle-wrap                    \  a 180 when it was looking away from the ladder)
-        fdup fabs 10e deg>rad f> if                             \ (a step a tick toward the rungs; the whole way when within one)
-            fdup f0< if  10e deg>rad fnegate  else  10e deg>rad  then  fnip
-        then
-        vr-turn-view
-    then
-    10e deg>rad turn-to-heading fdrop                           \ (her body too, toward the rungs, 10 degrees a tick)
+    her-yaw f@ {: F: before :}                                  \ (the view turns with her: her yaw before the step)
+    10e deg>rad turn-to-heading fdrop                           \ (toward the rungs, 10 degrees a tick, over the lowering)
+    her-yaw f@ before f- angle-wrap vr-turn-view                 \ (the step she took, given to the view)
     her-drop-dx f@ her-at v.x sf@ f+ her-at v.x sf!
     her-drop-dy f@ her-at v.y sf@ f+ her-at v.y sf!
     her-drop-dz f@ her-at v.z sf@ f+ her-at v.z sf!
     -1 her-drop-n +! ;
 : lower-start ( -- )   \ (a mounting at the top: she moves to the rung side of the top's edge, turns to face the rungs, and lowers onto the first rung, one step per tick)
-    her-ladder @ 1 nav-link-spot  {: F: xt F: yt F: zt :}        \ (the top spot: side 1, the nav foot being side 0)
-    her-ladder @ 0 nav-link-spot  {: F: xb F: yb F: zb :}        \ (the foot spot: its height is only the drop's way)
+    her-ladder @ 0 nav-link-spot  {: F: x0 F: y0 F: z0 :}        \ (the top spot)
+    her-ladder @ 1 nav-link-spot  {: F: x1 F: y1 F: z1 :}        \ (the bottom spot: its height is only the drop's way)
     her-drop-at her-at vec-copy                                  \ (dst src: her place, where the steps start)
-    xt  xb xt f- 1.2e f* f+  her-drop-at v.x sf!                 \ (1.2 of the way to the foot spot: about 2 units past it toward the rungs, on the rung side)
-    zt  zb zt f- 1.2e f* f+  her-drop-at v.z sf!
-    yt  yb yt f- fdup fabs f/ lower-drop f* f+  her-drop-at v.y sf!   \ (the top's height, the drop toward the foot's)
-    her-ladder @ 1 nav-link-yaw her-heading f!                   \ (the rungs' facing: the top's nav yaw)
+    x0  x1 x0 f- 1.2e f* f+  her-drop-at v.x sf!                 \ (1.2 of the way to the bottom spot: about 2 units past it toward the rungs, on the rung side)
+    z0  z1 z0 f- 1.2e f* f+  her-drop-at v.z sf!
+    y0  y1 y0 f- fdup fabs f/ lower-drop f* f+  her-drop-at v.y sf!   \ (the top's height, the drop toward the bottom's)
+    her-ladder @ 0 nav-link-yaw pi f+ her-heading f!             \ (the rung side's facing: the nav yaw turned round)
     her-drop-at 0 v-tri-in  dup 0< if  drop her-tri @  then  her-drop-tri !   \ (the triangle there; hers kept if there is none)
     LOWER_ON_TICKS her-drop-n !
     her-drop-at v.x sf@ her-at v.x sf@ f-  LOWER_ON_TICKS s>f f/  her-drop-dx f!
@@ -280,7 +275,7 @@ variable ladder-gripped                     \ (1 once a hand has gripped the lad
     0 ladder-gripped !
     her-ladder-side @ if  on-ladder-top-anim  else  on-ladder-foot-anim  then
     play-own
-    her-ladder-side @ vr? and if  lower-start  else  ['] on-ladder her-act !  then ;
+    her-ladder-side @ 0= if  lower-start  else  ['] on-ladder her-act !  then ;
 : ladder-start ( -- )
     her-ladder @ her-ladder-side @  dup if  0e 6.7e  else  0e -7.1068e  then  nav-link-front   ( tri ) ( F: x y z )
     dup 0< if  drop fdrop fdrop fdrop off-ladder exit  then
@@ -316,7 +311,7 @@ variable ladder-gripped                     \ (1 once a hand has gripped the lad
     her-ladder @ her-ladder-side @ nav-link-yaw her-yaw f!
     on-rungs her-sub !
     ladder-hold-anim play-own
-    her-ladder-side @ vr? and if  lower-start  else  ['] on-ladder her-act !  then ;
+    her-ladder-side @ 0= if  lower-start  else  ['] on-ladder her-act !  then ;
 : try-ladder-grab ( -- )   \ (a hand just grabbed a ladder's air: she gets on there, as the button does - no button needed)
     ladder-grab {: link side :}                              \ (always taken, so a grab is not kept for later)
     link 0< if  exit  then
