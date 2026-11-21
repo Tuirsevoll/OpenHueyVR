@@ -372,9 +372,9 @@ that her own move cannot feed back into it. On a ladder in VR the stick does not
 the keyboard's - `off-ladder-top-anim` / `off-ladder-foot-anim`, then `ladder-off` - taken when her
 height has reached the end's (`end-y 0` at the foot; `end-y 1` within 3 at the top) and the stalker
 is not on that side, whose rules are unchanged. With no hand on it she hangs: no stick, no fall.
-On this ladder side 0 is the physical top (the end at the larger height) and side 1 the physical
-bottom: a hand's climb to the top starts her stepping off it and a hand's climb to the bottom places
-her at once, neither with a step-off animation. Letting go with one hand at the top dismounts her;
+On this ladder side 0 is the foot and side 1 the top (the game's y runs down, so the top's spot has
+the smaller y): a hand's climb to the top starts her stepping off it and a hand's climb to the bottom
+places her at once, neither with a step-off animation. Letting go with one hand at the top dismounts her;
 letting go with both hands at the bottom places her there (unchanged); mid-ladder, letting go with
 both hands makes her fall after about a third of a second (`LET_GO_TICKS`), while at either end it is
 the dismount (the top) or nothing (the bottom), as before. A fall raises the panic bar, which cannot
