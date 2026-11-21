@@ -113,6 +113,10 @@ enum: skill  going-skill watching-skill eager-skill picking-up-skill telling-ski
 : treat-i ( -- i )  his-treat @ ;
 : treat-at ( -- v )  treat-i thing-at ;
 : treat-tri ( -- tri )  treat-i thing-tri ;
+: treat-floor-at ( -- v )   \ (its spot with the floor's height under it: a way can be planned to it)
+    treat-tri tri-center his-treat-at vec!
+    treat-at v.x sf@ his-treat-at v.x sf!  treat-at v.z sf@ his-treat-at v.z sf!
+    his-treat-at ;
 : treat-there? ( -- flag )   \ (still lying there, in his room)
     treat-i 0< if  false exit  then
     treat-i thing-used? 0= if  false exit  then
@@ -126,13 +130,17 @@ enum: skill  going-skill watching-skill eager-skill picking-up-skill telling-ski
     treat-forget  to-default ;
 : st-treat ( -- )
     treat-there? 0= if  ." hewie: treat walk ended - gone, or in another room" cr  treat-forget  to-default exit  then
-    treat-tri treat-at plan-and-go if  ." hewie: treat walk ended - no way to it" cr  treat-forget  to-default exit  then
+    treat-tri treat-floor-at plan-and-go if  ." hewie: treat walk ended - no way to it" cr  treat-forget  to-default exit  then
     rest
-    stride-len fabs 0.8e f<  fdup 6e f<  and if  fdrop treat-ate exit  then
+    stride-len fabs 0.8e f<  fdup 6e f<  and if
+        ." hewie: treat at it - straight " treat-at his-at vec-dist 1 f>s$ type
+        ." , tri " treat-tri . ." / " his-tri . cr
+        fdrop treat-ate exit
+    then
     fdrop
     walk-pose keep-pose
     stride drop
-    treat-at eyes-on ;
+    treat-floor-at eyes-on ;
 : treat-go ( -- )   \ (Hewie_Start to it: the same things may break in as the ball's fetch)
     ." hewie: going to treat " treat-i n>s type space
     ." (dist " his-at treat-at vec-dist 1 f>s$ type [char] ) emit cr

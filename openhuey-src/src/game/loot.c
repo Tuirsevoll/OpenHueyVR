@@ -1248,12 +1248,25 @@ static int word_in(Forth *f, Cell c) {
     return f != NULL && c > (Cell)f->mem && c < (Cell)f->here;
 }
 
+/* 1 when that pointer is a word's header - not a number or a branch's target that merely lies in
+ * the dictionary. Room for the whole Word is kept, its code is there, and its name ends inside it
+ * (a body scan reads these through pointers it found in compiled code, so a stray cell must never
+ * be taken for a Word: it would be read as one). */
+static int word_header(Forth *f, Cell c) {
+    const Word *w = (const Word *)c;
+
+    if (!word_in(f, c) || c + (Cell)sizeof(Word) > (Cell)f->here) {
+        return 0;
+    }
+    return w->code != NULL && memchr(w->name, 0, sizeof(w->name)) != NULL;
+}
+
 static int grants(Forth *f, Word *w, int depth) {
     Cell *p;
     int n = 0;
     static Word *give, *picks, *takes, *the;
 
-    if (w == NULL || depth > 2 || !word_in(f, (Cell)w)) {
+    if (w == NULL || depth > 2 || !word_header(f, (Cell)w)) {
         return 0;
     }
     if (give == NULL) {
@@ -1281,9 +1294,15 @@ static int grants(Forth *f, Word *w, int depth) {
             break;
         }
         if (!word_in(f, p[n])) {
-            if (n > 0 && word_in(f, p[n - 1]) && strcmp(((Word *)p[n - 1])->name, "(lit)") == 0) {
+            if (n > 0 && word_header(f, p[n - 1]) && strcmp(((Word *)p[n - 1])->name, "(lit)") == 0) {
                 continue;
             }
+            if (n > 4) {
+                break;
+            }
+            continue;
+        }
+        if (!word_header(f, p[n])) {   /* (a branch's target, a number: not a word's header) */
             if (n > 4) {
                 break;
             }
