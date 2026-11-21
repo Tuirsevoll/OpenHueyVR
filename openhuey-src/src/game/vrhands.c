@@ -3648,13 +3648,14 @@ static void hand_item_hide(void) {
     sHand.shown = 0;
 }
 
-/* One line a change, not every tick: the item in the hand, the hand it is in (the right, or the
- * left when that is the only one tracked) and the grip pose its grip line names. `hands: hand item
- * 64 in R hand (grip grip_flowers)`; `hands: hand item cleared` once the scripts put it away. A
- * menu or a cutscene merely stops it being shown: the same item is not said again when it comes
- * back. */
+/* One line a change, not every tick: the item in the hand, the hand it is in (the left in
+ * left-handed play, else the right, or the other one when that is the only one tracked) and the
+ * grip pose its grip line names. `hands: hand item 64 in L hand (left-handed) (grip
+ * grip_flowers)`; `hands: hand item cleared` once the scripts put it away. A menu or a cutscene
+ * merely stops it being shown: the same item is not said again when it comes back. */
 static void hand_item_log(void) {
     ItemGrip g;
+    const char *leftie = gVrOptions.left_handed && sHand.side == 0 ? " (left-handed)" : "";
 
     if (sHand.shown && sHand.item >= 0) {
         if (sHand.item == sHandLogItem && sHand.side == sHandLogSide) {
@@ -3663,11 +3664,11 @@ static void hand_item_log(void) {
         sHandLogItem = sHand.item;
         sHandLogSide = sHand.side;
         if (itemprops_grip(sHand.item, sHand.side == 0 ? 30 : 46, &g) && g.pose[0] != 0) {
-            fprintf(stderr, "hands: hand item %d in %c hand (grip %s)\n", sHand.item,
-                    sHand.side == 0 ? 'L' : 'R', g.pose);
+            fprintf(stderr, "hands: hand item %d in %c hand%s (grip %s)\n", sHand.item,
+                    sHand.side == 0 ? 'L' : 'R', leftie, g.pose);
         } else {
-            fprintf(stderr, "hands: hand item %d in %c hand (no grip pose)\n", sHand.item,
-                    sHand.side == 0 ? 'L' : 'R');
+            fprintf(stderr, "hands: hand item %d in %c hand%s (no grip pose)\n", sHand.item,
+                    sHand.side == 0 ? 'L' : 'R', leftie);
         }
         return;
     }
@@ -3678,9 +3679,10 @@ static void hand_item_log(void) {
     }
 }
 
-/* a tick: is the hand item shown, and in which hand (the right, or the left when that is the only
- * one tracked). The magnesia/antimony in slot 2 has the hand instead, and nothing is shown while
- * VR does not play (a menu, a cutscene - her eyes' anchor is cleared then - or flat screen). */
+/* a tick: is the hand item shown, and in which hand (the left in left-handed play, else the right;
+ * the other one only when the preferred one is not tracked). The magnesia/antimony in slot 2 has
+ * the hand instead, and nothing is shown while VR does not play (a menu, a cutscene - her eyes'
+ * anchor is cleared then - or flat screen). */
 static void hand_item_tick(void) {
     int item = gEngine.hand_item, side;
     Vec3 at, right, up, fwd;
@@ -3691,21 +3693,23 @@ static void hand_item_tick(void) {
         hand_item_log();
         return;
     }
-    for (side = 1; side >= 0; side--) {
-        if (sArmFound[side] && hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
-            sHand.item = item;
-            sHand.side = side;
-            sHand.at = at;
-            sHand.right = right;
-            sHand.up = up;
-            sHand.fwd = fwd;
-            sHand.shown = 1;
-            loot_preload_held(item, side);   /* (its model, off the render pass) */
+    side = gVrOptions.left_handed ? 0 : 1;
+    if (!sArmFound[side] || !hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
+        side ^= 1;
+        if (!sArmFound[side] || !hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
+            hand_item_hide();
             hand_item_log();
             return;
         }
     }
-    hand_item_hide();
+    sHand.item = item;
+    sHand.side = side;
+    sHand.at = at;
+    sHand.right = right;
+    sHand.up = up;
+    sHand.fwd = fwd;
+    sHand.shown = 1;
+    loot_preload_held(item, side);   /* (its model, off the render pass) */
     hand_item_log();
 }
 
@@ -3773,20 +3777,22 @@ static void defense_tick(void) {
         sDef.armed = 0;
         sDef.saw_low = 0;
         sDef.histN = 0;
-        sDef.side = 1;
+        sDef.side = gVrOptions.left_handed ? 0 : 1;
     }
-    side = sDef.side;
+    /* the left hand in left-handed play, else the right; the other one only when the preferred one
+     * is not tracked (as the hand item's own side is chosen) */
+    side = gVrOptions.left_handed ? 0 : 1;
     if (!hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
-        if (!hand_world(side ^ 1, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
+        side ^= 1;
+        if (!hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
             return;
         }
-        side = side ^ 1;
-        if (side != sDef.side) {
-            sDef.side = side;
-            sDef.armed = 0;
-            sDef.saw_low = 0;
-            sDef.histN = 0;
-        }
+    }
+    if (side != sDef.side) {
+        sDef.side = side;
+        sDef.armed = 0;
+        sDef.saw_low = 0;
+        sDef.histN = 0;
     }
     loot_preload_held(item, side);   /* (its model and the debug axes, off the render pass) */
     place = defense_place(at, up, fwd);
