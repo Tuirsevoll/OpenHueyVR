@@ -16,26 +16,26 @@ struct Actor;
 
 /* the bones the body found by name (vrbody_bone). `side` 0 is her left, 1 her right */
 enum {
-    VRBODY_ROOT,          /* bone 0: the floor */
-    VRBODY_PELVIS,        /* bone 1 */
-    VRBODY_WAIST,         /* bone 23 */
-    VRBODY_CHEST,         /* bone 24 */
-    VRBODY_NECK,          /* bone 32 */
-    VRBODY_HEAD,          /* bone 33 */
-    VRBODY_CLAV,          /* bone 26 / 42 */
-    VRBODY_UPPER,         /* bone 27 / 43: the shoulder joint */
-    VRBODY_ELBOW,         /* bone 28 / 44: the elbow hinge */
-    VRBODY_FORE,          /* bone 29 / 45: the PS2's own forearm roll */
-    VRBODY_HAND,          /* bone 30 / 46: the wrist */
+    VRBODY_ROOT,          /* the floor (vrbones.h: the outfit's own number) */
+    VRBODY_PELVIS,
+    VRBODY_WAIST,
+    VRBODY_CHEST,
+    VRBODY_NECK,
+    VRBODY_HEAD,
+    VRBODY_CLAV,          /* the clavicle */
+    VRBODY_UPPER,         /* the shoulder joint (the upper arm) */
+    VRBODY_ELBOW,         /* the elbow hinge */
+    VRBODY_FORE,          /* the PS2's own forearm roll */
+    VRBODY_HAND,          /* the wrist */
     VRBODY_TWIST1,        /* vr L/R forearm twist 1 */
     VRBODY_TWIST2,        /* vr L/R forearm twist 2 */
     VRBODY_UPPER_TWIST,   /* vr L/R upperarm twist */
     VRBODY_DELTOID,       /* vr L/R shoulder */
     VRBODY_NECK_FP,       /* vr neck fp */
-    VRBODY_THIGH,         /* bone 2 / 6 */
-    VRBODY_SHIN,          /* bone 3 / 7 */
-    VRBODY_FOOT,          /* bone 4 / 8: the ankle the leg's solve moves */
-    VRBODY_TOE,           /* bone 5 / 9 */
+    VRBODY_THIGH,
+    VRBODY_SHIN,
+    VRBODY_FOOT,          /* the ankle the leg's solve moves */
+    VRBODY_TOE,
     VRBODY_PARTS
 };
 
@@ -90,7 +90,7 @@ typedef struct VrArm {
 /* 1 when the arm was solved; `grip` is the hand's grip matrix in the room (its axes give the
  * wrist's twist), `root` the shoulder joint and `target` the grip's translation. */
 int vrbody_arm(struct Actor *a, int side, const float *root, const float *target, const Mat4 *grip, VrArm *out);
-/* After the arms: the forearm's roll (bone 29 and the two forearm helpers), the upper arm's twist
+/* After the arms: the forearm's roll (the forearm and the two helpers), the upper arm's twist
  * and the deltoid, then the first-person head. Each helper is rebuilt from its parent every frame,
  * so nothing accumulates. */
 void vrbody_finish(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace);

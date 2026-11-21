@@ -2,6 +2,7 @@
 #include "gripposes.h"
 
 #include "actor.h"
+#include "vrbones.h"
 
 #include "../core/files.h"
 #include "../data/model.h"
@@ -842,7 +843,8 @@ static Vec3 point_in_rest(const Model *m, const Mat4 *world, int bone, int wrist
     return mat4_point(&m->bones[wrist].inv_bind, p);
 }
 
-int vrgrip_selfcheck_model(const Model *m, const VrGripPose *poses, int nposes, VrGripCheck *out) {
+int vrgrip_selfcheck_model_at(const Model *m, int wrist, const VrGripPose *poses, int nposes,
+                              VrGripCheck *out) {
     static const char *names[4] = {"arm right finger 2a", "arm right finger 3a",
                                    "arm right finger 5a", "arm right finger 2c"};
     static const float posed[4][3] = {{-0.892f, 0.144f, 0.227f},
@@ -851,7 +853,7 @@ int vrgrip_selfcheck_model(const Model *m, const VrGripPose *poses, int nposes, 
                                       {-1.085f, -0.384f, 0.261f}};
     const VrGripPose *p = NULL;
     Mat4 world[MODEL_MAX_BONES];
-    int bones[4], wrist;
+    int bones[4];
     int i, k, ok = 1;
 
     if (out != NULL) {
@@ -869,7 +871,6 @@ int vrgrip_selfcheck_model(const Model *m, const VrGripPose *poses, int nposes, 
     if (p == NULL) {
         return 0;
     }
-    wrist = model_bone_named(m, "bone 46");
     for (i = 0; i < 4; i++) {
         bones[i] = model_bone_named(m, names[i]);
         if (bones[i] < 0) {
@@ -900,6 +901,13 @@ int vrgrip_selfcheck_model(const Model *m, const VrGripPose *poses, int nposes, 
     }
     out->pass = ok;
     return 1;
+}
+
+/* the original check, on FIN_000's right wrist (bone 46): the check's own model, and a model
+ * without a vr_bones.txt that keeps FIN's numbering */
+int vrgrip_selfcheck_model(const Model *m, const VrGripPose *poses, int nposes, VrGripCheck *out) {
+    return vrgrip_selfcheck_model_at(m, m != NULL ? model_bone_named(m, "bone 46") : -1,
+                                     poses, nposes, out);
 }
 
 
@@ -1008,8 +1016,12 @@ static void log_missing_pose(const char *name, int item) {
 #endif
 }
 
-static void model_ready(const Model *m) {
+static void model_ready(const struct Actor *a) {
     VrGripCheck chk;
+    const Model *m = &a->model;
+    const VrBones *vb = vrbones_for(a);
+    int wrist = vb->ok && vb->bone[VRB_WRIST_R] >= 0 ? vb->bone[VRB_WRIST_R] :
+                model_bone_named(m, "bone 46");
     int pidx = pose_named("grip_orb");
     int left = 0, right = 0, any = 0;
 
@@ -1051,7 +1063,7 @@ static void model_ready(const Model *m) {
 #endif
         return;
     }
-    if (!vrgrip_selfcheck_model(m, sPoses, sPoseN, &chk) || !chk.ran) {
+    if (!vrgrip_selfcheck_model_at(m, wrist, sPoses, sPoseN, &chk) || !chk.ran) {
         sDisabled = 1;
 #if GRIP_POSE_LOG
         fprintf(stderr, "[grip-poses] self-check skipped: no finger bones\n");
@@ -1328,7 +1340,7 @@ void vrgrip_apply(Actor *a, Mat4 *world, float dt) {
         sDisabled = 0;
         reset_motion(0);
         reset_motion(1);
-        model_ready(&a->model);
+        model_ready(a);
     }
     if (sDisabled) {
         return;

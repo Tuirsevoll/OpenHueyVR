@@ -249,6 +249,56 @@ characters' numbers as the story's scripts have them):
 A setting holds until freed or the model is loaded again (a costume change: `cast-model` gives
 the new one - find its bones again by name). Set them each tick for a hand that follows something (a VR controller).
 
+### VR bone roles (`vr_bones.txt`)
+
+Fiona's outfits number their game bones differently: cloth and skirt bones come before the body,
+so `bone 30` is her left wrist in `O_FIN/FIN_000` but a shoulder pad in the slip. The VR arm IK and
+body read **`library/data/<model>.model/vr_bones.txt`** (through the files layer, so a mod's copy
+wins). The fiona-vr-rig mod writes one beside every outfit:
+
+```
+# comment lines start with '#'
+model = O_FIS/FIS_000
+game_bones = 68
+bones = 107
+floor_y = 0.0
+root = bone 0   [bone 0]
+pelvis = bone 1   [bone 1]
+L thigh = bone 2   [bone 2]
+waist = bone 43   [bone 23]
+chest = bone 44   [bone 24]
+L clavicle = bone 46   [bone 26]
+L upperarm = bone 47   [bone 27]
+L elbow = bone 48   [bone 28]
+L forearm = bone 49   [bone 29]
+L wrist = bone 50   [bone 30]
+neck = bone 52   [bone 32]
+head = bone 53   [bone 33]
+L eye = bone 54   [bone 34]
+R eye = bone 55   [bone 35]
+R clavicle = bone 62   [bone 42]
+R upperarm = bone 63   [bone 43]
+R elbow = bone 64   [bone 44]
+R forearm = bone 65   [bone 45]
+R wrist = bone 66   [bone 46]
+```
+
+- Each line is `<role> = <bone name>`, with FIN_000's number in `[...]` for reference (ignored).
+  Roles may contain spaces. Unknown keys and roles (`bust`, the shoulder pads, `model`,
+  `game_bones`, `bones`) are ignored. A role that is missing where the VR code needs it disables
+  the table.
+- `floor_y` is the model-space floor height. In `O_FIS` and `O_FIC` `bone 0` binds at the hip
+  (10.75), not at the floor, so the eye height is measured from `floor_y`, not from bone 0.
+- The loader resolves each bone by name and checks the skeleton: the wrist's chain through
+  forearm, elbow, upper arm and clavicle, and (when the mod's finger bones are there) that
+  `arm left finger 1a` / `arm right finger 1a` hang from the named wrists. On a mismatch, or with
+  no file and a model that is not FIN_000's exact layout, the arm IK and the VR body are skipped
+  for that model (her own animation plays, nothing is twisted); the grip poses still run, because
+  they find the finger bones by name. One `vrbones: ... (ok)` line is logged per model.
+- From Forth (the checks and the console): `vr-bone ( id addr len -- bone )` gives the bone a role
+  names (`s" L wrist" vr-bone`), `vr-bones-ok?`, `vr-bones-from-file?` and `vr-bones-floor` read
+  the rest of the table.
+
 ### Props (API 1.5)
 
 A **prop** is a mod's own model: any glTF 2.0 (`.gltf` with its `.bin` and images beside it or as

@@ -19,6 +19,7 @@
  * their parents and the motions are exactly as they were. */
 #include "vrbody.h"
 #include "actor.h"
+#include "vrbones.h"
 
 #include "../platform/vr.h"
 
@@ -46,9 +47,9 @@
 #define NECK_PITCH_SAFE 80.0f      /* degrees: past it the yaw comes from the head's up */
 #define NECK_KEEP 0.75f            /* a frame at 90 Hz keeps this much of the body's forward */
 /* the chest's turn (her facing against the body's forward), bone by bone */
-#define CHEST_WAIST 0.3f           /* bone 23 */
-#define CHEST_CHEST 0.4f           /* bone 24 */
-#define CHEST_NECK 0.3f            /* bone 32 */
+#define CHEST_WAIST 0.3f           /* the waist's share of the chest's turn */
+#define CHEST_CHEST 0.4f           /* the chest's */
+#define CHEST_NECK 0.3f            /* the neck's */
 
 /* 3. FRIK's setBodyUnderHMD / setBodyPosture; VRIK's headInFront / headAbove */
 #define BODY_HEAD_FRONT 3.0f       /* (FRIK's fPlayerBodyOffsetForwardStanding -3) */
@@ -58,9 +59,9 @@
 #define BODY_PITCH_LOOK 0.1f       /* the look adds this much a degree */
 #define BODY_PITCH_DIV 1.2f
 #define BODY_COM_DROP 0.6666667f   /* (FRIK divides the COM's height by 1.5) */
-#define SPINE_WAIST 0.45f          /* the swing's shares: bone 23 */
-#define SPINE_CHEST 0.40f          /* bone 24 */
-#define SPINE_NECK 0.15f           /* bone 32 */
+#define SPINE_WAIST 0.45f          /* the swing's shares: the waist */
+#define SPINE_CHEST 0.40f          /* the chest */
+#define SPINE_NECK 0.15f           /* the neck */
 #define SPINE_FORWARD 60.0f        /* degrees the swing is clamped to */
 #define SPINE_BACK 25.0f
 #define SPINE_SIDE 35.0f
@@ -120,7 +121,7 @@
 #define VR_DAMPEN_HANDS 1          /* 1: the body's hands are smoothed (DampenHands on) */
 
 /* 6. the forearm's roll: FRIK's cumulative 0 / 0.5 / 1, split on this mesh's own bones */
-#define TWIST_FORE 0.5f            /* bone 29 and vr X forearm twist 1 */
+#define TWIST_FORE 0.5f            /* the forearm and vr X forearm twist 1 */
 #define TWIST_CUFF 0.8f            /* vr X forearm twist 2 (the PS2 split, not FRIK's 1.0) */
 #define VR_TWIST_FRIK_CUFF 0       /* 1: the cuff takes all of it (FRIK's 1.0). Tried both: at a 170
                                     * degree wrist, 0.8 gives steps of 42/42/51/34 degrees along the
@@ -197,7 +198,7 @@ typedef struct VrBody {
     int clav[2], upper[2], elbow[2], fore[2], hand[2];
     int thigh[2], shin[2], foot[2], toe[2];
     int twist1[2], twist2[2], upperTwist[2], deltoid[2], neckFp;
-    int eyeBone;                           /* her eye bone (34), or -1: the head + EYE_ABOVE_HEAD */
+    int eyeBone;                           /* her eye bone, or -1: the head + EYE_ABOVE_HEAD */
     int haveFore, haveUpper, haveNeckFp;   /* the vr ... helpers that are there */
     float kArm, kBody;                     /* the ratios: room units a FRIK unit is */
     float armLen;                          /* |pos(30) - pos(27)|, rest, model units */
@@ -613,12 +614,6 @@ static float crouch_excess(float frac) {
 
 /* ---- the bones by name, once a model -------------------------------------------------------- */
 
-static int game_bone(const Model *m, int n) {
-    char name[32];
-
-    snprintf(name, sizeof(name), "bone %d", n);
-    return model_bone_named(m, name);
-}
 static void bind_pos(const Model *m, int bone, float out[3]) {
     Mat4 b = rigid_inv(&m->bones[bone].inv_bind);
 
@@ -629,21 +624,23 @@ static void bind_pos(const Model *m, int bone, float out[3]) {
 
 static void cache_bones(const struct Actor *a) {
     const Model *m = &a->model;
-    static const char *const kUpper[2] = {"bone 27", "bone 43"};
-    static const char *const kElbow[2] = {"bone 28", "bone 44"};
-    static const char *const kHand[2] = {"bone 30", "bone 46"};
-    static const char *const kClav[2] = {"bone 26", "bone 42"};
-    static const char *const kFore[2] = {"bone 29", "bone 45"};
-    static const char *const kThigh[2] = {"bone 2", "bone 6"};
-    static const char *const kShin[2] = {"bone 3", "bone 7"};
-    static const char *const kFoot[2] = {"bone 4", "bone 8"};
-    static const char *const kToe[2] = {"bone 5", "bone 9"};
+    const VrBones *vb;
+    /* the roles the body asks for, by side; the game bones are the outfit's own (vrbones.h) */
+    static const int kClavRole[2] = {VRB_CLAV_L, VRB_CLAV_R};
+    static const int kUpperRole[2] = {VRB_UPPER_L, VRB_UPPER_R};
+    static const int kElbowRole[2] = {VRB_ELBOW_L, VRB_ELBOW_R};
+    static const int kForeRole[2] = {VRB_FORE_L, VRB_FORE_R};
+    static const int kHandRole[2] = {VRB_WRIST_L, VRB_WRIST_R};
+    static const int kThighRole[2] = {VRB_THIGH_L, VRB_THIGH_R};
+    static const int kShinRole[2] = {VRB_SHIN_L, VRB_SHIN_R};
+    static const int kFootRole[2] = {VRB_FOOT_L, VRB_FOOT_R};
+    static const int kToeRole[2] = {VRB_TOE_L, VRB_TOE_R};
     static const char *const kTwist1[2] = {"vr L forearm twist 1", "vr R forearm twist 1"};
     static const char *const kTwist2[2] = {"vr L forearm twist 2", "vr R forearm twist 2"};
     static const char *const kUpTwist[2] = {"vr L upperarm twist", "vr R upperarm twist"};
     static const char *const kDelt[2] = {"vr L shoulder", "vr R shoulder"};
     float scale = a->scale != 0.0f ? a->scale : 1.0f;
-    float p0[3], p1[3], eye;
+    float floor_y = 0.0f, p0[3], p1[3], eye;
     int side, ok, eyes, eye2;
 
     if (sBones.model == m && sBones.bones == m->nbones && sBones.verts == m->nv &&
@@ -656,22 +653,29 @@ static void cache_bones(const struct Actor *a) {
     sBones.verts = m->nv;
     sBones.scale = scale;
     snprintf(sBones.name, sizeof(sBones.name), "%s", a->name);
-    sBones.root = game_bone(m, 0);
-    sBones.pelvis = game_bone(m, 1);
-    sBones.waist = game_bone(m, 23);
-    sBones.chest = game_bone(m, 24);
-    sBones.neck = game_bone(m, 32);
-    sBones.head = game_bone(m, 33);
+    vb = vrbones_for(a);
+    if (!vb->ok) {
+        /* no table for this outfit: the body (and the arms' IK) are left off, as in a cutscene */
+        fprintf(stderr, "vrbody: no VR bones for %s: no VR body\n", a->name);
+        return;
+    }
+    sBones.root = vb->bone[VRB_ROOT];
+    sBones.pelvis = vb->bone[VRB_PELVIS];
+    sBones.waist = vb->bone[VRB_WAIST];
+    sBones.chest = vb->bone[VRB_CHEST];
+    sBones.neck = vb->bone[VRB_NECK];
+    sBones.head = vb->bone[VRB_HEAD];
+    floor_y = vb->floor_y;
     for (side = 0; side < 2; side++) {
-        sBones.upper[side] = model_bone_named(m, kUpper[side]);
-        sBones.elbow[side] = model_bone_named(m, kElbow[side]);
-        sBones.hand[side] = model_bone_named(m, kHand[side]);
-        sBones.clav[side] = model_bone_named(m, kClav[side]);
-        sBones.fore[side] = model_bone_named(m, kFore[side]);
-        sBones.thigh[side] = model_bone_named(m, kThigh[side]);
-        sBones.shin[side] = model_bone_named(m, kShin[side]);
-        sBones.foot[side] = model_bone_named(m, kFoot[side]);
-        sBones.toe[side] = model_bone_named(m, kToe[side]);
+        sBones.upper[side] = vb->bone[kUpperRole[side]];
+        sBones.elbow[side] = vb->bone[kElbowRole[side]];
+        sBones.hand[side] = vb->bone[kHandRole[side]];
+        sBones.clav[side] = vb->bone[kClavRole[side]];
+        sBones.fore[side] = vb->bone[kForeRole[side]];
+        sBones.thigh[side] = vb->bone[kThighRole[side]];
+        sBones.shin[side] = vb->bone[kShinRole[side]];
+        sBones.foot[side] = vb->bone[kFootRole[side]];
+        sBones.toe[side] = vb->bone[kToeRole[side]];
         sBones.twist1[side] = model_bone_named(m, kTwist1[side]);
         sBones.twist2[side] = model_bone_named(m, kTwist2[side]);
         sBones.upperTwist[side] = model_bone_named(m, kUpTwist[side]);
@@ -717,11 +721,12 @@ static void cache_bones(const struct Actor *a) {
         bind_pos(m, sBones.foot[side], p1);
         sBones.leg2[side] = v_dist3(p0, p1);
     }
-    /* her rest eye height above the floor (bone 0): the eye bones' own, else the head's + a little */
-    bind_pos(m, sBones.root, p0);
-    eyes = game_bone(m, 34);
+    /* her rest eye height above the model's floor (floor_y: in FIS and FIC bone 0 binds at the hip,
+     * not at the floor, so bone 0's bind y is not the floor): the eye bones' own, else the head's
+     * + a little */
+    eyes = vb->bone[VRB_EYE_L];
     sBones.eyeBone = eyes;
-    eye2 = game_bone(m, 35);
+    eye2 = vb->bone[VRB_EYE_R];
     if (eyes >= 0 && eye2 >= 0) {
         bind_pos(m, eyes, p1);
         eye = p1[1];
@@ -732,7 +737,7 @@ static void cache_bones(const struct Actor *a) {
         eye = p1[1] + EYE_ABOVE_HEAD;
     }
     sBones.kArm = sBones.armLen * scale / FRIK_ARM_LENGTH;
-    sBones.kBody = (eye - p0[1]) * scale / FRIK_PLAYER_HEIGHT;
+    sBones.kBody = (eye - floor_y) * scale / FRIK_PLAYER_HEIGHT;
     /* how far her eyes sit from her neck at rest: a look up or down swings them about the neck by
      * this, and that swing must not be read as the body's own move (it would crouch her) */
     {
@@ -748,7 +753,7 @@ static void cache_bones(const struct Actor *a) {
         sBones.eyeUp = (e[1] - neck[1]) * scale;
         /* and her own sizes the calibration is against: her eyes above the floor, and the eye to
          * the wrist with the arm out (her full reach, the T-pose the bind has) */
-        sBones.eyeWorld = (e[1] - p0[1]) * scale;
+        sBones.eyeWorld = (e[1] - floor_y) * scale;
         bind_pos(m, sBones.hand[0], hand);
         sBones.reachRest = v_dist3(e, hand) * scale;
     }
@@ -1962,7 +1967,7 @@ void vrbody_finish(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *
 
             roll_bone(&world[sBones.upper[side]], sgn * s27 * up_a);
             roll_bone(&world[el], sgn * s28 * up_a);
-            /* bone 29 and the cuff's helpers, from the elbow's own follow: what the upper arm
+            /* the forearm and the cuff's helpers, from the elbow's own follow: what the upper arm
              * already took, taken off theirs */
             f = follow(world, m, el, fore);
             m_pos(&f, p);

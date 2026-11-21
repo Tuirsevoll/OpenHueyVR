@@ -28,6 +28,7 @@
 #include "loot.h"
 #include "things.h"
 #include "vrbody.h"
+#include "vrbones.h"
 #include "vrspots.h"
 #include "vrlevers.h"
 #include "vrmirror.h"
@@ -202,6 +203,8 @@ static float sDoorVel[DOORS];
 
 static const Model *sArmModel;
 static int sArmBones, sArmVerts;
+static char sArmName[64];   /* the model file: the same counts in another costume number their bones differently */
+static char sNoRigName[64]; /* the model that had no VR bones: its one log line */
 static int sShoulder[2], sElbow[2], sHandBone[2], sArmFound[2];
 /* the bind pose's upper arm and forearm, model units scaled to room units: once per model */
 static float sArmLen[2][2];
@@ -307,24 +310,27 @@ static int palm_bone(const Model *m, int wrist) {
     return best;
 }
 
-/* The arm's chain. The model names its own bones (docs/modding.md: "bone 27", "bone 43" ...), so
- * when the names are there that is what is taken: the shoulder joint (27/43), the elbow hinge
- * (28/44) and the wrist (30/46), the wrist itself the palm the grip is placed on. A model without
- * them keeps the geometric search: the outermost bone two steps down from a joint, its grandparent
- * the shoulder, its parent the elbow, its child the palm. The hand is measured on the geometric
- * wrist either way, so its size and its seat are exactly what they were. Both answers are logged,
- * once a model (the fingers are a mod's own bones: never an index of ours). */
+/* The arm's chain. Each costume's model names its own bones in the fiona-vr-rig mod's
+ * `<model>.model/vr_bones.txt` (vrbones.h), so the table is what is taken: the shoulder joint (the
+ * upper arm), the elbow hinge and the wrist, the wrist itself the palm the grip is placed on. A
+ * model without a table keeps the geometric search: the outermost bone two steps down from a
+ * joint, its grandparent the shoulder, its parent the elbow, its child the palm. The hand is
+ * measured on the geometric wrist either way, so its size and its seat are exactly what they were.
+ * Both answers are logged, once a model (the fingers are a mod's own bones: never an index of
+ * ours). */
 static void find_arms(Actor *a, const Mat4 *world) {
     const Model *m = &a->model;
     float best[2] = {-1.0f, -1.0f};
     int i, k, near_sh[2], near_el[2], near_ha[2], named[6];
 
-    if (sArmModel == m && sArmBones == m->nbones && sArmVerts == m->nv && sArmFound[0] && sArmFound[1]) {
+    if (sArmModel == m && sArmBones == m->nbones && sArmVerts == m->nv &&
+        strcmp(sArmName, a->name) == 0 && sArmFound[0] && sArmFound[1]) {
         return;
     }
     sArmModel = m;
     sArmBones = m->nbones;
     sArmVerts = m->nv;
+    snprintf(sArmName, sizeof(sArmName), "%s", a->name);
     sArmFound[0] = sArmFound[1] = 0;
     sPalmBone[0] = sPalmBone[1] = -1;
     sMeasureBone[0] = sMeasureBone[1] = -1;
@@ -364,13 +370,19 @@ static void find_arms(Actor *a, const Mat4 *world) {
             sPalmBone[k] = palm_bone(m, sHandBone[k]);
         }
     }
-    /* by name, when the model has them: 27/43 the shoulder, 28/44 the elbow, 30/46 the wrist */
-    named[0] = model_bone_named(m, "bone 27");
-    named[1] = model_bone_named(m, "bone 43");
-    named[2] = model_bone_named(m, "bone 28");
-    named[3] = model_bone_named(m, "bone 44");
-    named[4] = model_bone_named(m, "bone 30");
-    named[5] = model_bone_named(m, "bone 46");
+    /* by the outfit's own table (vrbones.h: vr_bones.txt names the shoulder, the elbow and the
+     * wrist - their numbers differ per costume). With no file the table's fallback is the FIN
+     * numbers, exactly as the six hard-coded names were. */
+    {
+        const VrBones *vb = vrbones_for(a);
+
+        named[0] = vb->ok ? vb->bone[VRB_UPPER_L] : -1;
+        named[1] = vb->ok ? vb->bone[VRB_UPPER_R] : -1;
+        named[2] = vb->ok ? vb->bone[VRB_ELBOW_L] : -1;
+        named[3] = vb->ok ? vb->bone[VRB_ELBOW_R] : -1;
+        named[4] = vb->ok ? vb->bone[VRB_WRIST_L] : -1;
+        named[5] = vb->ok ? vb->bone[VRB_WRIST_R] : -1;
+    }
     if (named[0] >= 0 && named[1] >= 0 && named[2] >= 0 && named[3] >= 0 &&
         named[4] >= 0 && named[5] >= 0) {
         for (k = 0; k < 2; k++) {
@@ -1208,6 +1220,32 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
         vrbody_forget_place();
     }
     dt = grip_pose_dt();
+    if (!vrbones_for(a)->ok) {
+        /* No per-outfit table (no vr_bones.txt, and not the FIN layout): her own animation plays
+         * exactly as it does in a cutscene - no arm IK, no VR body, not one matrix twisted. The
+         * grip poses still run: they find the finger bones by name. */
+        if (strcmp(sNoRigName, a->name) != 0) {
+            snprintf(sNoRigName, sizeof(sNoRigName), "%s", a->name);
+            fprintf(stderr,
+                    "hands: no VR bones for %s (no vr_bones.txt and not the FIN layout):"
+                    " arm IK and VR body off\n", a->name);
+        }
+        vrbody_idle();
+        sArmFound[0] = sArmFound[1] = 0;   /* (no stale arm: the key item is not shown at one) */
+        for (side = 0; side < 2; side++) {
+            Vec3 at, right, up, fwd;
+            float grip, index, thumb;
+
+            if (hand_world(side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
+                grip_pose_want(side);
+            } else {
+                vrgrip_want(side, NULL, -1);
+            }
+        }
+        vrgrip_apply(a, world, dt);
+        log_hands(applied[0], applied[1], posed);
+        return;
+    }
     find_arms(a, world);
     arm_lengths(a);
     /* the VR body (vrbody.h): its yaw, and the body under the headset with the feet kept. Off

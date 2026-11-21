@@ -59,6 +59,9 @@ typedef struct VrGripCheck {
     float got[4][3];      /* R finger 2a, R finger 3a, R finger 5a, R finger 2c */
 } VrGripCheck;
 int vrgrip_selfcheck_model(const struct Model *m, const VrGripPose *poses, int nposes, VrGripCheck *out);
+/* the same, in `wrist`'s rest space (an outfit's real right wrist: not always bone 46) */
+int vrgrip_selfcheck_model_at(const struct Model *m, int wrist, const VrGripPose *poses, int nposes,
+                              VrGripCheck *out);
 
 /* the left hand's mirror (the same convention as itemprops_mirror): q -> (x, -y, -z, w), and the
  * bone-local move -> (-x, y, z) (the character is mirrored across model X) */

@@ -13,6 +13,7 @@
 #include "sprites.h"
 #include "things.h"
 #include "vrhands.h"
+#include "vrbones.h"
 #include "../core/files.h"
 #include "../data/pac.h"
 #include "../data/texbank.h"
@@ -534,9 +535,26 @@ static Actor *loot_fiona(void) {
     return NULL;
 }
 
-/* her left hand is bone 30 (+x), her right bone 46 (-x) */
+/* the grip data's key: FIN_000's numbers, the file format's own (left 30, right 46). They mean a
+ * hand, not a model bone, so itemprops' lines keep working in every outfit. */
 static int item_side_bone(int side) {
     return side == 1 ? ITEM_PROP_BONE_RIGHT : ITEM_PROP_BONE_LEFT;
+}
+
+/* the model bone the hand is actually posed from (the outfit's own wrist, vrbones.h); the key
+ * above only says which hand */
+static int item_wrist_bone(int side) {
+    Actor *a = loot_fiona();
+    const VrBones *vb;
+    int role = side == 1 ? VRB_WRIST_R : VRB_WRIST_L;
+
+    if (a != NULL) {
+        vb = vrbones_for(a);
+        if (vb->ok && vb->bone[role] >= 0) {
+            return vb->bone[role];
+        }
+    }
+    return item_side_bone(side);
 }
 
 /* the model's own cache slot, by its file (one file, however many items name it) */
@@ -658,16 +676,15 @@ int loot_held_origin(int item, int side, Vec3 *out) {
     ItemGrip grip_store;
     const ItemGrip *grip;
     Mat4 wrist, world;
-    int bone;
+    int key = item_side_bone(side), bone = item_wrist_bone(side);
 
     if (out == NULL || item < 0) {
         return 0;
     }
-    bone = item_side_bone(side);
     if (!item_wrist_matrix(bone, &wrist)) {
         return 0;
     }
-    grip = itemprops_grip(item, bone, &grip_store) ? &grip_store : NULL;
+    grip = itemprops_grip(item, key, &grip_store) ? &grip_store : NULL;
     world = itemprops_matrix(grip, &wrist);
     *out = vec3(world.m[12], world.m[13], world.m[14]);
     return 1;
@@ -756,15 +773,14 @@ static int item_prop_draw(int item, int side, const Mat4 *view_proj) {
     Mat4 wrist, world, mvp;
     Vec3 c;
     char path[128];
-    int bone;
+    int key = item_side_bone(side), bone = item_wrist_bone(side);
     float r = 1.0f, g = 1.0f, b = 1.0f;
 
     if (view_proj == NULL) {
         return 0;
     }
-    bone = item_side_bone(side);
     /* the holding hand's own line; with only the other hand's line, its mirror across her body */
-    grip = itemprops_grip(item, bone, &grip_store) ? &grip_store : NULL;
+    grip = itemprops_grip(item, key, &grip_store) ? &grip_store : NULL;
     itemprops_model_path(grip, item, path, sizeof(path));
     m = item_model_ensure(path);
     if (m == NULL) {
