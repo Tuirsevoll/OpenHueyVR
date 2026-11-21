@@ -10,15 +10,18 @@
 #include "../core/files.h"
 #include "../render/render.h"
 #include "engine.h"
+#include "loot.h"
 #include "sprites.h"
 
 #define TRI_HOLE 0x10000000u
 #define THING_MASK 0x20020008u   /* (the floor they keep off: as the characters') */
+#define THING_TREAT 11           /* (a bait let go on the floor: its own item model, see things.h) */
 
 typedef struct Thing {
     int used, kind, room, tri, state;
     int spent;             /* burst or gone: kept a frame for its owner to see why, then freed */
     int age, steps, events, turn, fading;
+    int item;              /* (kind 11) the bait it is: its PROPS/item-<id>.gltf */
     float alpha;
     Vec3 at, v, was;
 } Thing;
@@ -31,12 +34,12 @@ static float gravity_of(int kind) { return kind == 1 || kind == 4 || kind == 6 ?
 static int bursts(int kind) { return kind == 1 || kind == 4 || kind == 6; }   /* the powders: break on what they hit */
 static float keep_of(int kind) {   /* how much of its speed a bounce keeps */
     switch (kind) {
-    case 3: case 10: return 0.2f;
+    case 3: case 10: case THING_TREAT: return 0.2f;
     case 9: return 0.4f;
     default: return 0.7f;
     }
 }
-static int bounce_sound(int kind) { return kind != 9 && kind != 10; }
+static int bounce_sound(int kind) { return kind != 9 && kind != 10 && kind != THING_TREAT; }
 
 /* ---- small things ---- */
 
@@ -57,7 +60,7 @@ static float floor_at(int tri, Vec3 p) { return navmesh_height(nav(), tri, p.x, 
 int things_new(int kind, int room, int tri, Vec3 at, Vec3 v) {
     int i;
 
-    if (kind < 0 || kind > 10) {
+    if (kind < 0 || kind > THING_TREAT) {
         return -1;
     }
     for (i = 0; i < THINGS_MAX; i++) {
@@ -99,6 +102,12 @@ void things_set_age(int i, int age) {
     }
 }
 int things_turn(int i) { return get(i) ? sThings[i].turn : 0; }
+int things_item(int i) { return get(i) ? sThings[i].item : -1; }
+void things_set_item(int i, int item) {
+    if (get(i)) {
+        sThings[i].item = item;
+    }
+}
 Vec3 *things_at(int i) { return get(i) ? &sThings[i].at : NULL; }
 Vec3 *things_v(int i) { return get(i) ? &sThings[i].v : NULL; }
 void things_place(int i, int room, int tri, Vec3 at) {
@@ -554,6 +563,9 @@ void things_draw(int room, const Mat4 *view_proj) {
         }
         case 8:   /* the stone: model 3 */
             model_draw(3, 0, placed_at(t->at, 0.0f, turn, 0.0f), view_proj, t->alpha);
+            break;
+        case THING_TREAT:   /* a bait let go: its own PROPS/item-<id>.gltf, lying there */
+            (void)loot_item_rest_draw(t->item, t->at, view_proj);
             break;
         default:
             break;

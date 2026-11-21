@@ -3753,6 +3753,80 @@ int vrhands_mouth_take(void) {
     return on;
 }
 
+/* ---- a bait let go on the floor (her hand's own grip: squeezed, then opened) ---- */
+#define TREAT_FIRST 0x60   /* ($60..$66) the baits, chicken jerky .. bennenam esca (items.fs' use-rule) */
+#define TREAT_LAST 0x66
+/* the arming, as the defense items' (closed, then opened) for the bait in her hand */
+static struct {
+    int item, side, armed, saw_low;
+} sTreat = {.item = -1, .side = 1};
+/* the one the scripts take (treat-let): the item, and where it was let go */
+static int sTreatFire;
+static int sTreatItem = -1;
+static Vec3 sTreatAt;
+
+int vrhands_treat_take(int *item, Vec3 *at) {
+    if (!sTreatFire) {
+        *item = -1;
+        return 0;
+    }
+    *item = sTreatItem;
+    *at = sTreatAt;
+    sTreatFire = 0;
+    return 1;
+}
+
+/* The bait in her hand, let go over the floor: out of her hand at once - as Remove does (the hands
+ * line prints on the next tick) - and the one-shot the scripts make the floor treat from. It is not
+ * spent here: it is still hers in the list, and lies there for Hewie (items.fs's treat-let). */
+static void hand_item_treat(void) {
+    Vec3 at, right, up, fwd;
+    float grip, index, thumb;
+
+    if (!sHand.shown || sHand.item < TREAT_FIRST || sHand.item > TREAT_LAST) {
+        sTreat.item = -1;
+        sTreat.armed = 0;
+        sTreat.saw_low = 0;
+        return;
+    }
+    if (sTreat.item != sHand.item || sTreat.side != sHand.side) {
+        sTreat.item = sHand.item;
+        sTreat.side = sHand.side;
+        sTreat.armed = 0;
+        sTreat.saw_low = 0;
+    }
+    if (!hand_world(sHand.side, &at, &right, &up, &fwd, &grip, &index, &thumb)) {
+        return;
+    }
+    if (world_held() || sHold[sHand.side] != HOLD_NONE) {
+        return;
+    }
+    if (!sTreat.armed) {
+        if (grip <= 0.4f) {
+            sTreat.saw_low = 1;
+        }
+        if (sTreat.saw_low && grip > 0.65f) {
+            sTreat.armed = 1;
+        }
+        return;
+    }
+    if (grip <= 0.4f && vrhands_hand_item_at(&at)) {
+        sTreatFire = 1;   /* (where it was, its model preloaded for the floor draw) */
+        sTreatItem = sHand.item;
+        sTreatAt = at;
+        fprintf(stderr, "hands: treat let go - item %d at (%.1f %.1f %.1f)\n", sTreatItem, (double)at.x,
+                (double)at.y, (double)at.z);
+        loot_preload_held(sTreatItem, 1);
+        gEngine.hand_item = -1;   /* (out of her hand at once: the cleared line comes next tick) */
+        memset(gEngine.hand_letters, 0, sizeof(gEngine.hand_letters));
+        sTreat.item = -1;
+        sTreat.armed = 0;
+        sTreat.saw_low = 0;
+        sHand.item = -1;
+        sHand.shown = 0;
+    }
+}
+
 /* a tick: is the hand item shown, and in which hand (the left in left-handed play, else the right;
  * the other one only when the preferred one is not tracked). The magnesia/antimony in slot 2 has
  * the hand instead, and nothing is shown while VR does not play (a menu, a cutscene - her eyes'
@@ -3766,6 +3840,7 @@ static void hand_item_tick(void) {
         hand_item_hide();
         hand_item_log();
         hand_item_mouth();
+        hand_item_treat();
         return;
     }
     side = gVrOptions.left_handed ? 0 : 1;
@@ -3775,6 +3850,7 @@ static void hand_item_tick(void) {
             hand_item_hide();
             hand_item_log();
             hand_item_mouth();
+            hand_item_treat();
             return;
         }
     }
@@ -3788,6 +3864,7 @@ static void hand_item_tick(void) {
     loot_preload_held(item, side);   /* (its model, off the render pass) */
     hand_item_log();
     hand_item_mouth();   /* (a remedy held at her mouth: the one-shot hand-mouth? raises) */
+    hand_item_treat();   /* (a bait let go over the floor: treat-let) */
 }
 
 /* where the hand item's model sits in the room - her wrist and the item's grip line, the matrix

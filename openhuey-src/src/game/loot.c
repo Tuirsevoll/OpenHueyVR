@@ -2601,6 +2601,20 @@ static int item_rest_draw(const LootProp *p, const Mat4 *vp) {
     return 1;
 }
 
+/* The item's own model lying at a point (a treat on the floor, things.c's kind 11): the rest draw's
+ * upright placement, its floor side on the point. The caller preloads the model (loot_preload_held
+ * does the same path), so nothing is loaded in a draw. */
+int loot_item_rest_draw(int item, Vec3 at, const Mat4 *view_proj) {
+    LootProp p;
+
+    memset(&p, 0, sizeof(p));
+    p.used = 1;
+    p.item = item;
+    p.fx = -1;
+    p.home = p.pos = at;
+    return item_rest_draw(&p, view_proj);
+}
+
 static void draw_spawned(LootProp *p, const Mat4 *vp) {
     int model, pal;
     Mat4 world = prop_world(p);

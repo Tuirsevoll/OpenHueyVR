@@ -8,7 +8,8 @@
  *
  * Kinds: 0 the ball (a sprite), 1 / 4 / 6 the powders (sprites; they burst on whatever they hit),
  * 2 / 5 / 7 the magnesias (GAME_FIX.GFM model 1, palettes 0..2), 3 the doll (model 2, lying flat),
- * 8 the stone (model 3), 9 a room object kept at it, 10 unseen. */
+ * 8 the stone (model 3), 9 a room object kept at it, 10 unseen, 11 a treat (a bait let go: its own
+ * PROPS/item-<id>.gltf, lying where it fell - not kept in the save). */
 #ifndef THINGS_H
 #define THINGS_H
 
@@ -40,6 +41,8 @@ int things_state(int i);
 int things_age(int i);
 void things_set_age(int i, int age);
 int things_turn(int i);            /* its turn (0..255 of a full turn) */
+int things_item(int i);            /* the item it shows (kind 11: the bait's own model; -1 none) */
+void things_set_item(int i, int item);
 Vec3 *things_at(int i);            /* its place (written by its owner only through things_place) */
 Vec3 *things_v(int i);             /* its velocity */
 void things_place(int i, int room, int tri, Vec3 at);   /* (a loaded save: lying there, still) */

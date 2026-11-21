@@ -67,7 +67,7 @@ behaviour hewie-own
       self subscribe stalker-doing  self subscribe stalker-ties  self subscribe creature-doing  self subscribe scene  self subscribe camera-cut  -1 st-id !  100 st-age !  -1 his-grip !
       self subscribe danger-signals  self subscribe game-loaded  self subscribe fiona-struck-by  -1 her-struck-by !  self subscribe characters-still
       -1 his-heard-src !  0 hewie-noise acoustics-id send listen   \ (Character_Hearing: any noise but his own)
-      #creatures 0 do  -1 i cells cr-ids + !  100 i cells cr-ages + !  loop  -1 his-meet ! ;   \ (no meeting asked)
+      #creatures 0 do  -1 i cells cr-ids + !  100 i cells cr-ages + !  loop  -1 his-meet !  -1 his-treat ! ;   \ (no meeting asked)
   on game-loaded ( -- )  0 dress ;   \ (a game loaded: his files loaded afresh, DogModel's)
   on join-fiona ( -- )  fiona-id his-fiona !  room-id fiona-room !  join  1 his-model @ cast-as ;
   on part-from-fiona ( -- )  part  1 -1 cast-as ;
@@ -230,6 +230,8 @@ behaviour hewie-own
       along? up and if  room self body-room = if  2 his-creature-t !  then  then ;
   on fetch-this ( thing -- )   \ (Fiona_StateLetGo: her ball thrown, while all's calm)
       along? his-danger @ calm = and his-action @ fetch-act <> and if  his-follows !  else  drop  then ;
+  on treat-here ( i -- )   \ (the things: a bait she dropped lies on the floor - go and eat it)
+      along? his-danger @ calm = and if  his-treat !  treat-go  else  drop  then ;
   on shaken-off ( -- )  along? if  his-act @ ['] st-bite-hold = if  thrown-off his-biting !  then  then ;   \ (thrown off: only while he holds on)
   on blow-from ( kind damage how x y z -- )   \ (from a point: Progress_Noise)
       cells>xyz his-blow-pt vec!  along? 0= if  2drop drop exit  then  -2 take-blow drop ;

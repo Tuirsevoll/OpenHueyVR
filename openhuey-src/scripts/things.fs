@@ -15,9 +15,9 @@
 IN: things
 USING: engine game-state actors messages common vectors facts flag-names items items.names effects fiona.slam stalker-names ;
 
-\ the kinds (her items' throwables, in their order; then the story's own two)
+\ the kinds (her items' throwables, in their order; then the story's own two, and a treat on the floor)
 enum: thing-kind  ball-thing antimony-thing magnesia-thing doll-thing refined-antimony-thing
-    refined-magnesia-thing tube-thing prima-thing stone-thing keri-thing trap-thing ;
+    refined-magnesia-thing tube-thing prima-thing stone-thing keri-thing trap-thing treat-thing ;
 128 constant #things
 \ what a thing did in its motion this tick (thing-events)
 1 constant burst-event   2 constant bounced-event   4 constant fell-event   8 constant glanced-event
@@ -30,6 +30,7 @@ state: things-state
   cell field st-kind  cell field st-mode    \ (the stalker as he tells: his kind, his mode)
   cell field st-room  cell field st-told-t     \ (his room; frames since he told: 0 this one)
   #things cells field keris   \ (kind 9) the room object it carries: "keri0".."keri5" (-1 none)
+  cell field floor-treat  cell field treat-item   \ (kind 11) the bait lying on the floor (-1 none)
 end-state
 
 \ ---- the one looked at ----
@@ -228,6 +229,7 @@ $1F constant doll-noise
     kind case
         keri-thing of  carry-keri kick  endof
         trap-thing of  trap-frame  endof
+        treat-thing of  endof
         >r kick r>
     endcase ;
 
@@ -269,7 +271,7 @@ $1F constant doll-noise
 
 behaviour keeping-things
   on spawned ( -- )  kicked #things cells 0 fill  homunculi 3 cells -1 fill  keris #things cells -1 fill
-      met-in #things cells -1 fill  100 st-told-t !
+      met-in #things cells -1 fill  100 st-told-t !  -1 floor-treat !  -1 treat-item !
       self subscribe tick  self subscribe write-save  self subscribe creature-doing  self subscribe stalker-doing ;
   on tick ( -- )  frame  st-told-t @ 100 < if  1 st-told-t +!  then ;
   on thing-made ( kind tri x y z vx vy vz -- )   \ (her let go: at her hand, its way)
@@ -285,6 +287,20 @@ behaviour keeping-things
   on trap-place ( tri x y z -- )   \ (the story's: a trap set down there - five at most - smoke rising from it)
       {: tri x y z :}  trap-thing make-room
       trap-thing room-id tri  x cell>f y cell>f z cell>f  0e 0e 0e  thing-new  dup 0< if  drop  else  smoke-trail  then ;
+  \ a bait let go on the floor (the items' treat-let): its own item model, lying there; not kept in
+  \ the save, and only one at a time - a new one frees the old
+  on treat-made ( item tri x y z ready -- )
+      {: item tri x y z ready | i :}
+      floor-treat @ 0>= if  floor-treat @ thing-free  then
+      treat-thing room-id tri  x cell>f y cell>f z cell>f  0e 0e 0e  thing-new to i
+      i 0< if  -1 floor-treat !  -1 treat-item !  else
+          i item swap thing-item!
+          i floor-treat !  item treat-item !
+          ready if  i hewie-id send treat-here  then
+      then ;
+  on treat-gone ( -- )
+      floor-treat @ 0>= if  floor-treat @ thing-free  then
+      -1 floor-treat !  -1 treat-item ! ;
   on story-things-off ( -- )   \ (the story's kinds 9 and 10 all gone - their objects left where they are)
       #things 0 do  i thing-used? if  i it !  kind keri-thing = kind trap-thing = or if  -1 keri !  i thing-free  then  then  loop ;
   on clear-things ( -- )   \ (the story's $D2, PlacedThings_Clear: each gone as it ends - the ball back to her)

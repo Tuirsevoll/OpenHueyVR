@@ -11,7 +11,7 @@
 \ frame the counters count (the Fresh Flowers wither after 9000 frames) and the timed effects run
 \ down.
 IN: items
-USING: engine game-state actors messages common facts flag-names story-names room-names hewie-names items.tables items.names ;
+USING: engine game-state actors messages common facts flag-names story-names room-names hewie-names items.tables items.names vectors ;
 
 \ ==== the inventory (facts: anyone may read these) ====
 \ a place: the item's id (-1 empty), how many (a stack: 1..99; a counter: its frames), 8 letters
@@ -133,6 +133,11 @@ $10 constant done-quietly   \ (a mod's: something happened, nothing spent - back
 state: items-state
   cell field dog-commandable   \ (told by Hewie each frame) she may command him
   cell field dog-cond          \ his condition (dog-down: down)
+  cell field treat-id          \ the bait lying on the floor for Hewie (-1 none)
+  cell field treat-frames      \ frames since it was let go (30 s at most)
+  cell field treat-room        \ the room it lies in
+  /vec field treat-at          \ where it lies
+
   cell field dog-ready         \ he may take a command now (Hewie_CanTakeCommand: the baits' +0x40)
   cell field her-busy          \ (told by Fiona each frame) what she does (0: free)
 end-state
@@ -523,16 +528,96 @@ defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
     id items-of n>s type space ." left)" cr ;
 \ ... and the one vrhands.c raises when a remedy was held at her mouth (hand-mouth?)
 : hand-mouth ( -- )  hand-mouth? if  mouth-use  then ;
+\ ---- a bait let go on the floor (vrhands.c's treat-let): Hewie goes to it and eats it. One at a
+\ time: a new drop frees the old one, which is not spent. It is not spent until he eats it, either:
+\ if he is not with her, cannot reach it, 30 s pass, or she leaves the room, it goes and is still
+\ hers in the list. ----
+: treat? ( -- flag )  treat-id @ 0>= ;
+: treat-forget ( -- )  -1 treat-id !  0 treat-frames ! ;
+: hewie-with-her? ( -- flag )   \ (at hand, and in this room: the conditions at-hand? asks)
+    dog-ready @ 0= if  false exit  then
+    hewie-id dup 0< if  drop false exit  then
+    dup body? 0= if  drop false exit  then
+    body-room room-id = ;
+: treat-reach? ( -- flag )   \ (his own step to it, as at-hand? checks hers)
+    hewie-id dup 0< if  drop false exit  then
+    dup body? 0= if  drop false exit  then
+    dup body-tri  swap body-at  treat-at  $20008 v-walk  hewie-id body-tri = ;
+: treat-ready ( -- flag addr len )   \ (will he come - else why not)
+    hewie-with-her? 0= if  false s" not with her" exit  then
+    treat-reach? 0= if  false s" unreachable" exit  then
+    true s" ready" ;
+: treat-uneaten ( addr len -- )   \ (the floor treat goes, not spent)
+    treat? 0= if  2drop exit  then
+    s" things" actor-named send treat-gone
+    ." items: treat " treat-id @ n>s type space ." left uneaten (" type [char] ) emit space ." - not spent" cr
+    treat-forget ;
+: treat-frame ( -- )
+    treat? 0= if  exit  then
+    treat-room @ room-id <> if  s" room" treat-uneaten exit  then
+    treat-frames @ 1+ dup treat-frames ! 900 >= if  s" timeout" treat-uneaten then ;
+\ how a bait feeds him when he finds it on the floor (the same as the menu's Use, without
+\ at-hand? and without Fiona's $8E give): its how and his event; 0 0 for anything else
+: bait-feed ( id -- how ev )
+    case
+        chicken-jerky of  small-treat $8F  endof
+        beef-jerky of  big-treat $8F  endof
+        onion of  onion-bait $90  endof
+        esca of  small-treat $8F  endof
+        magna-esca of  big-treat $8F  endof
+        sylvesta-esca of  bite-boost 450 0e boost!  fury-bait $91  endof
+        bennenam-esca of  rouse-bait $90  endof
+        >r -1 -1 r>
+    endcase ;
+: bait-name ( how -- addr len )
+    case  small-treat of  s" small-treat"  endof  big-treat of  s" big-treat"  endof
+          onion-bait of  s" onion-bait"  endof  fury-bait of  s" fury-bait"  endof
+          >r s" rouse-bait" r>  endcase ;
+\ he ate the bait on the floor (his doing: the bait's rule, no at-hand?, no Fiona $8E give),
+\ one spent, and the floor treat gone
+: treat-eat ( id -- )
+    {: id :}
+    treat? id 0>= and 0= if  exit  then
+    id treat-id @ <> if  exit  then
+    id bait-feed {: how ev :}
+    how 0< if  exit  then
+    how hewie-id send fed
+    1 ev event
+    id find-item ?dup if  spend  then
+    s" things" actor-named send treat-gone
+    ." items: treat " id n>s type space ." eaten - " how bait-name type [char] , emit space
+    id items-of n>s type space ." left" cr
+    treat-forget ;
+: treat-drop ( id -- ) ( F: x y z -- )   \ (a bait let go at that point: the floor treat, and Hewie)
+    {: id F: x y z :}
+    id item-kind bait <> if  exit  then
+    treat? if  s" things" actor-named send treat-gone  then
+    x y z treat-at vec!
+    id treat-id !  room-id treat-room !  0 treat-frames !
+    treat-ready {: ok why-a why-n :}
+    id -1  x f>cell y f>cell z f>cell  ok if  -1  else  0  then  s" things" actor-named send treat-made
+    ." items: treat " id n>s type space ." on the floor, hewie ready "
+    ok if  s" yes"  else  s" no"  then  type
+    space [char] ( emit why-a why-n type [char] ) emit cr
+    \ (down: he eats it where he lies, if she can reach him - at-hand?'s own check)
+    dog-cond @ dog-down = if  at-hand? if  id treat-eat  then  then ;
+: hand-treat ( -- )   \ (the VR hand let a bait go: the floor treat, and Hewie)
+    treat-let {: k flag F: x y z :}
+    flag 0= if  exit  then
+    k x y z treat-drop ;
+
 
 behaviour keeping-items
+
   on spawned ( -- )
       3 0 do  #places 0 do  j i held-at empty  loop  loop
       4 0 do  -1 i equip-slot l!  loop
       -1 hand-item!
       progress pr.boosts 8 /boost * 0 fill
+      -1 treat-id !  0 treat-frames !
       self subscribe tick  self subscribe hewie-doing  self subscribe fiona-doing  self subscribe leaving-room  self subscribe game-loaded ;
   on tick ( -- )   \ (the counters not while the world is frozen: Items_Update under flag $17)
-      world-frozen state-flag? panic-starting state-flag? or 0= if  count-up  then  cam-scene? 0= if  timed-effects run-down  then  hand-trigger  hand-mouth ;
+      world-frozen state-flag? panic-starting state-flag? or 0= if  count-up  then  cam-scene? 0= if  timed-effects run-down  then  hand-trigger  hand-mouth  hand-treat  treat-frame ;
   \ (SceneGame's room change: everything heard full again - Weltigo's fade, if silent, only back
   \ as it fades in; and at the game's end)
   on leaving-room ( room exit -- )  2drop  1e world-volume! ;
@@ -567,6 +652,10 @@ behaviour keeping-items
       id find-item ?dup if  spend  then
       slot equipped id = if  -1 slot equip-slot l!  tell-equipment  then
       ." items: slot " slot . ." item " id . ." let go - unequipped (" id items-of . ." left)" cr ;
+  \ Hewie ate the bait he found on the floor (hewie/fetch.fs treat-eat): the bait's own rule with
+  \ his doing - no at-hand? distance, no Fiona $8E give - then one spent, and the floor treat gone
+  on treat-eaten ( id -- )  treat-eat ;
+
   \ hga's own `Equip` (hga's menu, scripts/subscreen/lists.fs): the key thing, word plate, remedy
   \ or bait in her hand, where it stays in its list place. Nothing is worn, nothing is thrown, and
   \ it is not saved.

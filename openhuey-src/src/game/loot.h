@@ -34,6 +34,9 @@ void loot_maintain(void);
 /* an equipped item, in the hand (`side` 0 the left, 1 the right): its model, or the thrown sprite
  * when that is its art. */
 void loot_draw_held(int item, int side, const Mat4 *world, const Mat4 *view_proj);
+/* the item's own model lying at a point (a treat on the floor: the rest draw's upright placement,
+ * its floor side on the point). 1 when it drew; its model must be preloaded (loot_preload_held). */
+int loot_item_rest_draw(int item, Vec3 at, const Mat4 *view_proj);
 /* 1 when the item's own held model is loaded in its private, by-file cache (a check; not the
  * shared props) */
 int loot_item_prop_loaded(int item, int side);

@@ -46,6 +46,8 @@ state: hewie-state
   cell field his-praise-a  cell field his-praise-b
   cell field his-did  cell field his-did-was  cell field his-did-2   \ what he did, for praise
   cell field his-follows        \ the thing he fetches (its index; -1 none)
+  cell field his-treat          \ the bait lying on the floor he goes to (a thing; -1 none)
+
   \ his skills at fetching (out of 32: 0 going after it, 1 following it with his eyes, 2 eager,
   \ 3 picking it up, 4 bringing word of it, 5 coming back when it's lost), the rolls made and
   \ how they came out (Hewie_RollReaction)

@@ -494,6 +494,11 @@ message unequip-item ( list place -- )        \ (the items) taken off
 message equip-hand-item ( list place -- )     \ (the items) hga's own `Equip`: the key thing into her hand (it stays in its list)
 message unequip-hand-item ( -- )              \ (the items) hga's own `Equip`'s other side: the item out of her hand
 message slot-let-go ( slot -- )               \ (the items) the VR hand let the slot 2 thing go: one spent, the slot emptied
+\ a bait let go on the floor for Hewie (the VR hand's treat-let)
+message treat-made ( item tri x y z ready -- )  \ (the items -> the things) a bait lies at x y z (floats, f>cell); ready: he is coming
+message treat-gone ( -- )                     \ (the items -> the things) the floor treat goes (eaten, or left)
+message treat-here ( i -- )                   \ (the things -> Hewie) a bait lies on the floor (a thing): go and eat it
+message treat-eaten ( item -- )               \ (Hewie -> the items) he ate it: its rule, then one spent
 message sort-items ( list -- )                \ (the items) a list put in order
 message item-bit ( n -- )                     \ (the items) item n marked as used (its note changes; the scripts' 0x5D)
 message equipment ( boots earrings costume choker -- )   \ broadcast: what she wears changed (ids, -1 none)

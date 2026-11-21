@@ -3,7 +3,7 @@
 \ map or a sketch has no Equip, and holding a remedy or a bait spends nothing. Headless:
 \   build/openhuey-src/openhuey --test openhuey-src/tests/items/test_hand_equip.fs
 IN: test-hand-equip
-USING: tester engine game-state actors messages keys facts flag-names story-names game items items.names items.tables subscreen subscreen.state subscreen.lists debug ;
+USING: tester engine game-state actors messages keys facts flag-names story-names room-names game items items.names items.tables subscreen subscreen.state subscreen.lists hewie.state hewie.body debug ;
 
 : tap ( key -- )  dup true key-hold  game-tick  false key-hold  game-tick ;
 : menu@ ( xt -- x )  game:subscreen enter  execute  leave-actor ;
@@ -169,5 +169,25 @@ T{ hand-item  weltigo items-of -> -1 1 }T
 weltigo equip-id
 mouth-use
 T{ hand-item  weltigo items-of -> weltigo 1 }T
+
+testing a treat on the floor: the bait let go, Hewie eats it - his rule, one spent (Part A)
+key: Tab tap  20 run-frames   \ (the menu shut: the world runs, and the items' tick with it)
+T{ stage@ -> 0 }T
+game:hewie send join-fiona  20 run-frames   \ (his body: the story's $8F can play its eating)
+: his@ ( xt -- x )  game:hewie enter  execute  leave-actor ;
+: his! ( xt -- )  game:hewie enter  execute  leave-actor ;
+: items! ( xt -- )  game:items enter  execute  leave-actor ;
+chicken-jerky 1 gives
+[: 50 his-hp ! ;] his!
+[: chicken-jerky game:fiona body-pos treat-drop ;] items!
+T{ chicken-jerky items-of -> 2 }T   \ (lying there: not spent yet)
+chicken-jerky game:items send treat-eaten  deliver
+T{ chicken-jerky items-of  [: his-hp @ ;] his@ -> 1 70 }T
+
+testing ... a treat nobody eats: the room left, it goes - and is not spent
+[: chicken-jerky game:fiona body-pos treat-drop ;] items!
+T{ chicken-jerky items-of -> 1 }T
+front-garden-2 -1 game:rooms send go-to-room  20 run-frames
+T{ chicken-jerky items-of -> 1 }T
 
 test-summary

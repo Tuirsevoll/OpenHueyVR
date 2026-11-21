@@ -32,6 +32,8 @@ int vrhands_hand_frame(int side, Vec3 *at, Vec3 *right, Vec3 *up, Vec3 *fwd);
 int vrhands_hand_item_at(Vec3 *out);
 /* 1 once when a remedy held at her mouth was raised (the scripts' hand-mouth?), then cleared */
 int vrhands_mouth_take(void);
+/* 1 once when a bait was let go over the floor (the scripts' treat-let): its item, and the point */
+int vrhands_treat_take(int *item, Vec3 *at);
 /* a pet pushes the bone under the hand. Called from the pose, after the skeleton is built. */
 void vrhands_pet_pose(struct Actor *a, Mat4 *world, int nbones, const Mat4 *unplace);
 void vrhands_tick(struct Engine *e);

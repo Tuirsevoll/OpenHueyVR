@@ -106,3 +106,35 @@ enum: skill  going-skill watching-skill eager-skill picking-up-skill telling-ski
             else  fdrop  then
         then  then
     loop  best ;
+
+\ ---- a treat on the floor (items.fs's treat-here: a bait the VR hand let go over the floor). The
+\ same walking as the ball's, without his skills asked: he goes to it by his way, and eats it when
+\ he is on it (the items actor runs the bait's rule - his doing, not Fiona's). ----
+: treat-i ( -- i )  his-treat @ ;
+: treat-at ( -- v )  treat-i thing-at ;
+: treat-tri ( -- tri )  treat-i thing-tri ;
+: treat-there? ( -- flag )   \ (still lying there, in his room)
+    treat-i 0< if  false exit  then
+    treat-i thing-used? 0= if  false exit  then
+    treat-i thing-room self body-room = ;
+: treat-forget ( -- )  -1 his-treat ! ;
+: treat-ate ( -- )
+    treat-i dup 0< if  drop  to-default exit  then
+    items-id send treat-eaten   \ (its rule, then one spent - the items')
+    treat-forget  to-default ;
+: st-treat ( -- )
+    treat-there? 0= if  treat-forget  to-default exit  then
+    treat-tri treat-at plan-and-go if  treat-forget  to-default exit  then
+    rest
+    stride-len fabs 0.8e f<  fdup 6e f<  and if  fdrop treat-ate exit  then
+    fdrop
+    walk-pose keep-pose
+    stride drop
+    treat-at eyes-on ;
+: treat-go ( -- )   \ (Hewie_Start to it: the same things may break in as the ball's fetch)
+    ." hewie: going to treat " treat-i n>s type space
+    ." (dist " his-at treat-at vec-dist 1 f>s$ type [char] ) emit cr
+    free-mode his-mode !  0 his-target !
+    on-waiting on-danger or on-command or on-wait-over or on-alert or on-praise-due or
+    ['] st-treat behave  his-cmd ! ;
+
