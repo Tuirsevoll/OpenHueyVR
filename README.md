@@ -112,7 +112,7 @@ Grab each one and pull it along its path to activate.
 
 ## Attack using your hands
 
-Swinging with one hand should be enough to break vases. Vases have been made significantly bigger to accommodate this and sometimes clip.
+Swinging with one hand should be enough to break vases. Vases have been made significantly bigger to accommodate this and sometimes clip. A one-hand swing now registers from about 16 cm (6 inches) away from a vase, so it does not have to touch it exactly.
 
 Pushing with two hands is the only one to damage stalkers and force open doors.
 

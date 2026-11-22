@@ -257,7 +257,7 @@ static Vec3 sCenter[2];
 #define AIM_PARALLEL 0.05f
 /* Both hands, every pose. 1 leaves the fitted size; 1.5 is half again as large. */
 #define HAND_SCALE 1.5f
-/* The arm stops at the room's mesh where the hand's buzz fires (SWING_SKIN's 0.40): the hand is
+/* The arm stops at the room's mesh where the hand's buzz fires (0.40, HAND_STOP): the hand is
  * stopped at the surface it has just been warned of, from the wrist and from the fingertip. */
 #define HAND_STOP 0.40f
 /* the soft buzz when a hand touches a wall, floor, ceiling, door or placed object; 0 is off, 1 is on */
@@ -2914,8 +2914,10 @@ void vrhands_pet_pose(Actor *a, Mat4 *world, int nbones, const Mat4 *unplace) {
     }
 }
 
-/* a hard swing on a surface. About 3 cm, and fast enough that a rest or a pet does not count. */
-#define SWING_SKIN 0.40f
+/* A hard swing on a surface registers from about 16 cm (2.0 room units): further than the hand's
+ * 0.40 stop and buzz skin, so a vase the wrist stops short of still counts as struck. Fast enough
+ * that a rest or a pet does not count. */
+#define SWING_SKIN 2.00f
 #define SWING_SPEED 1.25f
 #define SWING_FAST 8.0f
 #define ENV_COOL 12

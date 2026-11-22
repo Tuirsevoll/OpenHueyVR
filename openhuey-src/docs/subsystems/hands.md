@@ -91,6 +91,12 @@ calibration changes it.
 - **The raw controller still does everything else**: the buzz's detection (`hand_path_hits_*` in
   `vrhands_tick`), the door push (`push_step`) and every grab and swing read the controller's own
   position, unchanged. Only the arm is stopped.
+- **A hard swing's blow** (`swing_hand`, `SWING_SKIN`): a fast hand whose wrist comes within
+  `SWING_SKIN` (2.0 room units, about 16 cm) of the room's mesh or a placed object's mesh sets
+  Fiona's blow point at the wrist for one script frame (`vrhands_blow_at`, `body-point`). That is
+  wider than the wall test's and the arm stop's 0.40 skin, so a vase need not be touched by the
+  wrist to break - a swing that comes close enough still registers. Doors and stalkers keep their
+  own `SHOVE_REACH`.
 
 ## Hewie's paw
 
