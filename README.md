@@ -1,6 +1,6 @@
-# Haunting Ground VR (HGVR)
+# Haunting Ground VR
 
-A full PC VR mod of **Haunting Ground**, built on top of [OpenHuey](https://github.com/ArnautDaniel/OpenHuey). HUGE thanks and admiration for the original project, without which this mod would not exist. Show your support!
+A PC VR mod of **Haunting Ground**, built on top of [OpenHuey](https://github.com/ArnautDaniel/OpenHuey). HUGE thanks and admiration for the original project, without which this mod would not exist. Show your support!
 
 **[Download the latest release](../../releases)** · You need your own copy of the game. This was built on a USA ISO and I cannot vouch for full operation of any other region.
 
