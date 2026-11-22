@@ -91,6 +91,26 @@ create ch-at /vec allot
     dup pat-cmd = if  drop  pat-reaction react  exit  then
     dup rouse-cmd = if  drop  rouse-reaction react  exit  then
     drop ;
+\ a spoken command reaches Hewie voice-delay frames after the room was told (fiona-started), as the
+\ stick's reaches him on her gesture's key frame: the room's context (a fetch, a hole) takes him first,
+\ and then his busy guard (hewie.fs on command) drops the late one. She plays no gesture and keeps moving.
+10 constant voice-delay
+: voice-later ( code -- )
+    her-voice-code !  her-act-tri @ her-voice-tri !  her-act-yaw f@ f>cell her-voice-yaw !
+    her-act-at v.x sf@ f>cell her-voice-x !  her-act-at v.z sf@ f>cell her-voice-z !
+    voice-delay her-voice-wait ! ;
+: voice-cancel ( -- )  -1 her-voice-code !  0 her-voice-wait ! ;
+: voice-send ( -- )
+    her-voice-code @ {: code :}  voice-cancel
+    code 0< if  exit  then
+    hewie-commandable state-flag? 0= if  exit  then
+    plain-commands state-flag? 0=  hewie-played? 0= and if
+        1 to voice-issued
+        code  her-voice-tri @  her-voice-yaw @  her-voice-x @  her-voice-z @  hewie-id send command
+    then
+    code voice-react ;
+: voice-count ( -- )   \ (frame-end: the waiting spoken command, sent when its time comes)
+    her-voice-wait @ 0> if  -1 her-voice-wait +!  her-voice-wait @ 0= if  voice-send  then  then ;
 : voice-give ( code g -- )
     {: g :}
     dup 0< if  drop exit  then
@@ -101,12 +121,7 @@ create ch-at /vec allot
     dup broadcast fiona-started
     her-mode @ her-sub @ her-cond @ her-said-gesture @ her-doing @ broadcast fiona-doing
     dup go-there-cmd = if  go-spot  then
-    plain-commands state-flag? 0=  hewie-played? 0= and if
-        1 to voice-issued
-        dup  her-act-tri @  her-act-yaw f@ f>cell  her-act-at v.x sf@ f>cell  her-act-at v.z sf@ f>cell
-        hewie-id send command
-    then
-    voice-react ;
+    voice-later ;
 : voice-shake-now ( -- )
     hewie-commandable state-flag? 0= if  exit  then
     her-busy-t @ if  exit  then
@@ -296,6 +311,7 @@ create ch-at /vec allot
 \ command's action (on the move, "come back" and "go for it" without stopping) ----
 : control-command ( -- )
     her-cmd @ dup no-gesture = if  drop exit  then
+    voice-cancel
     her-fear-bits @ 2 and  her-mode @ thrown-mode = her-sub @ dup led-away-r = swap held-down-r = or and  or if
         drop  hewie-played? 0= if  help-cmd -1 0 0 0 hewie-id send command  then   \ (a cry for help - in the run, the cry alone)
         $38 line  60 her-busy-t !  exit

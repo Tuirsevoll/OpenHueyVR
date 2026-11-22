@@ -82,9 +82,10 @@ T{ 300 $63 takes? -> -1 }T
 T{ [: his-to-tri @ ;] his@ 0< -> 0 }T
 300 run-frames
 
-testing the voice's "go" is the stick's up: the same command (0x23), then the same action (0x63)
+testing the voice's "go" is the stick's up: the room is told first, then he hears it (0x23), and the same action (0x63)
 ready  [: 0 his-cmd-was ! ;] his!
-T{ voice-go fiona-id send voice-order  deliver  5 run-frames  [: his-cmd-was @ ;] his@ -> $23 }T
+T{ voice-go fiona-id send voice-order  deliver  2 run-frames  [: his-cmd-was @ ;] his@ -> 0 }T
+T{ 12 run-frames  [: his-cmd-was @ ;] his@ -> $23 }T
 T{ 300 $63 takes? -> -1 }T
 300 run-frames
 
