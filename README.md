@@ -12,9 +12,34 @@ This was built and tested only on a Quest 3 via Virtual Desktop streaming. Unfor
 
 ---
 
+## 🎮 Controls (Meta Quest 3)
+
+### Left controller
+| Input | Action |
+|---|---|
+| Thumbstick | Movement |
+| Thumbstick (click) | Toggle run |
+| X | Backstep |
+| Y | Status screen (open/close)<br>In a cutscene: opens the movie pause with Skip |
+| Menu (☰) | Pause game |
+| Trigger | Hold to crouch (slow sneak walk)<br>Menu: page left |
+| Grip | Grab<br>Back out / close dialogue or menu |
+
+### Right controller
+| Input | Action |
+|---|---|
+| Thumbstick | Turn |
+| Thumbstick (flick up) | Hewie: "Go" / "Attack" |
+| Thumbstick (flick down) | Hewie: "Come" |
+| Thumbstick (click) | Hewie: "Stay" / "Stop" |
+| A | Interact / menu select |
+| B | Hold to talk (voice commands) |
+| Trigger | Kick / tackle |
+| Grip | Grab |
+
 > To access the VR menu while in game, open your status screen where you access your inventory. To the "right" of the options tab, the VR menu is available. It does not show until you access it,  and its tab replaces the options tab once you are in it. You can still get back to the normal options tab by moving tabs left or right. No features in the status screen are lost.
 
-## Current Features - See more detail below
+## Current Features - More detail below
 
 - 6DOF Tracking.
 - Hand collision with walls and surfaces.
