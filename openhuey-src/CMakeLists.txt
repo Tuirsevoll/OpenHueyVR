@@ -186,6 +186,11 @@ if(HGA_RELEASE)
     target_compile_definitions(hga PRIVATE HGA_UPDATER)   # (a release updates itself: --update, the title's UPDATE)
     if(WIN32)
         set_target_properties(hga PROPERTIES WIN32_EXECUTABLE ON)   # (SDL3 gives the WinMain)
+        if(MSVC)
+            # the MinGW SDL3 package upstream releases with carries SDL3main (the WinMain that calls
+            # main); vcpkg's MSVC SDL3 does not, so the no-console build names the CRT's own entry instead.
+            set_target_properties(hga PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
+        endif()
     else()
         set_target_properties(hga PROPERTIES BUILD_RPATH "$ORIGIN/lib" INSTALL_RPATH "$ORIGIN/lib")
     endif()
