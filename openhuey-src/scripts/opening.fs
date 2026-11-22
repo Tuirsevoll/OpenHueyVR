@@ -76,13 +76,13 @@ create spot  -258e f, -10e f, 174e f,   \ (on the circle, between the scarecrows
     x  y 4e f+  z  cam-place
     camera cam.yaw sf@ -0.22e f+ camera cam.yaw sf! ;
 : title-start ( -- )
-    on-menu stage !  0 picked !  -1 titled !
+    on-menu stage !  0 picked !  -1 titled !  -1 title!
     front-garden-5 room  cam-new-room  cam-room-start   \ (the scenery: no `arrived` - no story, nobody else)
     s" O_HEW/HEW_000" actor-load dog !   \ (no motion table: as new-src's title, the motions played as they are)
     spot@ him act.z sf!  him act.y sf!  him act.x sf!  round 0.65e f- him act.yaw sf!  1e him act.shadow sf!   \ (three-quarters to the camera)
     1 him act.visible l!  m-lie -1 play  frame-him ;
 : title-end ( -- )   \ (his model gone, the room's lights back)
-    titled @ 0= if  exit  then  0 titled !
+    0 title!  titled @ 0= if  exit  then  0 titled !
     dog @ actor-free  0 stage-lights  0.06e 0.06e 0.08e clear-color  menu-layer ui-clear ;
 : title-gone ( -- )  title-end  started stage !  self kill ;   \ (leaving the title for the game: a mod's entry)
 \ ---- the first run's height calibration (docs/subsystems/comfort.md): stand straight, the cross

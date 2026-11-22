@@ -68,6 +68,7 @@ typedef struct Engine {
                                       * plate is item $3F, so the word is what tells them apart) */
     int paused;            /* a menu is up: actors and the room stand still (`pause!`) */
     int still;             /* the models and the room stand still, the actors run (`still!`: the game over) */
+    int title;             /* the title's menus are up (`title!`, scripts/opening.fs): no whisper subtitles over them */
     int alone;             /* an actor drawn alone (its id + 1; 0: the scene as it is) - the model gallery's */
     int black_frame;       /* the next picture black under the 2D (a scene's end: the scripts' 0x62 op 11) */
     char hud[128];         /* a line of text at the bottom of the screen ("" none) */

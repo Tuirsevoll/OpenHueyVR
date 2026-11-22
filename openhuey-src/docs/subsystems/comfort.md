@@ -319,7 +319,8 @@ are), **the microphone's mode** (`vr.whisper-open`:
 PTT, Open Mic) and **its subtitles** (`vr.whisper-debug`: Off, On, Debug - Off none; On the command
 Hewie heard, capitalised and with an exclamation mark, and nothing when the words made no command;
 Debug the command and the words Whisper heard in brackets, or `UNRECOGNISED:` and the words, in the
-message window's panel at the bottom of the screen), and **the VR options page**
+message window's panel at the bottom of the screen - never over the title's menus or a cutscene,
+whose subtitles are the scene's own), and **the VR options page**
 (`scripts/subscreen/vr.fs`, six rows on the main page and four sub menus): the title's `VR OPTIONS`
 row and, in a game, the sub screen's page after the options - both worked with the controllers, the
 sub screen's arrows read from the VR stick in a headset. Its sub menus are Comfort Options (the
