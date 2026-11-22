@@ -68,6 +68,7 @@ typedef void (APIENTRY *HGA_GLGETINTEGERV)(GLenum, GLint *);
     X(HGA_GLDISABLE, glDisable)                                                \
     X(HGA_GLDRAWARRAYS, glDrawArrays)                                          \
     X(HGA_GLENABLE, glEnable)                                                  \
+    X(HGA_GLFLUSH, glFlush)                                                    \
     X(HGA_GLGETSTRING, glGetString)                                            \
     X(HGA_GLPOLYGONOFFSET, glPolygonOffset)                                    \
     X(HGA_GLSTENCILFUNC, glStencilFunc)                                        \

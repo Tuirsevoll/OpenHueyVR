@@ -37,10 +37,10 @@ endif()
 enable_testing()
 set(CLANKFORTH_TESTS ON CACHE BOOL "the language's tests (ctest)")
 # ClankForth is written for GCC/Clang - upstream's Windows release is cross-built with MinGW - so its
-# sources use __attribute__ (three) and __int128 (once, in the */ primitive) that MSVC has no notion of.
-# cmake/clankforth-msvc.patch guards those for other compilers and gives the wide multiply-divide an
-# exact MSVC path (_mul128 + long division), and is applied here to the submodule's sources when it is
-# missing: idempotent, so a `git submodule update` is undone by the next configure rather than by hand.
+# sources use __attribute__ and __int128, which MSVC has no notion of. cmake/clankforth-msvc.patch
+# guards the attributes and gives every 128-bit product and division an exact MSVC path (_mul128 /
+# _umul128 and long division), and is applied here to the submodule's sources when it is missing:
+# idempotent, so a `git submodule update` is undone by the next configure rather than by hand.
 if(MSVC)
     find_package(Git QUIET)
     set(CLANKFORTH_MSVC_PATCH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/clankforth-msvc.patch")
@@ -75,6 +75,15 @@ if(MSVC)
             endif()
         endforeach()
     endforeach()
+endif()
+
+# The rest of ClankForth's POSIX: MSVC has no <dirent.h>, no clock_gettime, no nanosleep and no S_ISDIR.
+# cmake/msvc holds them - the <dirent.h> found on this include path (system.c's dir-list), the rest
+# included by the patch's forth_internal.h - so ClankForth 0.3 builds with MSVC as it does with GCC.
+# PUBLIC, because a host that includes forth_internal.h itself (src/forth/bind_engine.c, and
+# src/game/loot.c through its primitive macros) must find what that header includes.
+if(MSVC)
+    target_include_directories(clankforth PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/cmake/msvc")
 endif()
 
 # Hewie's voice: whisper.cpp in-process (tiny or base). Tests, examples and GPU backends stay off.

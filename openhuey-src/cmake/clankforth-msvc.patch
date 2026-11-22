@@ -1,24 +1,24 @@
 diff --git a/src/forth.c b/src/forth.c
-index 41007f4..f456a48 100644
+index 3232c0c..b9c6f69 100644
 --- a/src/forth.c
 +++ b/src/forth.c
-@@ -12,6 +12,9 @@
- #include <stdio.h>
+@@ -13,6 +13,9 @@
  #include <stdlib.h>
  #include <string.h>
+ #include <time.h>
 +#if defined(_MSC_VER)
-+#include <intrin.h>
++#include <intrin.h>   /* (_mul128, _umul128: the wide multiply MSVC has no __int128 for) */
 +#endif
  
  /* ---- stacks (forth_internal.h has them, for every file of the system: these are the hosts') ---- */
  
-@@ -1117,10 +1120,43 @@ PRIM(p_mod) { Cell b = POP(), a = POP(), q, r; floored(f, a, b, &q, &r); PUSH(r)
+@@ -1325,10 +1328,47 @@ PRIM(p_mod) { Cell b = POP(), a = POP(), q, r; floored(f, a, b, &q, &r); PUSH(r)
  PRIM(p_divmod) { Cell b = POP(), a = POP(), q, r; floored(f, a, b, &q, &r); PUSH(r); PUSH(q); }
  PRIM(p_muldiv) {   /* a * b / c with a wide intermediate */
      Cell c = POP(), b = POP(), a = POP();
 +#if defined(_MSC_VER)
 +    /* MSVC has no __int128: the product is made with _mul128 and divided by binary long division,
-+     * its low 64 bits kept (a quotient too large for a cell wraps, as a truncated 128-bit one does). */
++     * its low 64 bits kept (a quotient too large for a cell wraps, as a truncated 128-bit one does) */
 +    __int64 shi;
 +    UCell lo = (UCell)_mul128(a, b, &shi), hi = (UCell)shi, ud, rhi = 0, rlo = 0, q = 0, bit;
 +    int neg = 0, i;
@@ -28,7 +28,9 @@ index 41007f4..f456a48 100644
 +        neg = 1;
 +        hi = ~hi;
 +        lo = ~lo;
-+        if (++lo == 0) hi++;
++        if (++lo == 0) {
++            hi++;
++        }
 +    }
 +    if (c < 0) {
 +        neg ^= 1;
@@ -36,14 +38,16 @@ index 41007f4..f456a48 100644
 +    } else {
 +        ud = (UCell)c;
 +    }
-+    for (i = 127; i >= 0; i--) {
-+        bit = i >= 64 ? ((hi >> (i - 64)) & 1) : ((lo >> i) & 1);
-+        rhi = (rhi << 1) | (rlo >> 63);
++    for (i = 2 * (int)CELL_BITS - 1; i >= 0; i--) {
++        bit = i >= (int)CELL_BITS ? ((hi >> (i - (int)CELL_BITS)) & 1) : ((lo >> i) & 1);
++        rhi = (rhi << 1) | (rlo >> (CELL_BITS - 1));
 +        rlo = (rlo << 1) | bit;
 +        q = (q << 1) | (rhi != 0 || rlo >= ud ? 1 : 0);
 +        if (rhi != 0 || rlo >= ud) {
 +            rlo -= ud;
-+            if (rhi) rhi--;
++            if (rhi) {
++                rhi--;
++            }
 +        }
 +    }
 +    PUSH((Cell)(neg ? (UCell)(-(__int64)q) : q));
@@ -54,13 +58,85 @@ index 41007f4..f456a48 100644
      PUSH((Cell)(UCell)(unsigned __int128)(p / c));   /* (a quotient too large for a cell wraps) */
 +#endif
  }
+ /* unsigned, and twice a cell wide (a double: its low cell, its high cell over it - Forth's order) */
+ PRIM(p_udiv) { UCell b = (UCell)divisor(f, POP()), a = (UCell)POP(); PUSH((Cell)(a / b)); }   /* u/ ( u1 u2 -- q ) */
+@@ -1339,22 +1379,63 @@ PRIM(p_udivmod) {   /* u/mod ( u1 u2 -- r q ) */
+     PUSH((Cell)(a % b));
+     PUSH((Cell)(a / b));
+ }
++#if defined(_MSC_VER)
++static void push_double(Forth *f, UCell lo, UCell hi) {   /* (a double: its low cell, its high cell over) */
++    PUSH((Cell)lo);
++    PUSH((Cell)hi);
++}
++#else
+ static void push_double(Forth *f, unsigned __int128 d) {
+     PUSH((Cell)(UCell)d);
+     PUSH((Cell)(UCell)(d >> CELL_BITS));
+ }
++#endif
+ PRIM(p_umstar) {   /* um* ( u1 u2 -- lo hi ) */
+     UCell b = (UCell)POP(), a = (UCell)POP();
++#if defined(_MSC_VER)
++    UCell lo, hi;
+ 
++    lo = _umul128(a, b, &hi);   /* (in two steps: one call's arguments have no order of evaluation) */
++    push_double(f, lo, hi);
++#else
+     push_double(f, (unsigned __int128)a * b);
++#endif
+ }
+ PRIM(p_mstar) {   /* m* ( n1 n2 -- lo hi ) */
+     Cell b = POP(), a = POP();
++#if defined(_MSC_VER)
++    __int64 hi;
++    UCell lo;
+ 
++    lo = (UCell)_mul128(a, b, &hi);
++    push_double(f, lo, (UCell)hi);
++#else
+     push_double(f, (unsigned __int128)((__int128)a * b));
++#endif
+ }
+ PRIM(p_umdivmod) {   /* um/mod ( lo hi u -- r q ) a quotient past a cell is an error */
+     UCell u = (UCell)divisor(f, POP()), hi = (UCell)POP(), lo = (UCell)POP();
++#if defined(_MSC_VER)
++    UCell q = 0, r = 0, bit;
++    int i;
++
++    if (hi >= u) {
++        forth_error(f, "um/mod: the quotient doesn't fit a cell");
++    }
++    for (i = 2 * (int)CELL_BITS - 1; i >= 0; i--) {   /* (MSVC has no __int128: 128 / 64 long division) */
++        int carry = (int)(r >> (CELL_BITS - 1));
++
++        bit = i >= (int)CELL_BITS ? ((hi >> (i - (int)CELL_BITS)) & 1) : ((lo >> i) & 1);
++        r = (r << 1) | bit;
++        q <<= 1;
++        if (carry || r >= u) {
++            r -= u;
++            q |= 1;
++        }
++    }
++    PUSH((Cell)r);
++    PUSH((Cell)q);
++#else
+     unsigned __int128 d = (unsigned __int128)hi << CELL_BITS | lo;
+ 
+     if (hi >= u) {
+@@ -1362,6 +1443,7 @@ PRIM(p_umdivmod) {   /* um/mod ( lo hi u -- r q ) a quotient past a cell is an e
+     }
+     PUSH((Cell)(UCell)(d % u));
+     PUSH((Cell)(UCell)(d / u));
++#endif
+ }
  PRIM(p_negate) { Cell *s = top(f, 1); *s = (Cell)(0 - (UCell)*s); }
  PRIM(p_abs) { Cell *s = top(f, 1); if (*s < 0) *s = (Cell)(0 - (UCell)*s); }
 diff --git a/src/forth.h b/src/forth.h
-index 9f6bd97..471054b 100644
+index 70933b8..c16624d 100644
 --- a/src/forth.h
 +++ b/src/forth.h
-@@ -196,7 +196,11 @@ int forth_set_effect(Forth *f, Word *w, const char *comment);
+@@ -215,7 +215,11 @@ int forth_set_effect(Forth *f, Word *w, const char *comment);
   * comment must agree - else a warning saying why ("its message carries 1") */
  void forth_declare_effect(Forth *f, const char *comment, const char *why);
  /* a warning about the source being read, with its file and line (counted: `warnings`) */
@@ -73,21 +149,24 @@ index 9f6bd97..471054b 100644
  void forth_flush_warning(Forth *f);
  Word *forth_constant(Forth *f, const char *name, Cell value);
 diff --git a/src/forth_internal.h b/src/forth_internal.h
-index ffe5ab3..4a6a1c8 100644
+index 3b64fd3..7f4c14a 100644
 --- a/src/forth_internal.h
 +++ b/src/forth_internal.h
-@@ -9,6 +9,10 @@
+@@ -13,6 +13,13 @@
  
  #include <limits.h>
  #include <setjmp.h>
 +#if defined(_MSC_VER)
++/* MSVC has no strncasecmp, no <dirent.h> and no clock_gettime: the first is a rename, the rest are
++ * in openhuey-src/cmake/msvc (clankforth_msvc.h here, its <dirent.h> on the include path) */
 +#include <string.h>
 +#define strncasecmp _strnicmp
++#include "clankforth_msvc.h"
 +#endif
  
  #define FORTH_LOCALS 32   /* a definition's locals, all its {: :} together */
- 
-@@ -184,7 +188,11 @@ struct Forth {
+ #define FORTH_SBUFS 16        /* s" at the prompt: the buffers it goes round */
+@@ -207,7 +214,11 @@ struct Forth {
  /* nothing is mapped below this, nor at a "negative" address: a number there is a mistake */
  #define LOWEST_ADDRESS 0x10000
  
@@ -99,7 +178,7 @@ index ffe5ab3..4a6a1c8 100644
  #define PUSH(x) cell_push(f, (Cell)(x))
  #define POP() cell_pop(f)
  #define FPUSH(x) float_push(f, (Float)(x))
-@@ -289,7 +297,11 @@ enum { CODE_OTHER, CODE_COLON, CODE_VARIABLE, CODE_CONSTANT, CODE_FCONSTANT, COD
+@@ -312,7 +323,11 @@ enum { CODE_OTHER, CODE_COLON, CODE_VARIABLE, CODE_CONSTANT, CODE_FCONSTANT, COD
         CODE_STRINGS };
  int forth_code_of(const Word *w);
  /* a definition's warning held until the next definition begins (`immediate` drops it) */
