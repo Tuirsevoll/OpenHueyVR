@@ -183,4 +183,3 @@ Also inspired by Skyrim VR mods such as FRIK, VRIK and HIGGS, and by Half-Life 2
 - **Haunting Ground** and all related names, characters and assets are trademarks and copyright of **Capcom Co., Ltd.** This is an unofficial, non-commercial fan project. It is not affiliated with, endorsed by or sponsored by Capcom.
 - This repository and its releases **do not include the game or its data files.** You must own a legitimate copy of Haunting Ground to play. Please don't ask for, or share, game files or disc images.
 - The code is released under the **GNU General Public License v3.0**, the same as OpenHuey. See [`LICENSE`](LICENSE).
-- Third-party components keep their own licences: SDL3 (zlib), the OpenXR loader (Apache 2.0), whisper.cpp / ggml (MIT) and Steam Audio (Valve's Steam Audio licence). See the `licences` folder in the release.
