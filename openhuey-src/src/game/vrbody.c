@@ -18,6 +18,7 @@
  * cutscene, non-VR play - not one matrix is touched: the `vr ...` helpers keep their rest under
  * their parents and the motions are exactly as they were. */
 #include "vrbody.h"
+#include "../platform/vrlog.h"
 #include "actor.h"
 #include "vrbones.h"
 
@@ -658,7 +659,7 @@ static void cache_bones(const struct Actor *a) {
     vb = vrbones_for(a);
     if (!vb->ok) {
         /* no table for this outfit: the body (and the arms' IK) are left off, as in a cutscene */
-        fprintf(stderr, "vrbody: no VR bones for %s: no VR body\n", a->name);
+        VRLOG( "vrbody: no VR bones for %s: no VR body\n", a->name);
         return;
     }
     sBones.root = vb->bone[VRB_ROOT];
@@ -699,7 +700,7 @@ static void cache_bones(const struct Actor *a) {
         }
     }
     if (!ok) {
-        fprintf(stderr, "vrbody: a bone of hers is missing by name: no VR body\n");
+        VRLOG( "vrbody: a bone of hers is missing by name: no VR body\n");
         return;
     }
     /* the lengths the bind pose has, in model units: exactly what the motions were checked on */
@@ -760,7 +761,7 @@ static void cache_bones(const struct Actor *a) {
         sBones.reachRest = v_dist3(e, hand) * scale;
     }
     sBones.ok = 1;
-    fprintf(stderr,
+    VRLOG(
             "vrbody: bones by name - pelvis %d waist %d chest %d neck %d head %d; arms %d/%d %d/%d %d/%d;"
             " clavicles %d/%d; legs %d/%d %d/%d %d/%d %d/%d\n",
             sBones.pelvis, sBones.waist, sBones.chest, sBones.neck, sBones.head,
@@ -768,7 +769,7 @@ static void cache_bones(const struct Actor *a) {
             sBones.hand[0], sBones.hand[1], sBones.clav[0], sBones.clav[1],
             sBones.thigh[0], sBones.thigh[1], sBones.shin[0], sBones.shin[1],
             sBones.foot[0], sBones.foot[1], sBones.toe[0], sBones.toe[1]);
-    fprintf(stderr,
+    VRLOG(
             "vrbody: vr helpers - twists %d/%d %d/%d; upper %d/%d; deltoids %d/%d; neck fp %d;"
             " kArm %.4f kBody %.4f; steps: yaw, posture+feet, clavicle, arms, forearm%s, upper%s, head%s\n",
             sBones.twist1[0], sBones.twist1[1], sBones.twist2[0], sBones.twist2[1],
@@ -834,7 +835,7 @@ static void body_scales(const struct Actor *a) {
     if (gVrOptions.eye_height != sLoggedEye || gVrOptions.arm_reach != sLoggedReach) {
         sLoggedEye = gVrOptions.eye_height;
         sLoggedReach = gVrOptions.arm_reach;
-        fprintf(stderr,
+        VRLOG(
                 "vrbody: calibration - eyes %.2f m, reach %.2f m%s; her body scaled %.3f (the player's"
                 " height); fiona_arm_len %.3f, player_arm_len %.3f (room units), reach_scale %.3f"
                 " (clamped %.2f..%.2f); units_per_m %.3f; body move %.3f\n",
@@ -842,7 +843,7 @@ static void body_scales(const struct Actor *a) {
                 (double)sBones.bodyScale, (double)fiona_arm, (double)player_arm,
                 (double)sBones.armScale, (double)ARM_SCALE_MIN, (double)ARM_SCALE_MAX, (double)units_per_m,
                 (double)sBones.moveScale);
-        fprintf(stderr, "vrbody: her actor's scale is %.3f (untouched: the body scale is the drawn pose"
+        VRLOG( "vrbody: her actor's scale is %.3f (untouched: the body scale is the drawn pose"
                 " only - collision, hitbox, movement and the world are hers)\n", (double)a->scale);
     }
 }
@@ -1072,7 +1073,7 @@ int vrbody_begin(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *un
      * from too, so the arm and the calibration agree */
     if (!sShouldersLogged) {
         sShouldersLogged = 1;
-        fprintf(stderr, "vrbody: shoulders - %.2f m below the eyes, %.3f m behind them, %.2f m to each"
+        VRLOG( "vrbody: shoulders - %.2f m below the eyes, %.3f m behind them, %.2f m to each"
                 " side (%.3f m from the eye: the reach is measured from there), held within %.2f m of"
                 " her own and reached by the clavicle's turn\n", (double)SH_UP_M, (double)SH_BACK_M,
                 (double)SH_SIDE_M,
@@ -1083,7 +1084,7 @@ int vrbody_begin(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *un
      * turns and the legs' rules) - the first thing to quote when an elbow or a knee looks wrong */
     if (!sSignsLogged) {
         sSignsLogged = 1;
-        fprintf(stderr,
+        VRLOG(
                 "vrbody: signs - elbow bend %+.0f (of the elbow's own side, mirrored), elbow swing %+.0f,"
                 " elbow outward %.2f; the knees follow her pelvis's forward, in the leg's own forward"
                 " plane, and both legs stay straight until the head is %.0f cm below the calibrated"
@@ -1603,7 +1604,7 @@ void vrbody_head_camera(struct Actor *a, Mat4 *world, const Mat4 *place, const M
         if (len > lim) {
             if (!sHeadSeatWarned) {
                 sHeadSeatWarned = 1;
-                fprintf(stderr, "vrbody: the head seat asked for %.3f m - held to %.2f m\n",
+                VRLOG( "vrbody: the head seat asked for %.3f m - held to %.2f m\n",
                         (double)(len / u), (double)HEAD_SEAT_MAX_M);
             }
             v_scale3(delta, delta, lim / len);
@@ -1617,7 +1618,7 @@ void vrbody_head_camera(struct Actor *a, Mat4 *world, const Mat4 *place, const M
 
         sHeadCamLogged = 1;
         m_pos(&world[b], eye);
-        fprintf(stderr, "vrbody: head at the camera - camera %.2f %.2f %.2f, her eye %.2f %.2f %.2f,"
+        VRLOG( "vrbody: head at the camera - camera %.2f %.2f %.2f, her eye %.2f %.2f %.2f,"
                 " %.3f m apart before the seat; the camera %.3f m behind her eyes and %.3f m above them;"
                 " reach_scale %.3f\n",
                 (double)cam[0], (double)cam[1], (double)cam[2], (double)eye[0], (double)eye[1],
@@ -1682,7 +1683,7 @@ void vrbody_shoulders(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat
     if (len > sane) {
         if (!sShoulderWarned[side]) {
             sShoulderWarned[side] = 1;
-            fprintf(stderr, "vrbody: the %s shoulder target is %.3f m from her own: held to %.2f m\n",
+            VRLOG( "vrbody: the %s shoulder target is %.3f m from her own: held to %.2f m\n",
                     side == 0 ? "left" : "right", (double)(len / u), (double)SH_MAX_M);
         }
         v_scale3(d, d, sane / len);
@@ -1709,7 +1710,7 @@ void vrbody_shoulders(struct Actor *a, Mat4 *world, const Mat4 *place, const Mat
                          (wp.z - sp.z) * (wp.z - sp.z));
 
         sShoulderLogged[side] = 1;
-        fprintf(stderr, "vrbody: %s shoulder - eye %.2f %.2f %.2f, asked %.2f %.2f %.2f, hers %.2f %.2f %.2f; %.3f m apart (held to %.2f m at most)\n",
+        VRLOG( "vrbody: %s shoulder - eye %.2f %.2f %.2f, asked %.2f %.2f %.2f, hers %.2f %.2f %.2f; %.3f m apart (held to %.2f m at most)\n",
                 side == 0 ? "left" : "right", (double)eye[0], (double)eye[1], (double)eye[2],
                 (double)wp.x, (double)wp.y, (double)wp.z, (double)sp.x, (double)sp.y, (double)sp.z,
                 (double)(dm / u), (double)SH_MAX_M);

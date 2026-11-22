@@ -7,6 +7,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include "vr.h"
+#include "vrlog.h"
 
 #include "gl.h"
 
@@ -648,7 +649,7 @@ static void arm_measure_done(void) {
     sArmOn = 0;
     sArmFresh = 1;
     gVrOptions.arm_reach = sArmBest >= ARM_MEASURE_MIN ? sArmBest : 0.0f;
-    printf("vr: body calibrated - eyes %.2f m, reach %.2f m%s\n", (double)gVrOptions.eye_height,
+    VRLOGP("vr: body calibrated - eyes %.2f m, reach %.2f m%s\n", (double)gVrOptions.eye_height,
            (double)gVrOptions.arm_reach, gVrOptions.arm_reach > 0.0f ? "" : " (none: the height sizes the arm)");
 }
 
@@ -1882,7 +1883,7 @@ int vr_open(void) {
     glDisable(GL_FRAMEBUFFER_SRGB);   /* the renderer already writes display-encoded colour */
     xrGetInstanceProperties(sInstance, &inst);
     xrGetSystemProperties(sInstance, sSystem, &sys);
-    fprintf(stderr, "vr: %s, %s, %d eyes, %dx%d\n", inst.runtimeName, sys.systemName, sViewCount, sW[0], sH[0]);
+    VRLOG( "vr: %s, %s, %d eyes, %dx%d\n", inst.runtimeName, sys.systemName, sViewCount, sW[0], sH[0]);
     sActive = 1;
     return 1;
 }
@@ -2152,7 +2153,7 @@ int vr_begin_frame(void) {
          * options are otherwise silent, and a setting that never reached the engine looks the
          * same as one that did nothing. */
         sLogged = 1;
-        printf("vr: comfort %d (%.2f), scenes from her eyes %d, world scale %.3f (eye %.2f m), seated %d\n",
+        VRLOGP("vr: comfort %d (%.2f), scenes from her eyes %d, world scale %.3f (eye %.2f m), seated %d\n",
                (int)gVrOptions.comfort, (double)gVrOptions.comfort_strength,
                (int)gVrOptions.cutscene_first_person, (double)body_scale(),
                (double)gVrOptions.eye_height, (int)gVrOptions.seated);

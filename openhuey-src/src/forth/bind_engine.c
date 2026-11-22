@@ -3,6 +3,7 @@
  * Structs are reached by address plus field words: `camera cam.yaw sf@` reads the camera's yaw
  * (a field word adds its offset). Floats in structs are 32-bit: sf@ / sf!. */
 #include "../game/engine.h"
+#include "../platform/vrlog.h"
 #include "../data/exetables.h"
 #include "../hactor/hactor.h"
 #include "../game/areas.h"
@@ -3781,7 +3782,9 @@ PRIM(p_vr_calibrate) {   /* ( -- ) Page Up does this too: her eyes at the headse
         forth_printf(f, "vr: no headset height\n");
         return;
     }
-    forth_printf(f, "vr: height %.2f m, scale %.2f\n", h, s);
+    if (VR_LOG_ON()) {
+        forth_printf(f, "vr: height %.2f m, scale %.2f\n", h, s);
+    }
 }
 PRIM(p_vr_arm_pending) { PUSH(vr_arm_pending() ? -1 : 0); }   /* ( -- flag ) the reach is being measured */
 PRIM(p_vr_arm_save) { PUSH(vr_arm_save() ? -1 : 0); }         /* ( -- flag ) it has just been: save the options */

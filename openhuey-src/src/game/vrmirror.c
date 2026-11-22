@@ -2,6 +2,7 @@
  * authority (the flag, the glass, the smash); this only moves the curtain's morph between its two
  * frames and says when one end has been reached. */
 #include "vrmirror.h"
+#include "../platform/vrlog.h"
 
 #include "actors.h"   /* (the actor being run - forth_actor_self) */
 #include "../data/pac.h"
@@ -46,6 +47,9 @@ static void mirror_log(const char *fmt, ...) {
     char msg[512];
     va_list ap;
 
+    if (!VR_LOG_ON()) {
+        return;
+    }
     va_start(ap, fmt);
     vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);

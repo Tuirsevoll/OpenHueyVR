@@ -2,6 +2,7 @@
  * item is in. The box test turns the point into the box's own axes with its quaternion and
  * compares it with the half sizes; a box with a half of 0 never matches. */
 #include "triggers.h"
+#include "../platform/vrlog.h"
 
 #include "../core/files.h"
 #include "../data/pac.h"
@@ -29,6 +30,9 @@ static int sRoom = -1;      /* the room the boxes were tested in (a change re-ar
 static int sInside = -1;   /* the box entered and not left (-1 none) */
 
 static void trig_log(const char *msg) {
+    if (!VR_LOG_ON()) {
+        return;
+    }
     if (gEngine.forth != NULL) {
         forth_printf(gEngine.forth, "%s", msg);
     } else {

@@ -1,5 +1,6 @@
 /* Which of her model's bones is which, for every costume (vrbones.h). */
 #include "vrbones.h"
+#include "../platform/vrlog.h"
 
 #include "actor.h"
 
@@ -170,7 +171,7 @@ static int required_present(void) {
 static void log_table(void) {
     const VrBones *v = &sBones;
 
-    fprintf(stderr,
+    VRLOG(
             "vrbones: %s %s - L arm %d/%d/%d/%d/%d R arm %d/%d/%d/%d/%d chest %d neck %d head %d"
             " eyes %d/%d floor %.2f (%s)\n",
             v->name, v->from_file ? "from vr_bones.txt" : "no vr_bones.txt (FIN layout)",
@@ -205,11 +206,11 @@ static void compare_fin_once(void) {
 
         if (b >= 0 && b != kFinBones[role_order[i]]) {
             same = 0;
-            fprintf(stderr, "vrbones: FIN_000 assertion: role %d is %d, was %d\n",
+            VRLOG( "vrbones: FIN_000 assertion: role %d is %d, was %d\n",
                     role_order[i], b, kFinBones[role_order[i]]);
         }
     }
-    fprintf(stderr,
+    VRLOG(
             "vrbones: FIN_000 old and new indices are %s - root %d pelvis %d waist %d chest %d"
             " neck %d head %d eyes %d/%d L arm %d/%d/%d/%d/%d R arm %d/%d/%d/%d/%d\n",
             same ? "identical" : "DIFFERENT",
@@ -250,7 +251,7 @@ static void cross_check(const Model *m) {
     }
     if (mismatch) {
         sBones.ok = 0;
-        fprintf(stderr,
+        VRLOG(
                 "vrbones: %s vr_bones.txt does not match the skeleton (L arm %d/%d/%d/%d/%d,"
                 " R arm %d/%d/%d/%d/%d): arm IK and VR body off\n",
                 sBones.name,
@@ -378,7 +379,7 @@ const VrBones *vrbones_for(const struct Actor *a) {
         }
     }
     if (!sBones.ok && !sBones.from_file) {
-        fprintf(stderr,
+        VRLOG(
                 "vrbones: %s has no vr_bones.txt and is not the FIN layout: arm IK and VR body off\n",
                 sBones.name);
     } else {

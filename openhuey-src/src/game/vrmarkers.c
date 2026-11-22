@@ -3,6 +3,7 @@
  * - as triggers.c reads and tests its key items' boxes. Nothing hides, takes or moves anything
  * here: the files are read and what a room has is logged. */
 #include "vrmarkers.h"
+#include "../platform/vrlog.h"
 
 #include "../core/files.h"
 #include "engine.h"
@@ -28,6 +29,9 @@ static int sLoaded;
 static int sRoom = -1;   /* the room whose markers were logged last (a change logs again) */
 
 static void vrmarkers_log(const char *msg) {
+    if (!VR_LOG_ON()) {
+        return;
+    }
     if (gEngine.forth != NULL) {
         forth_printf(gEngine.forth, "%s", msg);
     } else {

@@ -2,6 +2,7 @@
  * fold, slide or morph with it - are posed from one closure every tick, so a wardrobe's two bifold
  * panels always move together and the gallery curtain's morph follows the same value. */
 #include "vrspots.h"
+#include "../platform/vrlog.h"
 
 #include "../data/navmesh.h"
 #include "../data/pac.h"
@@ -83,6 +84,9 @@ static void spot_log(const char *fmt, ...) {
     char msg[512];
     va_list ap;
 
+    if (!VR_LOG_ON()) {
+        return;
+    }
     va_start(ap, fmt);
     vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);

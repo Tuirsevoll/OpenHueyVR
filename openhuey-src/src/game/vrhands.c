@@ -23,6 +23,7 @@
 #define VR_STEP_LOG 0
 
 #include "vrhands.h"
+#include "../platform/vrlog.h"
 #include "gripposes.h"
 #include "itemprops.h"
 #include "loot.h"
@@ -404,11 +405,11 @@ static void find_arms(Actor *a, const Mat4 *world) {
             sArmFound[k] = 1;
         }
     }
-    fprintf(stderr,
+    VRLOG(
             "hands: arms by geometry - L shoulder %d elbow %d wrist %d;"
             " R shoulder %d elbow %d wrist %d\n",
             near_sh[0], near_el[0], near_ha[0], near_sh[1], near_el[1], near_ha[1]);
-    fprintf(stderr,
+    VRLOG(
             "hands: arms in use - L shoulder %d elbow %d wrist %d palm %d;"
             " R shoulder %d elbow %d wrist %d palm %d (%s; the hand measured on L%d/R%d, its grip unchanged)\n",
             sShoulder[0], sElbow[0], sHandBone[0], sPalmBone[0],
@@ -427,7 +428,7 @@ static void log_skip_once(const Actor *a, const char *why) {
     }
     snprintf(sSkipName, sizeof(sSkipName), "%s", a->name);
     snprintf(sSkipWhy, sizeof(sSkipWhy), "%s", why);
-    fprintf(stderr, "hands: VR arms/body off for %s - %s\n", a->name, why);
+    VRLOG( "hands: VR arms/body off for %s - %s\n", a->name, why);
 }
 
 void vrhands_note_skip(const Actor *a, const char *why) {
@@ -439,7 +440,7 @@ static void log_no_arm_once(const Actor *a) {
         return;
     }
     snprintf(sNoArmName, sizeof(sNoArmName), "%s", a->name);
-    fprintf(stderr, "hands: arm IK off for %s - no arm chain found (L %d R %d)\n",
+    VRLOG( "hands: arm IK off for %s - no arm chain found (L %d R %d)\n",
             a->name, sArmFound[0], sArmFound[1]);
 }
 
@@ -1371,7 +1372,7 @@ void vrhands_pose(Actor *a, Mat4 *world, const Mat4 *place, const Mat4 *unplace)
             float bs = vrbody_body_scale(a), tot = vrbody_arm_scale(a);
 
             sHandLogDone = 1;
-            fprintf(stderr, "hands: body_scale %.3f, arm_scale %.3f, hand world scale %.3f (the original IK's own, unchanged)\n", (double)bs,
+            VRLOG( "hands: body_scale %.3f, arm_scale %.3f, hand world scale %.3f (the original IK's own, unchanged)\n", (double)bs,
                     (double)(bs > 1.0e-6f ? tot / bs : 1.0f), (double)hs);
         }
         hand = grip_matrix(at, fwd, up, hs, sGripCenter[side], side);
@@ -2105,7 +2106,7 @@ static void hide_probe(Engine *e) {
     sHideSeen = 1;
     sHideInside = inside;
     sHideFrame = p->frame;
-    fprintf(stderr, "hide: inside %d frame %d\n", inside, p->frame);
+    VRLOG( "hide: inside %d frame %d\n", inside, p->frame);
 }
 #endif
 
@@ -3664,10 +3665,10 @@ static void hand_item_log(void) {
         sHandLogItem = sHand.item;
         sHandLogSide = sHand.side;
         if (itemprops_grip(sHand.item, sHand.side == 0 ? 30 : 46, &g) && g.pose[0] != 0) {
-            fprintf(stderr, "hands: hand item %d in %c hand%s (grip %s)\n", sHand.item,
+            VRLOG( "hands: hand item %d in %c hand%s (grip %s)\n", sHand.item,
                     sHand.side == 0 ? 'L' : 'R', leftie, g.pose);
         } else {
-            fprintf(stderr, "hands: hand item %d in %c hand%s (no grip pose)\n", sHand.item,
+            VRLOG( "hands: hand item %d in %c hand%s (no grip pose)\n", sHand.item,
                     sHand.side == 0 ? 'L' : 'R', leftie);
         }
         return;
@@ -3675,7 +3676,7 @@ static void hand_item_log(void) {
     if (gEngine.hand_item < 0 && sHandLogItem >= 0) {
         sHandLogItem = -1;
         sHandLogSide = -1;
-        fprintf(stderr, "hands: hand item cleared\n");
+        VRLOG( "hands: hand item cleared\n");
     }
 }
 
@@ -3742,7 +3743,7 @@ static void hand_item_mouth(void) {
     sMouthFire = 1;
     vr_haptic(sHand.side, 0.25f, 0.08f);
     m = metres_to_room(1.0f);
-    fprintf(stderr, "hands: mouth use - item %d at %.2f m, buzz %c\n", item, (double)(m > 0.0f ? d / m : 0.0f),
+    VRLOG( "hands: mouth use - item %d at %.2f m, buzz %c\n", item, (double)(m > 0.0f ? d / m : 0.0f),
             sHand.side == 0 ? 'L' : 'R');
 }
 
@@ -3814,7 +3815,7 @@ static void hand_item_treat(void) {
         sTreatFire = 1;   /* (where it was, its model preloaded for the floor draw) */
         sTreatItem = sHand.item;
         sTreatAt = at;
-        fprintf(stderr, "hands: treat let go - item %d at (%.1f %.1f %.1f)\n", sTreatItem, (double)at.x,
+        VRLOG( "hands: treat let go - item %d at (%.1f %.1f %.1f)\n", sTreatItem, (double)at.x,
                 (double)at.y, (double)at.z);
         loot_preload_held(sTreatItem, 1);
         gEngine.hand_item = -1;   /* (out of her hand at once: the cleared line comes next tick) */
@@ -4304,6 +4305,9 @@ float ladder_pull_step(Vec3 *anchor, Vec3 play) {
 }
 
 static void spot_log_line(const char *msg) {
+    if (!VR_LOG_ON()) {
+        return;
+    }
     if (gEngine.forth != NULL) {
         forth_printf(gEngine.forth, "%s", msg);
     } else {
@@ -4333,6 +4337,9 @@ static void spot_release_log(int id, const char *why) {
 static void spot_miss_log(int id, Vec3 at, float grab_d, float edge_d) {
     char msg[192];
 
+    if (!VR_LOG_ON()) {
+        return;
+    }
     snprintf(msg, sizeof(msg), "vrspots: miss %s at(%.2f %.2f %.2f) edge-dist %.2f grab-dist %.2f\n",
              vrspot_name(id), at.x, at.y, at.z, edge_d, grab_d);
     if (gEngine.forth != NULL) {
@@ -4346,6 +4353,9 @@ static void spot_miss_log(int id, Vec3 at, float grab_d, float edge_d) {
 static void lever_miss_log(int id, Vec3 at, float box_d, float handle_d) {
     char msg[192];
 
+    if (!VR_LOG_ON()) {
+        return;
+    }
     snprintf(msg, sizeof(msg), "vrlevers: miss '%s' at(%.2f %.2f %.2f) box-dist %.2f handle-dist %.2f\n",
              vrlever_name(id), at.x, at.y, at.z, box_d, handle_d);
     if (gEngine.forth != NULL) {
@@ -4463,7 +4473,7 @@ void vrhands_tick(Engine *e) {
 
                 if (ward_near(&e->room.placed, at, 60.0f, &d) >= 0) {
                     sWardLogs++;
-                    fprintf(stderr, "ward: hand %d dist %.1f grip %.2f\n", side, d, grip);
+                    VRLOG( "ward: hand %d dist %.1f grip %.2f\n", side, d, grip);
                 }
             }
 #endif

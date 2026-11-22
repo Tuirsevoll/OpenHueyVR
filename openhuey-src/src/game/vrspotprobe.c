@@ -4,6 +4,7 @@
  * placed.c's morph_fill. Remove this file, its CMakeLists.txt line and its call in engine_tick
  * when the hiding rework is done. */
 #include "vrspotprobe.h"
+#include "../platform/vrlog.h"
 
 #include "vrmarkers.h"
 #include "vrspots.h"
@@ -35,6 +36,9 @@ static void probe_log(const char *fmt, ...) {
     char msg[640];
     va_list ap;
 
+    if (!VR_LOG_ON()) {
+        return;
+    }
     va_start(ap, fmt);
     vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);

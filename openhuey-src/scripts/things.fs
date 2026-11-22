@@ -35,12 +35,10 @@ end-state
 
 \ ---- the one looked at ----
 : kind ( -- n )  it @ thing-kind ;
-\ (DEBUG) one line each time a treat thing goes, so a drop shows its whole path (kind 11 only)
+\ the treat thing gone: kept as a word (a quiet one) so the callers read as they did - a drop that
+\ looks wrong is found by its kind and age in the things, not by a line here
 : treat-free-log ( i addr len -- )   \ (the thing still used: its index, then the reason)
-    {: i why-a why-n :}
-    i 0< if  exit  then
-    ." things: treat thing " i n>s type space ." freed - " why-a why-n type
-    space ." (age " i thing-age n>s type [char] ) emit cr ;
+    2drop drop ;
 : its-room ( -- room )  it @ thing-room ;
 : its-tri ( -- tri )  it @ thing-tri ;
 : age ( -- n )  it @ thing-age ;
@@ -129,7 +127,6 @@ variable trodden
     kicked? @ if  drop exit  then
     at vec-dist 5e f> if  exit  then
     -1 kicked? !
-    kind treat-thing = if  ." things: treat thing " it @ n>s type space ." kicked (age " it @ thing-age n>s type [char] ) emit cr  then
     0e 2e her body-yaw rotate-by  up fswap  it @  thing-kick ;
 
 \ ---- the story's own (house-of-truth-1f-9): kind 9 carries a room object "keri<k>" with it
@@ -252,7 +249,6 @@ $1F constant doll-noise
 1000000 constant spent-age   \ (the original's age -1, past every limit: it goes off, or goes, next frame)
 : make-room ( k -- )
     {: k | n oldest :}  -1 to oldest
-    k treat-thing = if  ." things: treat make-room called (not kept: nothing done)" cr  then
     k kept? k trap-thing = or 0= if  exit  then
     #things 0 do
         k i of-kind? if
@@ -303,12 +299,9 @@ behaviour keeping-things
       floor-treat @ 0>= if  floor-treat @ s" replaced" treat-free-log  floor-treat @ thing-free  then
       treat-thing room-id tri  x cell>f y cell>f z cell>f  0e 0e 0e  thing-new to i
       i 0< if  -1 floor-treat !  -1 treat-item !
-          ." things: treat " item n>s type ." NOT made (things_new returned -1)" cr
       else
           i item swap thing-item!
           i floor-treat !  item treat-item !
-          ." things: treat " item n>s type space ." made as thing " i n>s type space
-          ." (tri " i thing-tri n>s type ." , room " i thing-room n>s type [char] ) emit cr
           ready if  i hewie-id send treat-here  then
       then ;
   on treat-gone ( -- )

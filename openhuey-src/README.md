@@ -89,3 +89,10 @@ of audio (16 voices ≈ 11 ms of CPU a second, about 1% of a core), and
 game's own block pattern, and prints the largest step between samples at a block's edge - equal to
 one inside a block means no discontinuity (`docs/subsystems/audio3d.md`).
 
+The VR side's own console lines - the headset and its session, the body and the hands, the grips,
+the physical items, the hiding spots, the levers, the markers and the probes under them - are off by
+default: a player needs none of them, and a release has no console to show them in. They all say
+nothing when `OPENHUEY_VR_LOG` is unset; `OPENHUEY_VR_LOG=1` brings every one of them back (the
+gate is `src/platform/vrlog.h`). The lines that say something failed - no headset, no runtime,
+`openxr_loader.dll` missing, no microphone, a model that will not load - print either way.
+

@@ -8,6 +8,7 @@
  *
  * Remove this file, its CMakeLists.txt line and its call in engine_tick when the check is done. */
 #include "triggerprobe.h"
+#include "../platform/vrlog.h"
 
 #include "../data/pac.h"
 #include "../hactor/hactor.h"
@@ -53,6 +54,8 @@ void triggerprobe_tick(Engine *e) {
     sRoom = room;
     sTick = tick;
     /* the same log the game's messages go to (the console's log and stdout) */
-    forth_printf(e->forth, "TRIGPROBE room=%d name=%s fiona=%.3f %.3f %.3f\n", room, name,
-                 b->pos[0], b->pos[1], b->pos[2]);
+    if (VR_LOG_ON()) {
+        forth_printf(e->forth, "TRIGPROBE room=%d name=%s fiona=%.3f %.3f %.3f\n", room, name,
+                     b->pos[0], b->pos[1], b->pos[2]);
+    }
 }

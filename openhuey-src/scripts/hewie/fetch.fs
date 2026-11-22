@@ -123,18 +123,15 @@ enum: skill  going-skill watching-skill eager-skill picking-up-skill telling-ski
     treat-i thing-room self body-room = ;
 : treat-forget ( -- )  -1 his-treat ! ;
 : treat-ate ( -- )
-    treat-i 0< if  ." hewie: treat walk ended - no treat" cr  to-default exit  then
-    ." hewie: treat walk ended - at it, eating" cr
+    treat-i 0< if  to-default exit  then
     treat-i thing-item dup 0< if  drop  treat-forget  to-default exit  then   \ (its item, for the items actor)
     items-id send treat-eaten   \ (its rule, then one spent - the items')
     treat-forget  to-default ;
 : st-treat ( -- )
-    treat-there? 0= if  ." hewie: treat walk ended - gone, or in another room" cr  treat-forget  to-default exit  then
-    treat-tri treat-floor-at plan-and-go if  ." hewie: treat walk ended - no way to it" cr  treat-forget  to-default exit  then
+    treat-there? 0= if  treat-forget  to-default exit  then
+    treat-tri treat-floor-at plan-and-go if  treat-forget  to-default exit  then
     rest
     stride-len fabs 0.8e f<  fdup 6e f<  and if
-        ." hewie: treat at it - straight " treat-at his-at vec-dist 1 f>s$ type
-        ." , tri " treat-tri . ." / " his-tri . cr
         fdrop treat-ate exit
     then
     fdrop
@@ -142,7 +139,5 @@ enum: skill  going-skill watching-skill eager-skill picking-up-skill telling-ski
     stride drop
     treat-floor-at eyes-on ;
 : treat-go ( -- )   \ (Hewie_Start to it: the same things may break in as the ball's fetch)
-    ." hewie: going to treat " treat-i n>s type space
-    ." (dist " his-at treat-at vec-dist 1 f>s$ type [char] ) emit cr
     treat-act 0 want ;
 

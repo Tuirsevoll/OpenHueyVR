@@ -2,6 +2,7 @@
  * time) every function here is a no-op and the driver's own left / right placement plays as it
  * always did. */
 #include "saudio.h"
+#include "vrlog.h"
 
 #include "sound.h"
 #include "spu.h"
@@ -317,7 +318,7 @@ int saudio_start(void) {
     SDL_LockMutex(S.lock);   /* (the audio thread reads ready under it) */
     S.ready = 1;
     SDL_UnlockMutex(S.lock);
-    fprintf(stderr, "audio: Steam Audio HRTF on, up to %d voices (%d Hz)\n", SAUDIO_MAX_BINAURAL, SOUND_RATE);
+    VRLOG( "audio: Steam Audio HRTF on, up to %d voices (%d Hz)\n", SAUDIO_MAX_BINAURAL, SOUND_RATE);
     {
         const char *self = SDL_getenv("HGA_AUDIO3D_SELFTEST");
 

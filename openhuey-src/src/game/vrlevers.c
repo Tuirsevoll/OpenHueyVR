@@ -2,6 +2,7 @@
  * near it; its track 0 is scrubbed from the end its own pose sits at (the rest) to the other (the
  * pulled pose), one closure c, by the hand that holds it. */
 #include "vrlevers.h"
+#include "../platform/vrlog.h"
 
 #include "../data/pac.h"
 #include "engine.h"
@@ -46,6 +47,9 @@ static void lever_log(const char *fmt, ...) {
     char msg[400];
     va_list ap;
 
+    if (!VR_LOG_ON()) {
+        return;
+    }
     va_start(ap, fmt);
     vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);

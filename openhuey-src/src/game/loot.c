@@ -1,5 +1,6 @@
 /* Collectible meshes you can pick up by hand. See loot.h. */
 #include "loot.h"
+#include "../platform/vrlog.h"
 
 /* the Forth's dictionary extent (loot.c reads word bodies): the handle is opaque in forth.h */
 #include "forth_internal.h"
@@ -450,7 +451,7 @@ static void ensure_catalog(void) {
         free(text);
     }
     parse_places();
-    fprintf(stderr, "loot: %d collectibles\n", sCatN);
+    VRLOG( "loot: %d collectibles\n", sCatN);
 }
 
 /* the throwable's own model (GAME_FIX.GFM): the magnesias, the doll, the stone */
@@ -2605,10 +2606,10 @@ static int item_rest_draw(const LootProp *p, const Mat4 *vp, int up_plus) {
     if (p->item < ITEMPROPS_ITEMS && !sItemRestLogged[p->item]) {
         sItemRestLogged[p->item] = 1;
         if (up_plus) {
-            fprintf(stderr, "loot: item %d at rest: spot y %.3f, model y %.3f .. %.3f (floor side on the spot, up +y)\n",
+            VRLOG( "loot: item %d at rest: spot y %.3f, model y %.3f .. %.3f (floor side on the spot, up +y)\n",
                     p->item, (double)spot_y, (double)min_y, (double)max_y);
         } else {
-            fprintf(stderr,
+            VRLOG(
                     "loot: item %d at rest: spot y %.3f, model y %.3f .. %.3f (room up is -y; model should be "
                     "ABOVE the spot: its lowest y (ceiling side) is smaller than the spot, its floor side at the spot)\n",
                     p->item, (double)spot_y, (double)min_y, (double)max_y);

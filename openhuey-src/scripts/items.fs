@@ -495,7 +495,6 @@ defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
     r 3 and  at id@ id = and if  at spend  then   \ (still there: a rule may have moved it)
     was-hand r use-counts? and if
         -1 hand-item!
-        ." items: item " id . ." used from her hand - hand cleared (" id items-of . ." left)" cr
     then
     id r ;
 
@@ -522,10 +521,7 @@ defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
     hand-item item-kind remedy = 0= if  exit  then
     find-hand-place {: at :}
     at 0= if  exit  then
-    at id@ {: id :}  at use-place swap drop {: r :}
-    ." items: remedy " id n>s type space
-    ." used at mouth (result " r n>s type [char] , emit space
-    id items-of n>s type space ." left)" cr ;
+    at id@ {: id :}  at use-place swap drop {: r :} ;
 \ ... and the one vrhands.c raises when a remedy was held at her mouth (hand-mouth?)
 : hand-mouth ( -- )  hand-mouth? if  mouth-use  then ;
 \ ---- a bait let go on the floor (vrhands.c's treat-let): Hewie goes to it and eats it. One at a
@@ -533,10 +529,9 @@ defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
 \ if he is not with her, cannot reach it, 30 s pass, or she leaves the room, it goes and is still
 \ hers in the list. ----
 : treat? ( -- flag )  treat-id @ 0>= ;
-: treat-forget ( addr len -- )   \ (the caller's name: the one-shot log, then no treat in the state)
-    treat? 0= if  2drop exit  then
-    ." items: treat forget - " type space ." (frames " treat-frames @ n>s type ." , room now " room-id n>s type
-    ." / treat room " treat-room @ n>s type [char] ) emit cr
+: treat-forget ( addr len -- )   \ (the caller's name, then no treat in the state)
+    2drop
+    treat? 0= if  exit  then
     -1 treat-id !  0 treat-frames ! ;
 : hewie-with-her? ( -- flag )   \ (at hand, and in this room: the conditions at-hand? asks)
     dog-ready @ 0= if  false exit  then
@@ -552,9 +547,9 @@ defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
     treat-reach? 0= if  false s" unreachable" exit  then
     true s" ready" ;
 : treat-uneaten ( addr len -- )   \ (the floor treat goes, not spent)
-    treat? 0= if  2drop exit  then
+    2drop
+    treat? 0= if  exit  then
     s" things" actor-named send treat-gone
-    ." items: treat " treat-id @ n>s type space ." left uneaten (" type [char] ) emit space ." - not spent" cr
     s" treat-uneaten" treat-forget ;
 : treat-frame ( -- )
     treat? 0= if  exit  then
@@ -581,16 +576,14 @@ defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
 \ one spent, and the floor treat gone
 : treat-eat ( id -- )
     {: id :}
-    treat? 0= if  ." items: treat eaten - no treat on the floor (id " id n>s type [char] ) emit cr  exit  then
-    id treat-id @ <> if  ." items: treat eaten ignored - id " id n>s type space ." , the floor treat " treat-id @ n>s type cr  exit  then
+    treat? 0= if  exit  then
+    id treat-id @ <> if  exit  then
     id bait-feed {: how ev :}
     how 0< if  exit  then
     how hewie-id send fed
     1 ev event
     id find-item ?dup if  spend  then
     s" things" actor-named send treat-gone
-    ." items: treat " id n>s type space ." eaten - " how bait-name type [char] , emit space
-    id items-of n>s type space ." left" cr
     s" treat-eat" treat-forget ;
 : treat-drop ( id -- ) ( F: x y z -- )   \ (a bait let go at that point: the floor treat, and Hewie)
     {: id F: x y z :}
@@ -600,14 +593,6 @@ defer item-use-rule ( place -- result )   ' use-rule is item-use-rule
     id treat-id !  room-id treat-room !  0 treat-frames !
     treat-ready {: ok why-a why-n :}
     id -1  x f>cell y f>cell z f>cell  ok if  -1  else  0  then  s" things" actor-named send treat-made
-    ." items: treat " id n>s type space ." on the floor, hewie ready "
-    ok if  s" yes"  else  s" no"  then  type
-    space [char] ( emit why-a why-n type [char] ) emit space
-    ." cmd " dog-commandable @ n>s type space
-    ." cond " dog-cond @ n>s type space
-    ." ready " dog-ready @ n>s type space
-    ." hewie-room " hewie-room n>s type space ." room " room-id n>s type space
-    ." along " hewie-along? n>s type space ." reach " treat-reach? n>s type cr
     \ (down: he eats it where he lies, if she can reach him - at-hand?'s own check)
     dog-cond @ dog-down = if  at-hand? if  id treat-eat  then  then ;
 : hand-treat ( -- )   \ (the VR hand let a bait go: the floor treat, and Hewie)
@@ -659,8 +644,7 @@ behaviour keeping-items
       slot equipped to id
       id 0< if  exit  then
       id find-item ?dup if  spend  then
-      slot equipped id = if  -1 slot equip-slot l!  tell-equipment  then
-      ." items: slot " slot . ." item " id . ." let go - unequipped (" id items-of . ." left)" cr ;
+      slot equipped id = if  -1 slot equip-slot l!  tell-equipment  then ;
   \ Hewie ate the bait he found on the floor (hewie/fetch.fs treat-eat): the bait's own rule with
   \ his doing - no at-hand? distance, no Fiona $8E give - then one spent, and the floor treat gone
   on treat-eaten ( id -- )  treat-eat ;

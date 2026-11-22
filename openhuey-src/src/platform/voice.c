@@ -3,6 +3,7 @@
  * the VR options' other choice (vr.h VrOptions). The transcript's subtitles are an option too.
  * A missing model leaves the commands quiet. */
 #include "voice.h"
+#include "vrlog.h"
 
 #include "disc.h"
 #include "vr.h"
@@ -360,7 +361,7 @@ static DWORD WINAPI capture_main(LPVOID unused) {
             Sleep(1000);
             continue;
         }
-        fprintf(stderr, "voice: microphone %d Hz, %d ch\n", rate, channels);
+        VRLOG( "voice: microphone %d Hz, %d ch\n", rate, channels);
         sPos = 0.0;
         sHavePrev = 0;
         while (!sQuit) {
@@ -616,7 +617,7 @@ static void store_result(const char *raw) {
     sKind = kind;
     sGen++;
     LeaveCriticalSection(&sMu);
-    fprintf(stderr, "voice: \"%s\"\n", norm);
+    VRLOG( "voice: \"%s\"\n", norm);
 }
 
 static DWORD WINAPI worker_main(LPVOID unused) {
@@ -632,7 +633,7 @@ static DWORD WINAPI worker_main(LPVOID unused) {
         fprintf(stderr, "voice: could not load %s\n", sModel);
         return 0;
     }
-    fprintf(stderr, "voice: %s ready (B talks, F8 open mic, Home hides the transcript)\n", sModel);
+    VRLOG( "voice: %s ready (B talks, F8 open mic, Home hides the transcript)\n", sModel);
     while (!sQuit) {
         float local[MAX_N];
         int n = 0;
@@ -816,14 +817,14 @@ void voice_copy(char *dst, int cap) {
 
 void voice_set_debug(int on) {
     gVrOptions.whisper_debug = on ? 2 : 0;   /* (the key's toggle: off, or the full debug transcript) */
-    fprintf(stderr, "voice: subtitles %s\n", voice_debug() ? "on" : "off");
+    VRLOG( "voice: subtitles %s\n", voice_debug() ? "on" : "off");
 }
 
 int voice_debug(void) { return gVrOptions.whisper_debug; }
 
 void voice_set_open_mic(int on) {
     InterlockedExchange((volatile LONG *)&gVrOptions.whisper_open, on ? 1 : 0);
-    fprintf(stderr, "voice: open mic %s\n", voice_open_mic() ? "on" : "off");
+    VRLOG( "voice: open mic %s\n", voice_open_mic() ? "on" : "off");
 }
 
 int voice_open_mic(void) {

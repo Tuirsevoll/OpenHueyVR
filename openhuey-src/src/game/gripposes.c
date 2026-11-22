@@ -1,5 +1,6 @@
-﻿/* Mod finger grip poses (gripposes.h). */
+/* Mod finger grip poses (gripposes.h). */
 #include "gripposes.h"
+#include "../platform/vrlog.h"
 
 #include "actor.h"
 #include "vrbones.h"
@@ -514,7 +515,7 @@ static void poses_load(void) {
     data = files_read(GRIP_POSE_PATH, &size);
     if (data == NULL) {
 #if GRIP_POSE_LOG
-        fprintf(stderr, "[grip-poses] no %s (finger poses are off)\n", GRIP_POSE_PATH);
+        VRLOG( "[grip-poses] no %s (finger poses are off)\n", GRIP_POSE_PATH);
 #endif
         return;
     }
@@ -530,7 +531,7 @@ static void poses_load(void) {
         }
     }
 #if GRIP_POSE_LOG
-    fprintf(stderr, "[grip-poses] loaded %d poses, %d bone lines, %d knuckle offsets, %d skipped from %s\n",
+    VRLOG( "[grip-poses] loaded %d poses, %d bone lines, %d knuckle offsets, %d skipped from %s\n",
             sPoseN, lines, offsets, skipped, GRIP_POSE_PATH);
 #endif
 }
@@ -612,7 +613,7 @@ static const ResolvedPose *resolve_pose(const Model *m, int side, int pidx) {
 #if GRIP_POSE_LOG
             if (!sResolvedLogged[side][pidx][i]) {
                 sResolvedLogged[side][pidx][i] = 1;
-                fprintf(stderr, "[grip-poses] pose '%s': no bone '%s' on this model\n", p->name, use);
+                VRLOG( "[grip-poses] pose '%s': no bone '%s' on this model\n", p->name, use);
             }
 #endif
             continue;
@@ -1020,7 +1021,7 @@ static void log_missing_pose(const char *name, int item) {
         sMissing[sMissingN].item = item;
         sMissingN++;
     }
-    fprintf(stderr, "[grip-poses] pose '%s' not found (item %d) - using today's curl\n", name, item);
+    VRLOG( "[grip-poses] pose '%s' not found (item %d) - using today's curl\n", name, item);
 #else
     (void)name;
     (void)item;
@@ -1059,30 +1060,30 @@ static void model_ready(const struct Actor *a) {
         any = model_bone_named(m, "arm right finger 2c") >= 0 || model_bone_named(m, "arm left finger 2c") >= 0;
     }
 #if GRIP_POSE_LOG
-    fprintf(stderr, "[grip-poses] finger bones: left %d/15, right %d/15\n", left, right);
+    VRLOG( "[grip-poses] finger bones: left %d/15, right %d/15\n", left, right);
 #endif
     if (!any) {
         sDisabled = 1;
 #if GRIP_POSE_LOG
-        fprintf(stderr, "[grip-poses] self-check skipped: no finger bones\n");
+        VRLOG( "[grip-poses] self-check skipped: no finger bones\n");
 #endif
         return;
     }
     if (pidx < 0) {
 #if GRIP_POSE_LOG
-        fprintf(stderr, "[grip-poses] self-check skipped: no grip_orb pose\n");
+        VRLOG( "[grip-poses] self-check skipped: no grip_orb pose\n");
 #endif
         return;
     }
     if (!vrgrip_selfcheck_model_at(m, wrist, sPoses, sPoseN, &chk) || !chk.ran) {
         sDisabled = 1;
 #if GRIP_POSE_LOG
-        fprintf(stderr, "[grip-poses] self-check skipped: no finger bones\n");
+        VRLOG( "[grip-poses] self-check skipped: no finger bones\n");
 #endif
         return;
     }
 #if GRIP_POSE_LOG
-    fprintf(stderr, "[grip-poses] self-check %s: R2a (%.3f, %.3f, %.3f), R3a (%.3f, %.3f, %.3f),"
+    VRLOG( "[grip-poses] self-check %s: R2a (%.3f, %.3f, %.3f), R3a (%.3f, %.3f, %.3f),"
                     " R5a (%.3f, %.3f, %.3f), R2c (%.3f, %.3f, %.3f)\n",
             chk.pass ? "PASS" : "FAIL", (double)chk.got[0][0], (double)chk.got[0][1], (double)chk.got[0][2],
             (double)chk.got[1][0], (double)chk.got[1][1], (double)chk.got[1][2], (double)chk.got[2][0],
@@ -1233,7 +1234,7 @@ static void apply_side(Actor *a, Mat4 *world, int side, float dt) {
                 s->t = 0.0f;
                 capture_base(m, world, s, resolve_pose(m, side, widx));
 #if GRIP_POSE_LOG
-                fprintf(stderr, "[grip-poses] %s hand: item %d pose %s, blend in %.2fs\n", side_name(side),
+                VRLOG( "[grip-poses] %s hand: item %d pose %s, blend in %.2fs\n", side_name(side),
                         s->want_item, s->want, (double)GRIP_POSE_BLEND_IN);
 #endif
             } else if (s->cur >= 0) {
@@ -1242,7 +1243,7 @@ static void apply_side(Actor *a, Mat4 *world, int side, float dt) {
                 s->mode = GRIP_OUT;
                 s->t = 0.0f;
 #if GRIP_POSE_LOG
-                fprintf(stderr, "[grip-poses] %s hand: released, blend out %.2fs\n", side_name(side),
+                VRLOG( "[grip-poses] %s hand: released, blend out %.2fs\n", side_name(side),
                         (double)GRIP_POSE_BLEND_OUT);
 #endif
             }
@@ -1258,7 +1259,7 @@ static void apply_side(Actor *a, Mat4 *world, int side, float dt) {
                 s->t = 0.0f;
                 capture_base(m, world, s, resolve_pose(m, side, widx));
 #if GRIP_POSE_LOG
-                fprintf(stderr, "[grip-poses] %s hand: item %d pose %s, blend in %.2fs\n", side_name(side),
+                VRLOG( "[grip-poses] %s hand: item %d pose %s, blend in %.2fs\n", side_name(side),
                         s->want_item, s->want, (double)GRIP_POSE_BLEND_IN);
 #endif
             } else {
@@ -1267,7 +1268,7 @@ static void apply_side(Actor *a, Mat4 *world, int side, float dt) {
                 s->mode = GRIP_OUT;
                 s->t = 0.0f;
 #if GRIP_POSE_LOG
-                fprintf(stderr, "[grip-poses] %s hand: released, blend out %.2fs\n", side_name(side),
+                VRLOG( "[grip-poses] %s hand: released, blend out %.2fs\n", side_name(side),
                         (double)GRIP_POSE_BLEND_OUT);
 #endif
             }
