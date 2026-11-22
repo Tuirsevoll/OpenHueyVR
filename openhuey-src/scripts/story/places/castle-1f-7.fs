@@ -88,7 +88,7 @@ $30 constant not-landed   $34 constant speed   -25.3e fconstant shut-y
 \ away, he leaves it, the plate lets go, and the gate falls (unless someone is under it - he is
 \ then kept out until they move). Coming in with the plate's fact kept holds it up as she arrives. ----
 : hewie-on-plate? ( -- flag )
-    hewie body? 0= if  false exit  then  hewie body-room castle-1f-4 <> if  false exit  then
+    room-of-hewie castle-1f-4 <> if  false exit  then
     hewie-act-now @ dup wait-a-while-act = swap knocked-down-act = or ;
 : someone-under? ( -- flag )
     fiona gate-floor on-group?  hewie gate-floor on-group? or  stalker gate-floor on-group? or ;

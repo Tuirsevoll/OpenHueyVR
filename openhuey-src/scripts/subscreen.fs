@@ -21,7 +21,7 @@ USING: engine game-state actors messages keys facts flag-names items items.table
     her-mode @ 0= and  the-panic @ 4 < and  cutscene-active? 0= and   \ (her mode only: out of breath, pushing - it opens)
     her-reach @ 24 and 0= and ;   \ (not a script's, not held: Fiona +0xE0, +0x14E8 5 - her plight's reach bits 8 / 16)
 : opened ( -- )
-    menu-art  opening stage !  0 openness !  back-to-page  0 quiet !  0 opt-editing !  back-to-her  frames @ opened-at !  0 tab !  1 pause!
+    menu-art  opening stage !  0 openness !  back-to-page  0 quiet !  0 opt-editing !  back-to-her  frames @ opened-at !  0 tab !  1 pause!   \ (the item's tab gone: SubScreen_TakeOver)
     vr-page-main
     screen-face ;   \ (the panel is put where the player is looking now, and left there: a menu is
                     \ in front of them when it opens, and stays in the room after)
