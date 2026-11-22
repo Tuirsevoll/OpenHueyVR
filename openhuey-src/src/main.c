@@ -856,6 +856,8 @@ static void draw_eye(Engine *e, const Mat4 *proj, const Mat4 *view) {
 /* the menu's picture: a 4:3 panel, laid out once. The headset shows that one picture. */
 enum { UI_W = 1280, UI_H = 960 };
 
+static int cutscene_on_screen(void);   /* (the temporary VRHEAD log in prepare_shadows) */
+
 static void prepare_shadows(Engine *e) {
     int i;
 
@@ -879,12 +881,22 @@ static void prepare_shadows(Engine *e) {
              * so the view is not inside them. The VR body's own shrink (game/vrbody.c) does the
              * same at the bone level, and both are the one option: "Body: Hide Head in First
              * Person" (vr.body-fp-head). Off, the head is there - for a mirror, a shadow or a
-             * player who wants to see it, at the price of the eye being inside it. */
-            if (a == sFp) {
-                if (gVrOptions.body_fp_head) {
-                    actor_hide_head(a);
-                } else {
-                    actor_head_shown(a);   /* (off again: her head drawn where its bones put it) */
+             * player who wants to see it, at the price of the eye being inside it.
+             *
+             * Asked every frame, for every drawn actor: the collapse stays in the mesh until
+             * something sends the vertices back, and a cutscene or a movie has no sFp to ask with -
+             * so hide 0 is what gives her head back there. */
+            {
+                int hide_head = a == sFp && gVrOptions.body_fp_head;
+
+                actor_hide_head(a, hide_head);
+                {   /* TEMPORARY (remove once the cutscene's head is confirmed): the state as a scene begins */
+                    static int was = -1;
+
+                    if (strncmp(a->name, "O_FI", 4) == 0 && hide_head != was) {
+                        fprintf(stderr, "VRHEAD hide=%d scene=%d\n", hide_head, cutscene_on_screen());
+                        was = hide_head;
+                    }
                 }
             }
             light_actor(e, a);

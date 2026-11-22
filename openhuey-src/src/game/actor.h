@@ -23,14 +23,17 @@ typedef struct Actor {
     int swap_sel;           /* a texture shown from another file (Message_Show: a face), -1 none */
     GpuTexture swap_orig;   /* ... and its own, to show again */
     GpuMesh gpu;
-    /* its vertices posed on the CPU as well (a headless stand-in included where the head is hidden):
-     * what the VR hands' own tests read (Hewie's head under a palm, a stalker's shove) and what
-     * actor_hide_head collapses. Filled only while a headset is on - the drawn mesh is posed by the
+    /* its vertices posed on the CPU as well: what the VR hands' own tests read (Hewie's head under a
+     * palm, a stalker's shove). Filled only while a headset is on - the drawn mesh is posed by the
      * GPU (render_skin_pose), as OpenHuey 0.3 does */
     MeshVertex *posed;
-    /* its drawn mesh collapsed on the head's triangles (the headset at her eyes): the pristine
-     * vertices sent again by actor_head_shown when that option goes off */
-    int32_t head_hidden;
+    /* the head's triangles in the drawn mesh - the first vertex of each - and the head bone they were
+     * picked by (a->head.head, which the scripts set): made by actor_hide_head, freed with the actor */
+    int *head_tris;
+    int nhead_tris;
+    int head_tris_head;
+    /* 1 while the GPU's skin buffer holds that head collapsed (the headset at her eyes) */
+    unsigned char head_hidden;
     GpuMesh shadow;         /* the contact shadow: a soft blob on the floor under it */
     /* what scripts set (fields in Forth) */
     Vec3 pos;
@@ -144,12 +147,10 @@ void actor_tick(Actor *a);
  * frozen (actor.character) */
 int actor_shown(const Actor *a);
 void actor_prepare(Actor *a);
-/* drop the head, face and hair from the drawn mesh, and from the VR hands' posed copy. The body
- * and hands stay. */
-void actor_hide_head(Actor *a);
-/* her head drawn again where its bones put it, after actor_hide_head (the first-person head option
- * off, the menu's or a save's) */
-void actor_head_shown(Actor *a);
+/* hide 1: the head, face and hair collapsed in the drawn mesh, so the headset at her eyes is not
+ * inside them; hide 0: the model's own vertices back, wherever a cutscene, a movie or the flat screen
+ * has her. The body and hands stay either way. Called every frame, after actor_prepare */
+void actor_hide_head(Actor *a, int hide);
 /* its middle and size in the room */
 Vec3 actor_center(const Actor *a);
 float actor_radius(const Actor *a);

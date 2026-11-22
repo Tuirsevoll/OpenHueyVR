@@ -221,6 +221,11 @@ void actor_free(Actor *a) {
     render_mesh_free(&a->shadow);
     model_free(&a->model);
     free(a->posed);
+    free(a->head_tris);   /* (the head's triangles: made again by actor_hide_head for the next model) */
+    a->head_tris = NULL;
+    a->nhead_tris = 0;
+    a->head_tris_head = -1;
+    a->head_hidden = 0;
     free(a->shaped);
     free(a->events);
     free(a->cloth);
@@ -919,8 +924,8 @@ static void skin(Actor *a) {
         }
     }
     /* the same vertices on the CPU too, while a headset is on: the VR hands' own tests read them
-     * (Hewie's head under a palm, a shove's reach) and actor_hide_head collapses them. The picture
-     * is the GPU's (below), so the flat screen doesn't pay for this pass. */
+     * (Hewie's head under a palm, a shove's reach). The picture is the GPU's (below), so the flat
+     * screen doesn't pay for this pass. */
     if (a->posed != NULL && vr_active()) {
         int j;
 
@@ -1022,20 +1027,16 @@ static int on_head(const Model *m, const SkinVertex *v, int head) {
     return bone_under(m, best, head) || share >= 0.25f;
 }
 
-void actor_hide_head(Actor *a) {
-    static SkinVertex *sHideVerts;   /* (the collapsed bind pose, made again each frame) */
-    static int sHideCap;
-    const Model *m;
-    const SkinVertex *src;
-    int head, i, n;
+/* the head's triangles, kept once a model: the first vertex of each, for the head bone the scripts
+ * gave her (a->head.head, bind_engine's head-bone) and the face's morph ranges (even where the skin
+ * weight is shared). Made again only when that bone changes; freed with the actor */
+static void build_head_tris(Actor *a) {
+    const Model *m = &a->model;
     unsigned char *hide;
+    int head = a->head.head;
+    int i, k, n, count = 0, t = 0;
 
-    if (a == NULL || !a->used || a->model.nv < 3) {
-        return;
-    }
-
-    m = &a->model;
-    head = a->head.head;
+    a->nhead_tris = 0;
     n = m->nv;
     hide = (unsigned char *)calloc((size_t)n, 1);
     if (hide == NULL) {
@@ -1052,7 +1053,6 @@ void actor_hide_head(Actor *a) {
     }
     for (i = 0; i < m->nmorphs; i++) {   /* the face parts, even where the skin weight is shared */
         const ModelMorph *mo = &m->morphs[i];
-        int k;
 
         if (!mo->face) {
             continue;
@@ -1065,54 +1065,114 @@ void actor_hide_head(Actor *a) {
             }
         }
     }
-    /* the head's triangles collapsed (all three corners at the first's): in the copy the VR hands
-     * test against, and in the bind pose the GPU poses - a collapsed triangle stays collapsed
-     * however its bones move it, so the drawn head goes too */
-    src = a->shaped != NULL ? a->shaped : m->v;
-    if (n > sHideCap) {
-        SkinVertex *grown = (SkinVertex *)realloc(sHideVerts, (size_t)n * sizeof(SkinVertex));
-
-        if (grown == NULL) {
-            free(hide);
-            return;
-        }
-        sHideVerts = grown;
-        sHideCap = n;
-    }
-    memcpy(sHideVerts, src, (size_t)n * sizeof(SkinVertex));
     for (i = 0; i + 2 < n; i += 3) {
-        if (!hide[i] && !hide[i + 1] && !hide[i + 2]) {
-            continue;
+        if (hide[i] || hide[i + 1] || hide[i + 2]) {
+            count++;
         }
-        sHideVerts[i + 1].pos = sHideVerts[i].pos;
-        sHideVerts[i + 2].pos = sHideVerts[i].pos;
-        if (a->posed != NULL) {
-            a->posed[i + 1].x = a->posed[i].x;
-            a->posed[i + 1].y = a->posed[i].y;
-            a->posed[i + 1].z = a->posed[i].z;
-            a->posed[i + 2].x = a->posed[i].x;
-            a->posed[i + 2].y = a->posed[i].y;
-            a->posed[i + 2].z = a->posed[i].z;
+    }
+    /* (an int even for none: head_tris NULL is what says 'not made yet') */
+    a->head_tris = (int *)malloc((size_t)(count > 0 ? count : 1) * sizeof(int));
+    if (a->head_tris != NULL) {
+        for (i = 0; i + 2 < n; i += 3) {
+            if (hide[i] || hide[i + 1] || hide[i + 2]) {
+                a->head_tris[t++] = i;
+            }
         }
+        a->nhead_tris = count;
     }
     free(hide);
-    render_skin_update(&a->gpu, sHideVerts, 0, n);
-    a->head_hidden = a->gpu.skin != 0;
 }
 
-/* her head drawn again, where its bones put it: the first-person head option turned off (the menu,
- * a save of its own). The GPU's mesh is the one actor_hide_head collapsed */
-void actor_head_shown(Actor *a) {
-    const Model *m;
-    const SkinVertex *src;
+/* The headset is at her eyes, so the head, face and hair are collapsed in the drawn mesh and the view
+ * is not inside them (main.c's "Hide Head in First Person"); hide 0 sends the model's own vertices
+ * back. The mesh is the GPU's (OpenHuey 0.3's skinning), so a triangle is collapsed by sending its
+ * first vertex three times - position, normal, bones and weights - and whatever its bones then do,
+ * the three corners go together. Nothing is written to the model nor to a->shaped: the vertices sent
+ * come from a scratch copy, and a->shaped is the live morph they go back to.
+ *
+ * Called every frame. While hidden the collapse is sent again each frame, because skin() sends the
+ * face's morph range again each frame - which would un-collapse the face and leave the rest of the
+ * head gone, a face mask with no skull behind it. Only a morphing mesh (a->shaped) has a buffer that
+ * takes updates: render_skin_upload gives GL_DYNAMIC_STORAGE_BIT to those alone. */
+void actor_hide_head(Actor *a, int hide) {
+    static SkinVertex *sTri;   /* (the collapsed triangles sent: made again as wide as they need) */
+    static int sTriCap;
+    int t;
 
-    if (a == NULL || !a->used || !a->head_hidden || a->model.nv == 0) {
+    if (a == NULL || !a->used || a->model.nv < 3) {
         return;
     }
-    a->head_hidden = 0;
-    m = &a->model;
-    src = a->shaped != NULL ? a->shaped : m->v;
-    render_skin_update(&a->gpu, src, 0, m->nv);
+    if (!hide && !a->head_hidden) {
+        return;   /* (nothing to undo: her head as it is - a cutscene, the flat screen, any other actor) */
+    }
+    if (a->gpu.skin == 0) {
+        return;   /* (not uploaded yet: no skin buffer to change) */
+    }
+    if (a->shaped == NULL) {
+        static int said;
+
+        if (hide && !said) {
+            said = 1;
+            fprintf(stderr, "actor: %s has no morphs: its head cannot be hidden in the drawn mesh\n", a->name);
+        }
+        return;
+    }
+    if (a->head_tris == NULL || a->head_tris_head != a->head.head) {
+        if (a->head_hidden) {   /* (its own triangles back, before the list they came from is dropped) */
+            if (a->head_tris != NULL) {
+                for (t = 0; t < a->nhead_tris; t++) {
+                    render_skin_update(&a->gpu, a->shaped + a->head_tris[t], a->head_tris[t], 3);
+                }
+            }
+            a->head_hidden = 0;
+        }
+        free(a->head_tris);
+        a->head_tris = NULL;
+        a->nhead_tris = 0;
+        build_head_tris(a);
+        a->head_tris_head = a->head.head;
+    }
+    if (hide) {
+        for (t = 0; t < a->nhead_tris; ) {   /* contiguous triangles sent as one run */
+            int first = a->head_tris[t];
+            int run = 1, k;
+
+            while (t + run < a->nhead_tris && a->head_tris[t + run] == first + 3 * run) {
+                run++;
+            }
+            if (3 * run > sTriCap) {
+                SkinVertex *grown = (SkinVertex *)realloc(sTri, (size_t)(3 * run) * sizeof(SkinVertex));
+
+                if (grown == NULL) {
+                    return;
+                }
+                sTri = grown;
+                sTriCap = 3 * run;
+            }
+            for (k = 0; k < run; k++) {
+                SkinVertex v = a->shaped[first + 3 * k];
+
+                sTri[3 * k] = v;
+                sTri[3 * k + 1] = v;
+                sTri[3 * k + 2] = v;
+            }
+            render_skin_update(&a->gpu, sTri, first, 3 * run);
+            t += run;
+        }
+        a->head_hidden = 1;
+    } else if (a->head_hidden) {
+        for (t = 0; t < a->nhead_tris; ) {   /* (the actor's own vertices, as they are this frame) */
+            int first = a->head_tris[t];
+            int run = 1;
+
+            while (t + run < a->nhead_tris && a->head_tris[t + run] == first + 3 * run) {
+                run++;
+            }
+            render_skin_update(&a->gpu, a->shaped + first, first, 3 * run);
+            t += run;
+        }
+        a->head_hidden = 0;
+    }
 }
 
 int actor_shown(const Actor *a) {
