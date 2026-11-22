@@ -3,7 +3,7 @@
 \ used move with the praise after; they are kept in the save. Headless:
 \   build/openhuey-src/openhuey --test openhuey-src/tests/hewie/test_fetch.fs
 IN: test-fetch
-USING: tester engine game-state actors messages common room-names game debug keys facts items fiona.state hewie.state hewie.body hewie.model hewie.states hewie.commands hewie.fetch ;
+USING: tester engine game-state actors messages common room-names game debug keys facts items fiona.state hewie.state hewie.body hewie.model hewie.states hewie.commands hewie.fetch flag-names story-names ;
 
 : hers ( xt -- x )  game:fiona enter  execute  leave-actor ;
 : his@ ( xt -- x )  game:hewie enter  execute  leave-actor ;
@@ -71,8 +71,9 @@ ball-still  10 run-frames
 T{ [: 0 0 want  -1 his-follows !  go-there-cmd act-on-command  his-follows @ 0< 0=  his-action @  his-next @ ;] his@ -> -1 -1 $1D $78 }T
 [: 0 0 want ;] his!
 testing her voice's "go" with the same ball: the same context fetch
+c1f-1-refined-magnesia story-flag-set   \ (the room's own up-gesture context done: this is the plain fetch)
 [: 0 0 want  -1 his-follows ! ;] his!  things-clear  10 run-frames
 ball-still  10 run-frames
-voice-go fiona-id send voice-order  deliver  5 run-frames
+voice-go fiona-id send voice-order  deliver  12 run-frames
 T{ [: his-follows @ 0< 0=  his-action @ ;] his@ -> -1 $1D }T
 test-summary
