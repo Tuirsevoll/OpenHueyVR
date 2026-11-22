@@ -3,6 +3,7 @@
  * frames and says when one end has been reached. */
 #include "vrmirror.h"
 
+#include "actors.h"   /* (the actor being run - forth_actor_self) */
 #include "../data/pac.h"
 #include "engine.h"
 #include "placed.h"
@@ -216,28 +217,94 @@ static float mirror_read_c(const VrMirror *m) {
     return morph_weight(p->words[0x74 / 4], p->words[0x78 / 4], p->words[0x7C / 4]);
 }
 
-/* the room's own words: `ok? ( loud? -- why )` - 0 may be pulled now, 1 no time, 2 broken, 3 smashing */
-static int mirror_ok_word(const VrMirror *m, int loud) {
-    Forth *f = gEngine.forth;
+/* the data stack's depth (the `depth` word), -1 when it can't be asked */
+static int forth_stack_depth(Forth *f) {
+    Word *w = forth_find(f, "depth", 5);
 
-    if (m->xt_ok == NULL || f == NULL) {
-        return 0;   /* (no word of this room's: nothing blocks it) */
-    }
-    forth_push(f, loud ? -1 : 0);
-    if (forth_call(f, (Word *)m->xt_ok) != 0) {
-        return 3;   /* (a word that failed blocks: a curtain is not pulled on a broken room) */
+    if (w == NULL || forth_call(f, w) != 0) {
+        return -1;
     }
     return (int)forth_pop(f);
 }
 
+/* the data stack back to `depth` cells (nothing when that isn't known: -1) */
+static void mirror_trim(Forth *f, int depth) {
+    while (depth >= 0 && forth_stack_depth(f) > depth) {
+        forth_pop(f);
+    }
+}
+
+/* A room's word (ok? / bare / cover) run inside the room's place actor, where its own state is
+ * (`smashing`, `glass`, ...). kit.fs's `in-place` enters it (the console's fiona-holder's way) and
+ * `run-caught` is the same under a catch point alone; both are ( ... xt -- ... ok? ), false when the
+ * word threw. A call already inside an actor (a script's) goes through `run-caught`: entering again
+ * would leave the wrong actor. Found each call: a new game's scripts are a new dictionary. */
+static int mirror_call_word(Forth *f, void *xt) {
+    const char *name = forth_actor_self(f) >= 0 ? "story.kit:run-caught" : "story.kit:in-place";
+    Word *helper = forth_find(f, name, strlen(name));
+
+    if (helper == NULL) {   /* (no helper: a bare call, as it was - said once, it can't happen) */
+        static int said;
+
+        if (!said) {
+            said = 1;
+            mirror_log("vrmirror: story.kit has no in-place / run-caught: room words called bare\n");
+        }
+        return forth_call(f, (Word *)xt) == 0;
+    }
+    forth_push(f, (Cell)xt);
+    if (forth_call(f, helper) != 0) {
+        return 0;
+    }
+    return forth_pop(f) != 0;
+}
+
+/* the room's own words: `ok? ( loud? -- why )` - 0 may be pulled now, 1 no time, 2 broken, 3 smashing,
+ * 4 its check failed (the place's word threw, or there is no place to ask it in) */
+static int mirror_ok_word(const VrMirror *m, int loud) {
+    Forth *f = gEngine.forth;
+    int before, why;
+
+    if (m->xt_ok == NULL || f == NULL) {
+        return 0;   /* (no word of this room's: nothing blocks it) */
+    }
+    before = forth_stack_depth(f);
+    forth_push(f, loud ? -1 : 0);
+    if (!mirror_call_word(f, m->xt_ok)) {
+        mirror_trim(f, before);   /* (the loud cell, and what a failed word left) */
+        if (loud) {   /* (once per press: the held tick's quiet check says nothing) */
+            char room[16];
+            const char *err = forth_last_error(f);
+
+            mirror_room_name(room, sizeof(room));
+            mirror_log("vrmirror: %s '%s' check failed: %s\n", room, m->name,
+                       err != NULL && err[0] != 0 ? err : "no place, or the room's word threw");
+        }
+        return 4;   /* (a check that failed is its own reason, not `smashing`) */
+    }
+    why = (int)forth_pop(f);
+    mirror_trim(f, before);   /* (a word leaving more than its why: none of it is kept) */
+    return why;
+}
+
 static void mirror_call(VrMirror *m, void *xt) {
     Forth *f = gEngine.forth;
+    int before;
 
     if (f == NULL || xt == NULL) {
         return;
     }
-    if (forth_call(f, (Word *)xt) != 0) {
-        mirror_log("vrmirror: '%s' a room word failed\n", m->name);
+    /* (the state stays as a fire leaves it - rest, the flag and c as they were set - even if the
+     * room's word failed: the curtain is where the hand put it) */
+    before = forth_stack_depth(f);
+    if (!mirror_call_word(f, xt)) {
+        char room[16];
+        const char *err = forth_last_error(f);
+
+        mirror_trim(f, before);
+        mirror_room_name(room, sizeof(room));
+        mirror_log("vrmirror: %s '%s' %s word failed: %s\n", room, m->name, xt == m->xt_bare ? "bare" : "cover",
+                   err != NULL && err[0] != 0 ? err : "the room's word threw");
     }
 }
 
@@ -249,6 +316,8 @@ static const char *mirror_why(int why) {
         return "broken";
     case 3:
         return "smashing";
+    case 4:
+        return "check failed";
     default:
         return "other";
     }

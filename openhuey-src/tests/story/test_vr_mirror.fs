@@ -32,4 +32,14 @@ T{ [: 0 vr-mirror-ok? ;] in-room -> 2 }T
 om1f-11-breakable-broken fact-off
 T{ [: 0 vr-mirror-ok? ;] in-room -> 0 }T
 
+\ (the hand's own call, as vrmirror.c makes it: kit.fs's in-place enters the place, so the room's own
+\ state is there - reason 0, and true - not a failed check (4) or a smashing (3) that no one is doing)
+testing its gate from the hand: the place entered, smashing read as 0
+T{ 0 ' vr-mirror-ok? in-place -> 0 -1 }T
+
+\ (a room word that throws: false, and the stack's depth as it began - what it left is dropped, so
+\ nothing of it is read as the reason)
+testing a room word that throws: false, and the stack's depth as it began
+T{ 5 [: 1 2 3 -1 abort" vrmirror test" ;] in-place -> 5 0 }T
+
 test-summary

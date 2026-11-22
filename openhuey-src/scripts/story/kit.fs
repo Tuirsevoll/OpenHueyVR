@@ -235,7 +235,31 @@ enum: scene-progress  no-scene-yet scene-loading scene-is-ready scene-running sc
     room-id room-name actor-named dup 0< if  drop  ." fiona holder: no place" cr exit  then
     enter   \ (the place's own state, as `<id> enter` at the console: its fields read from here)
     ." fiona holder " fiona-p holder-of @ .  ." posed " posed-in-vr @ .  ." skipped " skipped-in-vr @ . cr  leave-actor ;
+\ A room's own word (vrmirror.c's ok? / bare / cover) run where its state is: inside the room's
+\ place actor, as the console's fiona-holder is. `run-caught`: just the catch point, with the stack's
+\ depth put back as it began (a failed call's leftovers dropped). Either is ( i*x xt -- j*x ok? ):
+\ false when the word threw, and `in-place` also when there is no place (or no room).
+: run-caught ( i*x xt -- j*x ok? )
+    {: xt | d :}
+    depth to d
+    xt catch ?dup if
+        drop
+        begin  depth d > while  drop  repeat
+        false
+    else
+        true
+    then ;
+: in-place ( i*x xt -- j*x ok? )
+    {: xt | place :}
+    room-id 0< if  false exit  then
+    room-id room-name actor-named dup 0< if  drop false exit  then
+    to place
+    place enter
+    xt run-caught
+    leave-actor ;
+
 \ (temporary: the console - `entry: <what>` and her place, for a doing's start and its end)
+
 : show-her-at ( addr len -- )
     ." entry: " type space  fiona dup body? if  body-pos frot f. fswap f. f.  else  drop ." none"  then  cr ;
 
