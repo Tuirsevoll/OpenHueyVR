@@ -71,9 +71,11 @@ Inspired by HIGGS for SkyrimVR, and very barebones. Your hands will stop when th
 
 3D Models have been created and added for every item except for documents, and wearables (boots, earrings etc.) . Rather than the sparkle sprite from the base game, for consumables you will see a rotating, small model of the item just above it. Pick it up and you will grip it, let go and it gets added to your inventory. 
 
-## Physical Recovery Item Usage
+## Physical Recovery & Attack Item Usage
 
 Go in to your inventory and select Equip to place the recovery item in your hand. If it is for Fiona, hold it to your lower face and let go. You will feel a buzz in the controller and the item is consumed and used. If it is for Hewie, grip and let go to drop it to the floor. Currently, this works best if you drop it close to him. If you do not want to use these features, the 'Use' option in the menu works as the base game.
+
+Equip a defense item the same way. Drop magnesia on the ground, or throw your antimony at a stalker.
 
 ## Physical Use of Key Items
 
