@@ -91,7 +91,7 @@ Grab a door by the handle, push or pull it in either direction to open. Doors ca
 
 ## Physical Hiding Spots
 
-Grab the leftmost side of a wardrobe to slide the door open along its rails. Step inside and close the door to hide. Optional toggle to make the doors transparent once you are hidden and watch stalkers search for you. Turn it off for a more immersive experience. Near the beginning of Daniella's section, step into the cubby and closed the curtain to hide. Beds are still canned animations; Use the interaction button to slide underneath.
+Grab the leftmost side of a wardrobe to slide the door open along its rails. Step inside and close the door to hide. Optional toggle to make the doors transparent once you are hidden and watch stalkers search for you. Turn it off for a more immersive experience. Near the beginning of Daniella's section, step into the cubby and close the curtain to hide. Beds are still canned animations; Use the interaction button to slide underneath.
 
 ## Physical Ladder Climbing
 
