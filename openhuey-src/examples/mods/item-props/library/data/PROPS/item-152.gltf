@@ -1,0 +1,136 @@
+{
+ "asset": {
+  "generator": "Khronos glTF Blender I/O v5.3.43",
+  "version": "2.0"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "name": "Scene",
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "magnesia__exp"
+  }
+ ],
+ "materials": [
+  {
+   "doubleSided": true,
+   "name": "item_146_mat",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0
+    },
+    "metallicFactor": 0
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "name": "magnesia_exp",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0
+  }
+ ],
+ "images": [
+  {
+   "mimeType": "image/png",
+   "name": "item-152_prima_magnesia",
+   "uri": "item-152_prima_magnesia.png"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 2637,
+   "max": [
+    0.17569509148597717,
+    0.38432130217552185,
+    0.17885078489780426
+   ],
+   "min": [
+    -0.17569509148597717,
+    -0.38432130217552185,
+    -0.17885078489780426
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 2637,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 2637,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 4404,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 31644,
+   "byteOffset": 0,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 31644,
+   "byteOffset": 31644,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 21096,
+   "byteOffset": 63288,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteLength": 8808,
+   "byteOffset": 84384,
+   "target": 34963
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9729,
+   "minFilter": 9987
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 93192,
+   "uri": "magnesia.bin"
+  }
+ ]
+}
