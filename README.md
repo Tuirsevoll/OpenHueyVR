@@ -1,80 +1,186 @@
+# Haunting Ground VR (HGVR)
 
-# OpenHuey
-<img width="300" height="400" alt="h" src="https://github.com/user-attachments/assets/224650eb-86ee-4886-8f7a-74fb6e9bcf45" />
+A full PC VR mod of **Haunting Ground**, built on top of [OpenHuey](https://github.com/ArnautDaniel/OpenHuey). HUGE thanks and admiration for the original project, without which this mod would not exist. Show your support!
 
-Another kind of Hewie (Discord setup at https://discord.gg/7sMGvfBAE)
+**[Download the latest release](../../releases)** · You need your own copy of the game. This was built on a USA ISO and I cannot vouch for full operation of any other region.
 
-**Download:** [OpenHuey latest](https://github.com/ArnautDaniel/OpenHuey/releases/tag/openhuey-latest)
-(Linux and Windows, rebuilt on every merge) · [all releases](https://github.com/ArnautDaniel/OpenHuey/releases).
-You need your own copy of Haunting Ground for the PS2 - the USA disc, or the European one
-(SLES-52877: English, French, German, Italian and Spanish - LANGUAGE on the title picks one): start
-`openhuey` and pick its disc image (`.iso`) the first time - it is imported once into `library/`
-beside it. **No game data is included.** (`hg`, the decompiled build, runs the USA disc only.) To update: UPDATE on the title (or `openhuey --update`). When an update reads more of
-the game than your library has (0.1.18: faces and hands), OpenHuey says so as it starts and offers
-to import the disc again - pick the `.iso` once more; saves and settings are kept (or `openhuey
---import disc.iso`). Mods: `mods/` beside it
-([`openhuey-src/docs/modding.md`](openhuey-src/docs/modding.md)).
+> ⚠️ Early release by somebody who has never modded before. Expect lots of bugs, jank, and possible softlocks. Save Often. As of release date I have progressed very little in the game and can't confirm yet it is playable all the way to the end.  Please feel free to report issues in [Issues](../../issues) with as much detail as you can. If at all possible, try to keep to VR-specific issues.
 
-OpenHuey rebuilds **Haunting Ground** (Capcom, PS2, 2005, `SLUS_210.75`) for PC, in three parts:
+This mod was built using 100% code from various AI, with some manual Blender work and fine-tuning. A lot of inspiration was taken from other VR titles and mods. While I have added everything I can think of to reach a (somewhat) happy starting release point, there will be much to fix, iron out and add. At its core this is a fixed camera angle PS2 game and some things are much harder to bring to VR than others.
 
-| Part | Path | What it is |
-|---|---|---|
-| The decompilation | `src/`, `include/` | The executable as C, each function checked against the original in an emulated PS2 CPU (`tools/difftest.py`). Functional, not byte-matching. [`docs/decomp.md`](docs/decomp.md) |
-| `hg` | `native/` | That C running natively (SDL3, OpenGL, libavcodec): the **reference** for how the game behaves. |
-| `openhuey` (once `hga`) | `openhuey-src/` (once `new-src-actors/`) | The game rewritten for clarity and modding: a C engine, with Fiona, Hewie, the stalkers and the story as actors passing messages, written in Forth. A console runs Forth live. [`openhuey-src/README.md`](openhuey-src/README.md) |
+This was built and tested only on a Quest 3 via Virtual Desktop streaming. Unfortunately I cannot confirm how well it works on other headsets, but don't have a particular reason to believe it shouldn't. Let me know.
 
-`openhuey` plays the whole story: the title, the rooms and their scripts and cutscenes, Fiona,
-Hewie, the stalkers, items and the menu, saving, the game over and the endings, the mini-game
-where you play as Hewie, and the extras room's movies and galleries. Not yet: a few of the model
-gallery's details (some figures' second textures and idles).
+---
 
-## Building
+## 🎮 Controls (Meta Quest 3)
 
-Needs CMake, a C compiler and SDL3 (movies: libavcodec, loaded at run time). Data: `openhuey`
-imports the disc image (`.iso`) once into its library (chosen in a file dialog the first time, or
-`openhuey --import disc.iso`); a disc image, its `DATA.CVM` or the extracted folder can also be
-given as an argument. `hg` reads the disc image, `DATA.CVM` or folder as an argument, or chosen
-and remembered.
+### Left controller
+| Input | Action |
+|---|---|
+| Thumbstick | Movement |
+| Thumbstick (click) | Toggle run |
+| X | Backstep |
+| Y | Status screen (open/close)<br>In a cutscene: opens the movie pause with Skip |
+| Menu (☰) | Pause game |
+| Trigger | Hold to crouch (slow sneak walk)<br>Menu: page left |
+| Grip | Grab<br>Back out / close dialogue or menu |
 
-```
-# OpenHuey
-cmake -S openhuey-src -B build/openhuey-src -G Ninja
-cmake --build build/openhuey-src
-build/openhuey-src/openhuey                # (or --import disc.iso, or [disc.iso | data folder])
-ctest --test-dir build/openhuey-src        # the tests, headless
+### Right controller
+| Input | Action |
+|---|---|
+| Thumbstick | Turn |
+| Thumbstick (flick up) | Hewie: "Go" / "Attack" |
+| Thumbstick (flick down) | Hewie: "Come" |
+| Thumbstick (click) | Hewie: "Stay" / "Stop" |
+| A | Interact / menu select |
+| B | Hold to talk (voice commands) |
+| Trigger | Kick / tackle |
+| Grip | Grab |
 
-# hg (first: tools/setup.sh, then .venv/bin/python configure.py --split; the executable
-# SLUS_210.75, sha1 e0867d2ec83e6e2fccf147ad9e645a9a662d1c15, in baserom/)
-cmake -S native -B build/native/cmake
-cmake --build build/native/cmake -j8
-build/native/cmake/hg [disc.iso | data folder]
-```
+> To access the VR menu while in game, open your status screen where you access your inventory. To the "right" of the options tab, the VR menu is available. It does not show until you access it,  and its tab replaces the options tab once you are in it. You can still get back to the normal options tab by moving tabs left or right. No features in the status screen are lost.
 
-In `openhuey`: `` ` `` opens the Forth console (`free-play` skips the opening, `castle-2f-3 room!` goes
-to a room, more in `openhuey-src/scripts/debug.fs`; Ctrl+V pastes, Ctrl+C copies the line or the
-last output, Ctrl+Shift+C the whole log); **F1** the settings (the picture - presets *enhanced*, the
-default, and *as on the PS2* - fullscreen, the controls); **F11** or Alt+Return fullscreen; **F2** shows the debug meters, the actors and the
-version; **F3** frees the camera; **F5** / **F9** quicksave and load; **F12** keeps a bug report
-(in `user/bugs/`: a report, a screenshot and a save, and the console opened for a note - or
-`bug <what happened>` at the console). In `hg`: **F5** / **F9** quicksave and load; `HG_EVLOG=1`
-traces the room scripts, `HG_ROOM=2A` starts at a room, `HG_HEADLESS=1 HG_MAXFRAMES=n` runs
-without a window.
+## Current Features - More detail below
 
-## Controls
+- 6DOF Tracking.
+- Hand collision with walls and surfaces.
+- 3D models for most items in the game, with manually created hand-grab poses for each.
+- Physical pick-up and use of defense and recovery items.
+- Physical pick-up and use of key story items.
+- Physical crouching to hide.
+- Physics doors. Grab the doorknob, push or pull, and swing them in either direction. If you're in a rush, just swiping at the door without grabbing will slam it closed.
+- Physical Hiding Spot usage.
+- Physical Ladder Climbing
+- Physical Lever Usage
+- Attack using your hands
+- Command Hewie with your voice via a tiny local Whisper model
+- 3D positional audio with Steam Audio.
+- Customizable panic settings.
+- VR Comfort Options
 
-A gamepad works too, through SDL.
+## 6DOF Tracking and IK 
 
-| Key | Pad | In play | In menus |
-|---|---|---|---|
-| WASD | Left stick | Move | |
-| Arrows | D-pad | | Move the cursor |
-| X / Space | Cross | Hold to run | Confirm |
-| C / Backspace | Circle | Act: examine, doors | |
-| Z | Square | Shove / kick | |
-| V | Triangle | Throw / set down | Cancel; skip a paused movie |
-| Q / E | L1 / R1 | Q: crouch; E: flee | Turn pages |
-| I J K L, F | Right stick, R3 | Hewie's commands | |
-| Return | Start | Pause | Pause a movie |
-| Tab | Select | The menu | Close it |
+Fiona's hands track your controllers. If they seem off, enter the VR menu and hit the Calibrate button.
+You are going to see weird IK jank with wrists bending into dust and elbows turning the wrong way occasionally. Hopefully can improve this over time.
+Swing your hands to attack. A one hand swing should break vases. Stalkers and doors are only affected by a two hand shove. You will hear Fiona make her base-game kick sound if it triggered. Alternatively, use the right trigger to use the standard kick animation.
 
-The earlier rewrite `new-src/` (`hg2`) is retired, kept at the tag `new-src-final`.
+## Hand collision
+
+Inspired by HIGGS for SkyrimVR, and very barebones. Your hands will stop when they meet most solid surfaces, and slide along.
+
+## 3D Models
+
+3D Models have been created and added for every item except for documents, and wearables (boots, earrings etc.) . Rather than the sparkle sprite from the base game, for consumables you will see a rotating, small model of the item just above it. Pick it up and you will grip it, let go and it gets added to your inventory. 
+
+## Physical Recovery & Attack Item Usage
+
+Go in to your inventory and select Equip to place the recovery item in your hand. If it is for Fiona, hold it to your lower face and let go. You will feel a buzz in the controller and the item is consumed and used. If it is for Hewie, grip and let go to drop it to the floor. Currently, this works best if you drop it close to him. If you do not want to use these features, the 'Use' option in the menu works as the base game.
+
+Equip a defense item the same way. Drop magnesia on the ground, or throw your antimony at a stalker.
+
+## Physical Use of Key Items
+
+Go into your inventory and select 'Equip' on a key story item to place it in your hand. Manually created trigger zones were added and (hopefully) you should find that placing it in a logical place will activate the item. (For example, hold a plate to a Golem's mouth.) The standard 'Use' key remains as a backup.
+
+## Physical Crouching
+
+Crouch down to the floor to hide from stalkers. Operates as the base game as far as hiding. Alternatively, hold the left trigger to crouch.
+
+## Physical Doors
+
+Grab a door by the handle, push or pull it in either direction to open. Doors carry momentum and can be thrown closed or open by grabbing the handle, swinging with speed and letting go. A door that is left in between open and closed with no momentum will automatically adjust itself to the closest state. A door that is open can be swung closed by placing your hand on the leaf and swinging, no grip needed. A closed, unlocked door can be barged open by shoving it with both hands. Swing a door at a stalker with enough force to damage them.
+
+## Physical Hiding Spots
+
+Grab the leftmost side of a wardrobe to slide the door open along its rails. Step inside and close the door to hide. Optional toggle to make the doors transparent once you are hidden and watch stalkers search for you. Turn it off for a more immersive experience. Near the beginning of Daniella's section, step into the cubby and closed the curtain to hide. Beds are still canned animations; Use the interaction button to slide underneath.
+
+## Physical Ladder Climbing
+
+Grab a ladder's rungs to start climbing hand over hand. Once you climb high enough, you will automatically step forward from it. Joining a ladder from the top will automatically swing your camera around to face the rungs. Letting go of a ladder with both hands too early will cause you to fall to the ground and increase your panic by a measure of how far you fell. It will also reduce your movement speed for a few seconds. 
+This by itself will never set your panic past 95, so you will not enter panic mode from falling off of a ladder. Fall onto a stalker however...
+
+## Physical Lever Usage
+
+I could only find 3 instances in the game where this even applies:
+
+Gate Lever beside Fresh Flowers
+
+Breaker Switch in Doll Trap Room
+
+Lever to activate iron maiden
+
+Grab each one and pull it along its path to activate.
+
+## Attack using your hands
+
+Swinging with one hand should be enough to break vases. Vases have been made significantly bigger to accommodate this and sometimes clip.
+
+Pushing with two hands is the only one to damage stalkers and force open doors.
+
+You will know you have activated the attack when you hear Fiona grunt.
+
+## Hewie
+
+A local Whisper model running entirely on your machine listens to your voice and sends the commands to Hewie. Optional Push To Talk or Open Mic mode. Optional Subtitles to show which command you triggered. Currently, only Go, Come, and Stay work via the stick - Flick up or down to activate Go and Come, or click the right stick to Stay.
+
+Pet Hewie with your hands to get controller feedback and increase your relationship.
+
+Tell him to sit, stand nearby, and tell him to "Shake!" . He will offer his paw to you.
+
+Protect him with your life
+
+## 3D positional audio with Steam Audio.
+
+Toggleable. Uses Steam Audio to improve locational accuracy. Hear more clearly where stalkers are.
+
+## Customizable panic settings
+
+Enter the VR options menu to see a Panic Effects submenu. In here, you can select 'Full' , 'Reduced' and 'Minimal' presets, or just pick which effects you do and don't want.
+
+> ⚠️ Full effects are strong and will very likely to cause nausea, so be prepared. There is also real risk of photosensitive issues, so please start from minimal and work your way up if you are not sure.
+
+## VR Comfort Options
+
+A handful of your standard VR comfort settings that should work reliably. Available in the VR menu.
+
+---
+
+## Requirements
+
+- A PC VR headset with an OpenXR runtime (SteamVR, Meta Quest Link, etc.)
+- **Your own legally obtained copy of Haunting Ground (tested on USA) as an `.iso` disc image.** No game data is included, and none will be provided.
+- [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe), grab the latest.
+
+## Install
+
+1. Download and extract the latest `.zip` from [Releases](../../releases)
+4. Double-click **`Play.bat`** with your headset ready to go. On first launch, you will be asked to select your Haunting Ground .iso , same as with openhuey.
+6. The first time it launches, you will be asked to calibrate. You can do this at any time during the game by accessing the VR menu.
+
+**Updating:** download the new zip and copy your `library` and `user` folders (your imported game and saves) into the new folder.
+
+> ❗ It is not recommended to update to the latest openhuey version without confirming this mod will work with it first. I need to manually update each one to ensure compatibility.
+
+## Current Known issues
+
+- Some doors occasionally slam shut right after you walk through them. I have not found a reason for this yet. They do not lock, so feel free to just open it again (maybe it will save you time in a chase?)
+- As this is a fixed camera angle game at base, there are many areas and viewpoints that were just never meant to be seen. Expect holes in geometry and odd looking areas. The most egregious is anywhere with a view of outside, where you will just be staring into a void in the sky. This is planned to be fixed but will require extensive manual reworking in Blender and will likely take a long time.
+  
+
+## Credits and thanks
+
+**Huge thanks to ArnautDaniel [OpenHuey](https://github.com/ArnautDaniel/OpenHuey)**. Their rebuild of Haunting Ground for PC is the foundation of everything here. Without it, this mod would not exist. Please go and support the original project. Arnaut is extremely supportive and has a discord channel which is worth joining.
+
+Haunting Ground is my #1 favourite game and being able to bring it to life in VR has been a fun experience and something I've wanted for years. I hope you enjoy.
+
+Also inspired by Skyrim VR mods such as FRIK, VRIK and HIGGS, and by Half-Life 2 VR.
+
+
+
+---
+
+## Legal
+
+- **Haunting Ground** and all related names, characters and assets are trademarks and copyright of **Capcom Co., Ltd.** This is an unofficial, non-commercial fan project. It is not affiliated with, endorsed by or sponsored by Capcom.
+- This repository and its releases **do not include the game or its data files.** You must own a legitimate copy of Haunting Ground to play. Please don't ask for, or share, game files or disc images.
+- The code is released under the **GNU General Public License v3.0**, the same as OpenHuey. See [`LICENSE`](LICENSE).
+- Third-party components keep their own licences: SDL3 (zlib), the OpenXR loader (Apache 2.0), whisper.cpp / ggml (MIT) and Steam Audio (Valve's Steam Audio licence). See the `licences` folder in the release.
