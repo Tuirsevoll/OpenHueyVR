@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(hga VERSION 0.2.53 LANGUAGES C CXX)   # the version: shown with the debug mode (F2). CXX: whisper.cpp
+project(hga VERSION 0.3.1 LANGUAGES C CXX)   # the version: shown with the debug mode (F2). CXX: whisper.cpp
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -59,6 +59,8 @@ if(MSVC)
         endif()
     endif()
 endif()
+# (no TLS: the game gives its scripts no `net`, and OpenSSL would be one more library for the releases)
+set(CLANKFORTH_TLS OFF CACHE BOOL "TLS on net's sockets (OpenHuey: none)" FORCE)
 add_subdirectory(external/clankforth)
 # MSVC's C runtime is one library: there is no libm to link, and ClankForth asks for it unconditionally.
 # Dropped from both its own link line and the interface its tools inherit (a static library, so this is
@@ -183,7 +185,7 @@ set_target_properties(hga PROPERTIES OUTPUT_NAME openhuey)   # (the target keeps
 target_compile_definitions(hga PRIVATE "HGA_VERSION=\"${PROJECT_VERSION}\"" "HGA_BUILD=\"${HGA_BUILD}\"" "HG2_SCRIPT_DIR=\"${SCRIPT_DIR}\"" "HG2_DEFAULT_DATA=\"${DEFAULT_DATA}\""
     "HG2_DEFAULT_EXE=\"${DEFAULT_EXE}\"")
 if(HGA_RELEASE)
-    target_compile_definitions(hga PRIVATE HGA_UPDATER)   # (a release updates itself: --update, the title's UPDATE)
+    target_compile_definitions(hga PRIVATE HGA_RELEASE HGA_UPDATER)   # (a release updates itself: --update, the title's UPDATE)
     if(WIN32)
         set_target_properties(hga PROPERTIES WIN32_EXECUTABLE ON)   # (SDL3 gives the WinMain)
         if(MSVC)

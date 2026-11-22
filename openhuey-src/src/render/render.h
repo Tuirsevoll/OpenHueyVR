@@ -1,4 +1,4 @@
-/* The renderer: OpenGL 4.6, written 4.5+ style (direct state access).
+/* The renderer: OpenGL 4.6 (else 3.3 - platform/gl.h), written 4.5+ style (direct state access).
  *
  * A frame:
  *   render_begin       the window's size; picks the picture's rectangle (all of the window, or
@@ -17,6 +17,7 @@
 #define RENDER_H
 
 #include "../core/mathx.h"
+#include "../data/model.h"
 #include "../data/roommesh.h"
 
 #include <stdint.h>
@@ -26,6 +27,8 @@ typedef unsigned int GpuTexture;   /* a GL texture name; 0 = none */
 typedef struct GpuMesh {
     unsigned int vao, vbo;
     int nv;
+    int skin;     /* a skinned mesh (render_skin_upload): its slot in the bones' buffer + 1; 0 none */
+    int nbones;   /* ... its pose's bones (render_skin_pose) */
 } GpuMesh;
 
 /* what the picture looks like: changed freely (from Forth: the `gfx` fields); takes effect on
@@ -64,6 +67,7 @@ typedef struct RenderSettings {
                               * OpenHuey's point lights, times character_light, unclamped */
     int32_t shadow_maps;     /* characters cast shadows from the room's lights onto it */
     float shadow_strength;   /* 0 .. 1 */
+    int32_t shadow_soft;     /* ... their edges softened by 16 samples a pixel (else 4: the low-power look) */
     int32_t room_fog;        /* the room's own fog, tint and bloom (part of the original look) */
     int32_t room_tint;
     int32_t room_bloom;
@@ -111,6 +115,8 @@ void render_begin(int window_w, int window_h, Vec3 clear);
 /* where the finished picture and the 2D go: 0 the window, or a framebuffer (one headset eye) */
 void render_set_present(unsigned fbo);
 unsigned render_present(void);
+/* drawing OpenGL 3.3's way (platform/gl.h: the low-power path) */
+int render_gl_low(void);
 /* the picture's aspect (width / height) - for the camera's projection */
 float render_aspect(void);
 /* the camera (for lighting, ambient occlusion and fog): projection, view, eye, depth range */
@@ -127,9 +133,21 @@ GpuTexture render_texture(const uint8_t *rgba, int w, int h);
 void render_texture_free(GpuTexture t);
 
 void render_mesh_upload(GpuMesh *g, const MeshVertex *v, int n);
-/* replace a mesh's vertices (meshes that change every frame: skinned characters) */
+/* replace a mesh's vertices (meshes that change every frame) */
 void render_mesh_update(GpuMesh *g, const MeshVertex *v, int n);
 void render_mesh_free(GpuMesh *g);
+/* a skinned mesh (a character): its bind-pose vertices with their bones and weights kept on the GPU,
+ * posed there - the vertex shaders - by its bones' matrices as it is drawn (each vertex: place x the
+ * sum of its bones' matrices x it by their weights, its normal turned with them; the vertex colour
+ * 0x80). morphing: some of its vertices refilled (render_skin_update). 0 if there is no room (more
+ * skinned meshes than RENDER_SKIN_SLOTS) */
+#define RENDER_SKIN_SLOTS 48
+int render_skin_upload(GpuMesh *g, const SkinVertex *v, int n, int morphing);
+/* vertices first .. first + n - 1 refilled (a morphing face's, its hands') */
+void render_skin_update(GpuMesh *g, const SkinVertex *v, int first, int n);
+/* its pose for the next draws: the model's placing in the room, each bone's matrix (bind pose ->
+ * model space; n <= MODEL_MAX_BONES) */
+void render_skin_pose(GpuMesh *g, const Mat4 *place, const Mat4 *bones, int n);
 /* the next meshes drawn tinted and faded (1 1 1 1: as they are; a character fading out of sight,
  * a silhouette) */
 void render_mesh_tint(float r, float g, float b, float a);

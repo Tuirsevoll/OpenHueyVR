@@ -24,6 +24,7 @@ RenderSettings gRender = {
     .rim = 0.2f,
     .room_fog = 1, .room_tint = 1, .room_bloom = 1, .room_dof = 1, .game_font = 1,
     .room_lights = 1, .character_light = 1.0f, .ps2_lighting = 2, .shadow_maps = 1, .shadow_strength = 0.7f,
+    .shadow_soft = 1,
 };
 
 RoomLook gRoomLook;
@@ -71,7 +72,7 @@ enum { U_MVP, U_USE_TEX, U_SOLID_TEX, U_LIT, U_COVERAGE, U_LIGHT_DIR, U_LIGHT_CO
        U_SHADOW_INFO = 35, U_SHADOW_STRENGTH = 47, U_RECEIVE = 59, U_CHAR_LIGHT = 60, U_ALPHA = 61,
        U_REJECT = 62, U_UNFOGGED = 63, U_SHADOW_LIGHT = 64, U_NBLOCKERS = 76, U_BLOCKER = 77,   /* (12 shadows, 16 blockers) */
        U_FADE_SOLID = 178,   /* (a faded placed part: exactly its own alpha, not its texture's) */
-       U_PS2 = 180, U_PDIR = 181, U_PFALL = 184 };
+       U_PS2 = 180, U_PDIR = 181, U_PFALL = 184, U_SHADOW_SOFT = 187, U_SKIN = 188, U_NBONES = 189 };   /* (arrays: a location an element) */
 
 /* the PS2's lighting (gfx.ps2-lighting; src/game/model.c light_rgba): each light one direction
  * (from the model's root to it; w: -dir.L), a falloff along it, its colour; the ambient; the sum
@@ -94,6 +95,38 @@ enum { U_MVP, U_USE_TEX, U_SOLID_TEX, U_LIT, U_COVERAGE, U_LIGHT_DIR, U_LIGHT_CO
     "    return clamp(l, 0.0, 128.0);\n" \
     "}\n"
 
+/* a skinned mesh's vertex posed (render_skin_upload): its slot's matrices in u_bones (each four texels,
+ * its columns) - the placing first, then the bones; the position by the sum of its bones' matrices x
+ * it by their weights, then placed; the normal the same by their turns, then the placing's, made one
+ * long (as actor.c skinned on the CPU before) */
+#define SKIN_STRIDE (MODEL_MAX_BONES + 1)   /* matrices a slot: the placing, then the bones */
+#define SKIN_QUOTE_(x) #x
+#define SKIN_QUOTE(x) SKIN_QUOTE_(x)   /* (the number in the shader's text) */
+#define SKIN_GLSL \
+    "layout(location = 4) in vec4 a_bones;\n" \
+    "layout(location = 5) in vec4 a_weights;\n" \
+    "layout(binding = 2) uniform samplerBuffer u_bones;\n" \
+    "mat4 skin_matrix(int i) {\n" \
+    "    int t = ((u_skin - 1) * " SKIN_QUOTE(SKIN_STRIDE) " + i) * 4;\n" \
+    "    return mat4(texelFetch(u_bones, t), texelFetch(u_bones, t + 1), texelFetch(u_bones, t + 2), texelFetch(u_bones, t + 3));\n" \
+    "}\n" \
+    "void skinned(out vec3 p, out vec3 n) {\n" \
+    "    vec3 sp = vec3(0.0), sn = vec3(0.0);\n" \
+    "    for (int j = 0; j < 4; j++) {\n" \
+    "        float w = a_weights[j];\n" \
+    "        if (w == 0.0) continue;\n" \
+    "        int b = int(a_bones[j] + 0.5);\n" \
+    "        mat4 m = skin_matrix(1 + (b < u_nbones ? b : 0));\n" \
+    "        sp += (m * vec4(a_pos, 1.0)).xyz * w;\n" \
+    "        sn += mat3(m) * a_normal * w;\n" \
+    "    }\n" \
+    "    mat4 place = skin_matrix(0);\n" \
+    "    p = (place * vec4(sp, 1.0)).xyz;\n" \
+    "    sn = mat3(place) * sn;\n" \
+    "    float len = length(sn);\n" \
+    "    n = len > 0.0 ? sn / len : vec3(0.0);\n" \
+    "}\n"
+
 static const char *kMeshVs =
     "#version 460 core\n"
     "layout(location = 0) in vec3 a_pos;\n"
@@ -104,6 +137,9 @@ static const char *kMeshVs =
     "layout(location = 62) uniform vec4 u_reject;\n"   /* the PS2's clip volume (x, y bands, near, far); x 0: off */
     "layout(location = 3) uniform int u_lit;\n"
     "layout(location = 11) uniform int u_room_lit;\n"
+    "layout(location = 188) uniform int u_skin;\n"     /* a skinned mesh: its slot + 1 (0: not) */
+    "layout(location = 189) uniform int u_nbones;\n"
+    SKIN_GLSL
     PS2_LIGHT
     "out vec3 v_ps2;\n"
     "out vec2 v_st;\n"
@@ -112,16 +148,22 @@ static const char *kMeshVs =
     "out vec3 v_pos;\n"
     "noperspective out float v_out;\n"
     "void main() {\n"
-    "    gl_Position = u_mvp * vec4(a_pos, 1.0);\n"
+    "    vec3 pos = a_pos, normal = a_normal;\n"
+    "    vec4 col = a_col;\n"
+    "    if (u_skin != 0) {\n"
+    "        skinned(pos, normal);\n"
+    "        col = vec4(128.0 / 255.0);\n"   /* (0x80: the skinned vertices' colour) */
+    "    }\n"
+    "    gl_Position = u_mvp * vec4(pos, 1.0);\n"
     "    vec4 p = gl_Position;\n"
     "    v_out = u_reject.x > 0.0 && (p.w < u_reject.z || p.w > u_reject.w || abs(p.x) > u_reject.x * p.w ||\n"
     "                                 abs(p.y) > u_reject.y * p.w) ? 1.0 : 0.0;\n"
     "    v_st = a_st;\n"
-    "    v_col = a_col * (255.0 / 128.0);\n"   /* 0x80 = 1.0 */
-    "    v_normal = a_normal;\n"
-    "    v_pos = a_pos;\n"
+    "    v_col = col * (255.0 / 128.0);\n"   /* 0x80 = 1.0 */
+    "    v_normal = normal;\n"
+    "    v_pos = pos;\n"
     /* (per vertex, cut to whole steps: the vertex colour the microprograms gave the GS) */
-    "    v_ps2 = u_lit != 0 && u_room_lit != 0 && u_ps2 == 1 ? floor(ps2_light(a_normal, a_pos)) / 128.0 : vec3(1.0);\n"
+    "    v_ps2 = u_lit != 0 && u_room_lit != 0 && u_ps2 == 1 ? floor(ps2_light(normal, pos)) / 128.0 : vec3(1.0);\n"
     "}\n";
 
 /* the GS's modulate (texel times vertex colour), done on linear values; characters lit by a key
@@ -162,6 +204,7 @@ static const char *kMeshFs =
     "layout(location = 76) uniform int u_nblockers;\n"
     "layout(location = 77) uniform vec3 u_blocker[96];\n"   /* 6 each: 4 corners, the facing, the top middle */
     "layout(location = 178) uniform float u_fade_solid;\n"   /* a faded placed part: 1 */
+    "layout(location = 187) uniform int u_shadow_soft;\n"   /* 16 samples a pixel (else 4) */
     "layout(location = 0) out vec4 o_color;\n"
     /* the lights' blockers (room.c room_blocked, the original's Shadow_BlockerVolumes): shadow i's
      * light shaded from p by one - p behind a quad facing away from it, in the pyramid from the
@@ -238,7 +281,6 @@ static const char *kMeshFs =
     "            vec2(0.44, -0.94), vec2(-0.19, -0.37));\n"
     "        for (int i = 0; i < 12; i++) {\n"
     "            if (i >= u_nshadows) break;\n"
-    "            if (blocked(i, v_pos)) continue;\n"
     /* (characters receive too - each other's shadows and their own: the point is moved out along
      * the surface's normal first so a surface doesn't shadow itself) */
     "            vec3 at = u_lit != 0 ? v_pos + normalize(v_normal) * 0.35 : v_pos;\n"
@@ -247,13 +289,6 @@ static const char *kMeshFs =
     "            vec3 q = lp.xyz / lp.w * 0.5 + 0.5;\n"
     "            if (any(lessThan(q, vec3(0.0))) || any(greaterThan(q, vec3(1.0)))) continue;\n"
     "            float far = length(v_pos - u_shadow_info[i].xyz) / u_shadow_info[i].w;\n"
-    /* (sharp by the caster, softer the further it falls: the penumbra a lamp's size gives, not a
-     * cut-out's edge all the way to the shadow's end) */
-    "            float spread = mix(1.0, 5.0, smoothstep(0.5, 3.0, far));\n"
-    "            float lit = 0.0;\n"
-    "            for (int k = 0; k < 16; k++)\n"
-    "                lit += texture(u_shadow, vec4(q.xy + disc[k] * spread * texel, float(i), q.z - 0.0005));\n"
-    "            lit /= 16.0;\n"
     "            float fade = 1.0 - smoothstep(1.0, 5.0, far);\n"
     /* (a character's side turned from the light is dark by its lighting already: shadowed again
      * it went near black, cut off hard along the line where the body turns away - its own
@@ -262,6 +297,21 @@ static const char *kMeshFs =
     "                vec3 sn = normalize(v_normal);\n"
     "                if (dot(sn, u_eye - v_pos) < 0.0) sn = -sn;\n"
     "                fade *= smoothstep(0.0, 0.35, dot(sn, normalize(u_shadow_light[i].xyz - v_pos)));\n"
+    "            }\n"
+    /* (nothing to darken: the samples and the blockers - the costly part - not looked at) */
+    "            if (!(fade > 0.0) || !(u_shadow_strength[i] > 0.0) || blocked(i, v_pos)) continue;\n"
+    /* (sharp by the caster, softer the further it falls: the penumbra a lamp's size gives, not a
+     * cut-out's edge all the way to the shadow's end) */
+    "            float spread = mix(1.0, 5.0, smoothstep(0.5, 3.0, far));\n"
+    "            float lit = 0.0;\n"
+    "            if (u_shadow_soft != 0) {\n"
+    "                for (int k = 0; k < 16; k++)\n"
+    "                    lit += texture(u_shadow, vec4(q.xy + disc[k] * spread * texel, float(i), q.z - 0.0005));\n"
+    "                lit /= 16.0;\n"
+    "            } else {\n"   /* (fewer: the low-power look - 4 filtered taps a texel and a half apart) */
+    "                for (int k = 0; k < 4; k++)\n"
+    "                    lit += texture(u_shadow, vec4(q.xy + (vec2(k & 1, k >> 1) * 2.0 - 1.0) * 0.75 * spread * texel, float(i), q.z - 0.0005));\n"
+    "                lit /= 4.0;\n"
     "            }\n"
     /* (darkening by the strength as it looks on screen, not in linear values) */
     "            c.rgb *= pow(1.0 - u_shadow_strength[i] * (1.0 - lit) * fade, 2.2);\n"
@@ -285,8 +335,16 @@ static const char *kMeshFs =
 static const char *kShadowVs =
     "#version 460 core\n"
     "layout(location = 0) in vec3 a_pos;\n"
+    "layout(location = 3) in vec3 a_normal;\n"
     "layout(location = 0) uniform mat4 u_vp;\n"
-    "void main() { gl_Position = u_vp * vec4(a_pos, 1.0); }\n";
+    "layout(location = 1) uniform int u_skin;\n"
+    "layout(location = 2) uniform int u_nbones;\n"
+    SKIN_GLSL
+    "void main() {\n"
+    "    vec3 pos = a_pos, normal;\n"
+    "    if (u_skin != 0) skinned(pos, normal);\n"
+    "    gl_Position = u_vp * vec4(pos, 1.0);\n"
+    "}\n";
 static const char *kShadowFs =
     "#version 460 core\n"
     "void main() {}\n";
@@ -317,6 +375,8 @@ static struct {
     float shadow_info[RENDER_MAX_SHADOWS][4], shadow_strength[RENDER_MAX_SHADOWS];
     float shadow_light[RENDER_MAX_SHADOWS][4];   /* where its light shades from, its reach */
     GLuint shade_prog, shade_vao, shade_vbo;     /* layer 6's draws */
+    GLuint bone_buf, bone_tex;                   /* the skinned meshes' poses: RENDER_SKIN_SLOTS x SKIN_STRIDE matrices */
+    uint64_t skin_used;                          /* the slots taken, a bit each */
 } R;
 
 #define FONT_CELL_W 6
@@ -458,6 +518,12 @@ int render_init(void) {
             glNamedFramebufferDrawBuffer(R.shadow_fbo[i], GL_NONE);
         }
     }
+    /* the skinned meshes' matrices: a buffer seen by the vertex shaders as a texture of RGBA floats
+     * (four texels a matrix - 3.3's buffer textures: at least 65536 texels, this 49344) */
+    glCreateBuffers(1, &R.bone_buf);
+    glNamedBufferStorage(R.bone_buf, (GLsizeiptr)RENDER_SKIN_SLOTS * SKIN_STRIDE * sizeof(Mat4), NULL, GL_DYNAMIC_STORAGE_BIT);
+    glCreateTextures(GL_TEXTURE_BUFFER, 1, &R.bone_tex);
+    glTextureBuffer(R.bone_tex, GL_RGBA32F, R.bone_buf);
     return 1;
 }
 
@@ -482,6 +548,9 @@ void render_begin(int w, int h, Vec3 clear) {
     float scale = s->scale < 0.25f ? 0.25f : s->scale > 2.0f ? 2.0f : s->scale;
     const float black[4] = {0, 0, 0, 1};
 
+    while (samples > 1 && samples > gl_max_samples()) {   /* (as many as the GPU can: 4 on older ones) */
+        samples >>= 1;
+    }
     R.w = w;
     R.h = h;
     R.n2d = 0;
@@ -498,7 +567,7 @@ void render_begin(int w, int h, Vec3 clear) {
     R.px = (w - R.pw) / 2;
     R.py = (h - R.ph) / 2;
     glClearNamedFramebufferfv(R.present, GL_COLOR, 0, black);   /* (the bars, when there are any) */
-    if (s->anisotropy != R.sampler_aniso) {
+    if (s->anisotropy != R.sampler_aniso && gl_anisotropy()) {
         R.sampler_aniso = s->anisotropy;
         glSamplerParameterf(R.sampler, GL_TEXTURE_MAX_ANISOTROPY, s->anisotropy < 1.0f ? 1.0f : s->anisotropy);
     }
@@ -511,6 +580,9 @@ void render_begin(int w, int h, Vec3 clear) {
 
 void render_set_present(unsigned fbo) { R.present = fbo; }
 unsigned render_present(void) { return R.present; }
+int render_gl_low(void) {
+    return gl_low();
+}
 
 float render_aspect(void) {
     int w = R.w, h = R.h;
@@ -595,6 +667,7 @@ static void quad_draw(const Mat4 *vp, const Vec3 q[4]) {   /* (corners 0 1 2 3: 
     }
     glNamedBufferSubData(sQuadVbo, 0, sizeof(v), v);
     glProgramUniformMatrix4fv(R.shadow_prog, 0, 1, GL_FALSE, vp->m);
+    glProgramUniform1i(R.shadow_prog, 1, 0);
     glUseProgram(R.shadow_prog);
     glBindVertexArray(sQuadVao);
     glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -682,6 +755,11 @@ void render_shadow_mesh(const GpuMesh *g, const MeshDraw *d, int nd) {
     if (g->vao == 0) {
         return;
     }
+    glProgramUniform1i(R.shadow_prog, 1, g->skin);
+    if (g->skin) {
+        glProgramUniform1i(R.shadow_prog, 2, g->nbones);
+        glBindTextureUnit(2, R.bone_tex);
+    }
     glBindVertexArray(g->vao);
     for (i = 0; i < nd; i++) {
         if (!d[i].blend) {   /* (the cut-outs - fringes, lashes - cast nothing) */
@@ -701,6 +779,7 @@ void render_shadows_end(void) {
         memcpy(vp + i * 16, R.shadow_vp[i].m, sizeof(R.shadow_vp[i].m));
     }
     glProgramUniform1i(R.mesh_prog, U_NSHADOWS, R.nshadows);
+    glProgramUniform1i(R.mesh_prog, U_SHADOW_SOFT, gRender.shadow_soft);
     if (R.nshadows > 0) {
         glProgramUniformMatrix4fv(R.mesh_prog, U_SHADOW_VP, R.nshadows, GL_FALSE, vp);
         glProgramUniform4fv(R.mesh_prog, U_SHADOW_INFO, R.nshadows, &R.shadow_info[0][0]);
@@ -879,10 +958,26 @@ void render_post(void) {
     glViewport(0, 0, R.w, R.h);
 }
 
+/* the 2D waiting to be drawn is one batch of one kind: the font's (rectangles, text), or one
+ * picture's at one blend - pictures in a row from the same texture alike (the game's text: a glyph
+ * each) drawn together. A quad of another kind draws what is waiting first: the order kept */
+static struct {
+    int image;          /* the pictures' (else the font's) */
+    GLuint tex;
+    int blend;
+    float fix;
+} sBatch;
+
+static void image_draw(void);
+
 static void flush_2d(void) {
     Mat4 proj = mat4_ortho2d((float)R.w, (float)R.h);
 
     if (R.n2d == 0) {
+        return;
+    }
+    if (sBatch.image) {
+        image_draw();
         return;
     }
     glBindFramebuffer(GL_FRAMEBUFFER, R.present);
@@ -925,6 +1020,9 @@ GpuTexture render_texture(const uint8_t *rgba, int w, int h) {
 }
 
 void render_texture_free(GpuTexture t) {
+    if (t != 0 && sBatch.image && sBatch.tex == t) {   /* (waiting to be drawn: drawn first) */
+        flush_2d();
+    }
     if (t != 0) {
         glDeleteTextures(1, &t);
     }
@@ -955,6 +1053,10 @@ void render_mesh_upload(GpuMesh *g, const MeshVertex *v, int n) {
 
 /* a mesh refilled every frame (skinned characters): storage that can be replaced */
 void render_mesh_update(GpuMesh *g, const MeshVertex *v, int n) {
+    if (g->skin) {   /* (a skinned mesh's vertices are SkinVertex: render_skin_update) */
+        fprintf(stderr, "render: render_mesh_update of a skinned mesh\n");
+        return;
+    }
     if (g->vao == 0) {
         glCreateBuffers(1, &g->vbo);
         mesh_arrays(g);
@@ -964,6 +1066,9 @@ void render_mesh_update(GpuMesh *g, const MeshVertex *v, int n) {
 }
 
 void render_mesh_free(GpuMesh *g) {
+    if (g->skin > 0) {
+        R.skin_used &= ~(1ull << (g->skin - 1));
+    }
     if (g->vbo != 0) {
         glDeleteBuffers(1, &g->vbo);
         glDeleteVertexArrays(1, &g->vao);
@@ -971,9 +1076,112 @@ void render_mesh_free(GpuMesh *g) {
     memset(g, 0, sizeof(*g));
 }
 
+/* ---- skinned meshes (render.h: posed by the vertex shaders) ---- */
+
+int render_skin_upload(GpuMesh *g, const SkinVertex *v, int n, int morphing) {
+    int slot;
+
+    for (slot = 0; slot < RENDER_SKIN_SLOTS && (R.skin_used >> slot & 1); slot++) {
+    }
+    if (slot == RENDER_SKIN_SLOTS) {
+        static int said;   /* (asked again each frame: said once) */
+
+        if (!said) {
+            said = 1;
+            fprintf(stderr, "render: more than %d skinned models at once: the rest not drawn\n", RENDER_SKIN_SLOTS);
+        }
+        return 0;
+    }
+    R.skin_used |= 1ull << slot;
+    glCreateBuffers(1, &g->vbo);
+    glNamedBufferStorage(g->vbo, (GLsizeiptr)((size_t)n * sizeof(SkinVertex)), v, morphing ? GL_DYNAMIC_STORAGE_BIT : 0);
+    glCreateVertexArrays(1, &g->vao);
+    attribute(g->vao, 0, 3, GL_FLOAT, GL_FALSE, offsetof(SkinVertex, pos));
+    attribute(g->vao, 1, 2, GL_FLOAT, GL_FALSE, offsetof(SkinVertex, s));
+    attribute(g->vao, 3, 3, GL_FLOAT, GL_FALSE, offsetof(SkinVertex, normal));
+    attribute(g->vao, 4, 4, GL_UNSIGNED_BYTE, GL_FALSE, offsetof(SkinVertex, bones));   /* (0 .. 255, as floats) */
+    attribute(g->vao, 5, 4, GL_FLOAT, GL_FALSE, offsetof(SkinVertex, weights));
+    glVertexArrayVertexBuffer(g->vao, 0, g->vbo, 0, sizeof(SkinVertex));
+    g->nv = n;
+    g->skin = slot + 1;
+    g->nbones = 0;
+    return 1;
+}
+
+void render_skin_update(GpuMesh *g, const SkinVertex *v, int first, int n) {
+    if (g->skin && n > 0) {
+        glNamedBufferSubData(g->vbo, (GLintptr)((size_t)first * sizeof(SkinVertex)), (GLsizeiptr)((size_t)n * sizeof(SkinVertex)), v);
+    }
+}
+
+void render_skin_pose(GpuMesh *g, const Mat4 *place, const Mat4 *bones, int n) {
+    GLintptr at;
+
+    if (!g->skin) {
+        return;
+    }
+    n = n < 0 ? 0 : n > MODEL_MAX_BONES ? MODEL_MAX_BONES : n;
+    at = (GLintptr)((size_t)(g->skin - 1) * SKIN_STRIDE * sizeof(Mat4));
+    glNamedBufferSubData(R.bone_buf, at, sizeof(Mat4), place);
+    if (n > 0) {
+        glNamedBufferSubData(R.bone_buf, at + (GLintptr)sizeof(Mat4), (GLsizeiptr)((size_t)n * sizeof(Mat4)), bones);
+    }
+    g->nbones = n;
+}
+
 static float sTint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 static float sObjectAlpha = 1.0f;
 static int sFadeSolid;   /* (a placed object faded as a whole: its solid draws use sObjectAlpha alone) */
+
+/* the mesh shader's per-draw switches, as last set: only a change sent (a room is hundreds of
+ * draws, most alike - each call a trip through the driver, the dearer on an older GPU) */
+static struct {
+    int use_tex, solid_tex, lit, coverage, receive, skin, nbones;
+    float mask, fade, tint[4];
+} sSet = {-1, -1, -1, -1, -1, -1, -1, -1.0f, -1.0f, {-1.0f, -1.0f, -1.0f, -1.0f}};
+
+static void set_int(int *was, GLint loc, int v) {
+    if (*was != v) {
+        *was = v;
+        glProgramUniform1i(R.mesh_prog, loc, v);
+    }
+}
+
+static void set_mask(float v) {
+    if (sSet.mask != v) {
+        sSet.mask = v;
+        glProgramUniform1f(R.mesh_prog, U_MASK, v);
+    }
+}
+
+/* the whole draw tinted and faded: its alpha the tint's times a placed part's own (render_mesh_alpha) */
+static void set_tint(float r, float g, float b, float a) {
+    if (sSet.tint[0] != r || sSet.tint[1] != g || sSet.tint[2] != b || sSet.tint[3] != a) {
+        sSet.tint[0] = r;
+        sSet.tint[1] = g;
+        sSet.tint[2] = b;
+        sSet.tint[3] = a;
+        glProgramUniform4f(R.mesh_prog, U_ALPHA, r, g, b, a);
+    }
+}
+
+/* a placed part faded as a whole: its solid draws use its own alpha alone (the shader's u_fade_solid) */
+static void set_fade(float v) {
+    if (sSet.fade != v) {
+        sSet.fade = v;
+        glProgramUniform1f(R.mesh_prog, U_FADE_SOLID, v);
+    }
+}
+
+static void draw_switches(int use_tex, int solid_tex, int lit, int coverage, int receive, float mask, float fade) {
+    set_mask(mask);
+    set_fade(fade);
+    set_int(&sSet.use_tex, U_USE_TEX, use_tex);
+    set_int(&sSet.solid_tex, U_SOLID_TEX, solid_tex);
+    set_int(&sSet.lit, U_LIT, lit);
+    set_int(&sSet.coverage, U_COVERAGE, coverage);
+    set_int(&sSet.receive, U_RECEIVE, receive);
+}
 
 /* the character microprograms' clip test (tools/vudis.py: CLIP each corner, FCAND over the
  * triangle's three, the ADC bit then drops it): a triangle with a corner outside the PS2's clip
@@ -1026,8 +1234,8 @@ void render_mesh_alpha_solid(float a) {
 
 void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, const GpuTexture *textures,
                  int ntextures, const uint32_t groups[8]) {
-    float alpha = sTint[3] * sObjectAlpha;
-    int i, multisampled = gRender.msaa > 1, faded = alpha < 1.0f;
+    float alpha = sTint[3] * sObjectAlpha;   /* (a placed part faded as a whole: its own alpha too) */
+    int i, multisampled = post_samples() > 1, faded = alpha < 1.0f;
 
     if (g->vao == 0) {
         sObjectAlpha = 1.0f;
@@ -1035,8 +1243,12 @@ void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, c
         return;
     }
     glProgramUniformMatrix4fv(R.mesh_prog, U_MVP, 1, GL_FALSE, mvp->m);
-    glProgramUniform4f(R.mesh_prog, U_ALPHA, sTint[0], sTint[1], sTint[2], alpha);
-    glProgramUniform1f(R.mesh_prog, U_FADE_SOLID, 0.0f);
+    set_tint(sTint[0], sTint[1], sTint[2], alpha);
+    set_int(&sSet.skin, U_SKIN, g->skin);
+    if (g->skin) {
+        set_int(&sSet.nbones, U_NBONES, g->nbones);
+        glBindTextureUnit(2, R.bone_tex);
+    }
     glUseProgram(R.mesh_prog);
     glDisable(GL_BLEND);   /* (for both targets: only the colour one ever blends) */
     glBindSampler(0, R.sampler);
@@ -1056,12 +1268,7 @@ void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, c
         glColorMaski(0, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
         glColorMaski(1, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
         glDepthMask(GL_TRUE);
-        glProgramUniform1f(R.mesh_prog, U_MASK, 0.0f);
-        glProgramUniform1i(R.mesh_prog, U_USE_TEX, tex != 0);
-        glProgramUniform1i(R.mesh_prog, U_SOLID_TEX, x->solid_tex);
-        glProgramUniform1i(R.mesh_prog, U_LIT, x->lit);
-        glProgramUniform1i(R.mesh_prog, U_COVERAGE, 0);
-        glProgramUniform1i(R.mesh_prog, U_RECEIVE, 0);
+        draw_switches(tex != 0, x->solid_tex, x->lit, 0, 0, 0.0f, 0.0f);
         glBindTextureUnit(0, tex);
         glDrawArrays(GL_TRIANGLES, x->first, x->count);
     }
@@ -1094,13 +1301,8 @@ void render_mesh(const GpuMesh *g, const Mat4 *mvp, const MeshDraw *d, int nd, c
         glDepthMask(x->no_zwrite || x->mask ? GL_FALSE : GL_TRUE);
         /* (only what writes depth says whether the room's fog is over it) */
         glColorMaski(1, GL_TRUE, x->no_zwrite || x->mask ? GL_FALSE : GL_TRUE, GL_FALSE, GL_FALSE);
-        glProgramUniform1f(R.mesh_prog, U_MASK, x->mask ? 1.0f : 0.0f);
-        glProgramUniform1i(R.mesh_prog, U_USE_TEX, tex != 0);
-        glProgramUniform1i(R.mesh_prog, U_SOLID_TEX, fsolid ? 1 : x->solid_tex);
-        glProgramUniform1i(R.mesh_prog, U_LIT, x->lit);
-        glProgramUniform1i(R.mesh_prog, U_COVERAGE, coverage);
-        glProgramUniform1i(R.mesh_prog, U_RECEIVE, !x->mask);
-        glProgramUniform1f(R.mesh_prog, U_FADE_SOLID, fsolid ? 1.0f : 0.0f);
+        draw_switches(tex != 0, fsolid ? 1 : x->solid_tex, x->lit, coverage, !x->mask,
+                      x->mask ? 1.0f : 0.0f, fsolid ? 1.0f : 0.0f);
         glBindTextureUnit(0, tex);
         glDrawArrays(GL_TRIANGLES, x->first, x->count);
         if (x->mask) {
@@ -1142,10 +1344,18 @@ static void quad(float x0, float y0, float x1, float y1, float u0, float v0, flo
     }
 }
 
+static void font_batch(void) {
+    if (sBatch.image) {
+        flush_2d();
+        sBatch.image = 0;
+    }
+}
+
 void render_rect(float x, float y, float w, float h, uint32_t rgba) {
     /* the middle of the solid block glyph (127) */
     float u = ((FONT_COUNT - 1) * FONT_CELL_W + 2.5f) / FONT_ATLAS_W, v = 3.5f / FONT_CELL_H;
 
+    font_batch();
     quad(x, y, x + w, y + h, u, v, u, v, rgba);
 }
 
@@ -1182,6 +1392,7 @@ void render_panel_opaque(float alpha) {
         return;
     }
     flush_2d();   /* (what is queued goes first, as it is) */
+    sBatch.image = 0;   /* (a picture's batch there was drawn: nothing waits now) */
     rgba = (uint32_t)(a * 255.0f + 0.5f);
     quad(0.0f, 0.0f, (float)R.w, (float)R.h, u, v, u, v, rgba);
     proj = mat4_ortho2d((float)R.w, (float)R.h);
@@ -1205,12 +1416,21 @@ void render_panel_opaque(float alpha) {
     R.n2d = 0;
 }
 
-static void image_draw(GpuTexture t);
+/* a picture's quad to come: after what is waiting, unless that is this texture's at this blend */
+static void image_batch(GpuTexture t) {
+    if (!sBatch.image || sBatch.tex != t || sBatch.blend != sBlend2d || sBatch.fix != sFix2d) {
+        flush_2d();   /* (what was drawn before stays under it) */
+        sBatch.image = 1;
+        sBatch.tex = t;
+        sBatch.blend = sBlend2d;
+        sBatch.fix = sFix2d;
+    }
+}
+
 void render_image_uv(GpuTexture t, float x, float y, float w, float h, float u0, float v0, float u1, float v1,
                      uint32_t rgba) {
-    flush_2d();   /* (what was drawn before stays under it) */
+    image_batch(t);
     quad(x, y, x + w, y + h, u0, v0, u1, v1, rgba);
-    image_draw(t);
 }
 
 void render_image_quad(GpuTexture t, const float xy[8], float u0, float v0, float u1, float v1, uint32_t rgba) {
@@ -1218,7 +1438,7 @@ void render_image_quad(GpuTexture t, const float xy[8], float u0, float v0, floa
     const float uv[8] = {u0, v0, u1, v0, u0, v1, u1, v1};
     int i;
 
-    flush_2d();
+    image_batch(t);
     if (R.n2d + 6 > R.cap2d) {
         R.cap2d = R.cap2d * 2 + 6 * 256;
         R.v2d = realloc(R.v2d, (size_t)R.cap2d * sizeof(Vertex2d));
@@ -1233,24 +1453,27 @@ void render_image_quad(GpuTexture t, const float xy[8], float u0, float v0, floa
         v->rgba[2] = (uint8_t)(rgba >> 8);
         v->rgba[3] = (uint8_t)rgba;
     }
-    image_draw(t);
 }
 
-static void image_draw(GpuTexture t) {
+static void image_draw(void) {
     Mat4 proj = mat4_ortho2d((float)R.w, (float)R.h);
+    GLuint t = sBatch.tex;
+    int blend = sBatch.blend;
+    float fix = sBatch.fix;
+
     glBindFramebuffer(GL_FRAMEBUFFER, R.present);
     glViewport(0, 0, R.w, R.h);
     glNamedBufferData(R.vbo2d, (GLsizeiptr)(R.n2d * sizeof(Vertex2d)), R.v2d, GL_STREAM_DRAW);
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
-    if (sBlend2d == RENDER_BLEND_NORMAL) {
+    if (blend == RENDER_BLEND_NORMAL) {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     } else {   /* (the GS's ALPHA with C = FIX: the 2D is drawn in display values, as the GS blends) */
-        glBlendColor(sFix2d, sFix2d, sFix2d, sFix2d);
-        glBlendEquation(sBlend2d == RENDER_BLEND_SUBTRACT ? GL_FUNC_REVERSE_SUBTRACT : GL_FUNC_ADD);
-        glBlendFunc(GL_CONSTANT_COLOR, sBlend2d == RENDER_BLEND_MIX ? GL_ONE_MINUS_CONSTANT_COLOR : GL_ONE);
+        glBlendColor(fix, fix, fix, fix);
+        glBlendEquation(blend == RENDER_BLEND_SUBTRACT ? GL_FUNC_REVERSE_SUBTRACT : GL_FUNC_ADD);
+        glBlendFunc(GL_CONSTANT_COLOR, blend == RENDER_BLEND_MIX ? GL_ONE_MINUS_CONSTANT_COLOR : GL_ONE);
     }
-    glProgramUniform1i(R.prog2d_image, 1, sBlend2d != RENDER_BLEND_NORMAL);
+    glProgramUniform1i(R.prog2d_image, 1, blend != RENDER_BLEND_NORMAL);
     glProgramUniformMatrix4fv(R.prog2d_image, 0, 1, GL_FALSE, proj.m);
     glUseProgram(R.prog2d_image);
     glBindTextureUnit(0, t);
@@ -1273,6 +1496,9 @@ static void image_draw(GpuTexture t) {
 }
 
 GpuTexture render_texture_stream(GpuTexture t, const uint8_t *rgba, int w, int h, int *tw, int *th) {
+    if (t != 0 && sBatch.image && sBatch.tex == t) {   /* (its last picture waiting: drawn first) */
+        flush_2d();
+    }
     if (t == 0 || *tw != w || *th != h) {
         render_texture_free(t);
         glCreateTextures(GL_TEXTURE_2D, 1, &t);
@@ -1291,6 +1517,7 @@ GpuTexture render_texture_stream(GpuTexture t, const uint8_t *rgba, int w, int h
 void render_text(float x, float y, float scale, uint32_t rgba, const char *s, int n) {
     int i;
 
+    font_batch();
     for (i = 0; i < n && s[i] != 0; i++) {
         int c = (unsigned char)s[i];
 

@@ -3,6 +3,7 @@
 #include "vrbody.h"
 #include "vrhands.h"
 #include "vrbones.h"
+#include "../platform/vr.h"
 
 #include <math.h>
 
@@ -815,13 +816,13 @@ int actor_drive_place(Actor *a, const uint8_t *drive, size_t size, float frame, 
     return 1;
 }
 
-/* the posed vertices and normals, in room space (the shader lights them) */
+/* the skeleton posed and placed (its bones' matrices for the GPU's skinning; the bones in the room) */
 static void skin(Actor *a) {
     static Mat4 skin_m[MODEL_MAX_BONES];
     Model *m = &a->model;
     Mat4 place = mat4_identity();
     float c = cosf(a->yaw), s = sinf(a->yaw);
-    int i, j;
+    int i;
 
     model_pose_sets(a->sets, a->nsets);
     if (a->drive != NULL) {   /* a cutscene's motion: placed in the room by its root bone */
@@ -851,8 +852,6 @@ static void skin(Actor *a) {
         for (root_bone = 0; root_bone < m->nbones && m->bones[root_bone].parent >= 0; root_bone++) {
         }
         a->pos = vec3(root.x, root.y - (root_bone < m->nbones ? m->bones[root_bone].rest_pos[1] : 0.0f), root.z);
-        c = 1.0f;
-        s = 0.0f;
         place.m[0] = place.m[5] = place.m[10] = a->scale;
     } else {
         float x = a->fade_len > 0.0f && a->fade > 0.0f ? a->fade / a->fade_len : 0.0f;   /* (fade_weight) */
@@ -904,8 +903,11 @@ static void skin(Actor *a) {
         }
     }
     model_pose_sets(NULL, 0);
-    if (a->shaped != NULL) {
+    if (a->shaped != NULL) {   /* (its face and hands moved from their rest: those vertices sent again) */
         model_morph(m, &a->face, a->shaped);
+        for (i = 0; i < m->nmorphs; i++) {
+            render_skin_update(&a->gpu, a->shaped + m->morphs[i].first, m->morphs[i].first, m->morphs[i].count);
+        }
     }
     for (i = 0; i < m->nbones; i++) {   /* the bones' origins and axes, placed */
         Vec3 o = mat4_point(&place, vec3(0.0f, 0.0f, 0.0f));
@@ -916,36 +918,46 @@ static void skin(Actor *a) {
             a->bone_axes[i][k] = vec3_sub(mat4_point(&place, model_pose_axes()[i][k]), o);
         }
     }
-    for (i = 0; i < m->nv; i++) {
-        const SkinVertex *v = a->shaped != NULL ? &a->shaped[i] : &m->v[i];
-        MeshVertex *o = &a->posed[i];
-        Vec3 p = vec3(0, 0, 0), n = vec3(0, 0, 0);
+    /* the same vertices on the CPU too, while a headset is on: the VR hands' own tests read them
+     * (Hewie's head under a palm, a shove's reach) and actor_hide_head collapses them. The picture
+     * is the GPU's (below), so the flat screen doesn't pay for this pass. */
+    if (a->posed != NULL && vr_active()) {
+        int j;
 
-        for (j = 0; j < 4; j++) {
-            const Mat4 *b = &skin_m[v->bones[j] < m->nbones ? v->bones[j] : 0];
-            float w = v->weights[j];
+        for (i = 0; i < m->nv; i++) {
+            const SkinVertex *v = a->shaped != NULL ? &a->shaped[i] : &m->v[i];
+            MeshVertex *o = &a->posed[i];
+            Vec3 p = vec3(0, 0, 0), n = vec3(0, 0, 0);
 
-            if (w == 0.0f) {
-                continue;
+            for (j = 0; j < 4; j++) {
+                const Mat4 *b = &skin_m[v->bones[j] < m->nbones ? v->bones[j] : 0];
+                float w = v->weights[j];
+
+                if (w == 0.0f) {
+                    continue;
+                }
+                p = vec3_add(p, vec3_scale(mat4_point(b, v->pos), w));
+                n = vec3_add(n, vec3_scale(vec3(b->m[0] * v->normal.x + b->m[4] * v->normal.y + b->m[8] * v->normal.z,
+                                                b->m[1] * v->normal.x + b->m[5] * v->normal.y + b->m[9] * v->normal.z,
+                                                b->m[2] * v->normal.x + b->m[6] * v->normal.y + b->m[10] * v->normal.z),
+                                           w));
             }
-            p = vec3_add(p, vec3_scale(mat4_point(b, v->pos), w));
-            n = vec3_add(n, vec3_scale(vec3(b->m[0] * v->normal.x + b->m[4] * v->normal.y + b->m[8] * v->normal.z,
-                                            b->m[1] * v->normal.x + b->m[5] * v->normal.y + b->m[9] * v->normal.z,
-                                            b->m[2] * v->normal.x + b->m[6] * v->normal.y + b->m[10] * v->normal.z),
-                                       w));
+            p = mat4_point(&place, p);
+            n = vec3_norm(vec3(c * n.x + s * n.z, n.y, -s * n.x + c * n.z));
+            o->x = p.x;
+            o->y = p.y;
+            o->z = p.z;
+            o->s = v->s;
+            o->t = v->t;
+            o->rgba[0] = o->rgba[1] = o->rgba[2] = o->rgba[3] = 0x80;
+            o->nx = n.x;
+            o->ny = n.y;
+            o->nz = n.z;
         }
-        p = mat4_point(&place, p);
-        n = vec3_norm(vec3(c * n.x + s * n.z, n.y, -s * n.x + c * n.z));
-        o->x = p.x;
-        o->y = p.y;
-        o->z = p.z;
-        o->s = v->s;
-        o->t = v->t;
-        o->rgba[0] = o->rgba[1] = o->rgba[2] = o->rgba[3] = 0x80;
-        o->nx = n.x;
-        o->ny = n.y;
-        o->nz = n.z;
     }
+    /* the vertices posed by the GPU as they are drawn (render_skin_upload): each by its bones'
+     * matrices by their weights, then placed - its normal turned with them */
+    render_skin_pose(&a->gpu, &place, skin_m, m->nbones);
 }
 
 /* a soft dark disc on the floor under the actor, a little above it to stay in front */
@@ -1011,13 +1023,17 @@ static int on_head(const Model *m, const SkinVertex *v, int head) {
 }
 
 void actor_hide_head(Actor *a) {
+    static SkinVertex *sHideVerts;   /* (the collapsed bind pose, made again each frame) */
+    static int sHideCap;
     const Model *m;
+    const SkinVertex *src;
     int head, i, n;
     unsigned char *hide;
 
-    if (a == NULL || !a->used || a->model.nv < 3 || a->posed == NULL) {
+    if (a == NULL || !a->used || a->model.nv < 3) {
         return;
     }
+
     m = &a->model;
     head = a->head.head;
     n = m->nv;
@@ -1049,19 +1065,54 @@ void actor_hide_head(Actor *a) {
             }
         }
     }
+    /* the head's triangles collapsed (all three corners at the first's): in the copy the VR hands
+     * test against, and in the bind pose the GPU poses - a collapsed triangle stays collapsed
+     * however its bones move it, so the drawn head goes too */
+    src = a->shaped != NULL ? a->shaped : m->v;
+    if (n > sHideCap) {
+        SkinVertex *grown = (SkinVertex *)realloc(sHideVerts, (size_t)n * sizeof(SkinVertex));
+
+        if (grown == NULL) {
+            free(hide);
+            return;
+        }
+        sHideVerts = grown;
+        sHideCap = n;
+    }
+    memcpy(sHideVerts, src, (size_t)n * sizeof(SkinVertex));
     for (i = 0; i + 2 < n; i += 3) {
         if (!hide[i] && !hide[i + 1] && !hide[i + 2]) {
             continue;
         }
-        a->posed[i + 1].x = a->posed[i].x;
-        a->posed[i + 1].y = a->posed[i].y;
-        a->posed[i + 1].z = a->posed[i].z;
-        a->posed[i + 2].x = a->posed[i].x;
-        a->posed[i + 2].y = a->posed[i].y;
-        a->posed[i + 2].z = a->posed[i].z;
+        sHideVerts[i + 1].pos = sHideVerts[i].pos;
+        sHideVerts[i + 2].pos = sHideVerts[i].pos;
+        if (a->posed != NULL) {
+            a->posed[i + 1].x = a->posed[i].x;
+            a->posed[i + 1].y = a->posed[i].y;
+            a->posed[i + 1].z = a->posed[i].z;
+            a->posed[i + 2].x = a->posed[i].x;
+            a->posed[i + 2].y = a->posed[i].y;
+            a->posed[i + 2].z = a->posed[i].z;
+        }
     }
     free(hide);
-    render_mesh_update(&a->gpu, a->posed, n);
+    render_skin_update(&a->gpu, sHideVerts, 0, n);
+    a->head_hidden = a->gpu.skin != 0;
+}
+
+/* her head drawn again, where its bones put it: the first-person head option turned off (the menu,
+ * a save of its own). The GPU's mesh is the one actor_hide_head collapsed */
+void actor_head_shown(Actor *a) {
+    const Model *m;
+    const SkinVertex *src;
+
+    if (a == NULL || !a->used || !a->head_hidden || a->model.nv == 0) {
+        return;
+    }
+    a->head_hidden = 0;
+    m = &a->model;
+    src = a->shaped != NULL ? a->shaped : m->v;
+    render_skin_update(&a->gpu, src, 0, m->nv);
 }
 
 int actor_shown(const Actor *a) {
@@ -1077,8 +1128,11 @@ void actor_prepare(Actor *a) {
     if (!actor_shown(a) || a->model.nv == 0) {
         return;
     }
+    if (a->gpu.vao == 0 && !render_skin_upload(&a->gpu, a->shaped != NULL ? a->shaped : a->model.v, a->model.nv,
+                                               a->shaped != NULL)) {
+        return;
+    }
     skin(a);
-    render_mesh_update(&a->gpu, a->posed, a->model.nv);
 }
 
 Vec3 actor_center(const Actor *a) {
