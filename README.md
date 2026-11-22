@@ -4,7 +4,7 @@ A full PC VR mod of **Haunting Ground**, built on top of [OpenHuey](https://gith
 
 **[Download the latest release](../../releases)** · You need your own copy of the game. This was built on a USA ISO and I cannot vouch for full operation of any other region.
 
-> ⚠️ Early release. Expect lots of bugs, jank, and possible softlocks. Save Often. As of release date I have progressed very little in the game and can't confirm yet it is playable all the way to the end.  Please feel free to report issues in [Issues](../../issues) with as much detail as you can. If at all possible, try to keep to VR-specific issues.
+> ⚠️ Early release by somebody who has never modded before. Expect lots of bugs, jank, and possible softlocks. Save Often. As of release date I have progressed very little in the game and can't confirm yet it is playable all the way to the end.  Please feel free to report issues in [Issues](../../issues) with as much detail as you can. If at all possible, try to keep to VR-specific issues.
 
 This mod was built using 100% code from various AI, with some manual Blender work and fine-tuning. A lot of inspiration was taken from other VR titles and mods. While I have added everything I can think of to reach a (somewhat) happy starting release point, there will be much to fix, iron out and add. At its core this is a fixed camera angle PS2 game and some things are much harder to bring to VR than others.
 
