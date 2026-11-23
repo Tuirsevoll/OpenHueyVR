@@ -189,6 +189,15 @@ void render_draw_lights(Vec3 ambient, const DrawLight *lights, int n, Vec3 root)
  * the quad, in front of what was there (its depth pushed back), which is put back after */
 void render_reflect_begin(const Mat4 *vp, const Vec3 q[4]);
 void render_reflect_end(const Mat4 *vp, const Vec3 q[4]);
+/* a seam portal (game/roomseamless.c): between begin and end, what is drawn shows only where the
+ * opening's quad `q` is visible (its depth pushed back there first); end puts the depth of the
+ * plane's quad back where nothing was drawn. Uses the stencil's bits 2 and 4 and clears all of it. */
+void render_portal_begin(const Mat4 *vp, const Vec3 q[4]);
+void render_portal_end(const Mat4 *vp, const Vec3 plane_q[4]);
+/* the scene shader's clip plane, in CLIP space (dot(plane, gl_Position) >= 0 is kept); NULL: off */
+void render_clip_plane(const float *plane);
+/* a flat translucent quad in the room (the debug outline of a seam), 0xRRGGBBAA */
+void render_debug_quad(const Mat4 *vp, const Vec3 q[4], uint32_t rgba);
 void render_shadows_begin(void);
 /* a new shadow: the light's view-projection, the caster's middle and size (shadows fade past a
  * few sizes), the darkening, and where the light shades from and how far (for the blockers); -1

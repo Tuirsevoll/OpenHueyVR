@@ -1,0 +1,94 @@
+# HGVR connected map: third-room cases (22 Nov 2026)
+# Doorways where moving one room onto its doorway would put it inside another, unrelated room,
+# or where a straight route between the two doorways passes through another room.
+# 'unrelated' = not linked to either room by a door, and not a story version of either.
+# Checked with the walk meshes (floors) plus each room's height. A minimum: walls and ceilings outside the floor area aren't counted.
+
+1. ST_013 front-garden-2 exit2  <->  ST_02A front-garden-3 exit0   (Debilitas; gap hz 21 vt 8)
+   move ST_02A to the doorway: lands inside ST_036 off-map-36
+   move ST_013 to the doorway: lands inside ST_011 castle-1f-6
+   suggested: connector (both snaps hit a third room)
+
+2. ST_008 castle-1f-13 exit3  <->  ST_01E castle-1f-19 exit1   (Debilitas; gap hz 46 vt 0)
+   move ST_01E to the doorway: lands inside ST_01D castle-b1-7
+   move ST_008 to the doorway: lands inside ST_01D castle-b1-7
+   suggested: connector (both snaps hit a third room)
+
+3. ST_00F castle-1f-4 exit3  <->  ST_015 castle-1f-7 exit1   (Debilitas; gap hz 0 vt 80)
+   move ST_015 to the doorway: lands inside ST_001 castle-1f-1
+   move ST_00F to the doorway: free
+   your arrow notes nearby: Trap Room to Hallway
+   suggested: connector (moving would break 2 joined doors)
+
+4. ST_04B old-mansion-b1-2 exit1  <->  ST_04D old-mansion-1f-10 exit1   (Daniella; gap hz 87 vt 0)
+   move ST_04D to the doorway: free
+   move ST_04B to the doorway: lands inside ST_05D old-mansion-1f-17
+   suggested: move room (dead end, nothing else breaks)
+
+5. ST_00E castle-1f-14 exit2  <->  ST_018 castle-1f-8 exit0   (Debilitas; gap hz 0 vt 255)
+   move ST_018 to the doorway: lands inside ST_012 castle-b1-1
+   move ST_00E to the doorway: free
+   suggested: connector (moving would break 2 joined doors)
+
+6. ST_043 old-mansion-1f-5 exit4  <->  ST_066 old-mansion-b1-6 exit2   (Daniella; gap hz 127 vt 317)
+   move ST_066 to the doorway: lands inside ST_055 old-mansion-1f-16
+   move ST_043 to the doorway: free
+   suggested: connector (moving would break 2 joined doors)
+
+7. ST_05C old-mansion-2f-8 exit2  <->  ST_05F old-mansion-2f-10 exit1   (Daniella; gap hz 10 vt 446)
+   move ST_05F to the doorway: free
+   move ST_05C to the doorway: free
+   straight route passes through: ST_04D old-mansion-1f-10
+   suggested: connector (moving would break 1 joined door), route around a third room
+
+8. ST_046 old-mansion-1f-6 exit0  <->  ST_06D old-mansion-1f-21 exit0   (Daniella + Riccardo Pt 1; gap hz 147 vt 321)
+   move ST_06D to the doorway: free
+   move ST_046 to the doorway: free
+   straight route passes through: ST_059 old-mansion-2f-6
+   suggested: connector (moving would break 1 joined door), route around a third room
+
+9. ST_043 old-mansion-1f-5 exit2  <->  ST_045 old-mansion-2f-1 exit3   (Daniella; gap hz 25 vt 446)
+   move ST_045 to the doorway: free
+   move ST_043 to the doorway: lands inside ST_049 old-mansion-1f-9
+   your arrow notes nearby: Empty
+   suggested: connector (moving would break 2 joined doors)
+
+10. ST_055 old-mansion-1f-16 exit3  <->  ST_069 old-mansion-2f-12 exit0   (Daniella; gap hz 151 vt 322)
+   move ST_069 to the doorway: free
+   move ST_055 to the doorway: lands inside ST_061 old-mansion-b1-7
+   your arrow notes nearby: twisting puzzle to circular staircase
+   suggested: connector (moving would break 1 joined door)
+
+11. ST_040 old-mansion-1f-2 exit1  <->  ST_041 old-mansion-1f-3 exit2   (Riccardo Pt 1 + Unsorted; gap hz 463 vt 203)
+   move ST_041 to the doorway: lands inside ST_02C castle-3f-2
+   move ST_040 to the doorway: free
+   suggested: connector (moving would break 4 joined doors)
+
+12. ST_010 castle-1f-5 exit0  <->  ST_020 castle-2f-2 exit3   (Debilitas; gap hz 0 vt 702)
+   move ST_020 to the doorway: lands inside ST_00E castle-1f-14, ST_000 front-garden-1
+   move ST_010 to the doorway: free
+   suggested: connector (moving would break 2 joined doors)
+
+13. ST_05E old-mansion-2f-9 exit2  <->  ST_05F old-mansion-2f-10 exit0   (Daniella; gap hz 93 vt 611)
+   move ST_05F to the doorway: free
+   move ST_05E to the doorway: free
+   straight route passes through: ST_06F old-mansion-1f-23
+   suggested: connector (moving would break 1 joined door), route around a third room
+
+14. ST_003 castle-1f-11 exit0  <->  ST_008 castle-1f-13 exit2   (Debilitas; gap hz 34 vt 689)
+   move ST_008 to the doorway: free
+   move ST_003 to the doorway: lands inside ST_028 castle-2f-13, ST_02F castle-2f-14, ST_019 castle-1f-15, ST_026 castle-2f-12
+   suggested: connector (moving would break 1 joined door)
+
+15. ST_00F castle-1f-4 exit1  <->  ST_012 castle-b1-1 exit0   (Debilitas; gap hz 56 vt 700)
+   move ST_012 to the doorway: free
+   move ST_00F to the doorway: lands inside ST_013 front-garden-2
+   suggested: connector (moving would break 1 joined door)
+
+16. ST_055 old-mansion-1f-16 exit4  <->  ST_06B old-mansion-1f-19 exit0   (Daniella + Riccardo Pt 1; gap hz 564 vt 202)
+   move ST_06B to the doorway: free
+   move ST_055 to the doorway: free
+   straight route passes through: ST_043 old-mansion-1f-5
+   your arrow notes nearby: Riccardo start to waterstower spiral
+   suggested: connector (moving would break 1 joined door), route around a third room
+

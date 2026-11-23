@@ -53,9 +53,37 @@ int roomseamless_hewie_here(int id);
 /* the neighbour's moving batches for this eye, its eye converted into its space: 1 if it has
  * one. Draw the eye's layers after the played room's (main.c draw_scene/draw_layer). */
 int roomseamless_view_begin(struct Engine *e, Vec3 eye, Vec3 forward);
-/* the neighbour's room draws in renderer layer `layer` (only the solid and see-through layers are
- * drawn), with view_proj x T(neighbour -> played): 1 if it drew. */
-int roomseamless_draw(struct Engine *e, const Mat4 *view_proj, int layer);
+/* The portals: a neighbour seen through each seam's opening (main.c draw_scene does the drawing
+ * with render_portal_*; this says where and how). Per eye: `vp` the eye's view-projection, `eye`
+ * its place in the played room. mode 1: the eye is on the played room's side - the opening's quad
+ * (`mark`, a little beyond the plane; `plane`, on it) is a window the neighbour is drawn into,
+ * clipped at the plane (clip_b); mode 2: the eye is past the plane (a head through the doorway) -
+ * the played room's own draws are clipped to its side (clip_a) and the neighbour drawn whole,
+ * clipped to its own. Planes are in clip space (dot(plane, gl_Position) >= 0 is kept). The
+ * neighbour is drawn with vp x t_ba, in renderer layer 1 and `see_layer`. */
+typedef struct SeamPortal {
+    int mode;                 /* 0: no portal now */
+    Vec3 mark[4], plane[4];   /* quad corners 0 1 2 3: top left, top right, bottom left, bottom right */
+    float clip_b[4], clip_a[4];
+    Mat4 t_ba;
+    Room *room;
+    int skip_door, see_layer, tint;
+} SeamPortal;
+/* the played room's portals for this eye (up to max, one a seam whose neighbour is loaded and
+ * whose door is not shut): how many */
+#define SEAM_PORTALS_MAX 8
+int roomseamless_portals(struct Engine *e, const Mat4 *vp, Vec3 eye, SeamPortal *out, int max);
+/* The fog, tint and bloom across a doorway: look (the played room's, in and out) is blended with the
+ * neighbour's by the eye's distance from the plane - half and half on it, the same on both sides, so a
+ * handover does not show. 1 if it was changed (the caller puts the original back after the post pass). */
+int roomseamless_look(struct Engine *e, Vec3 eye, RoomLook *look);
+/* the debug outline of the opening (seam-outline), drawn near the end of the picture */
+void roomseamless_outline(struct Engine *e, const Mat4 *vp);
+/* the debug words: what is SEAM_DBG_*, on or off */
+enum { SEAM_DBG_PORTAL, SEAM_DBG_OUTLINE, SEAM_DBG_TINT, SEAM_DBG_LOG };
+void roomseamless_debug(int what, int on);
+/* seam-info's text: the played room's seam, T, the gate, the neighbour, Fiona's distance */
+void roomseamless_info(char *buf, size_t n);
 /* 1: this draw is one of the pair's gateway void boxes (the black cube shells the original uses
  * to hide what is beyond the doorway). Seamless mode does not draw them; room.c asks for every
  * solid room draw. Original mode always answers 0. */

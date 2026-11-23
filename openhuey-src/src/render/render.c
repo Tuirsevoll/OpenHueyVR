@@ -72,7 +72,8 @@ enum { U_MVP, U_USE_TEX, U_SOLID_TEX, U_LIT, U_COVERAGE, U_LIGHT_DIR, U_LIGHT_CO
        U_SHADOW_INFO = 35, U_SHADOW_STRENGTH = 47, U_RECEIVE = 59, U_CHAR_LIGHT = 60, U_ALPHA = 61,
        U_REJECT = 62, U_UNFOGGED = 63, U_SHADOW_LIGHT = 64, U_NBLOCKERS = 76, U_BLOCKER = 77,   /* (12 shadows, 16 blockers) */
        U_FADE_SOLID = 178,   /* (a faded placed part: exactly its own alpha, not its texture's) */
-       U_PS2 = 180, U_PDIR = 181, U_PFALL = 184, U_SHADOW_SOFT = 187, U_SKIN = 188, U_NBONES = 189 };   /* (arrays: a location an element) */
+       U_PS2 = 180, U_PDIR = 181, U_PFALL = 184, U_SHADOW_SOFT = 187, U_SKIN = 188, U_NBONES = 189,
+       U_CLIP = 190 };   /* (arrays: a location an element; u_clip: a seam portal's plane, in clip space) */
 
 /* the PS2's lighting (gfx.ps2-lighting; src/game/model.c light_rgba): each light one direction
  * (from the model's root to it; w: -dir.L), a falloff along it, its colour; the ambient; the sum
@@ -139,6 +140,7 @@ static const char *kMeshVs =
     "layout(location = 11) uniform int u_room_lit;\n"
     "layout(location = 188) uniform int u_skin;\n"     /* a skinned mesh: its slot + 1 (0: not) */
     "layout(location = 189) uniform int u_nbones;\n"
+    "layout(location = 190) uniform vec4 u_clip;\n"    /* a seam portal's plane in clip space (GL_CLIP_DISTANCE0 on: keeps what is >= 0) */
     SKIN_GLSL
     PS2_LIGHT
     "out vec3 v_ps2;\n"
@@ -155,6 +157,7 @@ static const char *kMeshVs =
     "        col = vec4(128.0 / 255.0);\n"   /* (0x80: the skinned vertices' colour) */
     "    }\n"
     "    gl_Position = u_mvp * vec4(pos, 1.0);\n"
+    "    gl_ClipDistance[0] = dot(u_clip, gl_Position);\n"
     "    vec4 p = gl_Position;\n"
     "    v_out = u_reject.x > 0.0 && (p.w < u_reject.z || p.w > u_reject.w || abs(p.x) > u_reject.x * p.w ||\n"
     "                                 abs(p.y) > u_reject.y * p.w) ? 1.0 : 0.0;\n"
@@ -646,7 +649,8 @@ void render_draw_lights(Vec3 ambient, const DrawLight *lights, int n, Vec3 root)
 
 static GLuint sQuadVao, sQuadVbo;
 
-static void quad_draw(const Mat4 *vp, const Vec3 q[4]) {   /* (corners 0 1 2 3: triangles 0 1 2, 2 1 3) */
+/* the quad's six vertices into its buffer (made on the first use) */
+static void quad_upload(const Vec3 q[4]) {
     static const int kOrder[6] = {0, 1, 2, 2, 1, 3};
     float v[18];
     int i;
@@ -666,6 +670,10 @@ static void quad_draw(const Mat4 *vp, const Vec3 q[4]) {   /* (corners 0 1 2 3: 
         v[i * 3 + 2] = q[kOrder[i]].z;
     }
     glNamedBufferSubData(sQuadVbo, 0, sizeof(v), v);
+}
+
+static void quad_draw(const Mat4 *vp, const Vec3 q[4]) {   /* (corners 0 1 2 3: triangles 0 1 2, 2 1 3) */
+    quad_upload(q);
     glProgramUniformMatrix4fv(R.shadow_prog, 0, 1, GL_FALSE, vp->m);
     glProgramUniform1i(R.shadow_prog, 1, 0);
     glUseProgram(R.shadow_prog);
@@ -711,6 +719,105 @@ void render_reflect_end(const Mat4 *vp, const Vec3 q[4]) {
     glDepthFunc(GL_LEQUAL);
     colour_writes(GL_TRUE);
     glDisable(GL_STENCIL_TEST);
+}
+
+/* ---- seam portals (game/roomseamless.c): the other room drawn through a doorway ----
+ * Stencil bit 2 marks where the opening's quad shows (depth-tested against what the played room
+ * drew); the depth there is pushed to the back and the other room drawn into it (stencil bit 4
+ * written where it drew), then the opening's plane depth goes back where it drew nothing. The
+ * reflections' bit 1 is theirs: they clear the whole stencil themselves, after this. */
+
+static GLuint sDbgProg;
+
+void render_portal_begin(const Mat4 *vp, const Vec3 q[4]) {
+    glDisable(GL_BLEND);
+    glEnable(GL_STENCIL_TEST);
+    glStencilMask(0xFF);
+    {
+        static const GLint kZero = 0;
+
+        glClearBufferiv(GL_STENCIL, 0, &kZero);
+    }
+    colour_writes(GL_FALSE);
+    glDepthMask(GL_FALSE);
+    glDepthFunc(GL_LEQUAL);
+    glStencilFunc(GL_ALWAYS, 2, 0x02);   /* where the quad shows */
+    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+    glStencilMask(0x02);
+    quad_draw(vp, q);
+    glStencilFunc(GL_EQUAL, 2, 0x02);    /* its depth pushed to the back there */
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    glStencilMask(0);
+    glDepthFunc(GL_ALWAYS);
+    glDepthMask(GL_TRUE);
+    glDepthRange(1.0, 1.0);
+    quad_draw(vp, q);
+    glDepthRange(0.0, 1.0);
+    glDepthFunc(GL_LEQUAL);
+    colour_writes(GL_TRUE);
+    glStencilFunc(GL_EQUAL, 6, 0x02);    /* the other room: in the mark only, and marking where it draws */
+    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+    glStencilMask(0x04);
+}
+
+void render_portal_end(const Mat4 *vp, const Vec3 plane_q[4]) {
+    static const GLint kZero = 0;
+
+    colour_writes(GL_FALSE);
+    glDisable(GL_BLEND);
+    glStencilFunc(GL_EQUAL, 2, 0x06);    /* marked, and the other room drew nothing there */
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    glStencilMask(0);
+    glDepthFunc(GL_ALWAYS);
+    glDepthMask(GL_TRUE);
+    quad_draw(vp, plane_q);
+    glDepthFunc(GL_LEQUAL);
+    colour_writes(GL_TRUE);
+    glStencilMask(0xFF);
+    glClearBufferiv(GL_STENCIL, 0, &kZero);
+    glDisable(GL_STENCIL_TEST);
+}
+
+void render_clip_plane(const float *plane) {
+    if (plane != NULL) {
+        glProgramUniform4fv(R.mesh_prog, U_CLIP, 1, plane);
+        glEnable(GL_CLIP_DISTANCE0);
+    } else {
+        glDisable(GL_CLIP_DISTANCE0);
+    }
+}
+
+static const char *kDbgVs =
+    "#version 460 core\n"
+    "layout(location = 0) in vec3 a_pos;\n"
+    "layout(location = 0) uniform mat4 u_vp;\n"
+    "void main() { gl_Position = u_vp * vec4(a_pos, 1.0); }\n";
+static const char *kDbgFs =
+    "#version 460 core\n"
+    "layout(location = 1) uniform vec4 u_color;\n"
+    "layout(location = 0) out vec4 o_color;\n"
+    "void main() { o_color = u_color; }\n";
+
+/* a flat translucent quad in the room (the seams' debug outline); depth-tested, none written */
+void render_debug_quad(const Mat4 *vp, const Vec3 q[4], uint32_t rgba) {
+    if (sDbgProg == 0) {
+        sDbgProg = gl_program(kDbgVs, kDbgFs, "debug");
+    }
+    quad_upload(q);
+    glProgramUniformMatrix4fv(sDbgProg, 0, 1, GL_FALSE, vp->m);
+    glProgramUniform4f(sDbgProg, 1, (float)(rgba >> 24) / 255.0f, (float)((rgba >> 16) & 255) / 255.0f,
+                       (float)((rgba >> 8) & 255) / 255.0f, (float)(rgba & 255) / 255.0f);
+    glUseProgram(sDbgProg);
+    glColorMaski(1, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glEnablei(GL_BLEND, 0);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
+    glBindVertexArray(sQuadVao);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 }
 
 void render_shadows_begin(void) {

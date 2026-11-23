@@ -1,0 +1,7 @@
+# HGVR seams v1 (Hallway Builder 1.1). One line per doorway pair, for PROPS/seams.txt.
+# roomA exitA roomB exitB | A: x y z yaw width height | B: x y z yaw width height
+# Each side in its OWN room's game units (Y down, as mesh.gltf and triggers.txt). yaw: out of
+# the room = (sin yaw, 0, cos yaw), radians. width/height: the opening, game units.
+# "layout" = the two doorways already meet in the map: use room_layout.txt (Prompt 1's transform).
+ST_001 2 ST_002 2  layout
+ST_008 3 ST_01E 1  -75.200 4.144 -142.250 1.5708 39.94 30.00  -97.402 4.058 -140.031 -1.5708 39.94 30.00

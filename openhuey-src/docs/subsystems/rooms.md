@@ -106,6 +106,28 @@ the doorway's line (its spots and event area, or its door) hands the played room
 `go-through`: Fiona and a nearby Hewie are put where they were converted by `T(from -> to)`, so the
 world position does not change. Original mode does none of it.
 
+**Seams (`PROPS/seams.txt`, `src/game/seam.c`).** A doorway between rooms that are not side by side
+in the map is joined by measured frames (a point on the floor in the opening, the way out as a yaw,
+the opening's width and height - the room data's y is up) instead of the layout: `theta = yawB + pi -
+yawA`, `T_A->B(p) = pB + R(theta)(p - pA)`. A `layout` line uses `room_layout.txt` as before. A line in
+`seams.txt` is also a seamless pair; the transform for a pair comes from `pair_T` in `roomseamless.c`.
+The other room is drawn through the opening as a stencil portal (`render_portal_begin/end`,
+`render_clip_plane`; main.c `draw_scene`): the opening's quad is marked in stencil bit 2 against the
+played room's depth, the depth there is pushed back, the other room is drawn clipped at the plane
+(`gl_ClipDistance` in the scene shader, the plane in clip space), and the plane's depth is put back
+where it drew nothing. With the eye past the plane (a head through the doorway) the played room is
+clipped to its side and the other drawn whole, clipped to its own. Debug words: `seam-outline`,
+`seam-portal`, `seam-tint`, `seam-info`.
+
+A room can have several seams (up to 8): each doorway a pair joins is an active seam with its own line,
+transforms, neighbour (a draw-only room, one loaded a tick, nearest doorway first) and portal. A
+measured seam's floor ends at its line, so it hands over as she reaches it (0.1 short); a layout pair
+at 3 past the line. A door in the exit must be swung open (20 degrees) to cross and more than 4 to
+show the room beyond. The doorways' void shells (always-drawn boxes of 6..24 triangles, untextured
+or more than 30 across) are not drawn in a paired room. A follower near her is put at the converted
+place only if that is on the new room's floor; otherwise he comes in by himself. `PROPS/seamless_all.txt`
+(from the connected map's report) lists every doorway the layout already joins.
+
 
 ## Design notes
 

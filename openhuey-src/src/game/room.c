@@ -146,16 +146,8 @@ size_t room_look_get(int slot, uint8_t *out) {
     memcpy(out, sLookRaw[slot - 0x1C], sLookN[slot - 0x1C]);
     return sLookN[slot - 0x1C];
 }
-void room_look_set(int slot, const uint8_t *d, size_t n) {
-    RoomLook *l = &gRoomLook;
-
-    if (slot >= 0x1C && slot <= 0x1F) {
-        sLookN[slot - 0x1C] = d != NULL ? (n < LOOK_RAW ? n : LOOK_RAW) : 0;
-        if (d != NULL) {
-            memcpy(sLookRaw[slot - 0x1C], d, sLookN[slot - 0x1C]);
-        }
-    }
-
+/* one effect's parameters decoded into a look (the played room's, or another room's) */
+static void look_decode(RoomLook *l, int slot, const uint8_t *d, size_t n) {
     switch (slot) {
     case 0x1F:
         l->has_tint = d != NULL && n >= 9;
@@ -203,6 +195,19 @@ void room_look_set(int slot, const uint8_t *d, size_t n) {
     }
 }
 
+void room_look_set(int slot, const uint8_t *d, size_t n) {
+    RoomLook *l = &gRoomLook;
+
+    if (slot >= 0x1C && slot <= 0x1F) {
+        sLookN[slot - 0x1C] = d != NULL ? (n < LOOK_RAW ? n : LOOK_RAW) : 0;
+        if (d != NULL) {
+            memcpy(sLookRaw[slot - 0x1C], d, sLookN[slot - 0x1C]);
+        }
+    }
+
+    look_decode(l, slot, d, n);
+}
+
 /* the parameters as last given, put back without making the effect from them (a cutscene's cues
  * wipe slot 0x1C as they play; the room's own are put back when it ends, so a later shot's hold
  * saves them and not the last cue's) */
@@ -216,6 +221,35 @@ void room_look_restore_raw(int slot, const uint8_t *d, size_t n) {
     }
 }
 
+/* a room's look from its own file, kept apart from the played room's (a seam's neighbour: its
+ * fog and tint are blended with the played room's as she nears the doorway) */
+void room_look_parse(const Room *r, RoomLook *out) {
+    size_t size;
+    const uint8_t *sec;
+
+    memset(out, 0, sizeof(*out));
+    if (r == NULL || r->id < 0) {
+        return;
+    }
+    sec = pac_section(&r->pac, PAC_EFFECTS, &size);
+    if (sec == NULL || size < 0x18) {
+        return;
+    }
+    if (word(sec + 0x8) != 0 && (size_t)word(sec + 0x8) + 9 <= size) {
+        look_decode(out, 0x1F, sec + word(sec + 0x8), 9);
+    }
+    if (word(sec + 0xC) != 0 && (size_t)word(sec + 0xC) + 5 <= size) {
+        look_decode(out, 0x1E, sec + word(sec + 0xC), 5);
+    }
+    if (word(sec + 0x10) != 0 && (size_t)word(sec + 0x10) + 16 <= size) {
+        size_t left = (size_t)(r->pac.data + r->pac_read - (sec + word(sec + 0x10)));
+
+        look_decode(out, 0x1D, sec + word(sec + 0x10), left < LOOK_RAW ? left : LOOK_RAW);
+    }
+    if (word(sec + 0x14) != 0 && (size_t)word(sec + 0x14) + 16 <= size) {
+        look_decode(out, 0x1C, sec + word(sec + 0x14), 16);
+    }
+}
 static void load_look(Room *r) {
     size_t size;
     const uint8_t *sec = pac_section(&r->pac, PAC_EFFECTS, &size);

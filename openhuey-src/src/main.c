@@ -704,12 +704,56 @@ static void draw_door_shades(Engine *e, const RoomView *v) {
  * the later layers draw, as the original's packets go out layer by layer) */
 static Vec3 view_position(const Mat4 *v);
 static Vec3 view_forward(const Mat4 *v);
+
+/* this picture's seam portals (roomseamless_portals): each the neighbour drawn through its
+ * opening's window (mode 1), or the eye past its plane (mode 2) */
+static SeamPortal sPortals[SEAM_PORTALS_MAX];
+static int sNPortals;
+
+/* a portal's neighbour: its solid and see-through parts, drawn with its plane's clip (a seam: the
+ * other room through the doorway) */
+static void portal_room(const SeamPortal *p, const Mat4 *vp, int layer_a, int layer_b) {
+    Mat4 nvp = mat4_mul(*vp, p->t_ba);
+    int layers[2] = {layer_a, layer_b}, i;
+
+    if (p->tint) {
+        render_mesh_tint(0.55f, 0.7f, 1.0f, 1.0f);   /* (seam-tint: what the portal shows is blue) */
+    }
+    render_clip_plane(p->clip_b);
+    for (i = 0; i < 2; i++) {
+        if (layers[i] < 0) {
+            continue;
+        }
+        render_fog_after(fog_after(layers[i]));
+        room_draw_view(p->room, &nvp, layers[i], p->skip_door);
+    }
+    render_clip_plane(NULL);
+    if (p->tint) {
+        render_mesh_tint(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+}
+
 static void draw_layer(Engine *e, const Mat4 *vp, const Mat4 *view, int layer) {
-    int i;
+    int i, k, past = -1;
 
     render_fog_after(fog_after(layer));
+    for (k = 0; k < sNPortals; k++) {
+        if (sPortals[k].mode == 2) {   /* (the eye past a doorway's plane: the played room only up to it) */
+            past = k;
+            break;
+        }
+    }
+    if (past >= 0) {
+        render_clip_plane(sPortals[past].clip_a);
+    }
     room_draw_layer(&e->room, vp, layer);
-    roomseamless_draw(e, vp, layer);   /* (the seamless neighbour's solid / see-through parts, after the room's) */
+    if (past >= 0) {
+        render_clip_plane(NULL);
+        if (layer == 1 || layer == sPortals[past].see_layer) {   /* (and that neighbour from it on, whole) */
+            portal_room(&sPortals[past], vp, layer, -1);
+        }
+        render_fog_after(fog_after(layer));
+    }
     for (i = 0; i < MAX_ACTORS; i++) {
         if (e->actors[i].used && actor_layer(&e->actors[i]) == layer && layer != 0x1C) {
             draw_actor(e, &e->actors[i], vp);
@@ -775,6 +819,7 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
     }
     room_draw_begin(&e->room, eye, forward);
     roomseamless_view_begin(e, eye, forward);   /* (the neighbour's moving batches, its eye in its own space) */
+    sNPortals = roomseamless_portals(e, &vp, eye, sPortals, SEAM_PORTALS_MAX);   /* (a seam's other room, through its opening) */
     rv = room_view(proj, view, eye, e->camera.znear, e->camera.zfar);
     use_blockers(e, &rv);
     for (layer = 0; layer < 0x1E; layer++) {   /* the room's layers and the characters' in order */
@@ -782,6 +827,16 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
             draw_door_shades(e, &rv);
         }
         draw_layer(e, &vp, view, layer);
+        for (i = 0; layer == 1 && i < sNPortals; i++) {
+            if (sPortals[i].mode != 1) {
+                continue;
+            }
+            /* the window: the neighbour in the opening, over what the room drew there (before the
+             * see-through layers, the reflections and the sprites, which the plane's depth hides) */
+            render_portal_begin(&vp, sPortals[i].mark);
+            portal_room(&sPortals[i], &vp, 1, sPortals[i].see_layer);
+            render_portal_end(&vp, sPortals[i].plane);
+        }
     }
     for (i = 0; i < MAX_ACTORS && !(e->actors[i].used && e->actors[i].layer == 0x1C); i++) {
     }
@@ -816,6 +871,7 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
     if (!engine_skip("sprites")) {
         sprites_draw(&vp, view);   /* the effects (after the opaque scene: they don't write depth) */
     }
+    roomseamless_outline(e, &vp);   /* (seam-outline: the opening drawn flat, a debug aid) */
     if (!engine_skip("glow") && sprites_glowing() && post_glow_begin()) {   /* the glow pass: the glowing ones again */
         sprites_draw_glow(&vp);
         post_glow_end();
@@ -829,7 +885,15 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
         }
         post_shine_end();
     }
-    render_post();
+    {   /* the room's look blended with the neighbour's near a seam (not a jump at the doorway) */
+        RoomLook keep = gRoomLook;
+        int blended = roomseamless_look(e, eye, &gRoomLook);
+
+        render_post();
+        if (blended) {
+            gRoomLook = keep;
+        }
+    }
 }
 
 /* menus, prompts, the console: one layer, in the picture's pixels */

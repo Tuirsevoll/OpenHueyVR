@@ -2,6 +2,7 @@
 #include "roomseamless.h"
 #include "engine.h"
 #include "roomlayout.h"
+#include "seam.h"
 #include "exits.h"
 #include "areas.h"
 #include "camdirector.h"
@@ -18,21 +19,58 @@
 
 #define SEAMLESS_PAIRS_MAX 256
 #define SEAMLESS_PAST 3.0f        /* units past the doorway's line: hand over */
+#define SEAMLESS_PAST_FRAME -0.1f /* ... for a measured seam: the floor ends at its line */
 #define SEAMLESS_PAST_MAX 20.0f   /* ... and no further past it (a save load's place is not a crossing) */
+#define SEAMLESS_LEVEL 30.0f      /* the most she may be above or below a doorway's floor to cross it */
 #define SEAMLESS_MARGIN 8.0f      /* across the doorway, past its width */
 #define SEAMLESS_HEWIE_NEAR 40.0f /* how near Hewie comes too */
 #define SEAMLESS_COOLDOWN 15      /* ticks (0.5 s) between handovers */
 #define SEAMLESS_TIMEOUT 120      /* ticks a handover may take before it is forgotten */
+#define SEAMLESS_DOOR_SHUT 4.0f   /* a door swung less than this (degrees) is shut: no portal */
+#define SEAMLESS_DOOR_OPEN 20.0f  /* ... and one swung less than this is not open enough to walk through */
 
 typedef struct SeamlessPair {
     int a, exit_a, b, exit_b;
+    const Seam *seam;   /* its frames (seams.txt; NULL: the layout's matrices are the transform) */
 } SeamlessPair;
 
 static SeamlessPair sPair[SEAMLESS_PAIRS_MAX];
 static int sPairN;
 static int sPairsLoaded;
 
-static Room sNeighbour;          /* the other room, drawn only */
+/* the doorway's line in the played room's space: its middle, its normal (out of the played room,
+ * toward the other room) and its width. An open passage has no door, so the line comes from its
+ * spots (0 out, 1 in: their middle is the point both rooms agree on when the layout places them)
+ * and its event area or gate (the line's direction and width: the box's edge most square across
+ * the way through, a gate's own line). A door's line is the door: where it stands and its turn. A
+ * seam's own measured frame is used as it is. */
+typedef struct Doorway {
+    Vec3 centre, normal, tangent;
+    float halfwidth;
+    float height;    /* the opening's, up from the floor (the room data's y is up) */
+    int frame;       /* 1: from seams.txt's own frame, not worked out from the exit's data */
+} Doorway;
+
+#define DOORWAY_HEIGHT 60.0f   /* (an opening with no frame of its own: taller than any gate) */
+
+/* the played room's seams: each doorway of it that a pair joins to another room */
+#define SEAM_ACT_MAX 8
+typedef struct ActiveSeam {
+    const SeamlessPair *pair;
+    int is_a;
+    int my_exit, other, other_exit;
+    Doorway line;
+    int t_ok;
+    Mat4 t_ab, t_ba;          /* played -> other, other -> played */
+    float prev_past;          /* the previous tick's side of the line: a handover is a crossing, not */
+    int prev_had;             /* merely being past it (a save's place or a door's arrival can be) */
+} ActiveSeam;
+
+static ActiveSeam sAct[SEAM_ACT_MAX];
+static int sActN;
+static int sActRoom = -1;
+static Room sNb[SEAM_ACT_MAX];   /* the other rooms, drawn only (id -1: free) */
+static RoomLook sNbLook[SEAM_ACT_MAX];   /* each one's own fog / tint / bloom, for the blend */
 static int sInit;
 
 /* the handover in progress */
@@ -46,11 +84,10 @@ static long sStartTick;
 static long sCooldownUntil;
 static Uint64 sLoadT0, sLoadNs;
 static int sLoadTimed;
+static int sSuppressedRoom = -1, sSuppressedExit = -1;
 
-/* the previous tick's side of the line: a handover is a crossing, not merely being past it (a
- * save's place or a door's arrival can be past it) */
-static float sPrevPast;
-static int sPrevHad, sPrevRoom = -1;
+/* the debug words (seam-portal, seam-outline, seam-tint, seam-log) */
+static int sDbgPortal = 1, sDbgOutline, sDbgTint, sDbgLog;
 
 /* one line to the console (and the log) */
 static void slog(const char *fmt, ...) {
@@ -61,14 +98,6 @@ static void slog(const char *fmt, ...) {
     vsnprintf(line, sizeof(line), fmt, ap);
     va_end(ap);
     fprintf(stderr, "%s", line);
-}
-
-static void room_name(int id, char *out, size_t n) {
-    if (id < 0) {
-        snprintf(out, n, "none");
-    } else {
-        snprintf(out, n, "ST_%03X", id);
-    }
 }
 
 /* a 3x4 matrix's linear part on a direction (no translation) */
@@ -93,6 +122,8 @@ static float wrap_angle(float a) {
 static float camera_yaw_of(Vec3 v) {
     return atan2f(v.x, -v.z);
 }
+
+static int base_of(int room);
 
 /* the pair file: `ST_001 2 ST_002 2`, one a line */
 static void pairs_load(void) {
@@ -141,8 +172,7 @@ static void pairs_load(void) {
                             na, ea, nb, eb);
                     continue;
                 }
-                sPair[sPairN++] = (SeamlessPair){a, ea, b, eb};
-                fprintf(stderr, "seamless: pair ST_%03X %d - ST_%03X %d\n", a, ea, b, eb);
+                sPair[sPairN++] = (SeamlessPair){base_of(a), ea, base_of(b), eb, NULL};   /* (a family's root) */
             } else if (ln + 1 < sizeof(line)) {
                 line[ln++] = c;
             }
@@ -152,43 +182,79 @@ static void pairs_load(void) {
     if (missing) {
         fprintf(stderr, "seamless: no PROPS/seamless.txt\n");
     }
+    /* the seams (PROPS/seams.txt): each line is a seam and a seamless pair; a pair in both files
+     * is the seam */
+    seam_load_if_needed();
+    for (ln = 0; (int)ln < seam_count(); ln++) {
+        const Seam *s = seam_at((int)ln);
+        int k, have = 0;
+
+        if (s->layout && (!roomlayout_get(s->a, NULL) || !roomlayout_get(s->b, NULL))) {
+            fprintf(stderr, "seam: ST_%03X %d - ST_%03X %d skipped (a layout line, and not in the layout)\n",
+                    s->a, s->ea, s->b, s->eb);
+            continue;
+        }
+        for (k = 0; k < sPairN; k++) {
+            int sa = base_of(s->a), sb = base_of(s->b);
+
+            if ((sPair[k].a == sa && sPair[k].exit_a == s->ea && sPair[k].b == sb && sPair[k].exit_b == s->eb) ||
+                (sPair[k].a == sb && sPair[k].exit_a == s->eb && sPair[k].b == sa && sPair[k].exit_b == s->ea)) {
+                if (!(sPair[k].a == sa && sPair[k].exit_a == s->ea)) {   /* (listed the other way round: the frames' A side is ours) */
+                    SeamlessPair r = {sPair[k].b, sPair[k].exit_b, sPair[k].a, sPair[k].exit_a, NULL};
+
+                    sPair[k] = r;
+                }
+                sPair[k].seam = s->layout ? NULL : s;
+                have = 1;
+            }
+        }
+        if (!have && sPairN < SEAMLESS_PAIRS_MAX) {
+            sPair[sPairN++] = (SeamlessPair){base_of(s->a), s->ea, base_of(s->b), s->eb, s->layout ? NULL : s};
+        }
+    }
+    fprintf(stderr, "seamless: %d doorway pair(s)\n", sPairN);
 }
 
-/* the seamless doorway of the played room: its exit, the other room and that room's exit */
-static int pair_for(int room, int *my_exit, int *other, int *other_exit) {
-    int base, i;
+/* the room a story version stands for, down the chain (ST_030 is a variant of ST_02F, the same
+ * place as ST_028): the pairs name any of a family, so both sides are taken to the root */
+static int base_of(int room) {
+    int i;
 
-    pairs_load();
-    base = roomlayout_base_id(room);
-    if (base < 0) {
-        return 0;
-    }
-    for (i = 0; i < sPairN; i++) {
-        if (sPair[i].a == base) {
-            *my_exit = sPair[i].exit_a;
-            *other = sPair[i].b;
-            *other_exit = sPair[i].exit_b;
-            return 1;
+    for (i = 0; i < 8; i++) {
+        int base = roomlayout_base_id(room);
+
+        if (base < 0 || base == room) {
+            break;
         }
-        if (sPair[i].b == base) {
-            *my_exit = sPair[i].exit_b;
-            *other = sPair[i].a;
-            *other_exit = sPair[i].exit_a;
-            return 1;
-        }
+        room = base;
     }
-    return 0;
+    return room;   /* (a seam's room need not be in the layout) */
+}
+
+/* T from `from_room`'s space into `to_room`'s over a pair: the seam's frames, else the layout's
+ * matrices */
+static int pair_matrix(const SeamlessPair *p, int from_is_a, int from_room, int to_room, Mat4 *T) {
+    if (p->seam != NULL) {
+        return seam_transform(p->seam, from_is_a, T);
+    }
+    return roomlayout_between(from_room, to_room, T);
 }
 
 /* The gate's own state, from what its scripts have applied: open 1, shut 0. ST_001 shows the
  * open / shut gate parts (groups $15 / $16); ST_002 shows its open part (group $1B). Until one
  * is shown it is treated as shut, so the asset's default cage place cannot open it early. A shut
- * gate keeps the gateway closed and its box solid, as the original room's story has it. */
-static int gateway_open(const Room *r) {
+ * gate keeps the gateway closed and its box solid, as the original room's story has it. Only the
+ * courtyard's lever gate (exit 2 of ST_001 and ST_002) has a state: any other seam is open. */
+static int gateway_open(const Room *r, int exit) {
     uint32_t open_part, shut_part, gate_open_part;
+    int base;
 
     if (r == NULL) {
         return -1;
+    }
+    base = base_of(r->id);
+    if ((base != 1 && base != 2) || exit != 2) {
+        return 1;
     }
     open_part = (r->groups[21 >> 5] >> (21 & 31)) & 1u;       /* ST_001, open */
     shut_part = (r->groups[22 >> 5] >> (22 & 31)) & 1u;       /* ST_001, shut */
@@ -204,32 +270,12 @@ static int gateway_open(const Room *r) {
     return 0;
 }
 
-/* the pair's base rooms: the black void shells at the gateway (the original's occluders) are
- * drawn in both and are what this feature takes away */
-static int room_is_paired(int id) {
-    static int last_id = -2, last_result;
-    int base, i;
-
-    if (id < 0) {
-        return 0;
+/* a door in the exit that is swung shut: no way through, and nothing to see through */
+static float door_swing(const Room *r, int exit) {
+    if (r == NULL || exit < 0 || exit >= ROOM_DOORS || !r->doors[exit].present || !r->doors[exit].shown) {
+        return 1000.0f;   /* (no door: as open as can be) */
     }
-    if (id == last_id) {
-        return last_result;
-    }
-    last_id = id;
-    last_result = 0;
-    pairs_load();
-    base = roomlayout_base_id(id);
-    if (base < 0) {
-        return 0;
-    }
-    for (i = 0; i < sPairN; i++) {
-        if (sPair[i].a == base || sPair[i].b == base) {
-            last_result = 1;
-            break;
-        }
-    }
-    return last_result;
+    return fabsf(r->doors[exit].swing);
 }
 
 /* a draw's own box: the vertices its run uses (the room mesh's v, not the moving batches') */
@@ -251,41 +297,75 @@ static int draw_box(const Room *r, const MeshDraw *d, Vec3 *lo, Vec3 *hi) {
     return 1;
 }
 
-/* The gateway's void shell: a tall, square, unlit group-0 solid draw (12 triangles in ST_001,
- * 8 in ST_002; a room box, not the gate cage or the gatehouse's walls). */
-static int draw_is_void_box(const Room *r, const MeshDraw *d, Vec3 *lo_out, Vec3 *hi_out) {
+/* A doorway's void shell: what the original draws in a doorway to hide the room that is not
+ * loaded behind it. Always drawn (part 0, group 0) and never textured - a box of a few triangles,
+ * or a flat panel - whatever colour the room's light makes it (white, black, brown). The one
+ * textured kind is an open 8-triangle box 30..70 across. A room that has a dozen such draws is
+ * something else (a stage, not doorways): none of its are taken for shells. */
+static int void_shell(const Room *r, const MeshDraw *d) {
     Vec3 lo, hi;
-    int tris;
+    int tris, big_dims;
 
     if (d == NULL || d->part != MESH_SOLID || d->group != 0 || !draw_box(r, d, &lo, &hi)) {
         return 0;
     }
     tris = d->count / 3;
-    if (tris < 6 || tris > 24) {
-        return 0;
+    big_dims = (hi.x - lo.x >= 15.0f) + (hi.y - lo.y >= 15.0f) + (hi.z - lo.z >= 15.0f);
+    if (d->texture < 0) {
+        return tris >= 2 && tris <= 32 && big_dims >= 2;
     }
-    if (hi.x - lo.x < 30.0f || hi.z - lo.z < 30.0f || hi.y - lo.y < 30.0f) {
-        return 0;
-    }
-    if (lo_out != NULL) {
-        *lo_out = lo;
-    }
-    if (hi_out != NULL) {
-        *hi_out = hi;
-    }
-    return 1;
+    return tris == 8 && hi.x - lo.x >= 30.0f && hi.y - lo.y >= 30.0f && hi.z - lo.z >= 30.0f &&
+           hi.x - lo.x <= 70.0f && hi.y - lo.y <= 70.0f && hi.z - lo.z <= 70.0f;
 }
 
-/* the doorway's line in the played room's space: its middle, its normal (toward the other room)
- * and its width. An open passage has no door, so the line comes from its spots (0 out, 1 in: their
- * middle is the point both rooms agree on when the layout places them) and its event area or gate
- * (the line's direction and width: the box's edge most square across the way through, a gate's own
- * line). A door's line is the door: where it stands and its turn. */
-typedef struct Doorway {
-    Vec3 centre, normal, tangent;
-    float halfwidth;
-} Doorway;
+/* which of a room's draws are void shells, worked out once per room (the draw asks for every run
+ * of every layer of every eye) */
+#define VOID_CACHE 12
+static struct VoidMask {
+    const Room *r;
+    int id, nd;
+    uint8_t *hide;
+} sVoid[VOID_CACHE];
+static int sVoidNext;
 
+static const uint8_t *void_mask(const Room *r) {
+    int i, n = 0;
+    struct VoidMask *m = NULL;
+
+    for (i = 0; i < VOID_CACHE; i++) {
+        if (sVoid[i].r == r && sVoid[i].hide != NULL) {
+            m = &sVoid[i];
+            break;
+        }
+    }
+    if (m != NULL && m->id == r->id && m->nd == r->mesh.nd) {
+        return m->hide;
+    }
+    if (m == NULL) {
+        m = &sVoid[sVoidNext];
+        sVoidNext = (sVoidNext + 1) % VOID_CACHE;
+    }
+    free(m->hide);
+    m->hide = calloc((size_t)(r->mesh.nd > 0 ? r->mesh.nd : 1), 1);
+    m->r = r;
+    m->id = r->id;
+    m->nd = r->mesh.nd;
+    if (m->hide == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < r->mesh.nd; i++) {
+        m->hide[i] = (uint8_t)void_shell(r, &r->mesh.d[i]);
+        n += m->hide[i];
+    }
+    if (n > 12) {
+        memset(m->hide, 0, (size_t)r->mesh.nd);   /* (a stage, not doorways) */
+        n = 0;
+    }
+    if (n > 0) {
+        slog("seamless: ST_%03X: %d doorway void shell(s) not drawn\n", r->id, n);
+    }
+    return m->hide;
+}
 static int doorway_build(int room_id, int exit, Doorway *d) {
     Room *r = &gEngine.room;
     Vec3 out, in, passage, pn;
@@ -310,6 +390,8 @@ static int doorway_build(int room_id, int exit, Doorway *d) {
         return 0;
     }
     pn = vec3_scale(passage, 1.0f / len);
+    d->height = DOORWAY_HEIGHT;
+    d->frame = 0;
     d->centre = vec3((out.x + in.x) * 0.5f, out.y, (out.z + in.z) * 0.5f);
     d->normal = pn;
     d->tangent = vec3(-pn.z, 0.0f, pn.x);
@@ -386,120 +468,257 @@ static int doorway_build(int room_id, int exit, Doorway *d) {
     return 1;
 }
 
-/* the line, kept for the room and exit it was built for */
-static int sLineRoom = -1, sLineExit = -1, sLineOk;
-static Doorway sLine;
-static int sSuppressedRoom = -1, sSuppressedExit = -1;
+/* one side of a pair as a doorway line in the played room: the seam's own frame, else worked out */
+static int doorway_make(int room_id, const SeamlessPair *p, int is_a, Doorway *d) {
+    int exit = is_a ? p->exit_a : p->exit_b;
 
-static int doorway_line(int room_id, int exit, Doorway *d) {
-    if (sLineRoom != room_id || sLineExit != exit) {
-        sLineRoom = room_id;
-        sLineExit = exit;
-        sLineOk = doorway_build(room_id, exit, &sLine);
-        if (sLineOk) {
-            slog("seamless: ST_%03X exit %d line: centre %.1f %.1f %.1f normal %.3f %.3f width %.1f\n",
-                 room_id, exit, sLine.centre.x, sLine.centre.y, sLine.centre.z,
-                 sLine.normal.x, sLine.normal.z, sLine.halfwidth * 2.0f);
+    if (p->seam != NULL) {
+        /* a seam's own measured frame: the opening's middle, its way out, its size */
+        const SeamFrame *f = seam_frame(p->seam, is_a);
+
+        d->centre = f->p;
+        d->normal = vec3(sinf(f->yaw), 0.0f, cosf(f->yaw));
+        d->tangent = vec3(-d->normal.z, 0.0f, d->normal.x);
+        d->halfwidth = f->width * 0.5f;
+        d->height = f->height;
+        d->frame = 1;
+        return 1;
+    }
+    return doorway_build(room_id, exit, d);
+}
+
+/* ---- the played room's seams ---- */
+
+/* each doorway of the played room that a pair joins, with its line and its transforms (rebuilt
+ * when a room is loaded: the lines come from its nav, its doors and its areas) */
+static void actives_refresh(Engine *e) {
+    int i;
+
+    if (sActRoom == e->room.id) {
+        return;
+    }
+    sActRoom = e->room.id;
+    sActN = 0;
+    pairs_load();
+    for (i = 0; i < sPairN && sActN < SEAM_ACT_MAX; i++) {
+        const SeamlessPair *p = &sPair[i];
+        int base = base_of(e->room.id), is_a = p->a == base;
+        ActiveSeam *s = &sAct[sActN];
+
+        if (p->a != base && p->b != base) {
+            continue;
+        }
+        memset(s, 0, sizeof(*s));
+        s->pair = p;
+        s->is_a = is_a;
+        s->my_exit = is_a ? p->exit_a : p->exit_b;
+        s->other_exit = is_a ? p->exit_b : p->exit_a;
+        {
+            /* the room the game's own graph sends this exit to now (a story version of the pair's
+             * room, as the story stands): it must be the pair's room, at the pair's exit - else
+             * this doorway is not what the pair says, and the old way out is kept for it */
+            int to_exit = -1, next = world_exit_leads(&e->world, e->room.id, s->my_exit, &to_exit);
+            int want = is_a ? p->b : p->a;
+
+            if (next < 0 || base_of(next) != want || to_exit != s->other_exit) {
+                slog("seamless: ST_%03X exit %d: the game's graph leads to ST_%03X exit %d, not the pair's ST_%03X exit %d: "
+                     "left to the old way out\n", e->room.id, s->my_exit, next < 0 ? 0 : next, to_exit, want,
+                     s->other_exit);
+                continue;
+            }
+            s->other = next;
+        }
+        if (!doorway_make(e->room.id, p, is_a, &s->line)) {
+            slog("seamless: ST_%03X exit %d: no doorway line (no spots): left to the old way out\n", e->room.id,
+                 s->my_exit);
+            continue;
+        }
+        s->t_ok = pair_matrix(p, is_a, e->room.id, s->other, &s->t_ab) &&
+                  pair_matrix(p, !is_a, s->other, e->room.id, &s->t_ba);
+        if (!s->t_ok) {
+            slog("seamless: ST_%03X exit %d: no transform to ST_%03X: left to the old way out\n", e->room.id,
+                 s->my_exit, s->other);
+            continue;
+        }
+        slog("seamless: ST_%03X exit %d -> ST_%03X exit %d (%s): centre %.1f %.1f %.1f normal %.3f %.3f width %.1f "
+             "height %.1f\n",
+             e->room.id, s->my_exit, s->other, s->other_exit, s->line.frame ? "frame" : "auto", s->line.centre.x,
+             s->line.centre.y, s->line.centre.z, s->line.normal.x, s->line.normal.z, s->line.halfwidth * 2.0f,
+             s->line.height);
+        sActN++;
+    }
+}
+
+static ActiveSeam *act_for_exit(int exit) {
+    int i;
+
+    for (i = 0; i < sActN; i++) {
+        if (sAct[i].my_exit == exit) {
+            return &sAct[i];
         }
     }
-    if (!sLineOk) {
-        return 0;
-    }
-    *d = sLine;
-    return 1;
+    return NULL;
 }
 
-/* ---- the draw-only neighbour ---- */
+static Room *nb_find(int id) {
+    int i;
 
-static void neighbour_free(const char *why) {
-    if (sNeighbour.id >= 0) {
-        slog("seamless: freed ST_%03X (drawing alone: %s)\n", sNeighbour.id, why);
-        room_free_view(&sNeighbour);
+    for (i = 0; i < SEAM_ACT_MAX; i++) {
+        if (sNb[i].id == id && id >= 0) {
+            return &sNb[i];
+        }
     }
-    sNeighbour.id = -1;
+    return NULL;
 }
 
-static void neighbour_ensure(Engine *e, int other) {
-    Mat4 t;
-    char a[16], b[16];
+static void nb_free_all(const char *why) {
+    int i;
 
-    if (sNeighbour.id == other) {
-        return;
+    for (i = 0; i < SEAM_ACT_MAX; i++) {
+        if (sNb[i].id >= 0) {
+            slog("seamless: freed ST_%03X (drawing alone: %s)\n", sNb[i].id, why);
+            room_free_view(&sNb[i]);
+        }
+        sNb[i].id = -1;
     }
-    if (sNeighbour.id >= 0) {
-        neighbour_free("the pair's other room changed");
+}
+
+/* the other rooms of the played room's seams kept in step: those no seam leads to now are freed,
+ * and one missing is loaded (one a tick: the nearest doorway first) */
+static void neighbours_update(Engine *e) {
+    int i, best = -1;
+    float best_d = 1e30f;
+    HBody *b = hactor_body(gCamDir.player);
+
+    for (i = 0; i < SEAM_ACT_MAX; i++) {
+        int k, needed = 0;
+
+        if (sNb[i].id < 0) {
+            continue;
+        }
+        for (k = 0; k < sActN; k++) {
+            needed |= sAct[k].other == sNb[i].id;
+        }
+        if (!needed) {
+            slog("seamless: freed ST_%03X (drawing alone: no seam of ST_%03X leads there)\n", sNb[i].id, e->room.id);
+            room_free_view(&sNb[i]);
+            sNb[i].id = -1;
+        }
     }
-    if (!room_load_view(&sNeighbour, other)) {
-        sNeighbour.id = -1;
-        slog("seamless: can't load ST_%03X to draw beside ST_%03X\n", other, e->room.id);
-        return;
+    for (i = 0; i < sActN; i++) {
+        float d;
+
+        if (nb_find(sAct[i].other) != NULL) {
+            continue;
+        }
+        if (b != NULL && b->has) {
+            Vec3 p = vec3(b->pos[0], b->pos[1], b->pos[2]);
+
+            d = vec3_len(vec3_sub(p, sAct[i].line.centre));
+        } else {
+            d = 0.0f;
+        }
+        if (d < best_d) {
+            best_d = d;
+            best = i;
+        }
     }
-    room_name(e->room.id, a, sizeof(a));
-    room_name(other, b, sizeof(b));
-    if (roomlayout_between(other, e->room.id, &t)) {
-        slog("seamless: drawing %s next to %s; T %s->%s [%.4f %.4f %.4f %.4f; %.4f %.4f %.4f %.4f; "
-             "%.4f %.4f %.4f %.4f]\n",
-             b, a, b, a, t.m[0], t.m[4], t.m[8], t.m[12], t.m[1], t.m[5], t.m[9], t.m[13],
-             t.m[2], t.m[6], t.m[10], t.m[14]);
-    } else {
-        slog("seamless: drawing %s next to %s (no T between them)\n", b, a);
+    if (best >= 0) {
+        Uint64 t0 = SDL_GetPerformanceCounter();
+        int slot, ok, other = sAct[best].other;
+
+        for (slot = 0; slot < SEAM_ACT_MAX && sNb[slot].id >= 0; slot++) {
+        }
+        if (slot >= SEAM_ACT_MAX) {
+            return;
+        }
+        ok = room_load_view(&sNb[slot], other);
+        if (ok) {
+            room_look_parse(&sNb[slot], &sNbLook[slot]);
+        }
+        slog("seamless: neighbour ST_%03X %s in %.1f ms (beside ST_%03X)\n", other, ok ? "ready" : "FAILED",
+             (double)(SDL_GetPerformanceCounter() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency(),
+             e->room.id);
+        if (!ok) {
+            sNb[slot].id = -1;
+            /* (not tried again for this room: its seam is left to the old way out) */
+            memmove(&sAct[best], &sAct[best + 1], (size_t)(sActN - best - 1) * sizeof(ActiveSeam));
+            sActN--;
+        }
     }
+}
+
+/* each room's matrix into one common space, for the handover's "she did not move" check: the
+ * layout's for a layout pair; for a seam the `from` room's own space and the `to` room's put
+ * into it by T */
+static int world_pair(const ActiveSeam *s, int from, int to, Mat4 *wf, Mat4 *wt) {
+    if (s->pair->seam != NULL) {
+        *wf = mat4_identity();
+        return seam_mat4_inverse(&s->t_ab, wt);
+    }
+    return roomlayout_get(from, wf) && roomlayout_get(to, wt);
 }
 
 /* ---- the handover ---- */
 
 void roomseamless_reset(void) {
-    if (sInit && sNeighbour.id >= 0) {
-        room_free_view(&sNeighbour);
+    int i;
+
+    if (sInit) {
+        nb_free_all("a new game");
     }
-    sNeighbour.id = -1;
+    for (i = 0; i < SEAM_ACT_MAX; i++) {
+        sNb[i].id = -1;
+    }
     sInit = 1;
     sPending = 0;
     sArrivalTaken = sHewieTaken = 0;
     sCooldownUntil = 0;
     sLoadTimed = 0;
-    sLineRoom = sLineExit = -1;
-    sLineOk = 0;
+    sActRoom = -1;
+    sActN = 0;
     sSuppressedRoom = sSuppressedExit = -1;
-    sPrevHad = 0;
-    sPrevRoom = -1;
 }
 
 int roomseamless_go(int exit) {
     Engine *e = &gEngine;
     HBody *b;
-    int my, other, oe;
+    ActiveSeam *s;
     Cell arg;
     int kind;
 
     if (!vr_active() || !gVrOptions.room_loading || sPending || exit < 0) {
         return 0;
     }
-    if (!pair_for(e->room.id, &my, &other, &oe) || my != exit) {
+    s = act_for_exit(exit);
+    if (s == NULL) {
         return 0;
     }
-    if (gateway_open(&e->room) != 1) {
+    if (gateway_open(&e->room, exit) != 1) {
         return 0;   /* (the story gate is still shut: no way through until the lever) */
+    }
+    if (door_swing(&e->room, exit) < SEAMLESS_DOOR_OPEN) {
+        return 0;   /* (a door in the way: shut, or not open enough yet) */
     }
     b = hactor_body(gCamDir.player);
     if (b == NULL || !b->has || b->room != e->room.id) {
         return 0;
     }
-    if (!roomlayout_between(e->room.id, other, &sTFromTo) ||
-        !roomlayout_get(e->room.id, &sWFrom) || !roomlayout_get(other, &sWTo)) {
-        slog("seamless: no layout for ST_%03X -> ST_%03X: no handover\n", e->room.id, other);
+    if (!world_pair(s, e->room.id, s->other, &sWFrom, &sWTo)) {
+        slog("seamless: no layout for ST_%03X -> ST_%03X: no handover\n", e->room.id, s->other);
         return 0;
     }
+    sTFromTo = s->t_ab;
     sFrom = e->room.id;
-    sTo = other;
-    sExitTo = oe;
+    sTo = s->other;
+    sExitTo = s->other_exit;
     {
         int to_exit = -1;
         int next = world_exit_leads(&e->world, e->room.id, exit, &to_exit);
 
         slog("seamless: go-through: ST_%03X exit %d leads to ST_%03X exit %d (the pair's other side is ST_%03X)\n",
-             e->room.id, exit, next, to_exit, other);
-        if (next != other) {
+             e->room.id, exit, next, to_exit, s->other);
+        if (next != s->other) {
             slog("seamless: WARNING the room graph and the seamless pair disagree here\n");
         }
     }
@@ -529,13 +748,12 @@ int roomseamless_go(int exit) {
     return 1;
 }
 
-
 void roomseamless_load_begin(int id) {
     HBody *b = hactor_body(gCamDir.player);
 
-    /* (a room (re)load, a save's included: its place is not a step across the line) */
-    sPrevHad = 0;
-    sPrevRoom = -1;
+    /* (a room (re)load, a save's included: its place is not a step across the line, and its
+     * doorways are worked out afresh) */
+    sActRoom = -1;
     if (!sPending || id != sTo || gEngine.room.id != sFrom) {
         return;
     }
@@ -600,9 +818,34 @@ int roomseamless_take_arrival(Vec3 *at, float *yaw) {
     }
     p = mat4_point(&sTFromTo, sFromPos);
     y = turn_yaw(&sTFromTo, sFromYaw);
+    {
+        /* a frame a few units off can put the exact place just off the floor: the nearest floor
+         * within 12 units (never further: a far one is a teleport) is better than none */
+        NavMesh *n = &gEngine.room.nav;
+        float h, best = 12.0f * 12.0f;
+        int i, found = -1;
+
+        if (n->ntris > 0 && navmesh_find(n, p, 8.0f, &h) < 0) {
+            for (i = 0; i < n->ntris; i++) {
+                Vec3 c = navmesh_center(n, i);
+                float d2 = (c.x - p.x) * (c.x - p.x) + (c.z - p.z) * (c.z - p.z);
+
+                if (d2 < best && fabsf(c.y - p.y) < 20.0f) {
+                    best = d2;
+                    found = i;
+                }
+            }
+            if (found >= 0) {
+                slog("seamless: the arrival point is off the floor; the nearest floor, %.1f units away\n", sqrtf(best));
+                p = navmesh_center(n, found);
+            } else {
+                slog("seamless: WARNING the arrival point is off the floor and none is within 12 units\n");
+            }
+        }
+    }
     log_doorway_after_arrival(p);
     /* her look is her heading; the camera's yaw turns by the same matrix, so the room does not
-     * spin in the headset (a pure move, as this pair, turns it by 0) */
+     * spin in the headset (a pure move turns it by 0) */
     f0 = vec3(sinf(sFromYaw), 0.0f, cosf(sFromYaw));
     f1 = turn_vec(&sTFromTo, f0);
     engine_vr_turn_view(wrap_angle(camera_yaw_of(f1) - camera_yaw_of(f0)));
@@ -630,7 +873,6 @@ int roomseamless_take_arrival(Vec3 *at, float *yaw) {
     return 1;
 }
 
-
 int roomseamless_arrived(void) {
     return sPending && sArrivalTaken;
 }
@@ -638,7 +880,8 @@ int roomseamless_arrived(void) {
 int roomseamless_hewie_here(int id) {
     HBody *b;
     Vec3 p, head, point;
-    float dx, dz, d, y;
+    float dx, dz, d, y, h;
+    int tri;
 
     if (!sPending || sHewieTaken) {
         return 0;
@@ -654,6 +897,14 @@ int roomseamless_hewie_here(int id) {
         return 0;
     }
     p = mat4_point(&sTFromTo, vec3(b->pos[0], b->pos[1], b->pos[2]));
+    /* a seam whose rooms only touch at the doorway: behind her is not a place in the new room
+     * (its floor stops at the doorway), so he is not put there - he comes in by the doorway the
+     * way he does from further off */
+    tri = navmesh_find(&gEngine.room.nav, p, 8.0f, &h);
+    if (tri < 0) {
+        slog("seamless: Hewie (%.1f units from her) would be off the new room's floor: he comes in by himself\n", d);
+        return 0;
+    }
     y = turn_yaw(&sTFromTo, b->yaw);
     if (b->has_head) {
         head = mat4_point(&sTFromTo, vec3(b->head[0], b->head[1], b->head[2]));
@@ -666,11 +917,7 @@ int roomseamless_hewie_here(int id) {
     b->pos[2] = p.z;
     b->yaw = y;
     b->room = gEngine.room.id;
-    {
-        float h;
-
-        b->tri = navmesh_find(&gEngine.room.nav, p, 8.0f, &h);
-    }
+    b->tri = tri;
     if (b->has_head) {
         b->head[0] = head.x;
         b->head[1] = head.y;
@@ -686,21 +933,16 @@ int roomseamless_hewie_here(int id) {
     return 1;
 }
 
-
 /* ---- each tick ---- */
 
 int roomseamless_exit(int exit) {
-    int my, other, oe;
-    Doorway d;
-
-    if (!vr_active() || !gVrOptions.room_loading) {
+    if (!vr_active() || !gVrOptions.room_loading || gEngine.room.id < 0) {
         return 0;
     }
-    if (!pair_for(gEngine.room.id, &my, &other, &oe) || my != exit) {
-        return 0;
-    }
-    /* (if the line can't be built, leave the old way out alone: better a fade than a trap) */
-    if (!doorway_line(gEngine.room.id, exit, &d)) {
+    actives_refresh(&gEngine);   /* (the scripts ask in the arrival's own tick, before the tick below) */
+    /* (if the line can't be built, there is no active seam: leave the old way out alone - better a
+     * fade than a trap) */
+    if (act_for_exit(exit) == NULL) {
         return 0;
     }
     if (sSuppressedRoom != gEngine.room.id || sSuppressedExit != exit) {
@@ -714,21 +956,20 @@ int roomseamless_exit(int exit) {
 
 void roomseamless_tick(struct Engine *ee) {
     Engine *e = (Engine *)ee;
-    int my, other, oe;
     HBody *b;
-    Doorway d;
+    int i;
 
     if (!sInit) {
-        sNeighbour.id = -1;
+        for (i = 0; i < SEAM_ACT_MAX; i++) {
+            sNb[i].id = -1;
+        }
         sInit = 1;
     }
     if (!vr_active()) {
         return;   /* (the flat-screen game is untouched: no files read, nothing drawn) */
     }
     if (!gVrOptions.room_loading) {
-        if (sNeighbour.id >= 0) {
-            neighbour_free("room loading: Original");
-        }
+        nb_free_all("room loading: Original");
         if (sPending) {
             slog("seamless: handover ST_%03X->ST_%03X cancelled (room loading: Original)\n", sFrom, sTo);
             sPending = 0;
@@ -747,7 +988,7 @@ void roomseamless_tick(struct Engine *ee) {
             } else {
                 engine_vr_reanchor(e);   /* (the hands and body pose from her new eyes this frame) */
             }
-            sPending = 0;   /* (her arrival is in; the neighbour below follows the new room) */
+            sPending = 0;   /* (her arrival is in; the neighbours below follow the new room) */
         } else if (e->ticks - sStartTick > SEAMLESS_TIMEOUT) {
             slog("seamless: handover ST_%03X->ST_%03X timed out\n", sFrom, sTo);
             sPending = 0;
@@ -755,13 +996,11 @@ void roomseamless_tick(struct Engine *ee) {
             return;   /* (no second one while one is in) */
         }
     }
-    if (!pair_for(e->room.id, &my, &other, &oe)) {
-        if (sNeighbour.id >= 0) {
-            neighbour_free("the room is not in a seamless pair");
-        }
+    actives_refresh(e);
+    neighbours_update(e);
+    if (sActN == 0) {
         return;
     }
-    neighbour_ensure(e, other);
     if (e->paused || e->still || gCamDir.scene) {
         return;
     }
@@ -772,81 +1011,369 @@ void roomseamless_tick(struct Engine *ee) {
     if (b == NULL || !b->has || b->room != e->room.id) {
         return;
     }
-    if (!doorway_line(e->room.id, my, &d)) {
-        return;
-    }
     {
-        Vec3 p = vec3(b->pos[0], b->pos[1], b->pos[2]);
-        Vec3 rel = vec3_sub(p, d.centre);
-        float past = vec3_dot(rel, d.normal);
-        float across = vec3_dot(rel, d.tangent);
+        int best = -1;
+        float best_across = 1e30f;
 
-        if (sPrevRoom != e->room.id) {
-            sPrevHad = 0;   /* (nothing to cross from in a room just come into) */
-            sPrevRoom = e->room.id;
+        for (i = 0; i < sActN; i++) {
+            ActiveSeam *s = &sAct[i];
+            const Doorway *d = &s->line;
+            Vec3 p = vec3(b->pos[0], b->pos[1], b->pos[2]);
+            Vec3 rel = vec3_sub(p, d->centre);
+            float past = vec3_dot(rel, d->normal);
+            float across = vec3_dot(rel, d->tangent);
+            /* a measured seam's floor ends at its line (the walk meshes stop within half a unit of it),
+             * so she cannot get 3 units past it: she hands over as she reaches the line */
+            float cross = d->frame ? SEAMLESS_PAST_FRAME : SEAMLESS_PAST;
+            /* a doorway on another floor (stairs, the room above or below) has the same place on the
+             * map: only the one at her own height is crossed */
+            int level = fabsf(p.y - d->centre.y) <= SEAMLESS_LEVEL;
+            int crossed = s->prev_had && s->prev_past <= cross && past > cross && past <= SEAMLESS_PAST_MAX &&
+                          fabsf(across) <= d->halfwidth + SEAMLESS_MARGIN && level;
+
+            if (crossed && fabsf(across) < best_across) {   /* (two at once: the nearer to her middle) */
+                best = i;
+                best_across = fabsf(across);
+            }
+            s->prev_past = past;
+            s->prev_had = 1;
         }
-        if (sPrevHad && sPrevPast <= SEAMLESS_PAST && past > SEAMLESS_PAST && past <= SEAMLESS_PAST_MAX &&
-            fabsf(across) <= d.halfwidth + SEAMLESS_MARGIN) {
-            slog("seamless: ST_%03X exit %d crossed the line toward the other room (past %.1f -> %.1f, across %.1f)\n",
-                 e->room.id, my, sPrevPast, past, across);
-            roomseamless_go(my);
+        if (best >= 0) {
+            const ActiveSeam *s = &sAct[best];
+            Vec3 p = vec3(b->pos[0], b->pos[1], b->pos[2]);
+
+            slog("seamless: ST_%03X exit %d crossed the line toward ST_%03X (across %.1f, height %.1f from the floor)\n",
+                 e->room.id, s->my_exit, s->other, vec3_dot(vec3_sub(p, s->line.centre), s->line.tangent),
+                 p.y - s->line.centre.y);
+            roomseamless_go(s->my_exit);
         }
-        sPrevPast = past;
-        sPrevHad = 1;
     }
 }
 
+/* ---- drawing: the neighbours beside the played room ---- */
 
-/* ---- drawing: the neighbour beside the played room ---- */
-
-/* the eye in the neighbour's space (T played -> neighbour) */
+/* the eye in each neighbour's space (T played -> neighbour) */
 int roomseamless_view_begin(struct Engine *ee, Vec3 eye, Vec3 forward) {
     Engine *e = (Engine *)ee;
-    Mat4 t;
+    int i, any = 0;
 
-    if (!sInit || sNeighbour.id < 0 || e->room.id < 0) {
+    if (!sInit || e->room.id < 0 || sActRoom != e->room.id) {
         return 0;
     }
-    if (!roomlayout_between(e->room.id, sNeighbour.id, &t)) {
+    for (i = 0; i < sActN; i++) {
+        Room *nb = nb_find(sAct[i].other);
+
+        if (nb == NULL || !sAct[i].t_ok) {
+            continue;
+        }
+        room_draw_view_begin(nb, mat4_point(&sAct[i].t_ab, eye), turn_vec(&sAct[i].t_ab, forward));
+        any = 1;
+    }
+    return any;
+}
+
+/* ---- the portals: each neighbour seen through its doorway (render_portal_*) ---- */
+
+/* a plane (world space: n . x + d >= 0 kept) in the CLIP space of `vp`: planeClip = vp^-T plane */
+static int plane_to_clip(const Mat4 *vp, Vec3 n, float d, float out[4]) {
+    Mat4 inv;
+    float pl[4] = {n.x, n.y, n.z, d};
+    int i, j;
+
+    if (!seam_mat4_inverse(vp, &inv)) {
         return 0;
     }
-    room_draw_view_begin(&sNeighbour, mat4_point(&t, eye), turn_vec(&t, forward));
+    for (i = 0; i < 4; i++) {
+        out[i] = 0.0f;
+        for (j = 0; j < 4; j++) {
+            out[i] += inv.m[i * 4 + j] * pl[j];
+        }
+    }
     return 1;
 }
 
-int roomseamless_draw(struct Engine *ee, const Mat4 *view_proj, int layer) {
+static int portal_for(Engine *e, const ActiveSeam *s, const Mat4 *vp, Vec3 eye, SeamPortal *out) {
+    Room *nb = nb_find(s->other);
+    const Doorway *d = &s->line;
+    float side, up_hi, hw;
+    Vec3 c, n, t, b, up = vec3(0.0f, 1.0f, 0.0f);
+    int k, outside[4] = {0, 0, 0, 0}, behind = 0;
+
+    memset(out, 0, sizeof(*out));
+    if (nb == NULL || !s->t_ok) {
+        return 0;
+    }
+    c = d->centre;
+    n = d->normal;
+    t = d->tangent;
+    hw = d->halfwidth + 2.0f;
+    up_hi = d->height + 2.0f;
+    side = vec3_dot(vec3_sub(eye, c), n);
+    if (vec3_len(vec3_sub(eye, c)) > 600.0f) {
+        return 0;
+    }
+    if (door_swing(&e->room, s->my_exit) < SEAMLESS_DOOR_SHUT) {
+        return 0;   /* (a door shut in the opening: nothing to see through it) */
+    }
+    out->t_ba = s->t_ba;
+    out->room = nb;
+    out->skip_door = -1;
+    if (s->my_exit < ROOM_DOORS && s->other_exit >= 0 && s->other_exit < ROOM_DOORS &&
+        e->room.doors[s->my_exit].present && nb->doors[s->other_exit].present) {
+        out->skip_door = s->other_exit;   /* (the played room's leaf is the one drawn and grabbed) */
+    }
+    out->see_layer = gRoomLook.has_fog && gRoomLook.fog_early ? 8 : 0x19;
+    out->tint = sDbgTint;
+    if (!plane_to_clip(vp, n, -vec3_dot(n, c), out->clip_b)) {
+        return 0;
+    }
+    for (k = 0; k < 4; k++) {
+        out->clip_a[k] = -out->clip_b[k];
+    }
+    b = vec3_add(c, vec3_scale(n, 0.5f));   /* the mark: a little beyond the plane */
+    out->mark[0] = vec3_add(vec3_sub(b, vec3_scale(t, hw)), vec3_scale(up, up_hi));
+    out->mark[1] = vec3_add(vec3_add(b, vec3_scale(t, hw)), vec3_scale(up, up_hi));
+    out->mark[2] = vec3_add(vec3_sub(b, vec3_scale(t, hw)), vec3_scale(up, -2.0f));
+    out->mark[3] = vec3_add(vec3_add(b, vec3_scale(t, hw)), vec3_scale(up, -2.0f));
+    for (k = 0; k < 4; k++) {   /* (the plane's own: the same, put back on it) */
+        out->plane[k] = vec3_sub(out->mark[k], vec3_scale(n, 0.5f));
+    }
+    if (side >= 0.0f) {
+        /* The eye is past the plane: a head through the doorway - both rooms drawn clipped to their
+         * sides. Only there: the plane runs on for ever, and a room that is not convex has places
+         * far from the doorway on its far side (clipping the room away there showed through the
+         * whole map). An eye past it anywhere else has no portal. */
+        if (side > 12.0f || fabsf(vec3_dot(vec3_sub(eye, c), t)) > hw + 6.0f ||
+            fabsf(eye.y - c.y) > SEAMLESS_LEVEL + d->height) {
+            return 0;
+        }
+        out->mode = 2;
+        return 1;
+    }
+    for (k = 0; k < 4; k++) {   /* (the opening anywhere in view?) */
+        const float *m = vp->m;
+        Vec3 q = out->mark[k];
+        float x = m[0] * q.x + m[4] * q.y + m[8] * q.z + m[12], y = m[1] * q.x + m[5] * q.y + m[9] * q.z + m[13];
+        float w = m[3] * q.x + m[7] * q.y + m[11] * q.z + m[15];
+
+        if (w <= 0.0f) {
+            behind++;
+            continue;
+        }
+        outside[0] += x > w;
+        outside[1] += x < -w;
+        outside[2] += y > w;
+        outside[3] += y < -w;
+    }
+    if (behind == 4 || outside[0] == 4 || outside[1] == 4 || outside[2] == 4 || outside[3] == 4) {
+        return 0;   /* (the opening is not in this eye's view) */
+    }
+    out->mode = 1;
+    return 1;
+}
+
+int roomseamless_portals(struct Engine *ee, const Mat4 *vp, Vec3 eye, SeamPortal *out, int max) {
     Engine *e = (Engine *)ee;
-    int see_layer = gRoomLook.has_fog && gRoomLook.fog_early ? 8 : 0x19;
-    Mat4 t, nvp;
-    int skip = -1;
-    int my, other, oe;
+    int i, n = 0;
 
-    if (!sInit || sNeighbour.id < 0 || (layer != 1 && layer != see_layer)) {
-        return 0;   /* (solid and see-through only: no glows, bloom mask or the later passes) */
-    }
-    if (!roomlayout_between(sNeighbour.id, e->room.id, &t)) {
+    if (!vr_active() || !gVrOptions.room_loading || !sDbgPortal || !sInit || vp == NULL || sActRoom != e->room.id) {
         return 0;
     }
-    nvp = mat4_mul(*view_proj, t);
-    if (pair_for(e->room.id, &my, &other, &oe) && other == sNeighbour.id &&
-        e->room.doors[my].present && sNeighbour.doors[oe].present) {
-        /* (the shared doorway has a door on both sides: the played room's is the one drawn and
-         * grabbed; the neighbour's copy would be a second leaf in the same place) */
-        skip = oe;
+    for (i = 0; i < sActN && n < max; i++) {
+        if (portal_for(e, &sAct[i], vp, eye, &out[n])) {
+            n++;
+        }
     }
-    room_draw_view(&sNeighbour, &nvp, layer, skip);
-    return 1;
+    return n;
 }
 
-/* ---- the gateway's void boxes (the black shells) ---- */
+/* the seams' openings drawn flat in the room (seam-outline): green, red while a handover is
+ * blocked (a shut gate or door); a short arrow for "out" */
+void roomseamless_outline(struct Engine *ee, const Mat4 *vp) {
+    Engine *e = (Engine *)ee;
+    int i;
+
+    if (!sDbgOutline || !vr_active() || !gVrOptions.room_loading || sActRoom != e->room.id) {
+        return;
+    }
+    for (i = 0; i < sActN; i++) {
+        const Doorway *d = &sAct[i].line;
+        Vec3 c = d->centre, n = d->normal, t = d->tangent, up = vec3(0.0f, 1.0f, 0.0f), q[4], a[4];
+        uint32_t col = gateway_open(&e->room, sAct[i].my_exit) == 1 &&
+                               door_swing(&e->room, sAct[i].my_exit) >= SEAMLESS_DOOR_OPEN
+                           ? 0x00FF4070u
+                           : 0xFF202080u;
+
+        q[0] = vec3_add(vec3_sub(c, vec3_scale(t, d->halfwidth)), vec3_scale(up, d->height));
+        q[1] = vec3_add(vec3_add(c, vec3_scale(t, d->halfwidth)), vec3_scale(up, d->height));
+        q[2] = vec3_sub(c, vec3_scale(t, d->halfwidth));
+        q[3] = vec3_add(c, vec3_scale(t, d->halfwidth));
+        render_debug_quad(vp, q, col);
+        /* the arrow: a flat shaft along n on the floor, and a head */
+        a[0] = vec3_add(vec3_add(c, vec3_scale(up, 0.3f)), vec3_scale(t, -0.8f));
+        a[1] = vec3_add(vec3_add(c, vec3_scale(up, 0.3f)), vec3_scale(t, 0.8f));
+        a[2] = vec3_add(a[0], vec3_scale(n, 12.0f));
+        a[3] = vec3_add(a[1], vec3_scale(n, 12.0f));
+        render_debug_quad(vp, a, 0xFFFF00C0u);
+        a[0] = vec3_add(vec3_add(vec3_add(c, vec3_scale(up, 0.3f)), vec3_scale(n, 12.0f)), vec3_scale(t, -3.0f));
+        a[1] = vec3_add(vec3_add(vec3_add(c, vec3_scale(up, 0.3f)), vec3_scale(n, 12.0f)), vec3_scale(t, 3.0f));
+        a[2] = vec3_add(vec3_add(c, vec3_scale(up, 0.3f)), vec3_scale(n, 17.0f));
+        a[3] = a[2];
+        render_debug_quad(vp, a, 0xFFFF00C0u);
+    }
+}
+
+void roomseamless_debug(int what, int on) {
+    switch (what) {
+    case SEAM_DBG_PORTAL: sDbgPortal = on != 0; break;
+    case SEAM_DBG_OUTLINE: sDbgOutline = on != 0; break;
+    case SEAM_DBG_TINT: sDbgTint = on != 0; break;
+    case SEAM_DBG_LOG: sDbgLog = on != 0; break;
+    }
+}
+
+/* seam-info: what the played room's seams are doing now */
+void roomseamless_info(char *buf, size_t n) {
+    Engine *e = &gEngine;
+    HBody *b = hactor_body(gCamDir.player);
+    int i, len;
+
+    if (sActRoom != e->room.id || sActN == 0) {
+        snprintf(buf, n, "seam: ST_%03X has no seam\n", e->room.id);
+        return;
+    }
+    len = snprintf(buf, n, "seam: ST_%03X has %d seam(s)\n", e->room.id, sActN);
+    for (i = 0; i < sActN && len > 0 && (size_t)len < n; i++) {
+        const ActiveSeam *s = &sAct[i];
+        const Doorway *d = &s->line;
+
+        len += snprintf(buf + len, n - (size_t)len, " exit %d <-> ST_%03X exit %d (%s); gate %s; door swing %.0f; neighbour %s;"
+                        " T move %.2f %.2f %.2f turn %.3f\n",
+                        s->my_exit, s->other, s->other_exit, d->frame ? "frames" : "layout/auto",
+                        gateway_open(&e->room, s->my_exit) == 1 ? "open" : "SHUT", door_swing(&e->room, s->my_exit),
+                        nb_find(s->other) != NULL ? "ready" : "not loaded", s->t_ab.m[12], s->t_ab.m[13],
+                        s->t_ab.m[14], atan2f(s->t_ab.m[8], s->t_ab.m[0]));
+        if (len > 0 && (size_t)len < n && b != NULL && b->has) {
+            Vec3 p = vec3(b->pos[0], b->pos[1], b->pos[2]);
+            float past = vec3_dot(vec3_sub(p, d->centre), d->normal);
+
+            len += snprintf(buf + len, n - (size_t)len, "   Fiona %.1f units %s the line (across %.1f of %.1f)\n",
+                            fabsf(past), past >= 0.0f ? "past" : "before", vec3_dot(vec3_sub(p, d->centre), d->tangent),
+                            d->halfwidth);
+        }
+    }
+}
+
+/* ---- the look (fog, tint, bloom) across a doorway ----
+ * The played room's look is one set of numbers for the whole picture, so it changed all at once
+ * when the played room did. Near a seam it is blended with the other room's by how far the eye is
+ * from the plane - half and half on the plane, all the played room's from `LOOK_REACH` units away -
+ * the same on both sides of it, so a handover (which swaps which room is "played") does not show. */
+#define LOOK_REACH 80.0f
+#define LOOK_SIDE 40.0f   /* how far beside the opening the blend still reaches */
+
+static float lerpf(float a, float b, float f) {
+    return a + (b - a) * f;
+}
+
+/* one colour (r g b a) of the two looks: a side without the effect has the other's colour and no
+ * strength, so only the strength fades */
+static void mix_colour(float *out, const float *a, int has_a, const float *b, int has_b, float f) {
+    float ca[4], cb[4];
+    int k;
+
+    memcpy(ca, has_a ? a : b, sizeof(ca));
+    memcpy(cb, has_b ? b : a, sizeof(cb));
+    if (!has_a) {
+        ca[3] = 0.0f;
+    }
+    if (!has_b) {
+        cb[3] = 0.0f;
+    }
+    for (k = 0; k < 4; k++) {
+        out[k] = lerpf(ca[k], cb[k], f);
+    }
+}
+
+static void look_mix(RoomLook *a, const RoomLook *b, float f) {
+    RoomLook o = *a;
+
+    if (a->has_fog || b->has_fog) {
+        mix_colour(o.fog_near_color, a->fog_near_color, a->has_fog, b->fog_near_color, b->has_fog, f);
+        mix_colour(o.fog_far_color, a->fog_far_color, a->has_fog, b->fog_far_color, b->has_fog, f);
+        o.fog_near = a->has_fog && b->has_fog ? lerpf(a->fog_near, b->fog_near, f) : a->has_fog ? a->fog_near : b->fog_near;
+        o.fog_far = a->has_fog && b->has_fog ? lerpf(a->fog_far, b->fog_far, f) : a->has_fog ? a->fog_far : b->fog_far;
+        o.fog_early = a->has_fog ? a->fog_early : b->fog_early;
+        o.has_fog = 1;
+    }
+    if (a->has_tint || b->has_tint) {
+        mix_colour(o.tint_glow, a->tint_glow, a->has_tint, b->tint_glow, b->has_tint, f);
+        mix_colour(o.tint_contrast, a->tint_contrast, a->has_tint, b->tint_contrast, b->has_tint, f);
+        o.tint_sharp = a->has_tint ? a->tint_sharp : b->tint_sharp;
+        o.has_tint = 1;
+    }
+    if (a->has_bloom || b->has_bloom) {
+        mix_colour(o.bloom, a->bloom, a->has_bloom, b->bloom, b->has_bloom, f);
+        if (!a->has_bloom) {
+            o.bloom_subtract = b->bloom_subtract;
+            o.bloom_mode = b->bloom_mode;
+        }
+        o.has_bloom = 1;
+    }
+    *a = o;
+}
+
+int roomseamless_look(struct Engine *ee, Vec3 eye, RoomLook *look) {
+    Engine *e = (Engine *)ee;
+    int i, best = -1;
+    float best_f = 0.0f;
+
+    if (!vr_active() || !gVrOptions.room_loading || !sInit || sActRoom != e->room.id || look == NULL) {
+        return 0;
+    }
+    for (i = 0; i < sActN; i++) {
+        const Doorway *d = &sAct[i].line;
+        Vec3 rel = vec3_sub(eye, d->centre);
+        float dist = -vec3_dot(rel, d->normal);   /* (before the plane: positive) */
+        float lateral = fabsf(vec3_dot(rel, d->tangent)) - d->halfwidth;
+        float f;
+        int k;
+
+        for (k = 0; k < SEAM_ACT_MAX && sNb[k].id != sAct[i].other; k++) {
+        }
+        if (k >= SEAM_ACT_MAX || door_swing(&e->room, sAct[i].my_exit) < SEAMLESS_DOOR_SHUT ||
+            fabsf(eye.y - d->centre.y) > SEAMLESS_LEVEL + d->height) {
+            continue;
+        }
+        if (dist > LOOK_REACH || dist < -LOOK_REACH || lateral > LOOK_SIDE) {
+            continue;
+        }
+        lateral = lateral > 0.0f ? lateral : 0.0f;
+        f = 0.5f - 0.5f * (dist / LOOK_REACH);
+        f *= 1.0f - lateral / LOOK_SIDE;
+        if (f > best_f) {
+            best_f = f;
+            best = k;
+        }
+    }
+    if (best < 0 || best_f <= 0.0005f) {
+        return 0;
+    }
+    look_mix(look, &sNbLook[best], best_f);
+    return 1;
+}
+/* ---- the doorways' void boxes (the shells that hid what lies beyond them) ---- */
 
 int roomseamless_hide_draw(const Room *r, const MeshDraw *d) {
-    if (!vr_active() || !gVrOptions.room_loading || r == NULL || d == NULL || !room_is_paired(r->id)) {
+    const uint8_t *mask;
+
+    if (!vr_active() || !gVrOptions.room_loading || r == NULL || d == NULL || r->id < 0) {
         return 0;
     }
     if (r->mesh.d == NULL || (const uint8_t *)d < (const uint8_t *)r->mesh.d ||
         (const uint8_t *)d >= (const uint8_t *)(r->mesh.d + r->mesh.nd)) {
-        return 0;   /* (a moving batch: not the still room's black shell) */
+        return 0;   /* (a moving batch: not the still room's shell) */
     }
-    return draw_is_void_box(r, d, NULL, NULL);
+    mask = void_mask(r);
+    return mask != NULL && mask[d - r->mesh.d];
 }

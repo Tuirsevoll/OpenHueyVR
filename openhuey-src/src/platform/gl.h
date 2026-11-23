@@ -26,6 +26,7 @@ typedef const GLubyte * (APIENTRY *HGA_GLGETSTRING)(GLenum);
 typedef void (APIENTRY *HGA_GLPOLYGONOFFSET)(GLfloat, GLfloat);
 typedef void (APIENTRY *HGA_GLSTENCILFUNC)(GLenum, GLint, GLuint);
 typedef void (APIENTRY *HGA_GLSTENCILOP)(GLenum, GLenum, GLenum);
+typedef void (APIENTRY *HGA_GLSTENCILMASK)(GLuint);
 typedef void (APIENTRY *HGA_GLVIEWPORT)(GLint, GLint, GLsizei, GLsizei);
 typedef void (APIENTRY *HGA_GLGETINTEGERV)(GLenum, GLint *);
 
@@ -73,6 +74,7 @@ typedef void (APIENTRY *HGA_GLGETINTEGERV)(GLenum, GLint *);
     X(HGA_GLPOLYGONOFFSET, glPolygonOffset)                                    \
     X(HGA_GLSTENCILFUNC, glStencilFunc)                                        \
     X(HGA_GLSTENCILOP, glStencilOp)                                            \
+    X(HGA_GLSTENCILMASK, glStencilMask)                                        \
     X(HGA_GLVIEWPORT, glViewport)
 
 /* the 4.1 - 4.5 functions: the driver's on the 4.6 path, gl.c's fallbacks on the 3.3 one */
@@ -139,6 +141,7 @@ GL_DSA_FUNCTIONS(GL_DECLARE)
 #define glPolygonOffset p_glPolygonOffset
 #define glStencilFunc p_glStencilFunc
 #define glStencilOp p_glStencilOp
+#define glStencilMask p_glStencilMask
 #define glViewport p_glViewport
 #define glCreateShader p_glCreateShader
 #define glShaderSource p_glShaderSource

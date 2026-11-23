@@ -1,0 +1,178 @@
+# HGVR connected map: doorway report v2 (22 Nov 2026)
+# Blend: HGVR_connected_sean.blend (box copy, saved 22 Nov 01:45 Dublin). Read-only.
+# One line per physical doorway. Story versions are folded into their base room and each doorway is counted once.
+# Gap = distance between the two sides' doorway points in game units (about 10 per metre); hz = sideways, vt = height.
+# joined = within 15 sideways and 10 height, and the floors meet (checked on the walk meshes).
+# close = within 40. stacked = lined up from above but parked at another height. apart = further.
+# forest = Chaos Forest maze (kept as invisible seams).
+
+TOTAL 144 doorways: joined 85, apart 31, forest 15, stacked 11, close 2
+
+== Debilitas: 48 doorways, joined 36, stacked 6, apart 4, close 2
+  [joined ] ST_00F castle-1f-4 exit0  <->  ST_025 castle-1f-9 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_001 castle-1f-1 exit0  <->  ST_025 castle-1f-9 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_006 castle-3f-1 exit0  <->  ST_02C castle-3f-2 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_01C castle-1f-18 exit1  <->  ST_01D castle-b1-7 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_020 castle-2f-2 exit4  <->  ST_024 castle-2f-8 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_004 castle-1f-12 exit0  <->  ST_01E castle-1f-19 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_00B castle-b1-5 exit1  <->  ST_00C castle-b1-6 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_007 castle-b1-4 exit0  <->  ST_00B castle-b1-5 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_02C castle-3f-2 exit1  <->  ST_02E old-mansion-1f-1 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_024 castle-2f-8 exit0  <->  ST_025 castle-1f-9 exit2   hz 0  vt 0   fix: joined
+  [joined ] ST_011 castle-1f-6 exit1  <->  ST_012 castle-b1-1 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_014 castle-b1-2 exit1  <->  ST_016 castle-b1-3 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_001 castle-1f-1 exit1  <->  ST_009 castle-1f-3 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_010 castle-1f-5 exit1  <->  ST_011 castle-1f-6 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_001 castle-1f-1 exit2  <->  ST_002 castle-1f-2 exit2   hz 0  vt 0   fix: joined
+  [joined ] ST_00F castle-1f-4 exit2  <->  ST_014 castle-b1-2 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_004 castle-1f-12 exit1  <->  ST_007 castle-b1-4 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_020 castle-2f-2 exit1  <->  ST_022 castle-2f-6 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_013 front-garden-2 exit0  <->  ST_021 castle-2f-3 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_01F castle-2f-11 exit0  <->  ST_026 castle-2f-12 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_019 castle-1f-15 exit2  <->  ST_01A castle-1f-16 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_010 castle-1f-5 exit2  <->  ST_021 castle-2f-3 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_00E castle-1f-14 exit0  <->  ST_01F castle-2f-11 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_019 castle-1f-15 exit4  <->  ST_026 castle-2f-12 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_019 castle-1f-15 exit3  <->  ST_02F castle-2f-14 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_008 castle-1f-13 exit0  <->  ST_01C castle-1f-18 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_020 castle-2f-2 exit2  <->  ST_023 castle-2f-7 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_002 castle-1f-2 exit0  <->  ST_029 castle-1f-10 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_000 front-garden-1 exit0  <->  ST_00E castle-1f-14 exit1   hz 2  vt 0   fix: joined
+  [joined ] ST_02A front-garden-3 exit2  <->  ST_02D front-garden-5 exit0   hz 2  vt 0   fix: joined
+  [joined ] ST_02A front-garden-3 exit3  <->  ST_02B front-garden-4 exit1   hz 6  vt 0   fix: joined
+  [joined ] ST_00A castle-2f-1 exit1  <->  ST_020 castle-2f-2 exit0   hz 8  vt 0   fix: joined
+  [joined ] ST_000 front-garden-1 exit1  <->  ST_013 front-garden-2 exit1   hz 9  vt 0   fix: joined
+  [joined ] ST_002 castle-1f-2 exit1  <->  ST_00A castle-2f-1 exit0   hz 9  vt 0   fix: joined
+  [joined ] ST_005 castle-2f-9 exit2  <->  ST_006 castle-3f-1 exit3   hz 7  vt 5   fix: joined
+  [joined ] ST_005 castle-2f-9 exit1  <->  ST_006 castle-3f-1 exit2   hz 9  vt 5   fix: joined
+  [close  ] ST_013 front-garden-2 exit2  <->  ST_02A front-garden-3 exit0   hz 21  vt 8   fix: connector (both snaps hit a third room)
+  [close  ] ST_004 castle-1f-12 exit2  <->  ST_005 castle-2f-9 exit0   hz 7  vt 26   fix: connector (moving would break 2 joined doors)
+  [apart  ] ST_008 castle-1f-13 exit3  <->  ST_01E castle-1f-19 exit1   hz 46  vt 0   fix: connector (both snaps hit a third room)
+  [stacked] ST_00F castle-1f-4 exit3  <->  ST_015 castle-1f-7 exit1   hz 0  vt 80   fix: connector (moving would break 2 joined doors)
+  [stacked] ST_00E castle-1f-14 exit2  <->  ST_018 castle-1f-8 exit0   hz 0  vt 255   fix: connector (moving would break 2 joined doors)
+  [stacked] ST_008 castle-1f-13 exit1  <->  ST_01B castle-1f-17 exit0   hz 8  vt 337   fix: move room (dead end, nothing else breaks)
+  [stacked] ST_019 castle-1f-15 exit0  <->  ST_01B castle-1f-17 exit1   hz 0  vt 349   fix: move room (dead end, nothing else breaks)
+  [stacked] ST_010 castle-1f-5 exit0  <->  ST_020 castle-2f-2 exit3   hz 0  vt 702   fix: connector (moving would break 2 joined doors)
+  [stacked] ST_003 castle-1f-11 exit0  <->  ST_008 castle-1f-13 exit2   hz 34  vt 689   fix: connector (moving would break 1 joined door)
+  [apart  ] ST_00F castle-1f-4 exit1  <->  ST_012 castle-b1-1 exit0   hz 56  vt 700   fix: connector (moving would break 1 joined door)
+  [apart  ] ST_002 castle-1f-2 exit3  <->  ST_01E castle-1f-19 exit2   hz 171  vt 720   fix: connector (moving would break 1 joined door)
+  [apart  ] ST_015 castle-1f-7 exit0  <->  ST_018 castle-1f-8 exit1   hz 181  vt 876   fix: move room (dead end, nothing else breaks)
+
+== Daniella: 39 doorways, joined 24, apart 12, stacked 3
+  [joined ] ST_05B old-mansion-2f-7 exit1  <->  ST_062 old-mansion-2f-11 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_046 old-mansion-1f-6 exit1  <->  ST_06A old-mansion-2f-13 exit3   hz 0  vt 0   fix: joined
+  [joined ] ST_043 old-mansion-1f-5 exit3  <->  ST_05C old-mansion-2f-8 exit3   hz 0  vt 0   fix: joined
+  [joined ] ST_05B old-mansion-2f-7 exit0  <->  ST_05E old-mansion-2f-9 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_054 old-mansion-1f-15 exit2  <->  ST_060 old-mansion-3f-1 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_049 old-mansion-1f-9 exit0  <->  ST_070 old-mansion-1f-24 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_05D old-mansion-1f-17 exit0  <->  ST_05F old-mansion-2f-10 exit2   hz 0  vt 0   fix: joined
+  [joined ] ST_053 old-mansion-1f-14 exit0  <->  ST_054 old-mansion-1f-15 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_044 old-mansion-b1-1 exit0  <->  ST_06A old-mansion-2f-13 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_052 old-mansion-1f-13 exit1  <->  ST_05D old-mansion-1f-17 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_061 old-mansion-b1-7 exit1  <->  ST_066 old-mansion-b1-6 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_045 old-mansion-2f-1 exit1  <->  ST_052 old-mansion-1f-13 exit2   hz 0  vt 0   fix: joined
+  [joined ] ST_054 old-mansion-1f-15 exit0  <->  ST_061 old-mansion-b1-7 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_05D old-mansion-1f-17 exit3  <->  ST_070 old-mansion-1f-24 exit3   hz 0  vt 0   fix: joined
+  [joined ] ST_04F old-mansion-1f-12 exit2  <->  ST_062 old-mansion-2f-11 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_069 old-mansion-2f-12 exit1  <->  ST_06A old-mansion-2f-13 exit2   hz 0  vt 0   fix: joined
+  [joined ] ST_06F old-mansion-1f-23 exit2  <->  ST_070 old-mansion-1f-24 exit2   hz 0  vt 0   fix: joined
+  [joined ] ST_044 old-mansion-b1-1 exit3  <->  ST_066 old-mansion-b1-6 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_059 old-mansion-2f-6 exit0  <->  ST_06A old-mansion-2f-13 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_055 old-mansion-1f-16 exit1  <->  ST_05C old-mansion-2f-8 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_04B old-mansion-b1-2 exit3  <->  ST_051 old-mansion-b1-5 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_04B old-mansion-b1-2 exit2  <->  ST_050 old-mansion-b1-4 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_04B old-mansion-b1-2 exit0  <->  ST_06F old-mansion-1f-23 exit1   hz 4  vt 0   fix: joined
+  [joined ] ST_045 old-mansion-2f-1 exit2  <->  ST_04B old-mansion-b1-2 exit5   hz 10  vt 0   fix: joined
+  [apart  ] ST_04D old-mansion-1f-10 exit0  <->  ST_06F old-mansion-1f-23 exit0   hz 87  vt 0   fix: move room (dead end, nothing else breaks)
+  [apart  ] ST_04B old-mansion-b1-2 exit1  <->  ST_04D old-mansion-1f-10 exit1   hz 87  vt 0   fix: move room (dead end, nothing else breaks)
+  [apart  ] ST_04D old-mansion-1f-10 exit2  <->  ST_070 old-mansion-1f-24 exit1   hz 91  vt 0   fix: move room (dead end, nothing else breaks)
+  [apart  ] ST_04C old-mansion-b1-3 exit0  <->  ST_04D old-mansion-1f-10 exit3   hz 87  vt 87   fix: move room (dead end, nothing else breaks)
+  [apart  ] ST_055 old-mansion-1f-16 exit2  <->  ST_063 old-mansion-3f-2 exit1   hz 203  vt 0   fix: move room (dead end, nothing else breaks)
+  [apart  ] ST_05C old-mansion-2f-8 exit1  <->  ST_05E old-mansion-2f-9 exit0   hz 82  vt 165   fix: connector (moving would break 1 joined door)
+  [apart  ] ST_043 old-mansion-1f-5 exit4  <->  ST_066 old-mansion-b1-6 exit2   hz 127  vt 317   fix: connector (moving would break 2 joined doors)
+  [stacked] ST_045 old-mansion-2f-1 exit0  <->  ST_05C old-mansion-2f-8 exit4   hz 0  vt 446   fix: connector (moving would break 2 joined doors)
+  [stacked] ST_05C old-mansion-2f-8 exit2  <->  ST_05F old-mansion-2f-10 exit1   hz 10  vt 446   fix: connector (moving would break 1 joined door), route around a third room
+  [stacked] ST_043 old-mansion-1f-5 exit2  <->  ST_045 old-mansion-2f-1 exit3   hz 25  vt 446   fix: connector (moving would break 2 joined doors)
+  [apart  ] ST_055 old-mansion-1f-16 exit3  <->  ST_069 old-mansion-2f-12 exit0   hz 151  vt 322   fix: connector (moving would break 1 joined door)
+  [apart  ] ST_054 old-mansion-1f-15 exit3  <->  ST_063 old-mansion-3f-2 exit0   hz 293  vt 312   fix: move room (dead end, nothing else breaks)
+  [apart  ] ST_04F old-mansion-1f-12 exit0  <->  ST_052 old-mansion-1f-13 exit0   hz 68  vt 611   fix: connector (moving would break 1 joined door)
+  [apart  ] ST_05E old-mansion-2f-9 exit2  <->  ST_05F old-mansion-2f-10 exit0   hz 93  vt 611   fix: connector (moving would break 1 joined door), route around a third room
+  [apart  ] ST_04B old-mansion-b1-2 exit4  <->  ST_04F old-mansion-1f-12 exit1   hz 109  vt 611   fix: connector (moving would break 1 joined door)
+
+== Old Lorenzo Section: 16 doorways, joined 11, apart 4, stacked 1
+  [joined ] ST_084 house-of-truth-b1-1 exit0  <->  ST_085 house-of-truth-b1-2 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_082 house-of-truth-2f-1 exit0  <->  ST_083 house-of-truth-2f-2 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_08D house-of-truth-1f-5 exit0  <->  ST_08E house-of-truth-1f-6 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_091 house-of-truth-1f-8 exit2  <->  ST_092 house-of-truth-1f-9 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_08F house-of-truth-1f-7 exit1  <->  ST_091 house-of-truth-1f-8 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_085 house-of-truth-b1-2 exit0  <->  ST_086 house-of-truth-b1-3 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_080 lake-pathway-2 exit0  <->  ST_081 house-of-truth-1f-1 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_080 lake-pathway-2 exit1  <->  ST_0C8 lake-pathway-1 exit1   hz 8  vt 0   fix: joined
+  [joined ] ST_082 house-of-truth-2f-1 exit4  <->  ST_08A house-of-truth-1f-3 exit3   hz 7  vt 2   fix: joined
+  [joined ] ST_081 house-of-truth-1f-1 exit4  <->  ST_09B house-of-truth-1f-10 exit0   hz 7  vt 3   fix: joined
+  [joined ] ST_082 house-of-truth-2f-1 exit3  <->  ST_08A house-of-truth-1f-3 exit2   hz 9  vt 2   fix: joined
+  [apart  ] ST_081 house-of-truth-1f-1 exit2  <->  ST_082 house-of-truth-2f-1 exit1   hz 110  vt 0   fix: connector (moving would break 2 joined doors)
+  [apart  ] ST_081 house-of-truth-1f-1 exit1  <->  ST_082 house-of-truth-2f-1 exit2   hz 110  vt 0   fix: connector (moving would break 2 joined doors)
+  [apart  ] ST_081 house-of-truth-1f-1 exit3  <->  ST_08A house-of-truth-1f-3 exit1   hz 117  vt 0   fix: connector (moving would break 2 joined doors)
+  [stacked] ST_088 house-of-truth-1f-2 exit0  <->  ST_091 house-of-truth-1f-8 exit1   hz 0  vt 169   fix: move room (dead end, nothing else breaks)
+  [apart  ] ST_08D house-of-truth-1f-5 exit2  <->  ST_08F house-of-truth-1f-7 exit0   hz 1261  vt 598   fix: connector (moving would break 1 joined door)
+
+== Chaos Forest: 14 doorways, forest 14
+  [forest ] ST_0D2 off-map-d2 exit2  <->  ST_0D5 off-map-d5 exit1   hz 0  vt 0   fix: forest
+  [forest ] ST_0D1 off-map-d1 exit1  <->  ST_104 chaos-forest-6 exit0   hz 0  vt 0   fix: forest
+  [forest ] ST_0D5 off-map-d5 exit0  <->  ST_0D7 off-map-d7 exit0   hz 138  vt 3   fix: forest
+  [forest ] ST_0D5 off-map-d5 exit2  <->  ST_0D6 off-map-d6 exit0   hz 234  vt 3   fix: forest
+  [forest ] ST_0D5 off-map-d5 exit4  <->  ST_0D6 off-map-d6 exit2   hz 262  vt 14   fix: forest
+  [forest ] ST_0D5 off-map-d5 exit3  <->  ST_0D6 off-map-d6 exit1   hz 295  vt 19   fix: forest
+  [forest ] ST_0D6 off-map-d6 exit3  <->  ST_0D8 off-map-d8 exit0   hz 429  vt 5   fix: forest
+  [forest ] ST_0D8 off-map-d8 exit1  <->  ST_104 chaos-forest-6 exit3   hz 1043  vt 3   fix: forest
+  [forest ] ST_0D8 off-map-d8 exit3  <->  ST_104 chaos-forest-6 exit2   hz 1295  vt 2   fix: forest
+  [forest ] ST_0D8 off-map-d8 exit2  <->  ST_0D9 off-map-d9 exit0   hz 7197  vt 238   fix: forest
+  [forest ] ST_0D3 off-map-d3 exit2  <->  ST_102 chaos-forest-4 exit0   hz 9765  vt 193   fix: forest
+  [forest ] ST_0D3 off-map-d3 exit1  <->  ST_102 chaos-forest-4 exit3   hz 9772  vt 191   fix: forest
+  [forest ] ST_0D3 off-map-d3 exit3  <->  ST_102 chaos-forest-4 exit1   hz 9799  vt 191   fix: forest
+  [forest ] ST_0D3 off-map-d3 exit0  <->  ST_100 chaos-forest-2 exit1   hz 10131  vt 2   fix: forest
+
+== Riccardo Pt 1: 7 doorways, joined 6, apart 1
+  [joined ] ST_041 old-mansion-1f-3 exit1  <->  ST_042 old-mansion-1f-4 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_047 old-mansion-1f-7 exit1  <->  ST_06C old-mansion-1f-20 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_06B old-mansion-1f-19 exit1  <->  ST_06C old-mansion-1f-20 exit3   hz 0  vt 0   fix: joined
+  [joined ] ST_041 old-mansion-1f-3 exit0  <->  ST_06C old-mansion-1f-20 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_04A old-mansion-2f-2 exit2  <->  ST_06D old-mansion-1f-21 exit3   hz 0  vt 0   fix: joined
+  [joined ] ST_06D old-mansion-1f-21 exit2  <->  ST_06E old-mansion-1f-22 exit1   hz 0  vt 0   fix: joined
+  [apart  ] ST_056 old-mansion-2f-3 exit0  <->  ST_06C old-mansion-1f-20 exit2   hz 97  vt 1   fix: move room (dead end, nothing else breaks)
+
+== Daniella + Riccardo Pt 1: 5 doorways, apart 4, joined 1
+  [joined ] ST_043 old-mansion-1f-5 exit0  <->  ST_058 old-mansion-2f-5 exit0   hz 0  vt 0   fix: joined
+  [apart  ] ST_046 old-mansion-1f-6 exit0  <->  ST_06D old-mansion-1f-21 exit0   hz 147  vt 321   fix: connector (moving would break 1 joined door), route around a third room
+  [apart  ] ST_044 old-mansion-b1-1 exit2  <->  ST_06D old-mansion-1f-21 exit1   hz 147  vt 321   fix: connector (moving would break 2 joined doors)
+  [apart  ] ST_044 old-mansion-b1-1 exit1  <->  ST_047 old-mansion-1f-7 exit0   hz 79  vt 524   fix: connector (moving would break 1 joined door)
+  [apart  ] ST_055 old-mansion-1f-16 exit4  <->  ST_06B old-mansion-1f-19 exit0   hz 564  vt 202   fix: connector (moving would break 1 joined door), route around a third room
+
+== Riccardo Pt 1 + Unsorted: 5 doorways, joined 4, apart 1
+  [joined ] ST_040 old-mansion-1f-2 exit5  <->  ST_067 chaos-forest-1 exit0   hz 0  vt 0   fix: joined
+  [joined ] ST_040 old-mansion-1f-2 exit4  <->  ST_04A old-mansion-2f-2 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_040 old-mansion-1f-2 exit2  <->  ST_058 old-mansion-2f-5 exit6   hz 0  vt 0   fix: joined
+  [joined ] ST_040 old-mansion-1f-2 exit0  <->  ST_06E old-mansion-1f-22 exit0   hz 8  vt 0   fix: joined
+  [apart  ] ST_040 old-mansion-1f-2 exit1  <->  ST_041 old-mansion-1f-3 exit2   hz 463  vt 203   fix: connector (moving would break 4 joined doors)
+
+== Riccardo pt 2: 5 doorways, apart 4, stacked 1
+  [stacked] ST_0C0 water-tower-b1-1 exit1  <->  ST_0C1 water-tower-1f-1 exit1   hz 0  vt 88   fix: move room (dead end, nothing else breaks)
+  [apart  ] ST_0C1 water-tower-1f-1 exit2  <->  ST_0C2 water-tower-2f-1 exit0   hz 91  vt 84   fix: move room (dead end, nothing else breaks)
+  [apart  ] ST_0C2 water-tower-2f-1 exit1  <->  ST_0C3 water-tower-4f-1 exit0   hz 93  vt 84   fix: move room (dead end, nothing else breaks)
+  [apart  ] ST_0C3 water-tower-4f-1 exit1  <->  ST_0C5 water-tower-7f-1 exit1   hz 114  vt 89   fix: move room (dead end, nothing else breaks)
+  [apart  ] ST_0C5 water-tower-7f-1 exit0  <->  ST_0C7 water-tower-8f-1 exit0   hz 505  vt 77   fix: move room (dead end, nothing else breaks)
+
+== Old Lorenzo Section + Unsorted: 2 doorways, joined 2
+  [joined ] ST_08C house-of-truth-1f-4 exit0  <->  ST_08D house-of-truth-1f-5 exit1   hz 0  vt 0   fix: joined
+  [joined ] ST_08A house-of-truth-1f-3 exit0  <->  ST_08C house-of-truth-1f-4 exit1   hz 0  vt 0   fix: joined
+
+== Daniella + Debilitas: 1 doorways, joined 1
+  [joined ] ST_02E old-mansion-1f-1 exit1  <->  ST_055 old-mansion-1f-16 exit0   hz 0  vt 0   fix: joined
+
+== Chaos Forest + Riccardo Pt 1: 1 doorways, forest 1
+  [forest ] ST_067 chaos-forest-1 exit1  <->  ST_0D1 off-map-d1 exit0   hz 342  vt 13   fix: forest
+
+== Old Lorenzo Section + Riccardo pt 2: 1 doorways, apart 1
+  [apart  ] ST_0C1 water-tower-1f-1 exit0  <->  ST_0C8 lake-pathway-1 exit0   hz 551  vt 244   fix: move room (dead end, nothing else breaks)
+
