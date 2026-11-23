@@ -60,9 +60,4 @@ int roomseamless_draw(struct Engine *e, const Mat4 *view_proj, int layer);
  * to hide what is beyond the doorway). Seamless mode does not draw them; room.c asks for every
  * solid room draw. Original mode always answers 0. */
 int roomseamless_hide_draw(const Room *r, const MeshDraw *d);
-/* Clear the keep-Fiona-off flags on the gateway's nav triangles so she can walk through the
- * pair's opening instead of being held inside its void box. Only Seamless mode, only pair rooms;
- * the PAC and every other mode keep their flags. */
-void roomseamless_open_gateway(Room *r);
-
 #endif

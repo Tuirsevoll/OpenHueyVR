@@ -52,11 +52,6 @@ static int sLoadTimed;
 static float sPrevPast;
 static int sPrevHad, sPrevRoom = -1;
 
-/* the gateway's keep-Fiona-off flags were cleared in this room (log when the count changes) */
-static int sGatewayRoom = -2;
-static int sGatewayCleared = -1;
-static int sGatewayState = -3;
-
 /* one line to the console (and the log) */
 static void slog(const char *fmt, ...) {
     char line[512];
@@ -305,10 +300,11 @@ static int doorway_build(int room_id, int exit, Doorway *d) {
     if (tri_out < 0 || tri_in < 0) {
         return 0;
     }
-    /* The spots: `out` (0) is beyond the doorway, on the other room's side; `in` (1) is inside
-     * this room. The way through is out - in; the middle of the two is a point both rooms agree
-     * on when the layout places them. */
-    passage = vec3(out.x - in.x, 0.0f, out.z - in.z);
+    /* The spots (rooms.md, Doors_NavSpot): `out` (0) is 4 inside this room from its door, `in` (1)
+     * is 12 beyond it, on the other room's side. The way through is out -> in (as main.c's
+     * doorway_faded takes it); the middle of the two is a point both rooms agree on when the
+     * layout places them. */
+    passage = vec3(in.x - out.x, 0.0f, in.z - out.z);
     len = vec3_len(passage);
     if (len < 0.001f) {
         return 0;
@@ -467,9 +463,6 @@ void roomseamless_reset(void) {
     sSuppressedRoom = sSuppressedExit = -1;
     sPrevHad = 0;
     sPrevRoom = -1;
-    sGatewayRoom = -2;
-    sGatewayCleared = -1;
-    sGatewayState = -3;
 }
 
 int roomseamless_go(int exit) {
@@ -562,119 +555,6 @@ void roomseamless_load_end(void) {
     }
 }
 
-/* The room's largest Fiona-walkable nav component: the gateway's box is a small island in the
- * story gate's floor, so an arrival converted into it would trap her. Use the main room floor
- * instead of the doorway's own spot (that spot is in the box too). Returns the point (its
- * triangle's middle) in *out, and 1 if the exact point was not on the main floor and out was used. */
-static int arrival_walkable(Vec3 exact, Vec3 *out, float *shift) {
-    Room *r = &gEngine.room;
-    NavMesh *n = &r->nav;
-    HBody *b = hactor_body(gCamDir.player);
-    uint32_t mask = b != NULL ? b->mask : 0;
-    Vec3 box_lo[8], box_hi[8];
-    int nboxes = 0, exact_in_box = 0;
-    float h;
-    int tri = navmesh_find(n, exact, 8.0f, &h);
-    int *comp, *queue, head, tail, i, j, start, best_comp = -1, best_size = 0, best = -1;
-    float best_d = 1e30f;
-
-    *out = exact;
-    *shift = 0.0f;
-    for (i = 0; i < r->mesh.nd && nboxes < (int)(sizeof(box_lo) / sizeof(box_lo[0])); i++) {
-        if (draw_is_void_box(r, &r->mesh.d[i], &box_lo[nboxes], &box_hi[nboxes])) {
-            if (exact.x >= box_lo[nboxes].x && exact.x <= box_hi[nboxes].x &&
-                exact.y >= box_lo[nboxes].y && exact.y <= box_hi[nboxes].y &&
-                exact.z >= box_lo[nboxes].z && exact.z <= box_hi[nboxes].z) {
-                exact_in_box = 1;
-            }
-            nboxes++;
-        }
-    }
-    if (n->ntris <= 0) {
-        return 0;
-    }
-    comp = malloc((size_t)n->ntris * sizeof(int));
-    queue = malloc((size_t)n->ntris * sizeof(int));
-    if (comp == NULL || queue == NULL) {
-        free(comp);
-        free(queue);
-        return 0;
-    }
-    for (i = 0; i < n->ntris; i++) {
-        comp[i] = -1;
-    }
-    for (start = 0; start < n->ntris; start++) {
-        int count = 0, cid;
-
-        if (comp[start] >= 0 || (n->tris[start].flags & mask)) {
-            continue;
-        }
-        cid = start;
-        comp[start] = cid;
-        queue[0] = start;
-        head = 0;
-        tail = 1;
-        while (head < tail) {
-            int t = queue[head++];
-
-            count++;
-            for (i = 0; i < 3; i++) {
-                int u = n->tris[t].next[i];
-
-                if (u < 0 || u >= n->ntris || comp[u] >= 0 || (n->tris[u].flags & mask)) {
-                    continue;
-                }
-                comp[u] = cid;
-                queue[tail++] = u;
-            }
-        }
-        if (count > best_size) {
-            best_size = count;
-            best_comp = cid;
-        }
-    }
-    if (!exact_in_box && tri >= 0 && tri < n->ntris && comp[tri] == best_comp) {
-        free(comp);
-        free(queue);
-        return 0;   /* (the converted place is on the room's own floor, outside the box) */
-    }
-    for (i = 0; i < n->ntris; i++) {
-        Vec3 c;
-        float d;
-        int in_box = 0;
-
-        if (comp[i] != best_comp) {
-            continue;
-        }
-        c = navmesh_center(n, i);
-        if (exact_in_box) {
-            for (j = 0; j < nboxes; j++) {
-                if (c.x >= box_lo[j].x && c.x <= box_hi[j].x && c.y >= box_lo[j].y &&
-                    c.y <= box_hi[j].y && c.z >= box_lo[j].z && c.z <= box_hi[j].z) {
-                    in_box = 1;
-                    break;
-                }
-            }
-            if (in_box) {
-                continue;   /* (outside the gateway's black shell) */
-            }
-        }
-        d = (c.x - exact.x) * (c.x - exact.x) + (c.z - exact.z) * (c.z - exact.z);
-        if (d < best_d) {
-            best_d = d;
-            best = i;
-        }
-    }
-    free(comp);
-    free(queue);
-    if (best < 0) {
-        return 0;
-    }
-    *out = navmesh_center(n, best);
-    *shift = sqrtf(best_d);
-    return 1;
-}
-
 /* one line after the room is in: the gateway's own cage (the courtyard's placed "ori") and the
  * room-mesh gate parts (groups $15 / $16: open / shut at ST_001's gate) - what is in the doorway */
 static void log_doorway_after_arrival(Vec3 at) {
@@ -720,16 +600,6 @@ int roomseamless_take_arrival(Vec3 *at, float *yaw) {
     }
     p = mat4_point(&sTFromTo, sFromPos);
     y = turn_yaw(&sTFromTo, sFromYaw);
-    {
-        Vec3 walked;
-        float shift = 0.0f;
-
-        if (arrival_walkable(p, &walked, &shift)) {
-            slog("seamless: arrival point is in/behind the gateway's void box; using the nearest "
-                 "walkable point outside it, %.1f units away\n", shift);
-            p = walked;
-        }
-    }
     log_doorway_after_arrival(p);
     /* her look is her heading; the camera's yaw turns by the same matrix, so the room does not
      * spin in the headset (a pure move, as this pair, turns it by 0) */
@@ -870,7 +740,6 @@ void roomseamless_tick(struct Engine *ee) {
     if (e->room.id < 0) {
         return;
     }
-    roomseamless_open_gateway(&e->room);   /* (the black shell's keep-off ring: open it) */
     if (sPending) {
         if (e->room.id == sTo) {
             if (!sArrivalTaken) {
@@ -918,6 +787,8 @@ void roomseamless_tick(struct Engine *ee) {
         }
         if (sPrevHad && sPrevPast <= SEAMLESS_PAST && past > SEAMLESS_PAST && past <= SEAMLESS_PAST_MAX &&
             fabsf(across) <= d.halfwidth + SEAMLESS_MARGIN) {
+            slog("seamless: ST_%03X exit %d crossed the line toward the other room (past %.1f -> %.1f, across %.1f)\n",
+                 e->room.id, my, sPrevPast, past, across);
             roomseamless_go(my);
         }
         sPrevPast = past;
@@ -979,66 +850,3 @@ int roomseamless_hide_draw(const Room *r, const MeshDraw *d) {
     }
     return draw_is_void_box(r, d, NULL, NULL);
 }
-
-void roomseamless_open_gateway(Room *r) {
-    Vec3 lo[8], hi[8];
-    Doorway d;
-    int state, n = 0, cleared = 0, my, other, oe, i, j;
-
-    if (!vr_active() || !gVrOptions.room_loading || r == NULL || !room_is_paired(r->id)) {
-        return;
-    }
-    state = gateway_open(r);
-    if (state != 1) {
-        if (sGatewayRoom != r->id || sGatewayState != state) {
-            sGatewayRoom = r->id;
-            sGatewayState = state;
-            sGatewayCleared = -1;
-            slog("seamless: ST_%03X gateway: gate %s; the gateway box stays solid\n",
-                 r->id, state == 0 ? "shut" : "not known yet");
-        }
-        return;
-    }
-    if (!pair_for(r->id, &my, &other, &oe) || !doorway_line(r->id, my, &d)) {
-        return;
-    }
-    for (i = 0; i < r->mesh.nd && n < (int)(sizeof(lo) / sizeof(lo[0])); i++) {
-        Vec3 a, b;
-
-        if (draw_is_void_box(r, &r->mesh.d[i], &a, &b) &&
-            d.centre.x >= a.x - 5.0f && d.centre.x <= b.x + 5.0f &&
-            d.centre.z >= a.z - 5.0f && d.centre.z <= b.z + 5.0f) {
-            lo[n] = a;
-            hi[n] = b;
-            n++;
-        }
-    }
-    for (i = 0; i < r->nav.ntris; i++) {
-        Vec3 c;
-        /* (Fiona's own blocking flags: solid-floor 8, keeps-fiona-off 10, barred 20000,
-         * keeps-people-off 8000000 / 20000000, grass/water 2000000 - scripts/floor-flags.fs) */
-        const uint32_t fiona_blocks = 0x28020018u;
-
-        if (!(r->nav.tris[i].flags & fiona_blocks)) {
-            continue;
-        }
-        c = navmesh_center(&r->nav, i);
-        for (j = 0; j < n; j++) {
-            if (c.x >= lo[j].x - 10.0f && c.x <= hi[j].x + 10.0f &&
-                c.z >= lo[j].z - 10.0f && c.z <= hi[j].z + 10.0f &&
-                c.y >= lo[j].y - 6.0f && c.y <= hi[j].y + 6.0f) {
-                r->nav.tris[i].flags &= ~fiona_blocks;
-                cleared++;
-                break;
-            }
-        }
-    }
-    if (sGatewayRoom != r->id || sGatewayCleared != cleared || sGatewayState != 1) {
-        sGatewayRoom = r->id;
-        sGatewayCleared = cleared;
-        sGatewayState = 1;
-        slog("seamless: ST_%03X gateway: open gate, %d void box(es), opened %d blocking nav triangle(s)\n",
-             r->id, n, cleared);
-    }
-}
-
