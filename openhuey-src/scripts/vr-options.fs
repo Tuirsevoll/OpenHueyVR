@@ -25,6 +25,7 @@ PRIVATE>
     0 vr-settings vr.teleport l!
     0 vr-settings vr.teleport-mode l!
     2.5e vr-settings vr.teleport-reach sf!
+    0 vr-settings vr.room-loading l!            \ (room loading: Original - as the game was)
     0 vr-settings vr.seated l!
     1.6e vr-settings vr.seated-height sf!
     0 vr-settings vr.left-handed l!                \ (the microphone and its transcript: vr.h VrOptions)
@@ -67,6 +68,8 @@ PRIVATE>
     vr-settings vr.teleport l@ n>s type              ."  vr-settings vr.teleport l!" cr
     vr-settings vr.teleport-mode l@ n>s type          ."  vr-settings vr.teleport-mode l!" cr
     vr-settings vr.teleport-reach sf@ 6 f>s$ type     ."  vr-settings vr.teleport-reach sf!" cr
+    vr-settings vr.room-loading l@ n>s type          ."  vr-settings vr.room-loading l!" cr
+
     vr-settings vr.seated l@ n>s type                ."  vr-settings vr.seated l!" cr
     vr-settings vr.seated-height sf@ 6 f>s$ type     ."  vr-settings vr.seated-height sf!" cr
     vr-settings vr.left-handed l@ n>s type           ."  vr-settings vr.left-handed l!" cr

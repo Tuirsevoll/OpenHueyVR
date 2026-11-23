@@ -858,11 +858,18 @@ $8000 constant room-motion
 : player-kind ( -- kind )  hewie-played? if  hewie-kind  else  fiona-kind  then ;
 : passable? ( exit -- flag )   \ (its door not locked against the one played; no door: not)
     exit-door dup 0< if  drop false exit  then  player-kind doors:locked-against? 0= ;
+\ The seamless doorway's old way out is suppressed here too: exit-out and leaves-by both come
+\ through exit-checked to take-exit (exit-out's own check is only an early way out).
 : exit-checked ( exit -- )   \ (the rooms' exit check: its door not locked, passable, the one played at their own pace)
-    {: ex :}  ex exit-door doors:door-locked? if  exit  then
+    {: ex :}  ex seamless-exit? if  exit  then
+    ex exit-door doors:door-locked? if  exit  then
     ex passable? 0= if  exit  then  own-pace? 0= if  exit  then  ex take-exit ;
+\ Seamless room loading (the VR option, game/roomseamless.c): the doorway's seamless handover
+\ takes it, so the old way out through that exit is suppressed - the exit area's take-exit here
+\ (each room's each-frame calls exit-out), the walk-out and its fade. Original mode is untouched.
 : exit-out ( exit -- )   \ (each frame: the one played goes when they can - free, in its area, its door open, not held)
-    {: ex :}  player-free? 0= if  exit  then
+    {: ex :}  ex seamless-exit? if  exit  then
+    player-free? 0= if  exit  then
     player ex exit-area  hewie-played? if  in-area-on?  else  in-area?  then  0= if  exit  then   \ (cond 0x07: Hewie's on his triangle)
     ex exit-open? 0= if  exit  then
     ex exit-held? if  exit  then
@@ -1334,7 +1341,11 @@ $88 constant shatter-sound   $40 constant shatter-loudness   $80303030 constant 
 \ comes in by), its cameras (an area and the camera whoever crosses into it takes), its ways
 \ out (an area and the exit loaded ahead as she enters it), what Hewie looks up at ----
 : way-in ( exit set path -- )   \ (she came by it: placed at it, its camera hers; whoever is in it, its camera)
-    {: ex set path :}  came-by @ ex = if  player ex at-exit  set path player-camera  then  ex set path exit-camera ;
+    {: ex set path :}  came-by @ ex = if
+        \ (a seamless handover's arrival is already where she was in the world: no at-exit)
+        seamless-arrived? 0= if  player ex at-exit  then
+        set path player-camera
+    then  ex set path exit-camera ;
 : ways-in ( table n -- )   \ (a set and path an exit, from 0)
     0 ?do  i  over i 2* cells + @  2 pick i 2* 1+ cells + @  way-in  loop  drop ;
 : cameras-at ( table n -- )   \ (area set path, three cells a camera)

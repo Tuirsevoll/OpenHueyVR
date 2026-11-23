@@ -167,7 +167,7 @@ add_executable(hga
     src/main.c
     src/platform/gl.c src/platform/platform.c src/platform/vr.c src/platform/voice.c src/platform/update.c src/platform/sound.c src/platform/movie.c src/platform/music.c src/platform/seq.c src/platform/spu.c src/platform/snddrv.c src/platform/saudio.c
     src/render/render.c src/render/post.c
-    src/game/room.c src/game/console.c src/game/actor.c src/game/doglegs.c src/game/humanlegs.c src/game/vrhands.c src/game/vrbody.c src/game/vrbones.c src/game/gripposes.c src/game/loot.c src/game/itemprops.c src/game/chair.c src/game/cloth.c src/game/world.c
+    src/game/room.c src/game/roomlayout.c src/game/roomseamless.c src/game/console.c src/game/actor.c src/game/doglegs.c src/game/humanlegs.c src/game/vrhands.c src/game/vrbody.c src/game/vrbones.c src/game/gripposes.c src/game/loot.c src/game/itemprops.c src/game/chair.c src/game/cloth.c src/game/world.c
     src/game/camdirector.c src/game/areas.c src/game/exits.c src/game/messages.c src/game/cutscene.c src/game/placed.c src/game/sprites.c src/game/mods.c src/game/particles.c src/game/things.c src/game/obstacles.c src/game/swimpath.c src/game/rumble.c src/game/props.c
     src/game/sound3d.c src/game/vrspots.c src/game/triggerprobe.c src/game/triggers.c src/game/vrmarkers.c
     src/game/vrspotprobe.c src/game/vrpath.c src/game/vrlevers.c src/game/vrmirror.c
@@ -339,6 +339,13 @@ target_link_libraries(vrmarkers-check PRIVATE hgadata forth)
 target_compile_definitions(vrmarkers-check PRIVATE
     "ITEMPROPS_SAMPLE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/item-props/library\"")
 add_test(NAME vrmarkers_check COMMAND vrmarkers-check)
+
+# the rooms' places (room_layout.txt): the three flags, a check line, and the pair's T
+add_executable(roomlayout-check tests/roomlayout_check.c src/game/roomlayout.c)
+target_link_libraries(roomlayout-check PRIVATE hgadata)
+target_compile_definitions(roomlayout-check PRIVATE
+    "ROOMLAYOUT_SAMPLE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/item-props/library\"")
+add_test(NAME roomlayout_check COMMAND roomlayout-check)
 
 # the hiding spots' geometry with no room behind it: the handle path a hand's target is projected on
 # (vrpath.c) and a track's pose at a fractional frame (placed.c's placed_pose_at)

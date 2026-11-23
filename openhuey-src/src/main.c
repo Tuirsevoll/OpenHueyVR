@@ -25,6 +25,7 @@
 #include "core/files.h"
 #include "forth.h"
 #include "game/engine.h"
+#include "game/roomseamless.h"
 #include "game/camdirector.h"
 #include "game/particles.h"
 #include "game/progress.h"
@@ -701,11 +702,14 @@ static void draw_door_shades(Engine *e, const RoomView *v) {
 /* layer `layer`: the room's draws in it, then the characters' ($1C, drawn softened, apart), then
  * the effects' (their drawers' layer: most $19 - so before the fog's pass at $21 and under what
  * the later layers draw, as the original's packets go out layer by layer) */
+static Vec3 view_position(const Mat4 *v);
+static Vec3 view_forward(const Mat4 *v);
 static void draw_layer(Engine *e, const Mat4 *vp, const Mat4 *view, int layer) {
     int i;
 
     render_fog_after(fog_after(layer));
     room_draw_layer(&e->room, vp, layer);
+    roomseamless_draw(e, vp, layer);   /* (the seamless neighbour's solid / see-through parts, after the room's) */
     for (i = 0; i < MAX_ACTORS; i++) {
         if (e->actors[i].used && actor_layer(&e->actors[i]) == layer && layer != 0x1C) {
             draw_actor(e, &e->actors[i], vp);
@@ -770,6 +774,7 @@ static void draw_scene(Engine *e, const Mat4 *proj, const Mat4 *view, Vec3 eye, 
         return;
     }
     room_draw_begin(&e->room, eye, forward);
+    roomseamless_view_begin(e, eye, forward);   /* (the neighbour's moving batches, its eye in its own space) */
     rv = room_view(proj, view, eye, e->camera.znear, e->camera.zfar);
     use_blockers(e, &rv);
     for (layer = 0; layer < 0x1E; layer++) {   /* the room's layers and the characters' in order */
@@ -1025,6 +1030,21 @@ static struct {
     float alpha;     /* how far from prev towards cur the picture draws (0 prev .. 1 cur) */
 } sPose;
 
+/* A seamless room handover turns her facing by the layout's matrix; the camera's yaw turns with
+ * it by the same angle, so the room does not spin in the headset (this pair's matrix is a pure
+ * move: 0). The two tick samples the picture blends between are turned too, though a new room is
+ * a cut for them anyway (fiona_pose_after). */
+void engine_vr_turn_view(float delta) {
+    if (delta == 0.0f) {
+        return;
+    }
+    sAlign = angle_wrap(sAlign + delta);
+    if (sPose.have) {
+        sPose.prev_align = angle_wrap(sPose.prev_align + delta);
+        sPose.cur_align = angle_wrap(sPose.cur_align + delta);
+    }
+}
+
 /* the Fiona in the room: the first actor used, shown and named O_FI..., as fiona_view finds her */
 static Actor *fiona_pick(Engine *e) {
     int i;
@@ -1037,6 +1057,37 @@ static Actor *fiona_pick(Engine *e) {
         }
     }
     return NULL;
+}
+
+/* A seamless handover's tick has put her in the new room; the anchor the hands and the body pose
+ * from (fiona_view's, set before the tick from her old place) is put on the new one. Unlike
+ * fiona_view it takes no turn and no recenter: the frame's draw does that as it always has. */
+void engine_vr_reanchor(struct Engine *e) {
+    Actor *pick;
+    Camera cam;
+    Vec3 bone;
+    float hy;
+
+    if (e == NULL || !vr_active() || !vr_tracking() || gCamDir.scene || freecam_active()) {
+        return;
+    }
+    pick = fiona_pick(e);
+    if (pick == NULL) {
+        return;
+    }
+    cam = e->camera;
+    cam.yaw = sAlign;
+    cam.pitch = 0.0f;
+    cam.roll = 0.0f;
+    bone = pick->head.head > 0 ? actor_bone(pick, pick->head.head)
+                               : vec3(pick->pos.x, pick->pos.y + 14.0f, pick->pos.z);
+    hy = bone.y;
+    vrbody_eye_y(pick, &hy);
+    cam.pos.x = pick->pos.x + sinf(sAlign);
+    cam.pos.y = vr_crouch_anchor(hy + 1.5f);
+    cam.pos.z = pick->pos.z - cosf(sAlign);
+    vr_anchor_set(1, cam.pos, cam.yaw);
+    sFp = pick;
 }
 
 /* before a tick: where the last one left her becomes the one before this */

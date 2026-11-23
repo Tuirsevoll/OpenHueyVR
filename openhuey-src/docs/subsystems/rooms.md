@@ -92,6 +92,21 @@ inside (VR already brings that in, `vrbody_near`, so her own body does not clip 
 The room's lights (section 4): without one, no lights and the ambient 128 (`Lights_Reset`). A
 character off the nav mesh takes light 0 alone, wherever it reaches (`Lights_ForModel`).
 
+## Seamless room loading (VR option, test)
+
+`Room loading: Original / Seamless (test)` (`vr.room-loading`, `scripts/vr-options.fs`, default
+Original) lets one doorway be walked through with no fade and no jump. `PROPS/room_layout.txt`
+(Sean's `export_layout.py`) gives each room's 3x4 place `W` in one shared world; `src/game/roomlayout.c`
+reads it. `PROPS/seamless.txt` names the doorways (`ST_001 2 ST_002 2`). `src/game/roomseamless.c`
+loads the other room draw-only into a second `Room` (`room_load_view` in `room.c`: the same mesh and
+texture path, no global resets; its placed objects are left out, since only the room's own scripts
+know which are shown, hidden or parked), draws it with `view_proj x T(other -> played)`, and suppresses the
+scripts' old way out (`kit.fs exit-out`, the exit area's `take-exit`, walk-out and fade). Crossing
+the doorway's line (its spots and event area, or its door) hands the played room over with the normal
+`go-through`: Fiona and a nearby Hewie are put where they were converted by `T(from -> to)`, so the
+world position does not change. Original mode does none of it.
+
+
 ## Design notes
 
 - The original loaded the next room into a second slot ahead of time (`exit-prepare`, event

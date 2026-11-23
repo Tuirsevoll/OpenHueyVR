@@ -82,6 +82,22 @@ int room_exists(int id);
 int room_load(Room *r, int id);
 /* mesh, textures and placed objects only: no vase reset, no effect-bank swap. For a prop's model. */
 int room_load_prop(Room *r, int id);
+/* A room drawn beside the played one (Seamless room loading): its mesh (the library's glTF,
+ * else the PAC's), GPU upload, textures, lights and doors - the same mesh and texture path
+ * room_load uses, and no global state touched (no loot, vases, sprite banks or sounds). Its
+ * placed objects are not loaded: only its own scripts know which are shown, hidden or moved
+ * (the courtyard's "ori" cage is parked by them). 0 if it can't be read. */
+int room_load_view(Room *r, int id);
+/* free what room_load_view loaded - not the sprite banks room_free clears (they are the played
+ * room's) */
+void room_free_view(Room *r);
+/* the frame's moving batches of a view-only room, the eye in its own space (no vase scaling) */
+void room_draw_view_begin(Room *r, Vec3 eye, Vec3 forward);
+/* its draws in renderer layer `layer`, `view_proj` already the current room's x T(neighbour->
+ * current); `skip_door` is the exit whose door not to draw (-1 none: the shared doorway's door
+ * is the played room's, when both sides have one). No loot, glows, bloom or reflections. */
+void room_draw_view(Room *r, const Mat4 *view_proj, int layer, int skip_door);
+
 /* breakable vases: uniform scale about the foot, tracking the Page Up world scale. 1 when not in VR. */
 float room_vase_scale(void);
 void room_vases_reset(void);

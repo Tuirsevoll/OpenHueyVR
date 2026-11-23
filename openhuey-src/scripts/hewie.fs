@@ -108,7 +108,14 @@ behaviour hewie-own
   on arrived ( room exit -- )
       hewie-played? along? and if  nip played-arrive exit  then
       drop fiona-room !
-      his-joining @ if  fiona-id his-fiona !  join  then ;   \ (he comes in by himself: Hewie_Arrive, the doors off screen)
+      \ (a seamless handover: a Hewie near her is put at the converted place, still following)
+      self seamless-hewie-here? if
+          0 his-alert !  0 his-scuffled !  0 his-at-door !  0 his-hide !  0 away!
+          show-him
+          arrived  after-arriving
+      else
+          his-joining @ if  fiona-id his-fiona !  join  then
+      then ;   \ (he comes in by himself: Hewie_Arrive, the doors off screen)
   \ a scene starting (the scripts' 0x61: Hewie_LeftBehind) - out of the room after an attack
   \ (0x38): his default; his mood back to normal
   on scene ( on -- )   \ (given back - Hewie_Halt: his feet afresh, his default action)

@@ -3,6 +3,7 @@
  * Structs are reached by address plus field words: `camera cam.yaw sf@` reads the camera's yaw
  * (a field word adds its offset). Floats in structs are 32-bit: sf@ / sf!. */
 #include "../game/engine.h"
+#include "../game/roomseamless.h"
 #include "../platform/vrlog.h"
 #include "../data/exetables.h"
 #include "../hactor/hactor.h"
@@ -92,12 +93,30 @@ PRIM(p_room) {   /* ( id -- ) load a room */
     Cell id = POP();
 
     camdir_room_gone(&gCamDir);   /* (its sets and paths lie in the room's data) */
+    roomseamless_load_begin((int)id);
     if (!room_load(&gEngine.room, (int)id)) {
         forth_error(f, "room: no room %lX", (long)id);
     }
+    roomseamless_load_end();
     particles_new_room();   /* (the engine's own sparks and motes go with the room) */
 }
 PRIM(p_room_id) { PUSH(gEngine.room.id); }
+PRIM(p_seamless_go) { PUSH(roomseamless_go((int)POP()) ? -1 : 0); }   /* ( exit -- ok? ) the seamless handover */
+PRIM(p_seamless_exit) { PUSH(roomseamless_exit((int)POP()) ? -1 : 0); }   /* ( exit -- flag ) a seamless doorway */
+PRIM(p_seamless_arrive) {   /* ( -- flag ) ( F: -- x y z yaw ) where a seamless arrival puts her */
+    Vec3 at = vec3(0.0f, 0.0f, 0.0f);
+    float yaw = 0.0f;
+    int ok = roomseamless_take_arrival(&at, &yaw);
+
+    FPUSH(at.x);
+    FPUSH(at.y);
+    FPUSH(at.z);
+    FPUSH(yaw);
+    PUSH(ok ? -1 : 0);
+}
+PRIM(p_seamless_hewie) { PUSH(roomseamless_hewie_here((int)POP()) ? -1 : 0); }   /* ( id -- flag ) */
+PRIM(p_seamless_arrived) { PUSH(roomseamless_arrived() ? -1 : 0); }   /* ( -- flag ) the seamless arrival is this one */
+
 PRIM(p_room_exists) { PUSH(room_exists((int)POP()) ? -1 : 0); }
 PRIM(p_room_bounds) {   /* ( F: -- lx ly lz hx hy hz ) the solid part's box */
     const RoomMesh *m = &gEngine.room.mesh;
@@ -4248,6 +4267,7 @@ void engine_tick(Engine *e) {
         render_look_tick();
         sound3d_tick(e);
         cutscene_audio(0, 0);   /* the menu set its own volumes; don't put the scene's mix back */
+        roomseamless_tick(e);   /* (a menu up: no handover, but Original frees the neighbour) */
         return;
     }
     e->nblockers = 0;   /* (Lights_Frame: the room's scripts give them again each frame) */
@@ -4257,6 +4277,7 @@ void engine_tick(Engine *e) {
         }
     }
     hactor_frame(e->forth);
+    roomseamless_tick(e);   /* (the neighbour kept in step; a handover when she is through) */
     if (!e->testing) {
         triggers_load_if_needed();   /* (the mods' PROPS/triggers.txt: read once, its count logged) */
         vrmarkers_load_if_needed();  /* (PROPS/hidespots.txt, PROPS/levers.txt: read once, the room's logged) */
@@ -4880,6 +4901,7 @@ void bind_engine_reset(void) {
     snddrv_stop_all();
     cutscene_end();
     triggers_reset();   /* (a new game: the boxes are read again and none is armed) */
+    roomseamless_reset();   /* (and a handover in progress: the neighbour freed; the files kept) */
     vrmarkers_reset();  /* (and the mods' VR markers: the spots and the levers, read again) */
     vrlevers_reset();   /* (and the levers' objects: found again in the new game's rooms) */
 }
@@ -4901,6 +4923,7 @@ void bind_engine(Forth *f) {
         const char *effect;   /* its stack effect: the scripts' code is checked with it (NULL: none fixed) */
     } prims[] = {
         {"room", p_room, "( id -- )"}, {"route", p_route, "( from to kind max -- n )"}, {"route-avoiding", p_route_avoiding, "( from to kind max avoid -- n )"}, {"route-sides", p_route_sides, "( from from-way to want kind max avoid -- n )"}, {"exit-way", p_exit_way, "( room exit checked -- way )"}, {"route-door", p_route_door, "( i -- door )"}, {"door-open?", p_door_open, "( door -- flag )"}, {"world-exits-rebuild", p_exits_rebuild, "( -- )"}, {"door-exit-in", p_door_exit_in, "( door room -- exit | -1 )"}, {"door-leads", p_door_leads, "( door room -- room' | -1 )"}, {"exit-stand", p_exit_stand, "( exit -- flag ) ( F: -- F: x y z )"}, {"room-id", p_room_id, "( -- room )"}, {"room-exists?", p_room_exists, "( room -- flag )"},
+        {"seamless-go", p_seamless_go, "( exit -- ok? )"}, {"seamless-exit?", p_seamless_exit, "( exit -- flag )"}, {"seamless-arrive?", p_seamless_arrive, "( -- flag ) ( F: -- x y z yaw )"}, {"seamless-arrived?", p_seamless_arrived, "( -- flag )"}, {"seamless-hewie-here?", p_seamless_hewie, "( id -- flag )"},
         {"room-bounds", p_room_bounds, "( F: -- lx ly lz hx hy hz )"}, {"room-cameras", p_room_cameras, "( -- n )"}, {"room-camera", p_room_camera, "( i -- ) ( F: -- F: ex ey ez fov-radians tx ty tz )"}, {"light-own", p_light_own, "( i -- )"}, {"light-scale", p_light_scale, "( i which -- ) ( F: k -- )"}, {"door-group?", p_door_group_q, "( exit group -- flag )"}, {"room-group?", p_room_group_q, "( group -- flag )"}, {"light@", p_light_fetch, "( i -- ) ( F: -- F: intensity shadow )"}, {"room-ambient", p_room_ambient, "( -- ) ( F: -- F: r g b )"}, {"lights-at", p_lights_at, "( -- l0 l1 l2 ) ( F: x y z -- )"}, {"look-on?", p_look_on, "( slot -- flag )"}, {"sprites", p_sprites_new, "( -- b )"}, {"sprites-free", p_sprites_free, "( b -- )"}, {"sprites-free-all", p_sprites_free_all, "( -- )"}, {"sprites-texture", p_sprites_texture, "( b group id palette -- )"}, {"sprites-cells", p_sprites_cells, "( b x y cw ch tw th frames -- )"}, {"sprites-flags", p_sprites_flags, "( b flags layer -- )"}, {"sprites-offset", p_sprites_offset, "( b -- ) ( F: cx cy -- )"}, {"sprites-corner", p_sprites_corner, "( b k -- ) ( F: x y z -- )"}, {"sprites-count", p_sprites_count, "( b n -- )"}, {"sprite!", p_sprite_store, "( b i rgba frame -- ) ( F: x y z w h rot -- )"}, {"sprites-uv", p_sprites_uv, "( b -- ) ( F: u0 v0 u1 v1 -- )"}, {"sprite-quad!", p_sprite_quad, "( b i rgba -- ) ( F: x0 y0 z0 x1 y1 z1 x2 y2 z2 x3 y3 z3 -- )"}, {"door-group!", p_door_group, "( group flag -- )"}, {"room-group!", p_room_group, "( group flag -- )"}, {"floor-below", p_floor_below, NULL},
         {"nav-tris", p_nav_tris, "( -- n )"}, {"nav-tri", p_nav_tri, "( -- ) ( -- tri | -1 ) ( F: x y z -- )"}, {"tri-center", p_tri_center, "( tri -- ) ( F: -- F: x y z )"}, {"tri-floor", p_tri_floor, "( tri -- ) ( F: x z -- F: y )"}, {"tri-normal", p_tri_normal, "( tri -- ) ( F: -- F: x y z )"},
         {"exit-tri", p_exit_tri, "( exit which -- tri | -1 )"}, {"exit-leads", p_exit_leads, "( exit -- room exit' | -1 -1 )"}, {"room-exit-door", p_room_exit_door, "( room exit -- door | -1 )"}, {"room-exit-leads", p_room_exit_leads, "( room exit -- room' exit' | -1 -1 )"}, {"door-sides", p_door_sides, "( door -- room0 exit0 tri0 room1 exit1 tri1 )"}, {"room-exit-tri", p_room_exit_tri, "( room exit which -- tri )"}, {"hud", p_hud, "( addr len -- )"}, {"ui-clear", p_ui_clear, "( layer -- )"}, {"ui-image", p_ui_image, "( layer x y w h group id csa u v uw vh rgba -- )"}, {"tex-bank", p_tex_bank, "( addr len group -- flag )"}, {"tex-info", p_tex_info, "( group id -- w h tex )"}, {"ui-rect", p_ui_rect, "( layer x y w h rgba -- )"}, {"ui-text", p_ui_text, "( layer addr len x y rgba scale -- )"}, {"text-width", p_text_width, "( addr len scale -- px )"}, {"ui-movie", p_ui_movie, "( layer x y w h -- )"}, {"ui-held", p_ui_held, "( layer x y w h -- )"}, {"movie-hold", p_movie_hold, "( -- flag )"}, {"movie-unhold", p_movie_unhold, "( -- )"}, {"cast-as", p_cast_as, "( id model -- )"}, {"chars-hide", p_chars_hide, "( -- )"}, {"cast-model", p_cast_model, "( id -- model | -1 )"}, {"scene-has?", p_scene_has, "( model -- flag )"}, {"model-file", p_model_file, "( model -- addr len )"}, {"nav-move", p_nav_move, "( F: x y z dx dz climb radius -- F: x' y' z' )"}, {"nav-nearest", p_nav_nearest, "( F: x y z -- F: x' y' z' )"}, {"nav-at", p_nav_at, NULL}, {".room", p_room_info, "( -- )"},
@@ -5069,6 +5092,7 @@ void bind_engine(Forth *f) {
     field(f, "vr.teleport", offsetof(VrOptions, teleport));
     field(f, "vr.teleport-mode", offsetof(VrOptions, teleport_mode));
     field(f, "vr.teleport-reach", offsetof(VrOptions, teleport_reach));
+    field(f, "vr.room-loading", offsetof(VrOptions, room_loading));
     field(f, "vr.seated", offsetof(VrOptions, seated));
     field(f, "vr.seated-height", offsetof(VrOptions, seated_height));
     field(f, "vr.seated-offset", offsetof(VrOptions, seated_offset));   /* (retired: an older options file still loads) */

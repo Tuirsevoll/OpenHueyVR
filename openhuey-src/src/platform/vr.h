@@ -20,6 +20,9 @@ typedef struct VrOptions {
     int32_t teleport_mode;    /* 0: the flick always goes `teleport_reach`; 1: it starts near and
                                * grows the longer the stick is held (up to teleport_reach) */
     float teleport_reach;     /* how far a teleport goes, or the furthest it grows to, metres */
+    int32_t room_loading;     /* 0: Original (the old room change and its fade), 1: Seamless
+                               * (test): the doorway's other room drawn beside it and walked
+                               * through with no fade or jump (game/roomseamless.c) */
     int32_t seated;           /* seated: her eye height is the seated one, never the floor's */
     float seated_height;      /* the eye height seated play is sized to, metres (1.6: as standing) */
     float seated_offset;      /* retired: kept so an older options file still loads (the view's

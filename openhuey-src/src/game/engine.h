@@ -101,5 +101,11 @@ void engine_skip_cycle(void);
 int freecam_active(void);
 /* the listener, when the headset is on her head (NULL: the game camera) */
 void engine_set_ear(const Mat4 *view);
+/* a seamless handover's turn: the headset's camera yaw (sAlign) turned by `delta` as her body's
+ * facing is turned, so the world does not spin; the pose blend is adjusted with it */
+void engine_vr_turn_view(float delta);
+/* a seamless handover has put her in the new room: the eyes' anchor (which the hands and the body
+ * pose from) moved with her before this frame's shadows and draw. No turn or recenter is taken. */
+void engine_vr_reanchor(struct Engine *e);
 
 #endif

@@ -8,6 +8,7 @@
 #include "../data/texbank.h"
 #include "../data/roomgltf.h"
 #include "../data/roomtext.h"
+#include "roomseamless.h"
 #include "sprites.h"
 #include "../render/post.h"
 
@@ -860,6 +861,81 @@ int room_load_prop(Room *r, int id) {
     return 1;
 }
 
+/* ---- a room drawn beside the played one (Seamless room loading; game/roomseamless.c) ---- */
+
+/* The same mesh and texture path room_load takes - the library's mesh.gltf and its texture
+ * bank first - but only what drawing needs: no loot_reset, room_vases_reset or
+ * sprites_group_bank (a draw-only room must not touch the played room's globals), no nav
+ * mesh, and no placed objects: their shown / hidden / moved state is the room scripts' (a
+ * gate cage parked out of the way, a lever, the memo), and a draw-only room runs none of them.
+ * Their defaults put the courtyard's "ori" cage right in the doorway. */
+int room_load_view(Room *r, int id) {
+    char path[64];
+    size_t size;
+    const uint8_t *sec;
+
+    if (r == NULL) {
+        return 0;
+    }
+    memset(r, 0, sizeof(*r));
+    r->id = -1;
+    pac_room_path(id, path, sizeof(path));
+    r->pac.data = files_read(path, &r->pac.size);
+    if (r->pac.data == NULL) {
+        fprintf(stderr, "seamless: can't read %s for the neighbour\n", path);
+        return 0;
+    }
+    r->id = id;
+    r->pac_read = r->pac.size;
+    attach_texts(r);
+    if (!load_mesh_gltf(r)) {   /* (else the PAC's own section, as room_load) */
+        sec = pac_section(&r->pac, PAC_MESH, &size);
+        if (sec != NULL && !roommesh_build(&r->mesh, sec, size)) {
+            fprintf(stderr, "seamless: room %03X: the mesh section is malformed\n", id);
+        }
+    }
+    if (r->mesh.nv > 0) {
+        render_mesh_upload(&r->gpu, r->mesh.v, r->mesh.nv);
+    }
+    load_textures(r);
+    load_lights(r);
+    load_doors(r);
+    if (r->mesh.ndyn > 0) {
+        r->moving_v = malloc((size_t)r->mesh.ndv * 3 * sizeof(MeshVertex));
+        r->moving_d = malloc((size_t)r->mesh.ndyn * sizeof(MeshDraw));
+    }
+    return 1;
+}
+
+/* room_free without the sprite banks (those are the played room's) */
+void room_free_view(Room *r) {
+    int i;
+
+    if (r == NULL || r->id < 0) {
+        if (r != NULL) {
+            r->id = -1;
+        }
+        return;
+    }
+    for (i = 0; i < r->ntextures; i++) {
+        render_texture_free(r->textures[i]);
+    }
+    render_mesh_free(&r->gpu);
+    render_mesh_free(&r->moving);
+    for (i = 0; i < ROOM_DOORS; i++) {
+        render_mesh_free(&r->doors[i].gpu);
+        roommesh_free(&r->doors[i].mesh);
+    }
+    placed_free(&r->placed);
+    free(r->moving_v);
+    free(r->moving_d);
+    roommesh_free(&r->mesh);
+    navmesh_free(&r->nav);
+    free(r->pac.data);
+    memset(r, 0, sizeof(*r));
+    r->id = -1;
+}
+
 void room_free(Room *r) {
     int i;
 
@@ -991,11 +1067,11 @@ static void draw_layer_runs(Room *r, const GpuMesh *g, const Mat4 *vp, const Mes
     int first = 0, end;
 
     while (first < n) {
-        if (part_layer(d[first].part) != layer) {
+        if (part_layer(d[first].part) != layer || roomseamless_hide_draw(r, &d[first])) {
             first++;
             continue;
         }
-        for (end = first; end < n && part_layer(d[end].part) == layer; end++) {
+        for (end = first; end < n && part_layer(d[end].part) == layer && !roomseamless_hide_draw(r, &d[end]); end++) {
         }
         render_mesh(g, vp, d + first, end - first, r->textures, r->ntextures, r->groups);
         first = end;
@@ -1039,6 +1115,52 @@ void room_draw_layer(Room *r, const Mat4 *view_proj, int layer) {
     if (!engine_skip("loot")) {
         loot_draw(view_proj, layer);   /* the VR collectibles lying about (loot.c) */
     }
+    render_mesh_ps2_clip(0);
+}
+
+/* a view-only neighbour's moving batches, the eye in its own space (no vase scaling: the vases
+ * are the played room's) */
+void room_draw_view_begin(Room *r, Vec3 eye, Vec3 forward) {
+    if (r == NULL) {
+        return;
+    }
+    r->nmoving = 0;
+    if (r->id >= 0 && r->mesh.ndyn > 0 && r->moving_v != NULL && r->moving_d != NULL) {
+        int n = roommesh_dynamic(&r->mesh, eye, forward, r->moving_v, r->moving_d), nv = 0, i;
+
+        for (i = 0; i < n; i++) {
+            nv = r->moving_d[i].first + r->moving_d[i].count > nv ? r->moving_d[i].first + r->moving_d[i].count : nv;
+        }
+        render_mesh_update(&r->moving, r->moving_v, nv > 0 ? nv : 1);
+        r->nmoving = n;
+    }
+}
+
+/* the neighbour's draws in one layer (room_draw_layer's room parts and placed objects, without
+ * the loot and without the player's own door on the shared doorway) */
+void room_draw_view(Room *r, const Mat4 *view_proj, int layer, int skip_door) {
+    int i;
+
+    if (r == NULL || r->id < 0) {
+        return;
+    }
+    render_mesh_ps2_clip(1);
+    draw_layer_runs(r, &r->gpu, view_proj, r->mesh.d, r->mesh.nd, layer);
+    draw_layer_runs(r, &r->moving, view_proj, r->moving_d, r->nmoving, layer);
+    if (layer == 1) {
+        for (i = 0; i < ROOM_DOORS; i++) {
+            if (i == skip_door) {
+                continue;
+            }
+            if (r->doors[i].present && r->doors[i].shown) {
+                Mat4 mvp = mat4_mul(*view_proj, door_matrix(&r->doors[i]));
+
+                render_mesh(&r->doors[i].gpu, &mvp, r->doors[i].mesh.d, r->doors[i].mesh.nd, r->textures, r->ntextures,
+                            r->doors[i].groups);
+            }
+        }
+    }
+    /* (no placed_draw: a draw-only room's placed objects have not had its came-in) */
     render_mesh_ps2_clip(0);
 }
 

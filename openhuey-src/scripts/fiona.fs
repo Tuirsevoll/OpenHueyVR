@@ -473,7 +473,14 @@ behaviour free
       self subscribe equipment  self subscribe exit-chosen ;
   on leaving-room ( room exit -- )  hewie-played? if  nip fiona.companion:he-left exit  then  2drop  through-door ;
   on arrived ( room exit -- )   \ (the story's scripts place her too; in the run, she comes with him or not)
-      hewie-played? if  fiona.companion:room-came exit  then  nip arrive  1 her act.visible l! ;
+      hewie-played? if  fiona.companion:room-came exit  then
+      \ (a seamless handover places her where she was in the world, not at the exit spot)
+      seamless-arrive? if
+          drop drop  put  1 her act.visible l!
+      else
+          fdrop fdrop fdrop fdrop
+          nip arrive  1 her act.visible l!
+      then ;
   on to-exit ( exit -- )  hewie-played? if  mate-door ! exit  then  arrive ;
   on exit-chosen ( exit -- )  mate-door ! ;   \ (her exit set by a room - Character_ChooseExit: the one she makes for with him)   \ (in the run: Character_ChooseExit - the exit she came in by)
   on hewie-told ( what arg -- )  fiona.companion:told ;

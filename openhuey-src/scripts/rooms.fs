@@ -21,7 +21,10 @@ end-state
     played @ 0< if  drop exit  then  played @ swap broadcast leaving-room ;
 
 behaviour rooming
-  on spawned ( -- )  -1 played !  -1 came-by !  -1 spare !  self subscribe write-save ;
+  on spawned ( -- )  -1 played !  -1 came-by !  -1 spare !  self subscribe write-save
+      \ (the seamless handover, game/roomseamless.c, broadcasts go-through like the engine's
+      \ own messages; a direct send from take-exit reached this handler without a subscription)
+      self subscribe go-through ;
   \ (saves.fs) the room loaded ahead: a save made where only a forced way leads out - the hidden
   \ room $27, in by a hole - goes back by it as loaded (a load plays the room afresh: the spare
   \ was the room played before, or none, and its way led nowhere - before 0.2.42)
