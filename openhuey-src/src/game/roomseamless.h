@@ -77,11 +77,17 @@ int roomseamless_portals(struct Engine *e, const Mat4 *vp, Vec3 eye, SeamPortal 
  * neighbour's by the eye's distance from the plane - half and half on it, the same on both sides, so a
  * handover does not show. 1 if it was changed (the caller puts the original back after the post pass). */
 int roomseamless_look(struct Engine *e, Vec3 eye, RoomLook *look);
+/* The room the handover is for, if it is already loaded beside the played one: it is swapped in as
+ * the played room (room_promote finishes it) and the room just left stays beside it as the scripts
+ * left it. Called by the `room` word in the tick of the crossing; 1 if swapped (no load needed). */
+int roomseamless_swap_in(Room *played, int id);
 /* the debug outline of the opening (seam-outline), drawn near the end of the picture */
 void roomseamless_outline(struct Engine *e, const Mat4 *vp);
 /* the debug words: what is SEAM_DBG_*, on or off */
 enum { SEAM_DBG_PORTAL, SEAM_DBG_OUTLINE, SEAM_DBG_TINT, SEAM_DBG_LOG };
 void roomseamless_debug(int what, int on);
+/* one game tick's time in ms (main.c), for the log: the slow ones */
+void roomseamless_note_tick(long tick, double ms);
 /* seam-info's text: the played room's seam, T, the gate, the neighbour, Fiona's distance */
 void roomseamless_info(char *buf, size_t n);
 /* 1: this draw is one of the pair's gateway void boxes (the black cube shells the original uses

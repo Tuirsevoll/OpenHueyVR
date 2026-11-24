@@ -757,6 +757,59 @@ static void vase_scale_group(Room *r, int group, Vec3 origin, float k) {
     }
 }
 
+void room_vases_stash(Room *r) {
+    int i;
+
+    if (r == NULL) {
+        return;
+    }
+    r->vases.saved = 1;
+    r->vases.n = sVaseN;
+    r->vases.scale = sVaseScale;
+    for (i = 0; i < sVaseN; i++) {
+        r->vases.group[i] = sVase[i].group;
+        r->vases.origin[i] = sVase[i].origin;
+    }
+}
+
+static void vases_restore(const RoomVases *v) {
+    int i;
+
+    sVaseN = v->n;
+    sVaseScale = v->scale;
+    for (i = 0; i < v->n; i++) {
+        sVase[i].group = v->group[i];
+        sVase[i].origin = v->origin[i];
+    }
+}
+
+/* the vases of each room the player has been in (their groups and feet): a room drawn beside the played
+ * one has them grown already, so they do not grow when it is entered */
+#define VASE_KNOWN_ROOMS 512
+static RoomVases *sVaseKnown[VASE_KNOWN_ROOMS];
+
+static void vases_known_note(const Room *r) {
+    RoomVases *k;
+    int i;
+
+    if (r == NULL || r->id < 0 || r->id >= VASE_KNOWN_ROOMS) {
+        return;
+    }
+    if (sVaseKnown[r->id] == NULL) {
+        sVaseKnown[r->id] = calloc(1, sizeof(RoomVases));
+        if (sVaseKnown[r->id] == NULL) {
+            return;
+        }
+    }
+    k = sVaseKnown[r->id];
+    k->saved = 1;
+    k->n = sVaseN;
+    k->scale = sVaseScale;
+    for (i = 0; i < sVaseN; i++) {
+        k->group[i] = sVase[i].group;
+        k->origin[i] = sVase[i].origin;
+    }
+}
 void room_vase_note(Room *r, int group, Vec3 origin, float scale) {
     int i, found = 0, dirty = 0;
 
@@ -793,6 +846,7 @@ void room_vase_note(Room *r, int group, Vec3 origin, float scale) {
     if (dirty && r->mesh.nv > 0) {
         render_mesh_upload(&r->gpu, r->mesh.v, r->mesh.nv);
     }
+    vases_known_note(r);
 }
 
 static void room_vases_sync(Room *r) {
@@ -867,6 +921,34 @@ int room_load(Room *r, int id) {
     return 1;
 }
 
+void room_promote(Room *r) {
+    size_t size;
+    const uint8_t *sec;
+
+    loot_reset();
+    if (r->vases.saved) {   /* (its vases are grown already in its mesh: as they were, not again) */
+        vases_restore(&r->vases);
+    } else {
+        room_vases_reset();
+    }
+    /* the effects' textures: groups 0 and 0x15 of the cache (RoomMgr_MakeCurrent) */
+    sprites_group_bank(0, room_bank(r, PAC_TEXTURES, "textures.TEX"));
+    sprites_group_bank(0x15, room_bank(r, PAC_TEXTURES2, "effects.TEX"));
+    sec = pac_section(&r->pac, PAC_NAV, &size);
+    navmesh_build(&r->nav, sec, size);
+    sec = pac_section(&r->pac, PAC_NAV3, &size);
+    navmesh_take_flags(&r->nav, sec, sec != NULL ? size : 0);
+    load_look(r);
+    {
+        size_t asize = 0;
+        const uint8_t *anims = pac_section(&r->pac, PAC_PLACED2, &asize);
+
+        sec = pac_section(&r->pac, PAC_PLACED, &size);
+        placed_load(&r->placed, sec, sec != NULL ? size : 0, anims, asize);
+    }
+    r->view_placed = 0;
+}
+
 int room_load_prop(Room *r, int id) {
     char path[64];
     size_t size = 0;
@@ -895,6 +977,30 @@ int room_load_prop(Room *r, int id) {
     return 1;
 }
 
+/* a room drawn beside the played one: the vases it had when she was last in it, grown as they will be */
+static void vases_grow_known(Room *r) {
+    const RoomVases *k;
+    float s;
+    int i;
+
+    if (r == NULL || r->id < 0 || r->id >= VASE_KNOWN_ROOMS || sVaseKnown[r->id] == NULL || !vr_active()) {
+        return;
+    }
+    k = sVaseKnown[r->id];
+    s = room_vase_scale();
+    if (k->n <= 0 || fabsf(s - 1.0f) < 1.0e-4f) {
+        return;
+    }
+    for (i = 0; i < k->n; i++) {
+        vase_scale_group(r, k->group[i], k->origin[i], s);
+    }
+    if (r->mesh.nv > 0) {
+        render_mesh_upload(&r->gpu, r->mesh.v, r->mesh.nv);
+    }
+    r->vases = *k;
+    r->vases.scale = s;
+    r->vases.saved = 1;
+}
 /* ---- a room drawn beside the played one (Seamless room loading; game/roomseamless.c) ---- */
 
 /* The same mesh and texture path room_load takes - the library's mesh.gltf and its texture
@@ -938,6 +1044,7 @@ int room_load_view(Room *r, int id) {
         r->moving_v = malloc((size_t)r->mesh.ndv * 3 * sizeof(MeshVertex));
         r->moving_d = malloc((size_t)r->mesh.ndyn * sizeof(MeshDraw));
     }
+    vases_grow_known(r);
     return 1;
 }
 
@@ -1194,7 +1301,10 @@ void room_draw_view(Room *r, const Mat4 *view_proj, int layer, int skip_door) {
             }
         }
     }
-    /* (no placed_draw: a draw-only room's placed objects have not had its came-in) */
+    if (r->view_placed) {   /* (the room just left: its objects are as its scripts left them) */
+        placed_draw(&r->placed, view_proj, r->textures, r->ntextures, layer);
+    }
+    /* (else no placed_draw: a draw-only room's placed objects have not had its came-in) */
     render_mesh_ps2_clip(0);
 }
 

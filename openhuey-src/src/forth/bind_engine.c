@@ -94,7 +94,9 @@ PRIM(p_room) {   /* ( id -- ) load a room */
 
     camdir_room_gone(&gCamDir);   /* (its sets and paths lie in the room's data) */
     roomseamless_load_begin((int)id);
-    if (!room_load(&gEngine.room, (int)id)) {
+    if (roomseamless_swap_in(&gEngine.room, (int)id)) {   /* (a seamless crossing: already loaded beside it) */
+        room_promote(&gEngine.room);
+    } else if (!room_load(&gEngine.room, (int)id)) {
         forth_error(f, "room: no room %lX", (long)id);
     }
     roomseamless_load_end();
@@ -120,7 +122,7 @@ PRIM(p_seam_portal) { roomseamless_debug(SEAM_DBG_PORTAL, POP() != 0); }     /* 
 PRIM(p_seam_tint) { roomseamless_debug(SEAM_DBG_TINT, POP() != 0); }         /* ( flag -- ) what the portal shows, blue */
 PRIM(p_seam_log) { roomseamless_debug(SEAM_DBG_LOG, POP() != 0); }           /* ( flag -- ) the per-event logs */
 PRIM(p_seam_info) {   /* ( -- ) the played room's seam: T, the gate, the neighbour, Fiona's distance */
-    char text[640];
+    char text[2000];
 
     roomseamless_info(text, sizeof(text));
     forth_printf(f, "%s", text);

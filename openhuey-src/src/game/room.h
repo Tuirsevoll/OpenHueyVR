@@ -55,6 +55,16 @@ typedef struct RoomDoor {
                              * door bits (Doors_SetBits: door +0x120) */
 } RoomDoor;
 
+/* the vases grown in a room's mesh (room.c: room_vase_note): which groups, from where, by how much - kept with
+ * the room, so one that is left and drawn beside the played one, then played again, is not grown twice */
+typedef struct RoomVases {
+    int saved;
+    int n;
+    float scale;
+    int group[48];
+    Vec3 origin[48];
+} RoomVases;
+
 typedef struct Room {
     int id;                 /* -1: none loaded */
     Pac pac;
@@ -75,6 +85,8 @@ typedef struct Room {
     MeshVertex *moving_v;
     MeshDraw *moving_d;
     int nmoving;            /* this frame's (room_draw_begin) */
+    int view_placed;        /* drawn beside the played room with its placed objects: it was the played room a moment ago */
+    RoomVases vases;        /* its vases as grown (saved: when it stopped being the played room, or was known from a visit) */
 } Room;
 
 int room_exists(int id);
@@ -88,6 +100,11 @@ int room_load_prop(Room *r, int id);
  * placed objects are not loaded: only its own scripts know which are shown, hidden or moved
  * (the courtyard's "ori" cage is parked by them). 0 if it can't be read. */
 int room_load_view(Room *r, int id);
+/* what room_load does that room_load_view did not (sprite banks, nav mesh, the look, the placed objects,
+ * loot and vases reset): a view-loaded room made the played one (game/roomseamless.c swaps it in) */
+void room_promote(Room *r);
+/* the played room is about to be left but kept (drawn beside the next): its vase growth is kept with it */
+void room_vases_stash(Room *r);
 /* free what room_load_view loaded - not the sprite banks room_free clears (they are the played
  * room's) */
 void room_free_view(Room *r);

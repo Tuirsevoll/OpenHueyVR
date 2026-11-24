@@ -1791,7 +1791,12 @@ int main(int argc, char **argv) {
             fprintf(stderr, "TICK %ld\n", e->ticks);   /* (temporary: before the tick, so the number of the tick about to run) */
 #endif
             fiona_pose_before(e);   /* (her place, for the headset to draw her between the two ticks) */
-            engine_tick(e);
+            {
+                Uint64 tick_t0 = SDL_GetPerformanceCounter();
+
+                engine_tick(e);
+                roomseamless_note_tick((long)e->ticks, (double)(SDL_GetPerformanceCounter() - tick_t0) * 1000.0 / (double)SDL_GetPerformanceFrequency());
+            }
             fiona_pose_after(e);
             comfort_measure(e);   /* (the vignette's want: one tick's movement, not a frame's) */
             memset(e->input.pressed, 0, sizeof(e->input.pressed));   /* presses count once */

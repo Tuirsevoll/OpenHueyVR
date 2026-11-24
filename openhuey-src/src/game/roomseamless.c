@@ -21,6 +21,9 @@
 #define SEAMLESS_PAST 3.0f        /* units past the doorway's line: hand over */
 #define SEAMLESS_PAST_FRAME -0.1f /* ... for a measured seam: the floor ends at its line */
 #define SEAMLESS_PAST_MAX 20.0f   /* ... and no further past it (a save load's place is not a crossing) */
+#define SEAMLESS_LOAD_REACH 350.0f /* a neighbour is loaded once she is this near its doorway */
+#define SEAMLESS_LOAD_GAP 8        /* ticks between neighbour loads */
+#define SEAMLESS_LOAD_AFTER 20     /* ... and before the first after a crossing or a new room */
 #define SEAMLESS_LEVEL 30.0f      /* the most she may be above or below a doorway's floor to cross it */
 #define SEAMLESS_MARGIN 8.0f      /* across the doorway, past its width */
 #define SEAMLESS_HEWIE_NEAR 40.0f /* how near Hewie comes too */
@@ -67,12 +70,29 @@ typedef struct ActiveSeam {
 } ActiveSeam;
 
 static ActiveSeam sAct[SEAM_ACT_MAX];
+/* the played room's doorways a pair names but that are not used, and why (seam-info) */
+static struct { int exit; char why[120]; } sDrop[16];
+static int sDropN;
+
+static void drop_note(int exit, const char *fmt, ...) {
+    va_list ap;
+
+    if (sDropN >= 16) {
+        return;
+    }
+    sDrop[sDropN].exit = exit;
+    va_start(ap, fmt);
+    vsnprintf(sDrop[sDropN].why, sizeof(sDrop[sDropN].why), fmt, ap);
+    va_end(ap);
+    sDropN++;
+}
 static int sActN;
 static int sActRoom = -1;
 static Room sNb[SEAM_ACT_MAX];   /* the other rooms, drawn only (id -1: free) */
 static RoomLook sNbLook[SEAM_ACT_MAX];   /* each one's own fog / tint / bloom, for the blend */
 static int sInit;
-
+static long sNbNextLoad;       /* no neighbour is loaded before this tick (one at a time, not at a crossing) */
+static int sTrace;               /* frames still to trace after a handover (seam-log) */
 /* the handover in progress */
 static int sPending;
 static int sFrom, sTo, sExitTo;
@@ -88,6 +108,17 @@ static int sSuppressedRoom = -1, sSuppressedExit = -1;
 
 /* the debug words (seam-portal, seam-outline, seam-tint, seam-log) */
 static int sDbgPortal = 1, sDbgOutline, sDbgTint, sDbgLog;
+
+/* Seamless is on in the headset with the option set; HGA_SEAM_FLAT=1 turns it on in the flat-screen game too
+ * (a debugging aid: stills of the doorways through --hidden --eval and screenshot) */
+static int seam_on(void) {
+    static int env = -1;
+
+    if (env < 0) {
+        env = getenv("HGA_SEAM_FLAT") != NULL;
+    }
+    return env || (vr_active() && gVrOptions.room_loading);
+}
 
 /* one line to the console (and the log) */
 static void slog(const char *fmt, ...) {
@@ -499,6 +530,10 @@ static void actives_refresh(Engine *e) {
     }
     sActRoom = e->room.id;
     sActN = 0;
+    sDropN = 0;
+    if (sNbNextLoad < e->ticks + SEAMLESS_LOAD_AFTER) {
+        sNbNextLoad = e->ticks + SEAMLESS_LOAD_AFTER;
+    }
     pairs_load();
     for (i = 0; i < sPairN && sActN < SEAM_ACT_MAX; i++) {
         const SeamlessPair *p = &sPair[i];
@@ -521,6 +556,7 @@ static void actives_refresh(Engine *e) {
             int want = is_a ? p->b : p->a;
 
             if (next < 0 || base_of(next) != want || to_exit != s->other_exit) {
+                drop_note(s->my_exit, "the game's graph leads to ST_%03X exit %d now, not the pair's ST_%03X exit %d", next < 0 ? 0 : next, to_exit, want, s->other_exit);
                 slog("seamless: ST_%03X exit %d: the game's graph leads to ST_%03X exit %d, not the pair's ST_%03X exit %d: "
                      "left to the old way out\n", e->room.id, s->my_exit, next < 0 ? 0 : next, to_exit, want,
                      s->other_exit);
@@ -529,6 +565,7 @@ static void actives_refresh(Engine *e) {
             s->other = next;
         }
         if (!doorway_make(e->room.id, p, is_a, &s->line)) {
+            drop_note(s->my_exit, "no doorway line could be worked out (no exit spots)");
             slog("seamless: ST_%03X exit %d: no doorway line (no spots): left to the old way out\n", e->room.id,
                  s->my_exit);
             continue;
@@ -536,6 +573,7 @@ static void actives_refresh(Engine *e) {
         s->t_ok = pair_matrix(p, is_a, e->room.id, s->other, &s->t_ab) &&
                   pair_matrix(p, !is_a, s->other, e->room.id, &s->t_ba);
         if (!s->t_ok) {
+            drop_note(s->my_exit, "no transform to ST_%03X", s->other);
             slog("seamless: ST_%03X exit %d: no transform to ST_%03X: left to the old way out\n", e->room.id,
                  s->my_exit, s->other);
             continue;
@@ -605,6 +643,9 @@ static void neighbours_update(Engine *e) {
             sNb[i].id = -1;
         }
     }
+    if (e->ticks < sNbNextLoad) {
+        return;   /* (a load is about 4 ms: not in the tick of a crossing, and one at a time) */
+    }
     for (i = 0; i < sActN; i++) {
         float d;
 
@@ -618,7 +659,7 @@ static void neighbours_update(Engine *e) {
         } else {
             d = 0.0f;
         }
-        if (d < best_d) {
+        if (d < best_d && d <= SEAMLESS_LOAD_REACH) {
             best_d = d;
             best = i;
         }
@@ -639,6 +680,7 @@ static void neighbours_update(Engine *e) {
         slog("seamless: neighbour ST_%03X %s in %.1f ms (beside ST_%03X)\n", other, ok ? "ready" : "FAILED",
              (double)(SDL_GetPerformanceCounter() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency(),
              e->room.id);
+        sNbNextLoad = e->ticks + SEAMLESS_LOAD_GAP;
         if (!ok) {
             sNb[slot].id = -1;
             /* (not tried again for this room: its seam is left to the old way out) */
@@ -687,7 +729,7 @@ int roomseamless_go(int exit) {
     Cell arg;
     int kind;
 
-    if (!vr_active() || !gVrOptions.room_loading || sPending || exit < 0) {
+    if (!seam_on() || sPending || exit < 0) {
         return 0;
     }
     s = act_for_exit(exit);
@@ -748,6 +790,32 @@ int roomseamless_go(int exit) {
     return 1;
 }
 
+/* The room the handover is for, if it is already loaded as a neighbour: it becomes the played room
+ * (the caller finishes it with room_promote) and the room just left takes its place beside it -
+ * as the scripts left it, with its placed objects and doors - so neither is read or uploaded
+ * again in the tick of the crossing. 1 if it was swapped. */
+int roomseamless_swap_in(Room *played, int id) {
+    static Room tmp;
+    int i;
+
+    if (!seam_on() || !sPending || id != sTo || played->id != sFrom) {
+        return 0;
+    }
+    for (i = 0; i < SEAM_ACT_MAX && sNb[i].id != id; i++) {
+    }
+    if (i >= SEAM_ACT_MAX) {
+        slog("seamless: ST_%03X was not loaded beside ST_%03X: loaded the usual way\n", id, played->id);
+        return 0;
+    }
+    room_vases_stash(played);   /* (her vases are grown in its mesh: kept with it, so they do not grow again if she comes back) */
+    tmp = *played;
+    *played = sNb[i];
+    sNb[i] = tmp;
+    sNb[i].view_placed = 1;
+    sNbLook[i] = gRoomLook;   /* (the room just left, as it looks now: the new room's look replaces it) */
+    slog("seamless: ST_%03X swapped in as the played room; ST_%03X stays beside it as it was\n", id, sNb[i].id);
+    return 1;
+}
 void roomseamless_load_begin(int id) {
     HBody *b = hactor_body(gCamDir.player);
 
@@ -936,7 +1004,7 @@ int roomseamless_hewie_here(int id) {
 /* ---- each tick ---- */
 
 int roomseamless_exit(int exit) {
-    if (!vr_active() || !gVrOptions.room_loading || gEngine.room.id < 0) {
+    if (!seam_on() || gEngine.room.id < 0) {
         return 0;
     }
     actives_refresh(&gEngine);   /* (the scripts ask in the arrival's own tick, before the tick below) */
@@ -965,10 +1033,10 @@ void roomseamless_tick(struct Engine *ee) {
         }
         sInit = 1;
     }
-    if (!vr_active()) {
+    if (!seam_on() && !vr_active()) {
         return;   /* (the flat-screen game is untouched: no files read, nothing drawn) */
     }
-    if (!gVrOptions.room_loading) {
+    if (!seam_on()) {
         nb_free_all("room loading: Original");
         if (sPending) {
             slog("seamless: handover ST_%03X->ST_%03X cancelled (room loading: Original)\n", sFrom, sTo);
@@ -989,6 +1057,8 @@ void roomseamless_tick(struct Engine *ee) {
                 engine_vr_reanchor(e);   /* (the hands and body pose from her new eyes this frame) */
             }
             sPending = 0;   /* (her arrival is in; the neighbours below follow the new room) */
+            sNbNextLoad = e->ticks + SEAMLESS_LOAD_AFTER;
+            sTrace = sDbgLog ? 60 : 0;
         } else if (e->ticks - sStartTick > SEAMLESS_TIMEOUT) {
             slog("seamless: handover ST_%03X->ST_%03X timed out\n", sFrom, sTo);
             sPending = 0;
@@ -1106,7 +1176,10 @@ static int portal_for(Engine *e, const ActiveSeam *s, const Mat4 *vp, Vec3 eye, 
     c = d->centre;
     n = d->normal;
     t = d->tangent;
-    hw = d->halfwidth + 2.0f;
+    /* the opening a door's or an exit area's line gives is the leaf's, not the doorway's: a window
+     * that small shows the room beyond as a slit with void around it. The walls round the doorway
+     * hide any margin, so a line that is not a measured frame is given at least a doorway's width. */
+    hw = (d->frame ? d->halfwidth : fmaxf(d->halfwidth, 18.0f)) + (d->frame ? 2.0f : 4.0f);
     up_hi = d->height + 2.0f;
     side = vec3_dot(vec3_sub(eye, c), n);
     if (vec3_len(vec3_sub(eye, c)) > 600.0f) {
@@ -1176,13 +1249,27 @@ int roomseamless_portals(struct Engine *ee, const Mat4 *vp, Vec3 eye, SeamPortal
     Engine *e = (Engine *)ee;
     int i, n = 0;
 
-    if (!vr_active() || !gVrOptions.room_loading || !sDbgPortal || !sInit || vp == NULL || sActRoom != e->room.id) {
+    if (!seam_on() || !sDbgPortal || !sInit || vp == NULL || sActRoom != e->room.id) {
         return 0;
     }
     for (i = 0; i < sActN && n < max; i++) {
         if (portal_for(e, &sAct[i], vp, eye, &out[n])) {
             n++;
         }
+    }
+    if (sTrace > 0) {   /* (a picture's per-eye line for a second after a crossing: what was drawn) */
+        static Uint64 last;
+        Uint64 now = SDL_GetPerformanceCounter();
+        int loaded = 0, k;
+
+        for (k = 0; k < SEAM_ACT_MAX; k++) {
+            loaded += sNb[k].id >= 0;
+        }
+        slog("seam trace: tick %ld room ST_%03X, %d seam(s), %d neighbour(s), %d portal(s)%s; %.1f ms since the last\n",
+             (long)e->ticks, e->room.id, sActN, loaded, n, n > 0 ? (out[0].mode == 1 ? " (window)" : " (head past)") : "",
+             last != 0 ? (double)(now - last) * 1000.0 / (double)SDL_GetPerformanceFrequency() : 0.0);
+        last = now;
+        sTrace--;
     }
     return n;
 }
@@ -1193,7 +1280,7 @@ void roomseamless_outline(struct Engine *ee, const Mat4 *vp) {
     Engine *e = (Engine *)ee;
     int i;
 
-    if (!sDbgOutline || !vr_active() || !gVrOptions.room_loading || sActRoom != e->room.id) {
+    if (!sDbgOutline || !seam_on() || sActRoom != e->room.id) {
         return;
     }
     for (i = 0; i < sActN; i++) {
@@ -1223,6 +1310,13 @@ void roomseamless_outline(struct Engine *ee, const Mat4 *vp) {
     }
 }
 
+/* a game tick's time (main.c): with seam-log on, the slow ones are named - a crossing's hitch is one of them */
+void roomseamless_note_tick(long tick, double ms) {
+    if (sDbgLog && ms > 5.0) {
+        slog("seam trace: tick %ld took %.1f ms%s\n", tick, ms, sPending ? " (a crossing is in it)" : "");
+    }
+}
+
 void roomseamless_debug(int what, int on) {
     switch (what) {
     case SEAM_DBG_PORTAL: sDbgPortal = on != 0; break;
@@ -1238,11 +1332,15 @@ void roomseamless_info(char *buf, size_t n) {
     HBody *b = hactor_body(gCamDir.player);
     int i, len;
 
-    if (sActRoom != e->room.id || sActN == 0) {
+    if (sActRoom != e->room.id || (sActN == 0 && sDropN == 0)) {
         snprintf(buf, n, "seam: ST_%03X has no seam\n", e->room.id);
         return;
     }
-    len = snprintf(buf, n, "seam: ST_%03X has %d seam(s)\n", e->room.id, sActN);
+    len = snprintf(buf, n, "seam: ST_%03X has %d seam(s), %d dropped\n", e->room.id, sActN, sDropN);
+    for (i = 0; i < sDropN && len > 0 && (size_t)len < n; i++) {
+        len += snprintf(buf + len, n - (size_t)len, " exit %d NOT USED: %s (the old way out applies; its box is hidden, so it shows void)\n", sDrop[i].exit,
+                        sDrop[i].why);
+    }
     for (i = 0; i < sActN && len > 0 && (size_t)len < n; i++) {
         const ActiveSeam *s = &sAct[i];
         const Doorway *d = &s->line;
@@ -1328,7 +1426,7 @@ int roomseamless_look(struct Engine *ee, Vec3 eye, RoomLook *look) {
     int i, best = -1;
     float best_f = 0.0f;
 
-    if (!vr_active() || !gVrOptions.room_loading || !sInit || sActRoom != e->room.id || look == NULL) {
+    if (!seam_on() || !sInit || sActRoom != e->room.id || look == NULL) {
         return 0;
     }
     for (i = 0; i < sActN; i++) {
@@ -1367,7 +1465,7 @@ int roomseamless_look(struct Engine *ee, Vec3 eye, RoomLook *look) {
 int roomseamless_hide_draw(const Room *r, const MeshDraw *d) {
     const uint8_t *mask;
 
-    if (!vr_active() || !gVrOptions.room_loading || r == NULL || d == NULL || r->id < 0) {
+    if (!seam_on() || r == NULL || d == NULL || r->id < 0) {
         return 0;
     }
     if (r->mesh.d == NULL || (const uint8_t *)d < (const uint8_t *)r->mesh.d ||

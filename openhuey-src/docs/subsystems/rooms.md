@@ -128,6 +128,15 @@ or more than 30 across) are not drawn in a paired room. A follower near her is p
 place only if that is on the new room's floor; otherwise he comes in by himself. `PROPS/seamless_all.txt`
 (from the connected map's report) lists every doorway the layout already joins.
 
+At a crossing the room being entered is not read again: if it is already loaded as a neighbour it is
+swapped into `gEngine.room` (`roomseamless_swap_in`) and finished with `room_promote` (sprite banks,
+nav, look, placed objects), and the room just left takes its slot - with its placed objects and
+doors as its scripts left them (`Room.view_placed`), so it is drawn true behind her. Neighbours are
+loaded one at a time (every 8 ticks, 20 after a crossing), nearest doorway first, once she is within
+350 units of it. A seam is only used if the game's own room graph leads that exit to the pair's room
+now (a story version of it is fine), and she must be within 30 units of the doorway's floor. The fog,
+tint and bloom blend with the neighbour's by the eye's distance from the plane (`roomseamless_look`).
+
 
 ## Design notes
 
