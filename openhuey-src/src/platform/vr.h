@@ -77,6 +77,8 @@ typedef struct VrOptions {
 extern VrOptions gVrOptions;
 
 int vr_open(void);          /* the session, ready to draw; 0 on failure */
+/* why the last vr_open failed ("" when it did not): for the player, when a release has no console */
+const char *vr_reason(void);
 void vr_close(void);
 /* crouching by the headset (story/crouch.fs): how far it is below her standing eyes, in metres
  * (the floor's own measurement, so a recenter keeps it); 0 seated, out of a headset, or before a

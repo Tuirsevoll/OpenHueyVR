@@ -1,5 +1,6 @@
 /* OpenXR, one OpenGL swapchain per eye. The SDL window keeps the GL context and the keyboard;
- * the picture is the headset's. A headset is required: there is no desktop fallback.
+ * the picture is the headset's. A headset is required for VR: when the session cannot start, the
+ * reason is kept (vr_reason) and the game runs on the desktop instead (main.c).
  *
  * Fiona stands about 20 world units tall (docs/game_design.md), about 1.6 m, so a metre of
  * head motion is 12.5 units. OpenXR's Y-up, -Z-forward space matches the game's camera. */
@@ -10,10 +11,12 @@
 #include "vrlog.h"
 
 #include "gl.h"
+#include "platform.h"   /* (the window's title and events while the runtime starts) */
 
 #include <SDL3/SDL.h>   /* (the calibration's clock, SDL_GetTicksNS) */
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,10 +70,13 @@ VrOptions gVrOptions = {
 
 #if !defined(_WIN32)
 
+static const char sNoVr[] = "this build's OpenXR is Windows only";
+
 int vr_open(void) {
-    fprintf(stderr, "vr: OpenXR is built for Windows\n");
+    fprintf(stderr, "vr: %s\n", sNoVr);
     return 0;
 }
+const char *vr_reason(void) { return sNoVr; }
 void vr_close(void) {}
 int vr_active(void) { return 0; }
 int vr_begin_frame(void) { return 0; }
@@ -187,6 +193,11 @@ static int sEyeActive = -1;   /* the eye being drawn (vr_eye_begin .. vr_eye_end
 static int sRunning, sActive, sFrameOn, sRender, sSubmit;
 static int sAcquired[VR_MAX_EYES];
 static int sQuit;
+static char sReason[512];   /* why vr_open failed: the player's (a release has no console), the log's */
+static XrSessionState sLastState = XR_SESSION_STATE_UNKNOWN;
+static Uint64 sNoFrameSince;   /* when the runtime last asked for no frame (0: it wants one) */
+static int sNoFrameSaid;       /* the log has the line about it */
+static int sWaitStalled;       /* the compositor refused an eye image (the log has the line) */
 static int sLogged;   /* the once-only console line: what this session was told to do */
 static int sHaveOrigin;
 static int sLockPose;   /* a cutscene or story shot: eyes stay on the scripted camera */
@@ -287,7 +298,8 @@ static int load_proc(XrInstance inst, const char *name, void *dst) {
     PFN_xrVoidFunction fn = NULL;
 
     if (XR_FAILED(xrGetInstanceProcAddr(inst, name, &fn)) || fn == NULL) {
-        fprintf(stderr, "vr: %s is not in this runtime\n", name);
+        snprintf(sReason, sizeof(sReason), "this OpenXR runtime has no %s", name);
+        fprintf(stderr, "vr: %s\n", sReason);
         return 0;
     }
     memcpy(dst, &fn, sizeof(fn));
@@ -296,6 +308,18 @@ static int load_proc(XrInstance inst, const char *name, void *dst) {
 
 #define LOAD(inst, name) if (!load_proc(inst, #name, &(name))) { vr_close(); return 0; }
 
+/* the reason the last vr_open failed, said once to the log and kept for the player */
+static void vr_say(const char *fmt, ...) {
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(sReason, sizeof(sReason), fmt, ap);
+    va_end(ap);
+    fprintf(stderr, "vr: %s\n", sReason);
+}
+
+const char *vr_reason(void) { return sReason; }
+
 static void xr_fail(XrResult r, const char *what) {
     char text[XR_MAX_RESULT_STRING_SIZE];
 
@@ -303,7 +327,8 @@ static void xr_fail(XrResult r, const char *what) {
     if (sInstance != XR_NULL_HANDLE && xrResultToString != NULL) {
         xrResultToString(sInstance, r, text);
     }
-    fprintf(stderr, "vr: %s failed (%d %s)\n", what, (int)r, text);
+    snprintf(sReason, sizeof(sReason), "%s failed (%d %s)", what, (int)r, text);
+    fprintf(stderr, "vr: %s\n", sReason);
 }
 
 static int xr_ok(XrResult r, const char *what) {
@@ -1567,9 +1592,28 @@ static Mat4 proj_fov(XrFovf fov, float znear, float zfar) {
     return m;
 }
 
+/* the session's state, in words (the log's: why a headset did not start) */
+static const char *state_name(XrSessionState state) {
+    switch (state) {
+    case XR_SESSION_STATE_IDLE: return "idle";
+    case XR_SESSION_STATE_READY: return "ready";
+    case XR_SESSION_STATE_SYNCHRONIZED: return "synchronized";
+    case XR_SESSION_STATE_VISIBLE: return "visible";
+    case XR_SESSION_STATE_FOCUSED: return "focused";
+    case XR_SESSION_STATE_STOPPING: return "stopping";
+    case XR_SESSION_STATE_LOSS_PENDING: return "loss pending";
+    case XR_SESSION_STATE_EXITING: return "exiting";
+    default: return "unknown";
+    }
+}
+
 static void on_state(XrSessionState state) {
     XrSessionBeginInfo begin = {XR_TYPE_SESSION_BEGIN_INFO};
 
+    if (state != sLastState) {   /* (the log's: a session that never starts says why, in order) */
+        sLastState = state;
+        fprintf(stderr, "vr: session %s\n", state_name(state));
+    }
     if (state == XR_SESSION_STATE_READY) {
         begin.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
         if (xr_ok(xrBeginSession(sSession, &begin), "xrBeginSession")) {
@@ -1634,7 +1678,7 @@ static int has_extension(void) {
     }
     free(p);
     if (!found) {
-        fprintf(stderr, "vr: this runtime has no OpenGL (XR_KHR_opengl_enable). Use a runtime that does, such as SteamVR.\n");
+        vr_say("this runtime has no OpenGL (XR_KHR_opengl_enable): use one that does, such as SteamVR");
     }
     return found;
 }
@@ -1733,14 +1777,17 @@ int vr_open(void) {
     int spins;
 
     memset(&sFrame, 0, sizeof(sFrame));
+    sReason[0] = 0;
+    sLastState = XR_SESSION_STATE_UNKNOWN;
+    platform_title("OpenHuey - starting the headset (OpenXR)...");
     sLoader = open_loader();
     if (sLoader == NULL) {
-        fprintf(stderr, "vr: openxr_loader.dll was not found beside openhuey.exe or in SteamVR\n");
+        vr_say("openxr_loader.dll was not found beside openhuey.exe or in SteamVR");
         return 0;
     }
     xrGetInstanceProcAddr = (PFN_xrGetInstanceProcAddr)GetProcAddress(sLoader, "xrGetInstanceProcAddr");
     if (xrGetInstanceProcAddr == NULL) {
-        fprintf(stderr, "vr: openxr_loader.dll has no xrGetInstanceProcAddr\n");
+        vr_say("openxr_loader.dll has no xrGetInstanceProcAddr");
         vr_close();
         return 0;
     }
@@ -1801,7 +1848,7 @@ int vr_open(void) {
 
     system.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     if (!xr_ok(xrGetSystem(sInstance, &system, &sSystem), "xrGetSystem")) {
-        fprintf(stderr, "vr: no headset is connected\n");
+        vr_say("no headset is connected (is SteamVR running, and the headset streaming?)");
         vr_close();
         return 0;
     }
@@ -1866,24 +1913,36 @@ int vr_open(void) {
         }
     }
     bind_stick();   /* before the session begins: the left controller's stick */
-    for (spins = 0; spins < 1000 && !sRunning && !sQuit; spins++) {
+    /* the runtime starts the session (SteamVR may be starting with it, which can take many
+     * seconds): wait for READY, with the window pumping its events so it stays answered and the
+     * player can close it. 6000 x 10 ms: a minute, then the game says why and runs on the desktop. */
+    for (spins = 0; spins < 6000 && !sRunning && !sQuit; spins++) {
         if (!poll_events()) {
             vr_close();
             return 0;
         }
+        if (platform_pump_quit()) {
+            sQuit = 1;
+            break;
+        }
         if (!sRunning && !sQuit) {
-            Sleep(10);
+            SDL_Delay(10);
         }
     }
     if (!sRunning) {
-        fprintf(stderr, "vr: the headset session did not start\n");
+        if (!sQuit) {
+            vr_say("the headset session did not start (the OpenXR runtime never reported READY - is "
+                   "SteamVR running, and the headset connected and streaming?)");
+        }
         vr_close();
         return 0;
     }
     glDisable(GL_FRAMEBUFFER_SRGB);   /* the renderer already writes display-encoded colour */
+    platform_title("OpenHuey");
+    sReason[0] = 0;
     xrGetInstanceProperties(sInstance, &inst);
     xrGetSystemProperties(sInstance, sSystem, &sys);
-    VRLOG( "vr: %s, %s, %d eyes, %dx%d\n", inst.runtimeName, sys.systemName, sViewCount, sW[0], sH[0]);
+    fprintf(stderr, "vr: %s, %s, %d eyes, %dx%d\n", inst.runtimeName, sys.systemName, sViewCount, sW[0], sH[0]);
     sActive = 1;
     return 1;
 }
@@ -2161,8 +2220,21 @@ int vr_begin_frame(void) {
     sRender = 0;
     sSubmit = 0;
     if (!sFrame.shouldRender) {
+        /* The runtime is not asking for a picture (no headset worn, or the streaming session
+         * paused): the game goes on, but nothing is drawn. Say it once after five seconds - a
+         * black headset with this in the log is the runtime's answer, not the game's. */
+        Uint64 now = SDL_GetTicksNS();
+
+        if (sNoFrameSince == 0) {
+            sNoFrameSince = now != 0 ? now : 1;
+        } else if (!sNoFrameSaid && now - sNoFrameSince > 5000000000ull) {
+            sNoFrameSaid = 1;
+            fprintf(stderr, "vr: the runtime has asked for no frame for 5 s (is the headset being worn, and streaming?)\n");
+        }
         return 1;
     }
+    sNoFrameSince = 0;
+    sNoFrameSaid = 0;
     /* the first tracked pose sets the yaw origin once (a recenter takes it again). Views after
      * that are the offset from that level facing, and the layer is submitted in that same
      * space. Pitch and roll are not stored, and the origin is not adjusted again. */
@@ -2223,24 +2295,40 @@ int vr_head_view(int eye, Mat4 *view) {
 int vr_eye_begin(int eye, float znear, float zfar, int *w, int *h, Mat4 *proj, Mat4 *view, unsigned *fbo) {
     XrSwapchainImageAcquireInfo acquire = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
     XrSwapchainImageWaitInfo wait = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+    XrResult r;
     uint32_t index = 0;
 
     if (eye < 0 || eye >= sViewCount || !sRender) {
         return 0;
     }
-    wait.timeout = XR_INFINITE_DURATION;
+    /* 100 ms, not forever: a compositor that stops taking images (a stalled stream) skips this
+     * frame instead of freezing the game and its window */
+    wait.timeout = 100 * 1000 * 1000;
     if (!xr_ok(xrAcquireSwapchainImage(sSwap[eye], &acquire, &index), "xrAcquireSwapchainImage") ||
         index >= sImageCount[eye]) {
         sSubmit = 0;
         return 0;
     }
-    if (!xr_ok(xrWaitSwapchainImage(sSwap[eye], &wait), "xrWaitSwapchainImage")) {
+    r = xrWaitSwapchainImage(sSwap[eye], &wait);
+    if (r == XR_TIMEOUT_EXPIRED) {
+        XrSwapchainImageReleaseInfo release = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+
+        xrReleaseSwapchainImage(sSwap[eye], &release);
+        sSubmit = 0;
+        if (!sWaitStalled) {
+            sWaitStalled = 1;
+            fprintf(stderr, "vr: the compositor is not taking eye images (frames skipped)\n");
+        }
+        return 0;
+    }
+    if (!xr_ok(r, "xrWaitSwapchainImage")) {
         XrSwapchainImageReleaseInfo release = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
 
         xrReleaseSwapchainImage(sSwap[eye], &release);
         sSubmit = 0;
         return 0;
     }
+    sWaitStalled = 0;
     sAcquired[eye] = 1;
     sEyeActive = eye;
     *w = sW[eye];

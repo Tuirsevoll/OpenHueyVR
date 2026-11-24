@@ -7,10 +7,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* the two discs' executables, by size: the USA disc's, and the European disc's (a little larger).
+ * platform/library.c checks both by size and CRC when it imports; exe_take() tells them apart by
+ * their size for a disc image or folder read as it is. */
+#define EXE_SIZE_USA 3650608L
+#define EXE_SIZE_EUROPE 3660080L
+
 typedef struct Exe {
     uint8_t *data;
     size_t size;
-    int european;   /* SLES_528.77: its tables at their own addresses (exetables.c) - set by its reader */
+    int european;   /* SLES_528.77: its tables at their own addresses (exetables.c) - exe_take's, by size */
 } Exe;
 
 /* take the file's bytes (malloc'd: freed with it, or now if it isn't an ELF); 0 if it isn't */

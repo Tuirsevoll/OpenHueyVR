@@ -8,6 +8,7 @@
 
 static SDL_Window *sWindow;
 static SDL_GLContext sContext;
+static int sQuitRequested;   /* the window was closed (a start-up wait's, or a frame's) */
 
 /* ---- the controls (platform.h): the actions' keys, as the scripts read them (keys.fs) ---- */
 static const SDL_Scancode kActions[] = {
@@ -311,6 +312,20 @@ void platform_close(void) {
     SDL_Quit();
 }
 
+int platform_pump_quit(void) {
+    SDL_Event e;
+
+    /* (a start-up wait: the window answers while the runtime starts, and the player can close it) */
+    while (SDL_PollEvent(&e)) {
+        if (e.type == SDL_EVENT_QUIT) {
+            sQuitRequested = 1;
+        }
+    }
+    return sQuitRequested;
+}
+
+int platform_quit_requested(void) { return sQuitRequested; }
+
 void platform_poll(Input *in) {
     SDL_Event e;
 
@@ -324,6 +339,7 @@ void platform_poll(Input *in) {
         switch (e.type) {
         case SDL_EVENT_QUIT:
             in->quit = 1;
+            sQuitRequested = 1;
             break;
         case SDL_EVENT_KEY_DOWN:
             if (sBindNext >= 0 && !e.key.repeat) {   /* (the key wanted for an action: taken, nothing else) */

@@ -33,8 +33,8 @@ void disc_file_close(DiscFile *f);
 unsigned char *disc_read_all(const char *path, size_t *size);
 unsigned char *disc_file_read_all(DiscFile *f, size_t *size);   /* (closes it) */
 
-/* the game's executable, SLUS_210.75 (on the disc; beside a DATA.CVM or the folder; $HG_EXE),
- * NULL if there is none */
+/* the game's executable, SLUS_210.75 (the USA disc) or SLES_528.77 (the European one) - on the
+ * disc; beside a DATA.CVM or the folder; $HG_EXE - NULL if there is neither */
 DiscFile *disc_exe(void);
 
 /* the folder the player's files (saves, settings, the disc chosen) are kept in, ending with / */

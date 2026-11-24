@@ -2,7 +2,7 @@
 
 A PC VR mod of **Haunting Ground**, built on top of [OpenHuey](https://github.com/ArnautDaniel/OpenHuey). HUGE thanks and admiration for the original project, without which this mod would not exist. Show your support!
 
-**[Download the latest release](../../releases)** · You need your own copy of the game. This was built on a USA ISO and I cannot vouch for full operation of any other region.
+**[Download the latest release](../../releases)** · You need your own copy of the game. The engine accepts the USA disc (SLUS_210.75) and the European disc (SLES_528.77, English/French/German/Italian/Spanish); the VR side has been tested on the USA disc, so please report anything odd with a European one.
 
 > ⚠️ Early release by somebody who has never modded before. Expect lots of bugs, jank, and possible softlocks. Save Often. As of release date I have progressed very little in the game and can't confirm yet it is playable all the way to the end.  Please feel free to report issues in [Issues](../../issues) with as much detail as you can. If at all possible, try to keep to VR-specific issues.
 
@@ -147,7 +147,7 @@ A handful of your standard VR comfort settings that should work reliably. Availa
 ## Requirements
 
 - A PC VR headset with an OpenXR runtime (SteamVR, Meta Quest Link, etc.)
-- **Your own legally obtained copy of Haunting Ground (tested on USA) as an `.iso` disc image.** No game data is included, and none will be provided.
+- **Your own legally obtained copy of Haunting Ground as an `.iso` disc image** - USA (SLUS_210.75) or Europe (SLES_528.77). No game data is included, and none will be provided.
 - [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe), grab the latest.
 
 ## Install
@@ -159,6 +159,15 @@ A handful of your standard VR comfort settings that should work reliably. Availa
 **Updating:** download the new zip and copy your `library` and `user` folders (your imported game and saves) into the new folder.
 
 > ❗ It is not recommended to update to the latest openhuey version without confirming this mod will work with it first. I need to manually update each one to ensure compatibility.
+
+## If it starts to a blank screen
+
+The game keeps a log beside the program: **`openhuey-log.txt`** (in `%TEMP%` if the game's folder cannot be written). It holds what the headset, the disc and the library said, so please attach it to an issue.
+
+- **VR could not start:** the game now says why on screen and in the title bar, and runs on the desktop so you can still play. Common causes: the OpenXR runtime is not running yet (start SteamVR / your headset's PC streaming first), no headset is connected, or the runtime has no OpenGL support. A cold SteamVR start can take up to a minute; the game waits for it.
+- **Skip VR on purpose:** run `openhuey.exe --flat` (or set `OPENHUEY_FLAT=1`) to play the window's picture without a headset.
+- **No dialog, just the log:** set `OPENHUEY_NO_DIALOG=1` (handy for scripts).
+- **The European disc** is imported the same way as the USA one; the first run unpacks it into `library\`.
 
 ## Current Known issues
 

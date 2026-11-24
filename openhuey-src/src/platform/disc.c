@@ -470,18 +470,32 @@ unsigned char *disc_file_read_all(DiscFile *f, size_t *size) {
 }
 
 DiscFile *disc_exe(void) {
+    static const char *const kExes[] = {"SLUS_210.75", "SLES_528.77"};   /* (the USA disc's, then Europe's) */
     const char *env = getenv("HG_EXE");
     DiscFile *f;
     FILE *fp;
+    int i;
 
     if (env != NULL && env[0] != 0 && (fp = fopen(env, "rb")) != NULL) {
         fseek64(fp, 0, SEEK_END);
         return handle(fp, 0, (long)ftell64(fp));
     }
-    if ((f = disc_file_open("../SLUS_210.75")) != NULL) {
-        return f;
+    for (i = 0; i < 2; i++) {
+        char path[32];
+
+        snprintf(path, sizeof(path), "../%s", kExes[i]);
+        if ((f = disc_file_open(path)) != NULL) {
+            return f;
+        }
     }
-    return sImage[0] == 0 && sFolder[0] != 0 ? open_in_folder(sFolder, "SLUS_210.75") : NULL;
+    if (sImage[0] == 0 && sFolder[0] != 0) {
+        for (i = 0; i < 2; i++) {
+            if ((f = open_in_folder(sFolder, kExes[i])) != NULL) {
+                return f;
+            }
+        }
+    }
+    return NULL;
 }
 
 /* ---- the files there are (an image's: the import copies them) ---- */

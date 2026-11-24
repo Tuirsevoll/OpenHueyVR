@@ -23,6 +23,12 @@ int platform_open(const char *title, int w, int h, int hidden, int low);
 void platform_close(void);
 /* gather this frame's events into the input state */
 void platform_poll(Input *in);
+/* pump the window's events without the game's input (a start-up wait: the window stays answered,
+ * and can be closed); 1 if it was closed */
+int platform_pump_quit(void);
+/* 1 once the window has been closed (by the wait, or by a frame's events): what the game should
+ * do when a start-up step fails after it */
+int platform_quit_requested(void);
 /* the drawable size in pixels */
 void platform_size(int *w, int *h);
 /* the window's title (a debug aid: what the F9 cycle has switched off) */

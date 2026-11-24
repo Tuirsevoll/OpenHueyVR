@@ -1,0 +1,54 @@
+Haunting Ground VR (built on OpenHuey)
+======================================
+
+This is an unofficial fan project. It is not affiliated with or endorsed by Capcom.
+You need your own legally obtained copy of Haunting Ground for the PlayStation 2.
+This zip does not include the game disc or its extracted files.
+
+Requirements
+------------
+- A 64-bit Windows PC
+- A VR headset that works with OpenXR (Meta Quest 3 via Steam Link, Quest Link or a similar
+  OpenXR runtime is what has been tested; SteamVR works too - start it before the game)
+- The Microsoft Visual C++ Redistributable (x64). If the game will not start and Windows mentions a
+  missing VCRUNTIME or MSVCP DLL, install it from:
+  https://aka.ms/vs/17/release/vc_redist.x64.exe
+- Your own Haunting Ground disc image, as a .iso file: USA (SLUS_210.75) or Europe (SLES_528.77,
+  which also brings French, German, Italian and Spanish text). The VR side has been tested with
+  the USA disc.
+
+How to play
+-----------
+1. Unzip this folder somewhere on your PC (for example Documents\HauntingGroundVR). Keep all the
+   files in this folder together.
+2. Put on your headset and make sure its OpenXR runtime is running (SteamVR, the Meta app, or
+   whatever you normally use). SteamVR can take a minute to start; the game waits for it.
+3. Double-click Play.bat (or openhuey.exe).
+4. The first time, the game asks for your disc image. Choose your Haunting Ground .iso (USA or
+   Europe). It will import the disc into a library\ folder beside the game. This takes a few
+   minutes.
+5. After that, just run Play.bat again. Your saves and settings stay in user\.
+
+If it asks for the disc every time, make sure the game can write inside its own folder (do not run
+it from a zip you have not extracted, and avoid a read-only location).
+
+If the screen stays blank
+-------------------------
+The game writes openhuey-log.txt beside openhuey.exe (or in %TEMP% if that folder cannot be
+written). It says what the headset, the disc and the library did - please attach it to an issue.
+
+- If VR could not start, the game says why, plays on the desktop instead, and the same reason is
+  in the log. The usual causes are an OpenXR runtime that is not running yet, no headset
+  connected, or a runtime without OpenGL support.
+- To play without VR on purpose: openhuey.exe --flat (or set OPENHUEY_FLAT=1).
+- For scripts: set OPENHUEY_NO_DIALOG=1 to skip the message box.
+
+Do not use the title screen's UPDATE button
+-------------------------------------------
+That button still points at the official non-VR OpenHuey project. Using it would replace this VR
+build. To update, download the newest zip from this project's GitHub Releases page instead.
+
+Licence
+-------
+The OpenHuey / Haunting Ground VR program is released under the GNU General Public License v3.0.
+See the licences folder. 3D audio uses Steam Audio (phonon.dll) by Valve.

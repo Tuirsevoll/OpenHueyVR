@@ -7,6 +7,8 @@
  *     --import disc.iso the disc imported into the library beside the executable, then out
  *     --mod folder|zip  a mod turned on (repeatable; with --test the only mods)
  *     --mods folder     the folder of mods (instead of mods/ beside the library)
+ *     --flat            no headset: the window's picture (a headset that will not start runs this way
+ *                       too, with the reason in openhuey-log.txt beside the program; $OPENHUEY_FLAT=1)
  *     --gl33            OpenGL 3.3's way even where 4.6 is there (the low-power path - gl.h; also
  *                       $OPENHUEY_GL=3.3)
  *     --title           the title even without a window (its tests; else, hidden, a new game at once)
@@ -56,6 +58,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>   /* (the log's folder: the program's own, before SDL is up) */
+#endif
+
 /* temporary, for the headset smoothing test; remove later */
 #define VR_STEP_LOG 0
 
@@ -83,6 +95,7 @@ typedef struct Options {
     const char *import; /* --import DISC: the disc imported into the library, then out */
     int update;         /* --update: updated to the newest release, then out */
     int title;          /* --title: the title, hidden too (tests) */
+    int flat;           /* --flat: no headset - the window's picture (a headset that will not start does this too) */
     const char *test;   /* --test FILE: run it after the scripts, headless, and exit with its status */
     int full;           /* --full (or $OPENHUEY_FULL_TESTS): the test file all through, not to its full-suite */
     const char *mods[MAX_EVALS];   /* --mod DIR: a mod's folder, on (the tests' only mods) */
@@ -97,6 +110,7 @@ static int parse_options(int argc, char **argv, Options *o) {
     memset(o, 0, sizeof(*o));
     o->data = getenv("HG_DATA");   /* (none: the disc chosen before, or ask) */
     o->full = getenv("OPENHUEY_FULL_TESTS") != NULL && strcmp(getenv("OPENHUEY_FULL_TESTS"), "0") != 0;
+    o->flat = getenv("OPENHUEY_FLAT") != NULL && strcmp(getenv("OPENHUEY_FLAT"), "0") != 0;
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--hidden") == 0) {
             o->hidden = 1;
@@ -108,6 +122,8 @@ static int parse_options(int argc, char **argv, Options *o) {
             o->import = argv[++i];
         } else if (strcmp(argv[i], "--gl33") == 0) {
             o->gl33 = 1;
+        } else if (strcmp(argv[i], "--flat") == 0) {
+            o->flat = 1;
         } else if (strcmp(argv[i], "--title") == 0) {
             o->title = 1;
         } else if (strcmp(argv[i], "--update") == 0) {
@@ -122,7 +138,7 @@ static int parse_options(int argc, char **argv, Options *o) {
             o->test = argv[++i];
             o->hidden = 1;
         } else if (argv[i][0] == '-') {
-            fprintf(stderr, "usage: openhuey [--hidden] [--frames N] [--eval code] [--test file.fs [--full]] [--mod folder|zip] [--mods folder] [--import disc.iso] [--update] [--title] [--gl33] [disc.iso | data folder]\n");
+            fprintf(stderr, "usage: openhuey [--hidden] [--frames N] [--eval code] [--test file.fs [--full]] [--mod folder|zip] [--mods folder] [--import disc.iso] [--update] [--flat] [--title] [--gl33] [disc.iso | data folder]\n");
             return 0;
         } else {
             o->data = argv[i];
@@ -162,7 +178,7 @@ static void load_world(World *w) {
         exetables_use_exe(&exe);
     }
     if (!world_load(w)) {
-        fprintf(stderr, "openhuey: no SLUS_210.75 found (set HG_EXE): rooms won't connect\n");
+        fprintf(stderr, "openhuey: no SLUS_210.75 or SLES_528.77 found (set HG_EXE): rooms won't connect\n");
     }
 }
 
@@ -1501,6 +1517,42 @@ static void soft_reset(Engine *e, int hidden) {
     start_scripts(e, hidden);
 }
 
+/* ---- the log: a release is a Windows program with no console (HGA_RELEASE, WIN32_EXECUTABLE),
+ * so what the game says about a failure - the headset's, the disc's, the library's - goes to
+ * openhuey-log.txt beside it (or in %TEMP% when that folder cannot be written). A developer's
+ * build keeps its console. */
+static void log_open(void) {
+#if defined(_WIN32) && defined(HGA_RELEASE)
+    static char sPath[1100];
+    char exe[MAX_PATH];
+
+    exe[0] = 0;
+    if (GetModuleFileNameA(NULL, exe, (DWORD)sizeof(exe)) > 0) {   /* (not SDL: it is not up yet) */
+        char *slash;
+
+        exe[sizeof(exe) - 1] = 0;
+        slash = strrchr(exe, '\\');
+        if (slash != NULL) {
+            slash[1] = 0;
+        } else {
+            exe[0] = 0;
+        }
+    }
+    snprintf(sPath, sizeof(sPath), "%sopenhuey-log.txt", exe[0] != 0 ? exe : ".\\");
+    if (freopen(sPath, "w", stderr) == NULL) {
+        const char *tmp = getenv("TEMP");
+
+        if (tmp != NULL && tmp[0] != 0) {
+            snprintf(sPath, sizeof(sPath), "%s\\openhuey-log.txt", tmp);
+            freopen(sPath, "w", stderr);
+        }
+    }
+    setvbuf(stderr, NULL, _IONBF, 0);
+    fprintf(stderr, "openhuey %s (%s)\n", HGA_VERSION, HGA_BUILD);   /* (who to ask about it) */
+    fprintf(stderr, "log: %s\n", sPath);
+#endif
+}
+
 int main(int argc, char **argv) {
     static const bool kNoKeys[SDL_SCANCODE_COUNT];
     Engine *e = &gEngine;
@@ -1512,6 +1564,14 @@ int main(int argc, char **argv) {
     int fullscreen = 0;   /* (the window as it is) */
     int i;
 
+    log_open();
+    if (argc > 1) {   /* (a bug report's: what was asked for) */
+        fprintf(stderr, "args:");
+        for (i = 1; i < argc; i++) {
+            fprintf(stderr, " %s", argv[i]);
+        }
+        fprintf(stderr, "\n");
+    }
     if (!parse_options(argc, argv, &opt)) {
         return 2;
     }
@@ -1536,10 +1596,29 @@ int main(int argc, char **argv) {
     if (!platform_open("OpenHuey", 1280, 720, opt.hidden, opt.gl33)) {
         return 1;
     }
-    if (!opt.hidden && opt.test == NULL && !vr_open()) {   /* the picture is the headset; tests stay headless */
-        platform_close();
-        return 1;
+#if defined(_WIN32)   /* (the headset is Windows-only: elsewhere the game is the window's picture) */
+    if (!opt.hidden && opt.test == NULL && !opt.flat) {   /* the picture is the headset; tests stay headless */
+        if (!vr_open()) {
+            if (platform_quit_requested()) {   /* (the window was closed while the headset started) */
+                platform_close();
+                return 1;
+            }
+            /* A release has no console: the reason goes to the log, the window's title and a
+             * message box, and the game goes on the desktop's way rather than ending. */
+            fprintf(stderr, "openhuey: VR didn't start: %s\n", vr_reason());
+            fprintf(stderr, "openhuey: the game runs on the desktop this time (start it with --flat to skip VR)\n");
+            platform_title("OpenHuey - desktop picture (VR didn't start - see openhuey-log.txt)");
+            if (getenv("OPENHUEY_NO_DIALOG") == NULL) {   /* (scripts: no one to click it away) */
+                char text[900];
+
+                snprintf(text, sizeof(text), "VR didn't start:\n\n%s\n\nThe game will run on the desktop this time. "
+                                             "The reason is also in openhuey-log.txt, beside the program (or in %%TEMP%% "
+                                             "when that folder cannot be written).", vr_reason());
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "OpenHuey: VR didn't start", text, NULL);
+            }
+        }
     }
+#endif
     if (vr_active()) {
         platform_swap_interval(0);   /* the runtime paces the frames */
     }

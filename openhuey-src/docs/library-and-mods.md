@@ -219,7 +219,8 @@ shown when the library has another language than English) sets it; `user/languag
 ### The executable's tables
 
 The engine and the scripts read 29 tables out of SLUS_210.75 (SLES_528.77 has each at an address
-of its own - `Exe.european`, the table's `vaddr_eu`): the doors and rooms (how the house
+of its own - `Exe.european`, which `exe_take` sets from the executable's size, and the table's
+`vaddr_eu`): the doors and rooms (how the house
 connects), the obstacle kinds, the sounds' distance curves, stereo pan and surround pan (format 3,
 0.2.42: the placement the game itself uses - an older library places by the stereo pan), the butterflies, the
 dealt maze rows, Fiona's meeting offsets, twelve models' motion tables (their fades and flags), the
@@ -229,7 +230,8 @@ letters' own shapes - the same - and the USA disc's places).
 `library/exe/<name>.bin` and keeps no executable. The engine asks by name -
 `exetable("doors")`, `s" motions-hewie" motion-table`, `s" deal-rows" exe-table` - reading
 `../exe/<name>.bin` through `files_read` (so a mod's over the library's), else (no library: the
-developers') the executable at the table's address.
+developers') the executable at the table's address - `disc_exe` finds either disc's, and the size
+tells them apart (`exe_take`), so a European disc read as it is uses its own addresses.
 
 They are the game's bytes as they are, but for one: the obstacle kinds are pointers to each
 kind's definition, so the file holds the definitions one after another instead. A motion table's

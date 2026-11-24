@@ -48,8 +48,8 @@ typedef struct Disc {
     int european;
 } Disc;
 static const Disc kDiscs[] = {
-    {"SLUS_210.75", 0xA295AF2Bu, 3650608L, 0},   /* Haunting Ground (USA) */
-    {"SLES_528.77", 0x99FA72AFu, 3660080L, 1},   /* Haunting Ground (Europe) (En,Fr,De,Es,It) */
+    {"SLUS_210.75", 0xA295AF2Bu, EXE_SIZE_USA, 0},      /* Haunting Ground (USA) */
+    {"SLES_528.77", 0x99FA72AFu, EXE_SIZE_EUROPE, 1},   /* Haunting Ground (Europe) (En,Fr,De,Es,It) */
 };
 #define NDISCS (int)(sizeof(kDiscs) / sizeof(kDiscs[0]))
 static const Disc *sDisc = &kDiscs[0];   /* the disc being imported */

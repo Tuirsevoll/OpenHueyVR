@@ -224,6 +224,11 @@ target_link_libraries(texbank-check PRIVATE hgadata)
 add_test(NAME texbank_check COMMAND texbank-check "${DEFAULT_DATA}" "${CMAKE_CURRENT_BINARY_DIR}/texbank-check.scratch")
 set_tests_properties(texbank_check PROPERTIES SKIP_RETURN_CODE 77)
 
+# the two discs' executables, told apart by size (data/exe.c): a disc read as it is has no CRC to
+# say which it is, and the European one's tables are at addresses of their own
+add_executable(exe-check tests/exe_check.c src/data/exe.c)
+add_test(NAME exe_check COMMAND exe-check)
+
 # the sample mod, turned on: tests/mods/*.fs (not test_*.fs - the rest run without mods)
 add_test(NAME mods_room_tally COMMAND hga --mod "${CMAKE_CURRENT_SOURCE_DIR}/examples/mods/room-tally"
     --test "${CMAKE_CURRENT_SOURCE_DIR}/tests/mods/room-tally.fs")
