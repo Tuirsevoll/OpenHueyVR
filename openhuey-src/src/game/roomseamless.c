@@ -104,7 +104,8 @@ static long sStartTick;
 static long sCooldownUntil;
 static Uint64 sLoadT0, sLoadNs;
 static int sLoadTimed;
-static int sSuppressedRoom = -1, sSuppressedExit = -1;
+static int sSuppressedRoom = -1;
+static unsigned sSuppressedMask;   /* (the exits already logged for this room) */
 
 /* the debug words (seam-portal, seam-outline, seam-tint, seam-log) */
 static int sDbgPortal = 1, sDbgOutline, sDbgTint, sDbgLog;
@@ -343,7 +344,7 @@ static int void_shell(const Room *r, const MeshDraw *d) {
     tris = d->count / 3;
     big_dims = (hi.x - lo.x >= 15.0f) + (hi.y - lo.y >= 15.0f) + (hi.z - lo.z >= 15.0f);
     if (d->texture < 0) {
-        return tris >= 2 && tris <= 32 && big_dims >= 2;
+        return tris >= 2 && tris <= 32 && big_dims >= 2 && hi.y - lo.y >= 15.0f;   /* (stands up: a flat floor patch is not one) */
     }
     return tris == 8 && hi.x - lo.x >= 30.0f && hi.y - lo.y >= 30.0f && hi.z - lo.z >= 30.0f &&
            hi.x - lo.x <= 70.0f && hi.y - lo.y <= 70.0f && hi.z - lo.z <= 70.0f;
@@ -719,7 +720,8 @@ void roomseamless_reset(void) {
     sLoadTimed = 0;
     sActRoom = -1;
     sActN = 0;
-    sSuppressedRoom = sSuppressedExit = -1;
+    sSuppressedRoom = -1;
+    sSuppressedMask = 0;
 }
 
 int roomseamless_go(int exit) {
@@ -1013,9 +1015,12 @@ int roomseamless_exit(int exit) {
     if (act_for_exit(exit) == NULL) {
         return 0;
     }
-    if (sSuppressedRoom != gEngine.room.id || sSuppressedExit != exit) {
+    if (sSuppressedRoom != gEngine.room.id) {
         sSuppressedRoom = gEngine.room.id;
-        sSuppressedExit = exit;
+        sSuppressedMask = 0;
+    }
+    if (exit >= 0 && exit < 32 && !(sSuppressedMask & (1u << exit))) {
+        sSuppressedMask |= 1u << exit;
         slog("seamless: ST_%03X exit %d: the old way out (take-exit, walk-out and fade) suppressed\n",
              gEngine.room.id, exit);
     }
@@ -1211,7 +1216,9 @@ static int portal_for(Engine *e, const ActiveSeam *s, const Mat4 *vp, Vec3 eye, 
     for (k = 0; k < 4; k++) {   /* (the plane's own: the same, put back on it) */
         out->plane[k] = vec3_sub(out->mark[k], vec3_scale(n, 0.5f));
     }
-    if (side >= 0.0f) {
+    /* (a little before the plane too: the window's quad is then at the eye's near plane, which cuts
+     * it away - the doorway would flash empty as the head goes through) */
+    if (side >= -4.0f && fabsf(vec3_dot(vec3_sub(eye, c), t)) <= hw + 6.0f) {
         /* The eye is past the plane: a head through the doorway - both rooms drawn clipped to their
          * sides. Only there: the plane runs on for ever, and a room that is not convex has places
          * far from the doorway on its far side (clipping the room away there showed through the
@@ -1257,19 +1264,34 @@ int roomseamless_portals(struct Engine *ee, const Mat4 *vp, Vec3 eye, SeamPortal
             n++;
         }
     }
-    if (sTrace > 0) {   /* (a picture's per-eye line for a second after a crossing: what was drawn) */
+    if (sTrace > 0 || sDbgLog) {   /* (a picture's per-eye line for a second after a crossing: what was drawn; any jump of the view at all, always) */
         static Uint64 last;
         Uint64 now = SDL_GetPerformanceCounter();
+        static Vec3 lastw;
+        static int havew;
         int loaded = 0, k;
+        Mat4 wm;
+        Vec3 w = vec3(0.0f, 0.0f, 0.0f);
+        float jump = 0.0f;
 
         for (k = 0; k < SEAM_ACT_MAX; k++) {
             loaded += sNb[k].id >= 0;
         }
-        slog("seam trace: tick %ld room ST_%03X, %d seam(s), %d neighbour(s), %d portal(s)%s; %.1f ms since the last\n",
+        if (roomlayout_get(e->room.id, &wm)) {   /* (the eye in the map's own space: a jump is a frame that moved the view) */
+            w = mat4_point(&wm, eye);
+            jump = havew ? vec3_len(vec3_sub(w, lastw)) : 0.0f;
+            lastw = w;
+            havew = 1;
+        }
+        if (sTrace > 0 || jump > 3.0f) {
+        slog("seam trace: tick %ld room ST_%03X, %d seam(s), %d neighbour(s), %d portal(s)%s; %.1f ms since the last; "
+             "eye in the room %.1f %.1f %.1f, in the map %.1f %.1f %.1f, moved %.2f since the last%s\n",
              (long)e->ticks, e->room.id, sActN, loaded, n, n > 0 ? (out[0].mode == 1 ? " (window)" : " (head past)") : "",
-             last != 0 ? (double)(now - last) * 1000.0 / (double)SDL_GetPerformanceFrequency() : 0.0);
+             last != 0 ? (double)(now - last) * 1000.0 / (double)SDL_GetPerformanceFrequency() : 0.0,
+             eye.x, eye.y, eye.z, w.x, w.y, w.z, jump, jump > 3.0f ? "  <-- JUMP" : "");
+        }
         last = now;
-        sTrace--;
+        sTrace -= sTrace > 0;
     }
     return n;
 }
