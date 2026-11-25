@@ -15,6 +15,7 @@
 
 #include <SDL3/SDL.h>   /* (the calibration's clock, SDL_GetTicksNS) */
 
+#include <ctype.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -1836,8 +1837,105 @@ static void log_available_runtimes(void) {
     }
 }
 
-/* the OpenXR runtime the loader will use: the environment's, else the registry's active one. A
- * runtime set to something stale (an uninstalled driver's) otherwise hangs or fails with no clue. */
+/* case-insensitive: is a the same word as b? */
+static int equals_ci(const char *a, const char *b) {
+    while (*a != 0 && *b != 0) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) {
+            return 0;
+        }
+        a++;
+        b++;
+    }
+    return *a == 0 && *b == 0;
+}
+
+/* case-insensitive: does hay contain needle? */
+static int has_ci(const char *hay, const char *needle) {
+    size_t n = strlen(needle), i;
+
+    if (n == 0) {
+        return 1;
+    }
+    for (; *hay != 0; hay++) {
+        for (i = 0; i < n; i++) {
+            if (tolower((unsigned char)hay[i]) != tolower((unsigned char)needle[i])) {
+                break;
+            }
+        }
+        if (i == n) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* SteamVR's OpenXR runtime JSON: one of the registered runtimes, else its usual place */
+static int find_steamvr_runtime(char *out, size_t n) {
+    HKEY key;
+    DWORD i;
+
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Khronos\\OpenXR\\1\\AvailableRuntimes", 0, KEY_READ, &key) ==
+        ERROR_SUCCESS) {
+        for (i = 0; i < 12; i++) {
+            char name[1024];
+            DWORD len = (DWORD)sizeof(name), type = 0;
+
+            if (RegEnumValueA(key, i, name, &len, NULL, &type, NULL, NULL) != ERROR_SUCCESS) {
+                break;
+            }
+            if (has_ci(name, "steamvr") || has_ci(name, "steamxr")) {
+                snprintf(out, n, "%s", name);
+                RegCloseKey(key);
+                return 1;
+            }
+        }
+        RegCloseKey(key);
+    }
+    {
+        static const char *const kUsual[] = {
+            "C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json",
+            "C:\\Program Files\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json",
+        };
+
+        for (i = 0; i < 2; i++) {
+            if (GetFileAttributesA(kUsual[i]) != INVALID_FILE_ATTRIBUTES) {
+                snprintf(out, n, "%s", kUsual[i]);
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+/* $OPENHUEY_XR_RUNTIME: the runtime to use - a JSON path, or "steamvr" for SteamVR's own, wherever
+ * it is registered. Set before the loader's first call, so a machine with several OpenXR runtimes
+ * (Virtual Desktop's and the Meta app's are registered too) can still be told which one runs the
+ * game. $XR_RUNTIME_JSON, the loader's own, wins if it is already set. */
+static void choose_runtime(void) {
+    const char *want = getenv("OPENHUEY_XR_RUNTIME");
+    const char *have = getenv("XR_RUNTIME_JSON");
+    char path[MAX_PATH];
+
+    if (want == NULL || want[0] == 0 || (have != NULL && have[0] != 0)) {
+        return;   /* (the loader's choice, or the loader's own variable) */
+    }
+    if (equals_ci(want, "steamvr")) {
+        if (!find_steamvr_runtime(path, sizeof(path))) {
+            fprintf(stderr, "vr: OPENHUEY_XR_RUNTIME=steamvr, but SteamVR's OpenXR runtime was not found\n");
+            return;
+        }
+    } else if (GetFileAttributesA(want) != INVALID_FILE_ATTRIBUTES) {
+        snprintf(path, sizeof(path), "%s", want);
+    } else {
+        fprintf(stderr, "vr: OPENHUEY_XR_RUNTIME=%s: no such file\n", want);
+        return;
+    }
+    SetEnvironmentVariableA("XR_RUNTIME_JSON", path);
+    fprintf(stderr, "vr: the runtime asked for: %s\n", path);
+}
+
+/* the OpenXR runtime the loader will use: the environment's (the game's or the player's), else the
+ * registry's active one; and every one registered, so the log says what it had to choose from */
 static void log_active_runtime(void) {
     char value[1024];
     DWORD len = (DWORD)sizeof(value), type = 0;
@@ -2010,6 +2108,7 @@ int vr_open(void) {
     SDL_SetAtomicInt(&sInitCancelled, 0);
     SDL_SetAtomicInt(&sInitDone, 0);
     platform_title("OpenHuey - starting the headset (OpenXR)...");
+    choose_runtime();
     log_active_runtime();
     {
         SDL_Thread *t = SDL_CreateThread(vr_init_thread, "vr-init", NULL);

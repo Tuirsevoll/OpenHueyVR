@@ -41,8 +41,8 @@ written). It says what the headset, the disc and the library did - please attach
   in the log. The usual causes are an OpenXR runtime that is not running yet, no headset
   connected, or a runtime without OpenGL support.
 - The log's first vr: lines name the active OpenXR runtime and all registered ones. If it is not
-  SteamVR, set SteamVR as the OpenXR runtime (SteamVR Settings -> Developer), or set
-  XR_RUNTIME_JSON to SteamVR's steamxr_win64.json before starting the game.
+  SteamVR, set SteamVR as the OpenXR runtime (SteamVR Settings -> Developer), or start the game
+  with OPENHUEY_XR_RUNTIME=steamvr (or set XR_RUNTIME_JSON to SteamVR's steamxr_win64.json).
 - The title bar counts the seconds and names the step; after 45 s without an answer the game
   gives up and runs on the desktop, and the last vr: line in the log says what stalled.
 - To play without VR on purpose: openhuey.exe --flat (or set OPENHUEY_FLAT=1). --flat opens no
