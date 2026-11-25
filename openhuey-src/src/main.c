@@ -66,6 +66,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>   /* (the log's folder: the program's own, before SDL is up) */
+#include <fcntl.h>
+#include <io.h>
+#include <sys/stat.h>
 #endif
 
 /* temporary, for the headset smoothing test; remove later */
@@ -1525,6 +1528,7 @@ static void log_open(void) {
 #if defined(_WIN32) && defined(HGA_RELEASE)
     static char sPath[1100];
     char exe[MAX_PATH];
+    int fd = -1;
 
     exe[0] = 0;
     if (GetModuleFileNameA(NULL, exe, (DWORD)sizeof(exe)) > 0) {   /* (not SDL: it is not up yet) */
@@ -1539,15 +1543,28 @@ static void log_open(void) {
         }
     }
     snprintf(sPath, sizeof(sPath), "%sopenhuey-log.txt", exe[0] != 0 ? exe : ".\\");
-    if (freopen(sPath, "w", stderr) == NULL) {
+    fd = _open(sPath, _O_CREAT | _O_TRUNC | _O_WRONLY, _S_IREAD | _S_IWRITE);
+    if (fd < 0) {
         const char *tmp = getenv("TEMP");
 
         if (tmp != NULL && tmp[0] != 0) {
             snprintf(sPath, sizeof(sPath), "%s\\openhuey-log.txt", tmp);
-            freopen(sPath, "w", stderr);
+            fd = _open(sPath, _O_CREAT | _O_TRUNC | _O_WRONLY, _S_IREAD | _S_IWRITE);
         }
     }
-    setvbuf(stderr, NULL, _IONBF, 0);
+    if (fd >= 0) {
+        _close(fd);   /* (made, and empty: both streams append to it below) */
+    }
+    /* Both of the game's own streams append to the one file: stderr (the game's lines) and stdout
+     * (its own rare prints), in the order they were written. Another DLL's output is not ours to
+     * redirect: for the OpenXR loader's own lines, run from a command prompt with
+     * `set XR_LOADER_DEBUG=info` and `openhuey.exe > loader.txt 2>&1`. */
+    if (freopen(sPath, "a", stderr) != NULL) {
+        setvbuf(stderr, NULL, _IONBF, 0);
+    }
+    if (freopen(sPath, "a", stdout) != NULL) {
+        setvbuf(stdout, NULL, _IONBF, 0);
+    }
     fprintf(stderr, "openhuey %s (%s)\n", HGA_VERSION, HGA_BUILD);   /* (who to ask about it) */
     fprintf(stderr, "log: %s\n", sPath);
 #endif

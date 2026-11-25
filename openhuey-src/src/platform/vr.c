@@ -166,6 +166,7 @@ void vr_eye_end(int eye) { (void)eye; }
 #define XR_USE_GRAPHICS_API_OPENGL
 #define XR_NO_PROTOTYPES
 #include <windows.h>
+#include <tlhelp32.h>
 #include <unknwn.h>
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
@@ -347,12 +348,34 @@ static void vr_say(const char *fmt, ...) {
 
 const char *vr_reason(void) { return sReason; }
 
+/* the common result codes' names: xrResultToString needs an instance, and the instance is exactly
+ * what failed when this matters */
+static const char *result_name(XrResult r) {
+    switch (r) {
+    case XR_ERROR_RUNTIME_FAILURE: return "XR_ERROR_RUNTIME_FAILURE";
+    case XR_ERROR_INITIALIZATION_FAILED: return "XR_ERROR_INITIALIZATION_FAILED";
+    case XR_ERROR_API_VERSION_UNSUPPORTED: return "XR_ERROR_API_VERSION_UNSUPPORTED";
+    case XR_ERROR_EXTENSION_NOT_PRESENT: return "XR_ERROR_EXTENSION_NOT_PRESENT";
+    case XR_ERROR_FORM_FACTOR_UNSUPPORTED: return "XR_ERROR_FORM_FACTOR_UNSUPPORTED";
+    case XR_ERROR_FORM_FACTOR_UNAVAILABLE: return "XR_ERROR_FORM_FACTOR_UNAVAILABLE";
+    case XR_ERROR_OUT_OF_MEMORY: return "XR_ERROR_OUT_OF_MEMORY";
+    case XR_ERROR_LIMIT_REACHED: return "XR_ERROR_LIMIT_REACHED";
+    case XR_ERROR_VALIDATION_FAILURE: return "XR_ERROR_VALIDATION_FAILURE";
+    case XR_ERROR_HANDLE_INVALID: return "XR_ERROR_HANDLE_INVALID";
+    case XR_ERROR_SESSION_LOST: return "XR_ERROR_SESSION_LOST";
+    default: return "";
+    }
+}
+
 static void xr_fail(XrResult r, const char *what) {
     char text[XR_MAX_RESULT_STRING_SIZE];
 
     text[0] = 0;
     if (sInstance != XR_NULL_HANDLE && xrResultToString != NULL) {
         xrResultToString(sInstance, r, text);
+    }
+    if (text[0] == 0) {
+        snprintf(text, sizeof(text), "%s", result_name(r));
     }
     snprintf(sReason, sizeof(sReason), "%s failed (%d %s)", what, (int)r, text);
     fprintf(stderr, "vr: %s\n", sReason);
@@ -1869,8 +1892,11 @@ static int has_ci(const char *hay, const char *needle) {
     return 0;
 }
 
-/* SteamVR's OpenXR runtime JSON: one of the registered runtimes, else its usual place */
-static int find_steamvr_runtime(char *out, size_t n) {
+/* SteamVR's, Virtual Desktop's and the Oculus/Meta runtime's OpenXR JSON: one of the registered
+ * runtimes, else its usual place */
+enum { RT_STEAMVR, RT_VIRTUALDESKTOP, RT_OCULUS };
+
+static int find_runtime(int kind, char *out, size_t n) {
     HKEY key;
     DWORD i;
 
@@ -1879,11 +1905,15 @@ static int find_steamvr_runtime(char *out, size_t n) {
         for (i = 0; i < 12; i++) {
             char name[1024];
             DWORD len = (DWORD)sizeof(name), type = 0;
+            int match;
 
             if (RegEnumValueA(key, i, name, &len, NULL, &type, NULL, NULL) != ERROR_SUCCESS) {
                 break;
             }
-            if (has_ci(name, "steamvr") || has_ci(name, "steamxr")) {
+            match = kind == RT_STEAMVR ? (has_ci(name, "steamvr") || has_ci(name, "steamxr"))
+                    : kind == RT_VIRTUALDESKTOP ? (has_ci(name, "virtualdesktop") || has_ci(name, "virtual desktop"))
+                                                : has_ci(name, "oculus");
+            if (match) {
                 snprintf(out, n, "%s", name);
                 RegCloseKey(key);
                 return 1;
@@ -1892,14 +1922,25 @@ static int find_steamvr_runtime(char *out, size_t n) {
         RegCloseKey(key);
     }
     {
-        static const char *const kUsual[] = {
+        static const char *const kSteam[] = {
             "C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json",
             "C:\\Program Files\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json",
         };
+        static const char *const kVd[] = {
+            "C:\\Program Files\\Virtual Desktop Streamer\\OpenXR\\virtualdesktop-openxr.json",
+        };
+        static const char *const kOculus[] = {
+            "C:\\Program Files\\Oculus\\Support\\oculus-runtime\\oculus_openxr_64.json",
+            "C:\\Program Files\\Meta Horizon\\Support\\oculus-runtime\\oculus_openxr_64.json",
+        };
+        static const struct {
+            const char *const *paths;
+            int n;
+        } kUsual[] = {{kSteam, 2}, {kVd, 1}, {kOculus, 2}};
 
-        for (i = 0; i < 2; i++) {
-            if (GetFileAttributesA(kUsual[i]) != INVALID_FILE_ATTRIBUTES) {
-                snprintf(out, n, "%s", kUsual[i]);
+        for (i = 0; i < (DWORD)kUsual[kind].n; i++) {
+            if (GetFileAttributesA(kUsual[kind].paths[i]) != INVALID_FILE_ATTRIBUTES) {
+                snprintf(out, n, "%s", kUsual[kind].paths[i]);
                 return 1;
             }
         }
@@ -1907,46 +1948,96 @@ static int find_steamvr_runtime(char *out, size_t n) {
     return 0;
 }
 
-/* $OPENHUEY_XR_RUNTIME: the runtime to use - a JSON path, or "steamvr" for SteamVR's own, wherever
- * it is registered. Set before the loader's first call, so a machine with several OpenXR runtimes
- * (Virtual Desktop's and the Meta app's are registered too) can still be told which one runs the
- * game. $XR_RUNTIME_JSON, the loader's own, wins if it is already set. */
+/* is a process whose name has `needle` in it running? (SteamVR's vrserver is the signal that a
+ * SteamVR headset - the Frame included - is in use) */
+static int process_running(const char *needle) {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    PROCESSENTRY32 pe;
+    int found = 0;
+
+    if (snap == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    memset(&pe, 0, sizeof(pe));
+    pe.dwSize = sizeof(pe);
+    if (Process32First(snap, &pe)) {
+        do {
+            if (has_ci(pe.szExeFile, needle)) {
+                found = 1;
+                break;
+            }
+        } while (Process32Next(snap, &pe));
+    }
+    CloseHandle(snap);
+    return found;
+}
+
+/* the Windows OpenXR runtime choice (HKCU ActiveRuntime), if the player has set one */
+static int active_runtime(char *out, size_t n) {
+    char value[1024];
+    DWORD len = (DWORD)sizeof(value), type = 0;
+
+    value[0] = 0;
+    if (RegGetValueA(HKEY_CURRENT_USER, "Software\\Khronos\\OpenXR\\1", "ActiveRuntime", RRF_RT_REG_SZ, &type,
+                     value, &len) == ERROR_SUCCESS && value[0] != 0) {
+        snprintf(out, n, "%s", value);
+        return 1;
+    }
+    return 0;
+}
+
+/* $OPENHUEY_XR_RUNTIME, or the automatic choice: the player's Windows setting (HKCU ActiveRuntime)
+ * if there is one; else SteamVR, when its server is running (a Frame or any SteamVR headset); else
+ * the loader's own default. One Play.bat for every headset. An explicit $XR_RUNTIME_JSON wins. */
 static void choose_runtime(void) {
     const char *want = getenv("OPENHUEY_XR_RUNTIME");
     const char *have = getenv("XR_RUNTIME_JSON");
     char path[MAX_PATH];
 
-    if (want == NULL || want[0] == 0 || (have != NULL && have[0] != 0)) {
-        return;   /* (the loader's choice, or the loader's own variable) */
+    if (have != NULL && have[0] != 0) {
+        return;   /* (the loader's own variable, set by the player or a launcher) */
     }
-    if (equals_ci(want, "steamvr")) {
-        if (!find_steamvr_runtime(path, sizeof(path))) {
-            fprintf(stderr, "vr: OPENHUEY_XR_RUNTIME=steamvr, but SteamVR's OpenXR runtime was not found\n");
+    if (want != NULL && want[0] != 0 && !equals_ci(want, "auto")) {
+        int kind = equals_ci(want, "steamvr") ? RT_STEAMVR
+                   : (equals_ci(want, "virtualdesktop") || equals_ci(want, "vd")) ? RT_VIRTUALDESKTOP
+                   : equals_ci(want, "oculus") ? RT_OCULUS : -1;
+
+        if (kind >= 0) {
+            if (!find_runtime(kind, path, sizeof(path))) {
+                fprintf(stderr, "vr: OPENHUEY_XR_RUNTIME=%s, but that runtime was not found\n", want);
+                return;
+            }
+        } else if (GetFileAttributesA(want) != INVALID_FILE_ATTRIBUTES) {
+            snprintf(path, sizeof(path), "%s", want);
+        } else {
+            fprintf(stderr, "vr: OPENHUEY_XR_RUNTIME=%s: no such file\n", want);
             return;
         }
-    } else if (GetFileAttributesA(want) != INVALID_FILE_ATTRIBUTES) {
-        snprintf(path, sizeof(path), "%s", want);
-    } else {
-        fprintf(stderr, "vr: OPENHUEY_XR_RUNTIME=%s: no such file\n", want);
+        SetEnvironmentVariableA("XR_RUNTIME_JSON", path);
+        fprintf(stderr, "vr: the runtime asked for: %s\n", path);
         return;
     }
-    SetEnvironmentVariableA("XR_RUNTIME_JSON", path);
-    fprintf(stderr, "vr: the runtime asked for: %s\n", path);
+    if (active_runtime(path, sizeof(path))) {
+        return;   /* (Windows' choice; the log says which) */
+    }
+    if (process_running("vrserver") && find_runtime(RT_STEAMVR, path, sizeof(path))) {
+        SetEnvironmentVariableA("XR_RUNTIME_JSON", path);
+        fprintf(stderr, "vr: no active OpenXR runtime; SteamVR is running - using it: %s\n", path);
+        return;
+    }
+    fprintf(stderr, "vr: no active OpenXR runtime and SteamVR is not running; the loader's default is used\n");
 }
 
 /* the OpenXR runtime the loader will use: the environment's (the game's or the player's), else the
  * registry's active one; and every one registered, so the log says what it had to choose from */
 static void log_active_runtime(void) {
     char value[1024];
-    DWORD len = (DWORD)sizeof(value), type = 0;
     const char *env = getenv("XR_RUNTIME_JSON");
 
     if (env != NULL && env[0] != 0) {
         fprintf(stderr, "vr: XR_RUNTIME_JSON=%s\n", env);
     }
-    value[0] = 0;
-    if (RegGetValueA(HKEY_CURRENT_USER, "Software\\Khronos\\OpenXR\\1", "ActiveRuntime", RRF_RT_REG_SZ, &type,
-                     value, &len) == ERROR_SUCCESS && value[0] != 0) {
+    if (active_runtime(value, sizeof(value))) {
         fprintf(stderr, "vr: active OpenXR runtime: %s\n", value);
     } else {
         fprintf(stderr, "vr: no active OpenXR runtime in HKCU (the loader's default is used)\n");
@@ -1975,6 +2066,7 @@ static int SDLCALL vr_init_thread(void *arg) {
     XrInstanceProperties props = {XR_TYPE_INSTANCE_PROPERTIES};
     const char *ext = XR_KHR_OPENGL_ENABLE_EXTENSION_NAME;
     char path[MAX_PATH];
+    XrResult made;
     int ok = 0;
 
     (void)arg;
@@ -2012,7 +2104,12 @@ static int SDLCALL vr_init_thread(void *arg) {
     create.enabledExtensionCount = 1;
     create.enabledExtensionNames = &ext;
     vr_step(VR_STEP_INSTANCE, "creating the OpenXR instance");
-    if (!xr_ok(xrCreateInstance(&create, &sInstance), "xrCreateInstance")) {
+    made = xrCreateInstance(&create, &sInstance);
+    if (!xr_ok(made, "xrCreateInstance")) {
+        if (made == XR_ERROR_RUNTIME_FAILURE) {
+            vr_say("the OpenXR runtime failed to start (it is running but did not answer - restart it; "
+                   "a SteamVR beta may be the cause)");
+        }
         goto out;
     }
     LOAD_INIT(sInstance, xrDestroyInstance);   /* (the cleanup's, before a later step can fail) */
