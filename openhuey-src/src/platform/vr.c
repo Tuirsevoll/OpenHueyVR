@@ -2265,10 +2265,12 @@ int vr_open(void) {
         vr_close();
         return 0;
     }
+    vr_step(VR_STEP_VIEWS, "asking for the eyes' views");
+    memset(config, 0, sizeof(config));   /* (next must be NULL: the runtime walks the chain) */
     for (i = 0; i < VR_MAX_EYES; i++) {
         config[i].type = XR_TYPE_VIEW_CONFIGURATION_VIEW;
+        config[i].next = NULL;
     }
-    vr_step(VR_STEP_VIEWS, "asking for the eyes' views");
     if (!xr_ok(xrEnumerateViewConfigurationViews(sInstance, sSystem, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
                                                  VR_MAX_EYES, &nviews, config), "view configuration") ||
         nviews == 0) {
