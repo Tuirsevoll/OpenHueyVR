@@ -315,10 +315,26 @@ void platform_close(void) {
 int platform_pump_quit(void) {
     SDL_Event e;
 
-    /* (a start-up wait: the window answers while the runtime starts, and the player can close it) */
+    /* (a start-up wait: the window answers while the runtime starts, and the player can close it;
+     * a pad is opened as it would be: its added event is not left for the game's first frame) */
     while (SDL_PollEvent(&e)) {
-        if (e.type == SDL_EVENT_QUIT) {
+        switch (e.type) {
+        case SDL_EVENT_QUIT:
             sQuitRequested = 1;
+            break;
+        case SDL_EVENT_GAMEPAD_ADDED:
+            if (sPad == NULL) {
+                sPad = SDL_OpenGamepad(e.gdevice.which);
+            }
+            break;
+        case SDL_EVENT_GAMEPAD_REMOVED:
+            if (sPad != NULL && SDL_GetGamepadID(sPad) == e.gdevice.which) {
+                SDL_CloseGamepad(sPad);
+                sPad = NULL;
+            }
+            break;
+        default:
+            break;
         }
     }
     return sQuitRequested;

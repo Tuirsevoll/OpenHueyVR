@@ -198,6 +198,32 @@ static XrSessionState sLastState = XR_SESSION_STATE_UNKNOWN;
 static Uint64 sNoFrameSince;   /* when the runtime last asked for no frame (0: it wants one) */
 static int sNoFrameSaid;       /* the log has the line about it */
 static int sWaitStalled;       /* the compositor refused an eye image (the log has the line) */
+
+/* The runtime's start-up (vr_open) runs on a thread of its own: a runtime that never answers (SteamVR
+ * waiting for a headset, a stuck driver) must not freeze the game. The window pumps its events while
+ * it waits, a bounded time; when that runs out the game plays on the desktop and the log says what
+ * the runtime was doing. */
+#define VR_INIT_TIMEOUT_MS 45000
+enum {
+    VR_STEP_NONE = 0,
+    VR_STEP_LOADER,       /* openxr_loader.dll */
+    VR_STEP_EXTENSIONS,   /* its extensions, and the OpenGL one */
+    VR_STEP_INSTANCE,     /* xrCreateInstance */
+    VR_STEP_FUNCTIONS,    /* xrGetInstanceProcAddr for the rest */
+    VR_STEP_SYSTEM,       /* xrGetSystem: the headset */
+    VR_STEP_REQUIREMENTS, /* its OpenGL requirements */
+    VR_STEP_SESSION,      /* xrCreateSession, with the window's GL context */
+    VR_STEP_VIEWS,        /* xrEnumerateViewConfigurationViews */
+    VR_STEP_FORMAT,       /* the swapchain format */
+    VR_STEP_SWAPCHAINS,   /* the eyes' images */
+    VR_STEP_SPACES,       /* the play space */
+    VR_STEP_READY         /* waiting for XR_SESSION_STATE_READY */
+};
+static SDL_AtomicInt sStep;           /* VR_STEP_*: what the start-up is doing (or was, stuck) */
+static SDL_AtomicInt sInitDone;       /* the start-up thread has finished */
+static SDL_AtomicInt sInitCancelled;  /* vr_open gave up: clean up, say nothing more */
+static int sInitOk;                   /* the instance and the system are ready */
+static int sInitAbandoned;            /* vr_open returned without it: the thread owns them now */
 static int sLogged;   /* the once-only console line: what this session was told to do */
 static int sHaveOrigin;
 static int sLockPose;   /* a cutscene or story shot: eyes stay on the scripted camera */
@@ -1758,71 +1784,157 @@ static int pick_format(int64_t *format) {
     return 1;
 }
 
-int vr_open(void) {
+/* the start-up's step, said to the log (unbuffered: the last line before a stuck call is the one
+ * that says what it is stuck in) */
+static void vr_step(int step, const char *what) {
+    SDL_SetAtomicInt(&sStep, step);
+    fprintf(stderr, "vr: %s\n", what);
+}
+
+static const char *step_name(int step) {
+    switch (step) {
+    case VR_STEP_LOADER: return "loading openxr_loader.dll";
+    case VR_STEP_EXTENSIONS: return "asking the runtime for its extensions";
+    case VR_STEP_INSTANCE: return "creating the OpenXR instance";
+    case VR_STEP_FUNCTIONS: return "reading the runtime's functions";
+    case VR_STEP_SYSTEM: return "asking the runtime for a headset";
+    case VR_STEP_REQUIREMENTS: return "asking for its OpenGL requirements";
+    case VR_STEP_SESSION: return "creating the headset session";
+    case VR_STEP_VIEWS: return "asking for the eyes' views";
+    case VR_STEP_FORMAT: return "choosing the eyes' image format";
+    case VR_STEP_SWAPCHAINS: return "making the eyes' images";
+    case VR_STEP_SPACES: return "making the play space";
+    case VR_STEP_READY: return "waiting for the headset session to start";
+    default: return "starting";
+    }
+}
+
+/* every runtime the loader could choose, so a machine with several (SteamVR, Virtual Desktop's, the
+ * Meta app's) says which one it picked - and which it could be told to (XR_RUNTIME_JSON) */
+static void log_available_runtimes(void) {
+    HKEY key;
+
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Khronos\\OpenXR\\1\\AvailableRuntimes", 0, KEY_READ, &key) ==
+        ERROR_SUCCESS) {
+        DWORD i;
+        int shown = 0;
+
+        for (i = 0; i < 12; i++) {
+            char name[1024];
+            DWORD n = (DWORD)sizeof(name), type = 0;
+
+            if (RegEnumValueA(key, i, name, &n, NULL, &type, NULL, NULL) != ERROR_SUCCESS) {
+                break;
+            }
+            fprintf(stderr, "vr: available runtime: %s\n", name);
+            shown++;
+        }
+        RegCloseKey(key);
+        if (shown > 1) {
+            fprintf(stderr, "vr: (XR_RUNTIME_JSON names the one to use, e.g. SteamVR's steamxr_win64.json)\n");
+        }
+    }
+}
+
+/* the OpenXR runtime the loader will use: the environment's, else the registry's active one. A
+ * runtime set to something stale (an uninstalled driver's) otherwise hangs or fails with no clue. */
+static void log_active_runtime(void) {
+    char value[1024];
+    DWORD len = (DWORD)sizeof(value), type = 0;
+    const char *env = getenv("XR_RUNTIME_JSON");
+
+    if (env != NULL && env[0] != 0) {
+        fprintf(stderr, "vr: XR_RUNTIME_JSON=%s\n", env);
+    }
+    value[0] = 0;
+    if (RegGetValueA(HKEY_CURRENT_USER, "Software\\Khronos\\OpenXR\\1", "ActiveRuntime", RRF_RT_REG_SZ, &type,
+                     value, &len) == ERROR_SUCCESS && value[0] != 0) {
+        fprintf(stderr, "vr: active OpenXR runtime: %s\n", value);
+    } else {
+        fprintf(stderr, "vr: no active OpenXR runtime in HKCU (the loader's default is used)\n");
+    }
+    log_available_runtimes();
+}
+
+/* how long vr_open waits for the runtime's instance and headset ($OPENHUEY_VR_INIT_TIMEOUT in ms:
+ * a developer's, and the tests') */
+static int init_timeout_ms(void) {
+    const char *env = getenv("OPENHUEY_VR_INIT_TIMEOUT");
+    long ms = env != NULL ? atol(env) : 0;
+
+    return ms > 0 && ms <= 600000 ? (int)ms : VR_INIT_TIMEOUT_MS;
+}
+
+/* the start-up thread: the loader, the instance and the system, then out. They need no GL context, so
+ * they can be waited for without freezing the window (xrCreateSession does need it: vr_open, on its
+ * own thread). */
+#define LOAD_INIT(inst, name) if (!load_proc(inst, #name, &(name))) goto out
+
+static int SDLCALL vr_init_thread(void *arg) {
     XrInstanceCreateInfo create = {XR_TYPE_INSTANCE_CREATE_INFO};
     XrSystemGetInfo system = {XR_TYPE_SYSTEM_GET_INFO};
-    XrSystemProperties sys = {XR_TYPE_SYSTEM_PROPERTIES};
-    XrInstanceProperties inst = {XR_TYPE_INSTANCE_PROPERTIES};
     XrGraphicsRequirementsOpenGLKHR glreq = {XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_KHR};
-    XrGraphicsBindingOpenGLWin32KHR binding = {XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR};
-    XrSessionCreateInfo session = {XR_TYPE_SESSION_CREATE_INFO};
-    XrReferenceSpaceCreateInfo space = {XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
-    XrViewConfigurationView config[VR_MAX_EYES];
-    XrEnvironmentBlendMode blends[4];
+    XrInstanceProperties props = {XR_TYPE_INSTANCE_PROPERTIES};
     const char *ext = XR_KHR_OPENGL_ENABLE_EXTENSION_NAME;
-    uint32_t nviews = 0, nblends = 0, i;
-    int64_t format = 0;
-    HDC dc;
-    HGLRC rc;
-    int spins;
+    char path[MAX_PATH];
+    int ok = 0;
 
-    memset(&sFrame, 0, sizeof(sFrame));
-    sReason[0] = 0;
-    sLastState = XR_SESSION_STATE_UNKNOWN;
-    platform_title("OpenHuey - starting the headset (OpenXR)...");
+    (void)arg;
+    sInitOk = 0;
+    vr_step(VR_STEP_LOADER, "loading openxr_loader.dll");
     sLoader = open_loader();
     if (sLoader == NULL) {
         vr_say("openxr_loader.dll was not found beside openhuey.exe or in SteamVR");
-        return 0;
+        goto out;
     }
+    path[0] = 0;
+    GetModuleFileNameA((HMODULE)sLoader, path, (DWORD)sizeof(path));
+    path[sizeof(path) - 1] = 0;
+    fprintf(stderr, "vr: loader %s\n", path);
     xrGetInstanceProcAddr = (PFN_xrGetInstanceProcAddr)GetProcAddress(sLoader, "xrGetInstanceProcAddr");
     if (xrGetInstanceProcAddr == NULL) {
         vr_say("openxr_loader.dll has no xrGetInstanceProcAddr");
-        vr_close();
-        return 0;
+        goto out;
     }
-    LOAD(XR_NULL_HANDLE, xrEnumerateInstanceExtensionProperties);
-    LOAD(XR_NULL_HANDLE, xrCreateInstance);
+    if (SDL_GetAtomicInt(&sInitCancelled)) {
+        goto out;
+    }
+    vr_step(VR_STEP_EXTENSIONS, "asking the runtime for its extensions");
+    LOAD_INIT(XR_NULL_HANDLE, xrEnumerateInstanceExtensionProperties);
+    LOAD_INIT(XR_NULL_HANDLE, xrCreateInstance);
     if (!has_extension()) {
-        vr_close();
-        return 0;
+        goto out;
+    }
+    if (SDL_GetAtomicInt(&sInitCancelled)) {
+        goto out;
     }
     strcpy(create.applicationInfo.applicationName, "OpenHuey");
     strcpy(create.applicationInfo.engineName, "OpenHuey");
     create.applicationInfo.apiVersion = XR_API_VERSION_1_0;
     create.enabledExtensionCount = 1;
     create.enabledExtensionNames = &ext;
+    vr_step(VR_STEP_INSTANCE, "creating the OpenXR instance");
     if (!xr_ok(xrCreateInstance(&create, &sInstance), "xrCreateInstance")) {
-        vr_close();
-        return 0;
+        goto out;
     }
-    LOAD(sInstance, xrDestroyInstance);
-    LOAD(sInstance, xrResultToString);
-    LOAD(sInstance, xrGetInstanceProperties);
-    LOAD(sInstance, xrGetSystem);
-    LOAD(sInstance, xrGetSystemProperties);
-    LOAD(sInstance, xrEnumerateEnvironmentBlendModes);
-    LOAD(sInstance, xrEnumerateViewConfigurationViews);
-    LOAD(sInstance, xrGetOpenGLGraphicsRequirementsKHR);
-    LOAD(sInstance, xrCreateSession);
-    LOAD(sInstance, xrDestroySession);
-    LOAD(sInstance, xrBeginSession);
-    LOAD(sInstance, xrEndSession);
-    LOAD(sInstance, xrPollEvent);
-    LOAD(sInstance, xrWaitFrame);
-    LOAD(sInstance, xrBeginFrame);
-    LOAD(sInstance, xrEndFrame);
-    LOAD(sInstance, xrLocateViews);
+    LOAD_INIT(sInstance, xrDestroyInstance);   /* (the cleanup's, before a later step can fail) */
+    vr_step(VR_STEP_FUNCTIONS, "reading the runtime's functions");
+    LOAD_INIT(sInstance, xrResultToString);
+    LOAD_INIT(sInstance, xrGetInstanceProperties);
+    LOAD_INIT(sInstance, xrGetSystem);
+    LOAD_INIT(sInstance, xrGetSystemProperties);
+    LOAD_INIT(sInstance, xrEnumerateEnvironmentBlendModes);
+    LOAD_INIT(sInstance, xrEnumerateViewConfigurationViews);
+    LOAD_INIT(sInstance, xrGetOpenGLGraphicsRequirementsKHR);
+    LOAD_INIT(sInstance, xrCreateSession);
+    LOAD_INIT(sInstance, xrDestroySession);
+    LOAD_INIT(sInstance, xrBeginSession);
+    LOAD_INIT(sInstance, xrEndSession);
+    LOAD_INIT(sInstance, xrPollEvent);
+    LOAD_INIT(sInstance, xrWaitFrame);
+    LOAD_INIT(sInstance, xrBeginFrame);
+    LOAD_INIT(sInstance, xrEndFrame);
+    LOAD_INIT(sInstance, xrLocateViews);
     load_proc(sInstance, "xrLocateSpace", &xrLocateSpace);   /* the floor height; the session still runs without it */
     load_proc(sInstance, "xrCreateActionSet", &xrCreateActionSet);
     load_proc(sInstance, "xrDestroyActionSet", &xrDestroyActionSet);
@@ -1836,24 +1948,112 @@ int vr_open(void) {
     load_proc(sInstance, "xrGetActionStateFloat", &xrGetActionStateFloat);
     load_proc(sInstance, "xrCreateActionSpace", &xrCreateActionSpace);
     load_proc(sInstance, "xrApplyHapticFeedback", &xrApplyHapticFeedback);
-    LOAD(sInstance, xrCreateReferenceSpace);
-    LOAD(sInstance, xrDestroySpace);
-    LOAD(sInstance, xrEnumerateSwapchainFormats);
-    LOAD(sInstance, xrCreateSwapchain);
-    LOAD(sInstance, xrDestroySwapchain);
-    LOAD(sInstance, xrEnumerateSwapchainImages);
-    LOAD(sInstance, xrAcquireSwapchainImage);
-    LOAD(sInstance, xrWaitSwapchainImage);
-    LOAD(sInstance, xrReleaseSwapchainImage);
-
+    LOAD_INIT(sInstance, xrCreateReferenceSpace);
+    LOAD_INIT(sInstance, xrDestroySpace);
+    LOAD_INIT(sInstance, xrEnumerateSwapchainFormats);
+    LOAD_INIT(sInstance, xrCreateSwapchain);
+    LOAD_INIT(sInstance, xrDestroySwapchain);
+    LOAD_INIT(sInstance, xrEnumerateSwapchainImages);
+    LOAD_INIT(sInstance, xrAcquireSwapchainImage);
+    LOAD_INIT(sInstance, xrWaitSwapchainImage);
+    LOAD_INIT(sInstance, xrReleaseSwapchainImage);
+    if (xrGetInstanceProperties != NULL && XR_SUCCEEDED(xrGetInstanceProperties(sInstance, &props))) {
+        fprintf(stderr, "vr: runtime %s %u.%u.%u\n", props.runtimeName, XR_VERSION_MAJOR(props.runtimeVersion),
+                XR_VERSION_MINOR(props.runtimeVersion), XR_VERSION_PATCH(props.runtimeVersion));
+    }
+    if (SDL_GetAtomicInt(&sInitCancelled)) {
+        goto out;
+    }
     system.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
+    vr_step(VR_STEP_SYSTEM, "asking the runtime for a headset (is SteamVR showing it?)");
     if (!xr_ok(xrGetSystem(sInstance, &system, &sSystem), "xrGetSystem")) {
         vr_say("no headset is connected (is SteamVR running, and the headset streaming?)");
-        vr_close();
-        return 0;
+        goto out;
     }
+    vr_step(VR_STEP_REQUIREMENTS, "asking the runtime for its OpenGL requirements");
     if (!xr_ok(xrGetOpenGLGraphicsRequirementsKHR(sInstance, sSystem, &glreq), "OpenGL requirements")) {
-        vr_close();
+        goto out;
+    }
+    ok = 1;
+out:
+    if (!ok && sInstance != XR_NULL_HANDLE && xrDestroyInstance != NULL) {   /* (the main thread's, or no one's) */
+        xrDestroyInstance(sInstance);
+        sInstance = XR_NULL_HANDLE;
+    }
+    sInitOk = ok;
+    SDL_SetAtomicInt(&sInitDone, 1);
+    return 0;
+}
+
+int vr_open(void) {
+    XrSystemProperties sys = {XR_TYPE_SYSTEM_PROPERTIES};
+    XrInstanceProperties inst = {XR_TYPE_INSTANCE_PROPERTIES};
+    XrGraphicsBindingOpenGLWin32KHR binding = {XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR};
+    XrSessionCreateInfo session = {XR_TYPE_SESSION_CREATE_INFO};
+    XrReferenceSpaceCreateInfo space = {XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+    XrViewConfigurationView config[VR_MAX_EYES];
+    XrEnvironmentBlendMode blends[4];
+    uint32_t nviews = 0, nblends = 0, i;
+    int64_t format = 0;
+    HDC dc;
+    HGLRC rc;
+    int spins;
+    int timeout = init_timeout_ms();
+    Uint64 start, now;
+
+    memset(&sFrame, 0, sizeof(sFrame));
+    sReason[0] = 0;
+    sLastState = XR_SESSION_STATE_UNKNOWN;
+    sInitAbandoned = 0;
+    sInitOk = 0;
+    SDL_SetAtomicInt(&sStep, VR_STEP_NONE);
+    SDL_SetAtomicInt(&sInitCancelled, 0);
+    SDL_SetAtomicInt(&sInitDone, 0);
+    platform_title("OpenHuey - starting the headset (OpenXR)...");
+    log_active_runtime();
+    {
+        SDL_Thread *t = SDL_CreateThread(vr_init_thread, "vr-init", NULL);
+
+        if (t == NULL) {
+            vr_say("can't start the OpenXR thread (%s)", SDL_GetError());
+            return 0;
+        }
+        start = SDL_GetTicks();
+        while (!SDL_GetAtomicInt(&sInitDone)) {
+            char title[180];
+
+            if (platform_pump_quit()) {   /* (the player closed the window while it started) */
+                sQuit = 1;
+                SDL_SetAtomicInt(&sInitCancelled, 1);
+                sInitAbandoned = 1;
+                SDL_DetachThread(t);
+                return 0;
+            }
+            now = SDL_GetTicks();
+            if (now - start >= (Uint64)timeout) {
+                char within[32];
+
+                SDL_SetAtomicInt(&sInitCancelled, 1);
+                sInitAbandoned = 1;   /* (the thread's to clean up: not vr_close's) */
+                SDL_DetachThread(t);
+                if (timeout >= 1000) {
+                    snprintf(within, sizeof(within), "%d s", timeout / 1000);
+                } else {
+                    snprintf(within, sizeof(within), "%d ms", timeout);
+                }
+                vr_say("the OpenXR runtime did not answer within %s while %s - is SteamVR running, and the headset connected?",
+                       within, step_name(SDL_GetAtomicInt(&sStep)));
+                return 0;
+            }
+            snprintf(title, sizeof(title), "OpenHuey - starting the headset (OpenXR)... %lus: %s",
+                     (unsigned long)((now - start) / 1000), step_name(SDL_GetAtomicInt(&sStep)));
+            platform_title(title);
+            SDL_Delay(50);
+        }
+        SDL_WaitThread(t, NULL);
+    }
+    if (!sInitOk) {
+        vr_close();   /* (the thread said why; anything it loaded is let go) */
         return 0;
     }
     if (!current_context(&dc, &rc)) {
@@ -1864,6 +2064,7 @@ int vr_open(void) {
     binding.hGLRC = rc;
     session.next = &binding;
     session.systemId = sSystem;
+    vr_step(VR_STEP_SESSION, "creating the headset session (with the window's OpenGL)");
     if (!xr_ok(xrCreateSession(sInstance, &session, &sSession), "xrCreateSession")) {
         vr_close();
         return 0;
@@ -1871,6 +2072,7 @@ int vr_open(void) {
     for (i = 0; i < VR_MAX_EYES; i++) {
         config[i].type = XR_TYPE_VIEW_CONFIGURATION_VIEW;
     }
+    vr_step(VR_STEP_VIEWS, "asking for the eyes' views");
     if (!xr_ok(xrEnumerateViewConfigurationViews(sInstance, sSystem, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
                                                  VR_MAX_EYES, &nviews, config), "view configuration") ||
         nviews == 0) {
@@ -1878,16 +2080,19 @@ int vr_open(void) {
         return 0;
     }
     sViewCount = (int)nviews;
+    vr_step(VR_STEP_FORMAT, "choosing the eyes' image format");
     if (!pick_format(&format)) {
         vr_close();
         return 0;
     }
+    vr_step(VR_STEP_SWAPCHAINS, "making the eyes' images");
     for (i = 0; i < nviews; i++) {
         if (!make_swapchain((int)i, config[i].recommendedImageRectWidth, config[i].recommendedImageRectHeight, format)) {
             vr_close();
             return 0;
         }
     }
+    vr_step(VR_STEP_SPACES, "making the play space");
     space.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     space.poseInReferenceSpace.orientation.w = 1.0f;
     if (!xr_ok(xrCreateReferenceSpace(sSession, &space, &sLocal), "xrCreateReferenceSpace")) {
@@ -1916,6 +2121,7 @@ int vr_open(void) {
     /* the runtime starts the session (SteamVR may be starting with it, which can take many
      * seconds): wait for READY, with the window pumping its events so it stays answered and the
      * player can close it. 6000 x 10 ms: a minute, then the game says why and runs on the desktop. */
+    vr_step(VR_STEP_READY, "waiting for the headset session to start (XR_SESSION_STATE_READY)");
     for (spins = 0; spins < 6000 && !sRunning && !sQuit; spins++) {
         if (!poll_events()) {
             vr_close();
@@ -1926,6 +2132,12 @@ int vr_open(void) {
             break;
         }
         if (!sRunning && !sQuit) {
+            if ((spins % 100) == 0) {   /* (once a second: what it waits for, and for how long) */
+                char title[160];
+
+                snprintf(title, sizeof(title), "OpenHuey - waiting for the headset to start... %d s", spins / 100);
+                platform_title(title);
+            }
             SDL_Delay(10);
         }
     }
@@ -2006,13 +2218,15 @@ void vr_close(void) {
         sActions = XR_NULL_HANDLE;
         sMove = XR_NULL_HANDLE;
     }
-    if (sInstance != XR_NULL_HANDLE && xrDestroyInstance != NULL) {
-        xrDestroyInstance(sInstance);
-        sInstance = XR_NULL_HANDLE;
-    }
-    if (sLoader != NULL) {
-        FreeLibrary(sLoader);
-        sLoader = NULL;
+    if (!sInitAbandoned) {   /* (a start-up thread still in the runtime owns these) */
+        if (sInstance != XR_NULL_HANDLE && xrDestroyInstance != NULL) {
+            xrDestroyInstance(sInstance);
+            sInstance = XR_NULL_HANDLE;
+        }
+        if (sLoader != NULL) {
+            FreeLibrary(sLoader);
+            sLoader = NULL;
+        }
     }
     sActive = 0;
     sQuit = 0;

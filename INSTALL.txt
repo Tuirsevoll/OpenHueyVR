@@ -40,7 +40,13 @@ written). It says what the headset, the disc and the library did - please attach
 - If VR could not start, the game says why, plays on the desktop instead, and the same reason is
   in the log. The usual causes are an OpenXR runtime that is not running yet, no headset
   connected, or a runtime without OpenGL support.
-- To play without VR on purpose: openhuey.exe --flat (or set OPENHUEY_FLAT=1).
+- The log's first vr: lines name the active OpenXR runtime and all registered ones. If it is not
+  SteamVR, set SteamVR as the OpenXR runtime (SteamVR Settings -> Developer), or set
+  XR_RUNTIME_JSON to SteamVR's steamxr_win64.json before starting the game.
+- The title bar counts the seconds and names the step; after 45 s without an answer the game
+  gives up and runs on the desktop, and the last vr: line in the log says what stalled.
+- To play without VR on purpose: openhuey.exe --flat (or set OPENHUEY_FLAT=1). --flat opens no
+  headset session, so the headset shows nothing while it is on.
 - For scripts: set OPENHUEY_NO_DIALOG=1 to skip the message box.
 
 Do not use the title screen's UPDATE button
